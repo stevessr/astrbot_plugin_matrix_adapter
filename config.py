@@ -84,6 +84,9 @@ class MatrixConfig:
         # OAuth2 回调服务器监听端口（从插件级别配置读取）
         self.oauth2_callback_port = plugin_cfg.oauth2_callback_port
 
+        # OAuth2 回调服务器监听主机地址（从插件级别配置读取）
+        self.oauth2_callback_host = plugin_cfg.oauth2_callback_host
+
         self._validate()
 
     @property

@@ -22,5 +22,11 @@
     "type": "int",
     "hint": "OAuth2 认证回调服务器监听端口，用于接收认证重定向",
     "default": 8765
+  },
+  "matrix_oauth2_callback_host": {
+    "description": "OAuth2 回调服务器主机地址",
+    "type": "string",
+    "hint": "OAuth2 认证回调服务器监听主机地址，默认 127.0.0.1 仅限本地访问，0.0.0.0 允许所有地址访问（适用于远程服务器部署）",
+    "default": "127.0.0.1"
   }
 }

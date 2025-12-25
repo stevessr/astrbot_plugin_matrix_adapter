@@ -41,6 +41,7 @@ class PluginConfig:
         self._e2ee_store_path: str | None = None
         self._media_cache_dir: str | None = None
         self._oauth2_callback_port: int = 8765
+        self._oauth2_callback_host: str = "127.0.0.1"
 
     def _ensure_default_paths(self):
         """确保默认路径已初始化"""
@@ -68,6 +69,7 @@ class PluginConfig:
         self._e2ee_store_path = config.get("matrix_e2ee_store_path", default_e2ee)
         self._media_cache_dir = config.get("matrix_media_cache_dir", default_media)
         self._oauth2_callback_port = config.get("matrix_oauth2_callback_port", 8765)
+        self._oauth2_callback_host = config.get("matrix_oauth2_callback_host", "127.0.0.1")
 
     @property
     def store_path(self) -> str:
@@ -91,6 +93,11 @@ class PluginConfig:
     def oauth2_callback_port(self) -> int:
         """获取 OAuth2 回调服务器端口"""
         return self._oauth2_callback_port
+
+    @property
+    def oauth2_callback_host(self) -> str:
+        """获取 OAuth2 回调服务器主机地址"""
+        return self._oauth2_callback_host
 
 
 # 全局单例实例
