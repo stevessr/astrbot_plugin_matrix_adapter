@@ -633,7 +633,11 @@ class MatrixOAuth2:
                 token_data["client_secret"] = self.client_secret
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(token_endpoint, json=token_data) as response:
+                async with session.post(
+                    token_endpoint, 
+                    data=urlencode(token_data),
+                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                ) as response:
                     if response.status != 200:
                         error_text = await response.text()
                         raise Exception(f"Token exchange failed: {error_text}")
@@ -699,7 +703,11 @@ class MatrixOAuth2:
                 token_data["client_secret"] = self.client_secret
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(token_endpoint, json=token_data) as response:
+                async with session.post(
+                    token_endpoint, 
+                    data=urlencode(token_data),
+                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                ) as response:
                     if response.status != 200:
                         error_text = await response.text()
                         raise Exception(f"Token refresh failed: {error_text}")
