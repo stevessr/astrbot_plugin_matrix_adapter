@@ -188,3 +188,8 @@ E2EE（End-to-End Encryption）功能允许 Bot 在加密房间中接收和发�
 ## 许可证
 
 MIT License
+
+
+# P.S.
+
+如果你想要使用加密，请安装 vodozemac 库

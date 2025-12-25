@@ -4,7 +4,7 @@ from typing import Any
 
 from astrbot import logger
 from astrbot.api.event import AstrMessageEvent, MessageChain
-from astrbot.api.message_components import File, Image, Plain, Reaction, Reply
+from astrbot.api.message_components import File, Image, Plain, Reply
 from astrbot.api.platform import AstrBotMessage, PlatformMetadata
 
 from .constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES, TEXT_TRUNCATE_LENGTH_50
@@ -336,31 +336,6 @@ class MatrixPlatformEvent(AstrMessageEvent):
                         logger.error(f"发送文件消息失败：{e}")
                 except Exception as e:
                     logger.error(f"处理文件消息过程出错：{e}")
-
-            elif isinstance(segment, Reaction):
-                # Handle reaction/emoji response to a message
-                try:
-                    target_event_id = segment.target_id
-                    emoji = segment.emoji
-
-                    if not target_event_id:
-                        logger.warning("Reaction 缺少 target_id，跳过")
-                        continue
-
-                    if not emoji:
-                        logger.warning("Reaction 缺少 emoji，跳过")
-                        continue
-
-                    # Send reaction using the client's send_reaction method
-                    await client.send_reaction(
-                        room_id=room_id,
-                        event_id=target_event_id,
-                        emoji=emoji,
-                    )
-                    sent_count += 1
-                    logger.debug(f"Reaction 发送成功：{emoji} -> {target_event_id}")
-                except Exception as e:
-                    logger.error(f"发送 Reaction 失败：{e}")
 
         return sent_count
 
