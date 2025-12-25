@@ -39,8 +39,7 @@ from ..constants import (
 try:
     from cryptography.hazmat.backends import default_backend
     from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives import hmac as crypto_hmac
-    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives import hmac as crypto_hmac  # noqa: F401
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
@@ -154,16 +153,15 @@ def _decrypt_backup_data(
     """
     try:
         from vodozemac import (
-            Curve25519PublicKey,
             Curve25519SecretKey,
             PkDecryption,
         )
 
         # Try to import PkDecodeException if available
         try:
-            from vodozemac import PkDecodeException
+            from vodozemac import PkDecodeException  # noqa: F401
         except ImportError:
-            PkDecodeException = Exception
+            pass
 
         logger.info(
             f"使用 vodozemac 解密：private_key={len(private_key_bytes)}B, "
@@ -604,7 +602,7 @@ class KeyBackup:
                                             )
                                             # Use this as the actual recovery key!
                                             return extracted_key
-                                        except:
+                                        except Exception:
                                             logger.warning(
                                                 "Failed to base64 decode backup key from device"
                                             )
@@ -663,7 +661,7 @@ class KeyBackup:
                             ssss_key = base64.b64decode(secret_str)
                         else:
                             ssss_key = decrypted_ssss_key
-                    except:
+                    except Exception:
                         ssss_key = decrypted_ssss_key
                 else:
                     logger.warning(
@@ -696,7 +694,7 @@ class KeyBackup:
                     if len(secret_str.strip()) >= 43:
                         return base64.b64decode(secret_str)
                     return decrypted_secret
-                except:
+                except Exception:
                     return decrypted_secret
             else:
                 logger.error(
@@ -1497,11 +1495,6 @@ class CrossSigning:
             if ssk_on_server:
                 ssk_id = (
                     list(ssk_on_server.get("keys", {}).keys())[0]
-                    if ssk_on_server.get("keys")
-                    else "N/A"
-                )
-                ssk_val = (
-                    list(ssk_on_server.get("keys", {}).values())[0]
                     if ssk_on_server.get("keys")
                     else "N/A"
                 )
