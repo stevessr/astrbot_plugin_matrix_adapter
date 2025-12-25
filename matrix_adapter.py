@@ -85,12 +85,6 @@ def _inject_astrbot_field_metadata():
                 "type": "string",
                 "hint": "设备显示名称，默认 AstrBot",
             },
-            # 存储配置
-            "matrix_store_path": {
-                "description": "存储路径",
-                "type": "string",
-                "hint": "数据存储路径，默认 ./data/matrix_store",
-            },
             # 功能配置
             "matrix_auto_join_rooms": {
                 "description": "自动加入房间",
@@ -112,12 +106,6 @@ def _inject_astrbot_field_metadata():
                 "description": "启用端到端加密",
                 "type": "bool",
                 "hint": "是否启用 E2EE 端到端加密（试验性），默认 False",
-            },
-            "matrix_e2ee_store_path": {
-                "description": "E2EE 存储路径",
-                "type": "string",
-                "hint": "E2EE 数据存储路径，默认 ./data/matrix_e2ee",
-                "condition": {"matrix_enable_e2ee": True},
             },
             "matrix_e2ee_auto_verify": {
                 "description": "自动验证模式",
@@ -143,12 +131,6 @@ def _inject_astrbot_field_metadata():
                 "type": "string",
                 "hint": "E2EE 恢复密钥（Base58 或 Base64 格式），留空则自动生成",
                 "condition": {"matrix_enable_e2ee": True},
-            },
-            # 媒体配置
-            "matrix_media_cache_dir": {
-                "description": "媒体缓存目录",
-                "type": "string",
-                "hint": "媒体文件缓存目录，默认 ./data/temp/matrix_media",
             },
         }
 
@@ -191,21 +173,16 @@ def _inject_astrbot_field_metadata():
         "matrix_access_token": "",
         "matrix_auth_method": "password",
         "matrix_device_name": "AstrBot",
-        # 存储配置
-        "matrix_store_path": "./data/matrix_store",
         # 功能配置
         "matrix_auto_join_rooms": True,
         "matrix_sync_timeout": 30000,
         "matrix_enable_threading": False,
         # E2EE 配置
         "matrix_enable_e2ee": False,
-        "matrix_e2ee_store_path": "./data/matrix_e2ee",
         "matrix_e2ee_auto_verify": "auto_accept",
         "matrix_e2ee_trust_on_first_use": False,
         "matrix_e2ee_key_backup": False,
         "matrix_e2ee_recovery_key": "",
-        # 媒体配置
-        "matrix_media_cache_dir": "./data/temp/matrix_media",
     },
     adapter_display_name="Matrix",
     support_streaming_message=True,

@@ -46,11 +46,14 @@ data/plugins/astrbot_plugin_matrix_adapter/
 | `matrix_sync_timeout` | int | `30000` | 同步超时时间（毫秒） |
 | `matrix_enable_threading` | bool | `false` | 是否使用消息线程回复 |
 
-### 存储配置
+### 插件级别存储配置
+
+以下配置位于插件配置中（`_conf_schema.json`），由所有 Matrix 适配器实例共享：
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `matrix_store_path` | string | `./data/matrix_store` | 数据存储路径 |
+| `matrix_e2ee_store_path` | string | `./data/matrix_e2ee` | E2EE 数据存储路径 |
 | `matrix_media_cache_dir` | string | `./data/temp/matrix_media` | 媒体文件缓存目录 |
 
 ### E2EE 端到端加密配置
@@ -58,7 +61,6 @@ data/plugins/astrbot_plugin_matrix_adapter/
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `matrix_enable_e2ee` | bool | `false` | 是否启用端到端加密 |
-| `matrix_e2ee_store_path` | string | `./data/matrix_e2ee` | E2EE 数据存储路径 |
 | `matrix_e2ee_auto_verify` | string | `auto_accept` | 自动验证模式：`auto_accept`、`auto_reject`、`manual` |
 | `matrix_e2ee_trust_on_first_use` | bool | `false` | 是否自动信任首次使用的设备 |
 | `matrix_e2ee_key_backup` | bool | `false` | 是否启用密钥备份 |

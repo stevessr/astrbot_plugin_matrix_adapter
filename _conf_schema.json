@@ -1,0 +1,20 @@
+{
+  "matrix_store_path": {
+    "description": "数据存储路径",
+    "type": "string",
+    "hint": "Matrix 数据存储路径，用于保存设备 ID、登录状态等",
+    "default": "./data/matrix_store"
+  },
+  "matrix_e2ee_store_path": {
+    "description": "E2EE 存储路径",
+    "type": "string",
+    "hint": "端到端加密数据存储路径，用于保存加密密钥等",
+    "default": "./data/matrix_e2ee"
+  },
+  "matrix_media_cache_dir": {
+    "description": "媒体缓存目录",
+    "type": "string",
+    "hint": "媒体文件缓存目录，用于临时存储下载的媒体文件",
+    "default": "./data/temp/matrix_media"
+  }
+}

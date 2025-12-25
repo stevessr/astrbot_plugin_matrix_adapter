@@ -6,6 +6,7 @@ from astrbot.api import logger
 
 from .constants import DEFAULT_TIMEOUT_MS_30000
 from .device_manager import MatrixDeviceManager
+from .plugin_config import get_plugin_config
 
 
 class MatrixConfig:
@@ -42,7 +43,9 @@ class MatrixConfig:
         self.refresh_token = self.config.get("matrix_refresh_token")
 
         # Ensure these attributes exist for other components
-        self.store_path = self.config.get("matrix_store_path", "./data/matrix_store")
+        # 目录路径从插件级别配置读取（而非适配器配置）
+        plugin_cfg = get_plugin_config()
+        self.store_path = plugin_cfg.store_path
         self.auto_join_rooms = self.config.get("matrix_auto_join_rooms", True)
         self.sync_timeout = self.config.get(
             "matrix_sync_timeout", DEFAULT_TIMEOUT_MS_30000
@@ -56,9 +59,8 @@ class MatrixConfig:
         # E2EE 端到端加密配置（试验性）
         # 启用后 Bot 可以在加密房间中接收和发送消息
         self.enable_e2ee = self.config.get("matrix_enable_e2ee", False)
-        self.e2ee_store_path = self.config.get(
-            "matrix_e2ee_store_path", "./data/matrix_e2ee"
-        )
+        # E2EE 存储路径从插件级别配置读取
+        self.e2ee_store_path = plugin_cfg.e2ee_store_path
         # 自动验证模式：auto_accept (自动接受) / auto_reject (自动拒绝) / manual (手动)
         # 无论哪种模式都会打印详细的验证日志
         self.e2ee_auto_verify = self.config.get(
@@ -75,10 +77,8 @@ class MatrixConfig:
         # 如果为空，将自动生成新密钥并在日志中输出
         self.e2ee_recovery_key = self.config.get("matrix_e2ee_recovery_key", "")
 
-        # 媒体文件缓存目录，默认为 ./data/temp/matrix_media
-        self.media_cache_dir = self.config.get(
-            "matrix_media_cache_dir", "./data/temp/matrix_media"
-        )
+        # 媒体文件缓存目录从插件级别配置读取
+        self.media_cache_dir = plugin_cfg.media_cache_dir
 
         self._validate()
 
@@ -93,9 +93,9 @@ class MatrixConfig:
     def _ensure_device_manager(self):
         """确保设备管理器已初始化"""
         if self._device_manager is None and self.user_id:
-            store_path = self.config.get("matrix_store_path", "./data/matrix_store")
+            # 使用插件级别配置的存储路径
             self._device_manager = MatrixDeviceManager(
-                user_id=self.user_id, homeserver=self.homeserver, store_path=store_path
+                user_id=self.user_id, homeserver=self.homeserver, store_path=self.store_path
             )
 
     def set_device_id(self, device_id: str):
