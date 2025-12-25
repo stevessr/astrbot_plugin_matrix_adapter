@@ -384,17 +384,23 @@ class E2EEManager:
             # 验证上传：查询自己的设备密钥确认服务器收到
             try:
                 verify_response = await self.client.query_keys({self.user_id: []})
-                my_devices = verify_response.get("device_keys", {}).get(self.user_id, {})
+                my_devices = verify_response.get("device_keys", {}).get(
+                    self.user_id, {}
+                )
                 if self.device_id in my_devices:
                     my_device_info = my_devices[self.device_id]
                     my_keys = my_device_info.get("keys", {})
-                    logger.info(f"✅ 验证成功：服务器已确认设备 {self.device_id} 的密钥")
+                    logger.info(
+                        f"✅ 验证成功：服务器已确认设备 {self.device_id} 的密钥"
+                    )
                     logger.info(f"服务器上的密钥：{list(my_keys.keys())}")
                     # 检查签名
                     signatures = my_device_info.get("signatures", {})
                     logger.info(f"服务器上的签名：{signatures}")
                 else:
-                    logger.error(f"❌ 验证失败：服务器没有设备 {self.device_id} 的密钥！")
+                    logger.error(
+                        f"❌ 验证失败：服务器没有设备 {self.device_id} 的密钥！"
+                    )
                     logger.error(f"服务器上的设备列表：{list(my_devices.keys())}")
             except Exception as verify_e:
                 logger.warning(f"验证设备密钥失败：{verify_e}")
@@ -656,9 +662,7 @@ class E2EEManager:
             ):
                 signatures = device_info.get("signatures", {}).get(sender, {})
                 # 检查是否有自签名密钥的签名（使用完整公钥作为 key ID）
-                self_signing_key_id = (
-                    f"ed25519:{self._cross_signing._self_signing_key}"
-                )
+                self_signing_key_id = f"ed25519:{self._cross_signing._self_signing_key}"
                 if self_signing_key_id in signatures:
                     device_verified = True
                     logger.debug(f"设备 {requesting_device_id} 已通过交叉签名验证")

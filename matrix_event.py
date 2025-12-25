@@ -482,7 +482,9 @@ class MatrixPlatformEvent(AstrMessageEvent):
         """
         import time
 
-        logger.info(f"Matrix send_streaming 开始 (编辑模式)，use_fallback={use_fallback}")
+        logger.info(
+            f"Matrix send_streaming 开始 (编辑模式)，use_fallback={use_fallback}"
+        )
         room_id = self.session_id
         accumulated_text = ""  # 累积的文本内容
         non_text_components = []  # 非文本组件列表
@@ -586,21 +588,30 @@ class MatrixPlatformEvent(AstrMessageEvent):
                                         my_user_id = whoami.get("user_id")
 
                                         if my_user_id:
-                                            messages_resp = await self.client.room_messages(
-                                                room_id=room_id,
-                                                direction="b",
-                                                limit=50,
+                                            messages_resp = (
+                                                await self.client.room_messages(
+                                                    room_id=room_id,
+                                                    direction="b",
+                                                    limit=50,
+                                                )
                                             )
 
                                             chunk = messages_resp.get("chunk", [])
                                             for event in chunk:
                                                 if (
-                                                    event.get("type") == "m.room.message"
-                                                    and event.get("sender") == my_user_id
-                                                    and event.get("content", {}).get("msgtype") == "m.text"
+                                                    event.get("type")
+                                                    == "m.room.message"
+                                                    and event.get("sender")
+                                                    == my_user_id
+                                                    and event.get("content", {}).get(
+                                                        "msgtype"
+                                                    )
+                                                    == "m.text"
                                                 ):
                                                     reply_to = event.get("event_id")
-                                                    logger.debug(f"找到自己最近的消息作为回复对象：{reply_to}")
+                                                    logger.debug(
+                                                        f"找到自己最近的消息作为回复对象：{reply_to}"
+                                                    )
                                                     break
                                     except Exception as e:
                                         logger.debug(f"获取自己最近消息失败：{e}")
@@ -608,7 +619,11 @@ class MatrixPlatformEvent(AstrMessageEvent):
                                 logger.debug(f"处理回复模式时出错：{e}")
 
                         # 使用原始消息 ID 作为回复目标
-                        if not reply_to and self.message_obj and self.message_obj.message_id:
+                        if (
+                            not reply_to
+                            and self.message_obj
+                            and self.message_obj.message_id
+                        ):
                             reply_to = str(self.message_obj.message_id)
 
                         # 检查是否需要使用嘟文串模式
@@ -621,7 +636,9 @@ class MatrixPlatformEvent(AstrMessageEvent):
                                         "body": resp.get("content", {}).get("body", ""),
                                     }
                                     if resp and "content" in resp:
-                                        relates_to = resp["content"].get("m.relates_to", {})
+                                        relates_to = resp["content"].get(
+                                            "m.relates_to", {}
+                                        )
                                         if relates_to.get("rel_type") == "m.thread":
                                             thread_root = relates_to.get("event_id")
                                             use_thread = True
@@ -632,7 +649,9 @@ class MatrixPlatformEvent(AstrMessageEvent):
                                             use_thread = False
                                             thread_root = None
                             except Exception as e:
-                                logger.warning(f"Failed to get event for threading: {e}")
+                                logger.warning(
+                                    f"Failed to get event for threading: {e}"
+                                )
 
                         first_chain_processed = True
 
@@ -649,7 +668,9 @@ class MatrixPlatformEvent(AstrMessageEvent):
                         if not initial_message_sent:
                             # 发送初始消息
                             try:
-                                content = await build_content(accumulated_text, is_streaming=True)
+                                content = await build_content(
+                                    accumulated_text, is_streaming=True
+                                )
                                 result = await self.client.send_message(
                                     room_id=room_id,
                                     msg_type="m.room.message",
@@ -658,16 +679,23 @@ class MatrixPlatformEvent(AstrMessageEvent):
                                 message_event_id = result.get("event_id")
                                 initial_message_sent = True
                                 last_edit_time = current_time
-                                logger.debug(f"流式消息初始发送成功：{message_event_id}")
+                                logger.debug(
+                                    f"流式消息初始发送成功：{message_event_id}"
+                                )
                             except Exception as e:
                                 logger.error(f"发送初始流式消息失败：{e}")
-                        elif message_event_id and (current_time - last_edit_time) >= edit_interval:
+                        elif (
+                            message_event_id
+                            and (current_time - last_edit_time) >= edit_interval
+                        ):
                             # 编辑已发送的消息
                             try:
                                 new_content = {
                                     "body": accumulated_text + "...",
                                     "format": "org.matrix.custom.html",
-                                    "formatted_body": markdown_to_html(accumulated_text + "..."),
+                                    "formatted_body": markdown_to_html(
+                                        accumulated_text + "..."
+                                    ),
                                 }
                                 await self.client.edit_message(
                                     room_id=room_id,
@@ -675,7 +703,9 @@ class MatrixPlatformEvent(AstrMessageEvent):
                                     new_content=new_content,
                                 )
                                 last_edit_time = current_time
-                                logger.debug(f"流式消息编辑成功，当前长度：{len(accumulated_text)}")
+                                logger.debug(
+                                    f"流式消息编辑成功，当前长度：{len(accumulated_text)}"
+                                )
                             except Exception as e:
                                 logger.debug(f"编辑流式消息失败（将继续累积）：{e}")
 

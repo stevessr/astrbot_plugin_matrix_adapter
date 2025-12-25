@@ -50,9 +50,10 @@ class MatrixSyncManager:
         # 如果提供了新的路径参数，使用新逻辑生成路径
         if homeserver and user_id and store_path:
             from ..storage_paths import MatrixStoragePaths
-            self.sync_store_path = str(MatrixStoragePaths.get_sync_file_path(
-                store_path, homeserver, user_id
-            ))
+
+            self.sync_store_path = str(
+                MatrixStoragePaths.get_sync_file_path(store_path, homeserver, user_id)
+            )
         else:
             # 回退到旧的路径参数
             self.sync_store_path = sync_store_path
@@ -96,6 +97,7 @@ class MatrixSyncManager:
 
         try:
             from ..storage_paths import MatrixStoragePaths
+
             sync_path = Path(self.sync_store_path)
             MatrixStoragePaths.ensure_directory(sync_path)
             with open(sync_path, "w") as f:

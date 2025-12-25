@@ -1,7 +1,8 @@
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
-from ..constants import PREFIX_ED25519
 from astrbot.core.star.register import register_command
+
+from ..constants import PREFIX_ED25519
 
 
 @register_command("approve_device", help="Approve a Matrix device manually")
@@ -50,13 +51,19 @@ async def approve_device(event: AstrMessageEvent, user_id: str, device_id: str):
         fingerprint = keys.get(f"{PREFIX_ED25519}{device_id}")
 
         if not fingerprint:
-            await event.send(f"Could not find Ed25519 key (fingerprint) for device {device_id}")
+            await event.send(
+                f"Could not find Ed25519 key (fingerprint) for device {device_id}"
+            )
             return
 
         # Add to trusted devices
-        e2ee_manager._verification.device_store.add_device(user_id, device_id, fingerprint)
+        e2ee_manager._verification.device_store.add_device(
+            user_id, device_id, fingerprint
+        )
 
-        await event.send(f"✅ Device approved:\nUser: {user_id}\nDevice: {device_id}\nFingerprint: {fingerprint}")
+        await event.send(
+            f"✅ Device approved:\nUser: {user_id}\nDevice: {device_id}\nFingerprint: {fingerprint}"
+        )
         logger.info(f"Manually approved device {user_id}|{device_id} via command")
 
     except Exception as e:
