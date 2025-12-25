@@ -5,6 +5,8 @@ Implements the Matrix Client-Server API using aiohttp
 
 import json
 import os
+import secrets
+import time
 from typing import Any
 
 import aiohttp
@@ -333,7 +335,6 @@ class MatrixHTTPClient:
         Returns:
             Send response with event_id
         """
-        import time
 
         txn_id = f"{int(time.time() * 1000)}_{id(content)}"
         endpoint = f"/_matrix/client/v3/rooms/{room_id}/send/{msg_type}/{txn_id}"
@@ -357,7 +358,6 @@ class MatrixHTTPClient:
         Returns:
             Send response with event_id
         """
-        import time
 
         txn_id = f"txn_{int(time.time() * 1000)}"
         endpoint = f"/_matrix/client/v3/rooms/{room_id}/send/{event_type}/{txn_id}"
@@ -769,7 +769,6 @@ class MatrixHTTPClient:
         Returns:
             Send response with event_id
         """
-        import time
 
         txn_id = f"{int(time.time() * 1000)}_{id(new_content)}"
         endpoint = f"/_matrix/client/v3/rooms/{room_id}/send/m.room.message/{txn_id}"
@@ -925,7 +924,6 @@ class MatrixHTTPClient:
         Returns:
             Response with event_id of the reaction
         """
-        import time
 
         txn_id = f"{int(time.time() * 1000)}_{id(emoji)}"
         endpoint = f"/_matrix/client/v3/rooms/{room_id}/send/m.reaction/{txn_id}"
@@ -1010,7 +1008,6 @@ class MatrixHTTPClient:
         Returns:
             Empty dict on success
         """
-        import secrets
 
         if txn_id is None:
             txn_id = secrets.token_hex(16)

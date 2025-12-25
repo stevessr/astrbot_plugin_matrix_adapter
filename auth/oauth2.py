@@ -4,6 +4,8 @@ Implements OAuth2 authentication flow with HTTP callback server
 """
 
 import asyncio
+import base64
+import hashlib
 import secrets
 from typing import Any
 from urllib.parse import urlencode
@@ -453,8 +455,6 @@ class MatrixOAuth2:
         Returns:
             PKCE code challenge (base64url-encoded SHA256 hash)
         """
-        import base64
-        import hashlib
 
         digest = hashlib.sha256(verifier.encode()).digest()
         challenge = base64.urlsafe_b64encode(digest).decode().rstrip("=")

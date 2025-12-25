@@ -6,7 +6,7 @@ from astrbot.api.event import MessageChain
 from astrbot.api.message_components import Plain, Reply
 from astrbot.api.platform import Platform, PlatformMetadata, register_platform_adapter
 from astrbot.core.config.astrbot_config import AstrBotConfig
-from astrbot.core.platform.astr_message_event import MessageSesion
+from astrbot.core.platform.astr_message_event import MessageSession
 
 from .auth.auth import MatrixAuth
 
@@ -311,7 +311,7 @@ class MatrixPlatformAdapter(Platform):
         logger.info("Matrix Adapter 初始化完成")
 
     async def send_by_session(
-        self, session: MessageSesion, message_chain: MessageChain, reply_to: str = None
+        self, session: MessageSession, message_chain: MessageChain, reply_to: str = None
     ):
         try:
             room_id = session.session_id
