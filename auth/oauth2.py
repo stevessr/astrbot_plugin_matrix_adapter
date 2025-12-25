@@ -552,8 +552,13 @@ class MatrixOAuth2:
 
             # Step 2: Start callback server if no redirect URI provided
             if not self.redirect_uri:
-                _log("info", f"Starting OAuth2 callback server on {self.callback_host}:{self.callback_port}...")
-                self.callback_server = OAuth2CallbackServer(host=self.callback_host, port=self.callback_port)
+                _log(
+                    "info",
+                    f"Starting OAuth2 callback server on {self.callback_host}:{self.callback_port}...",
+                )
+                self.callback_server = OAuth2CallbackServer(
+                    host=self.callback_host, port=self.callback_port
+                )
                 self.redirect_uri = await self.callback_server.start()
                 _log("info", f"Callback server listening at {self.redirect_uri}")
 

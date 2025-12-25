@@ -10,6 +10,7 @@ from pathlib import Path
 
 from astrbot.api import logger
 
+from ..client.http_client import MatrixAPIError
 from ..constants import DEFAULT_TIMEOUT_MS_30000, DISPLAY_TRUNCATE_LENGTH_20
 
 
@@ -27,6 +28,7 @@ class MatrixSyncManager:
         homeserver: str | None = None,
         user_id: str | None = None,
         store_path: str | None = None,
+        on_token_invalid: Callable | None = None,
     ):
         """
         Initialize sync manager
@@ -39,6 +41,7 @@ class MatrixSyncManager:
             homeserver: Matrix homeserver URL
             user_id: Matrix user ID
             store_path: Base storage path
+            on_token_invalid: Callback to handle invalid token (e.g., refresh token)
         """
         self.client = client
         self.sync_timeout = sync_timeout
@@ -46,6 +49,7 @@ class MatrixSyncManager:
         self.homeserver = homeserver
         self.user_id = user_id
         self.store_path = store_path
+        self.on_token_invalid = on_token_invalid
 
         # 如果提供了新的路径参数，使用新逻辑生成路径
         if homeserver and user_id and store_path:
@@ -173,6 +177,25 @@ class MatrixSyncManager:
                     for room_id, invite_data in rooms.get("invite", {}).items():
                         if self.on_invite:
                             await self.on_invite(room_id, invite_data)
+
+            except MatrixAPIError as e:
+                # Handle token expiration
+                if (
+                    e.status == 401 or "M_UNKNOWN_TOKEN" in str(e)
+                ) and self.on_token_invalid:
+                    logger.warning(
+                        "Token appears to be invalid or expired. Attempting to refresh..."
+                    )
+                    if await self.on_token_invalid():
+                        logger.info("Token refreshed successfully. Retrying sync...")
+                        continue
+                    else:
+                        logger.error("Failed to refresh token. Stopping sync loop.")
+                        raise
+
+                logger.error(f"Matrix API error in sync loop: {e}")
+                # Wait a bit before retrying
+                await asyncio.sleep(5)
 
             except KeyboardInterrupt:
                 logger.info("Sync loop interrupted by user")

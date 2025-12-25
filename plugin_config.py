@@ -69,7 +69,9 @@ class PluginConfig:
         self._e2ee_store_path = config.get("matrix_e2ee_store_path", default_e2ee)
         self._media_cache_dir = config.get("matrix_media_cache_dir", default_media)
         self._oauth2_callback_port = config.get("matrix_oauth2_callback_port", 8765)
-        self._oauth2_callback_host = config.get("matrix_oauth2_callback_host", "127.0.0.1")
+        self._oauth2_callback_host = config.get(
+            "matrix_oauth2_callback_host", "127.0.0.1"
+        )
 
     @property
     def store_path(self) -> str:

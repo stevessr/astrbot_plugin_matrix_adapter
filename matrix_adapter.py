@@ -249,6 +249,7 @@ class MatrixPlatformAdapter(Platform):
             homeserver=self._matrix_config.homeserver,
             user_id=self._matrix_config.user_id,
             store_path=self._matrix_config.store_path,
+            on_token_invalid=self.auth.refresh_token,
         )
 
         # Initialize event processor

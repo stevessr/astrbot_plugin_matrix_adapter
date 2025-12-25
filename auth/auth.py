@@ -376,3 +376,32 @@ class MatrixAuth:
         except Exception as e:
             self._log("error", f"Failed to refresh OAuth2 token: {e}")
             raise RuntimeError(f"Token refresh failed: {e}")
+
+    async def refresh_token(self) -> bool:
+        """
+        Unified method to refresh access token regardless of auth method
+        Returns True if successful, False otherwise
+        """
+        try:
+            if self.auth_method == "oauth2":
+                await self.refresh_oauth2_token()
+                self._save_token()
+                return True
+            elif self.refresh_token:
+                # Standard Matrix token refresh
+                self._log("info", "Refreshing standard Matrix access token...")
+                response = await self.client.refresh_access_token(self.refresh_token)
+
+                self.access_token = response.get("access_token")
+                if "refresh_token" in response:
+                    self.refresh_token = response.get("refresh_token")
+
+                self._save_token()
+                self._log("info", "Standard token refreshed successfully")
+                return True
+            else:
+                self._log("error", "No refresh token available to refresh session")
+                return False
+        except Exception as e:
+            self._log("error", f"Failed to refresh token: {e}")
+            return False
