@@ -1,5 +1,6 @@
 name: Matrix Adapter
-author: AstrBot Team
-description: Matrix 协议适配器，支持端到端加密、OAuth2 认证、消息线程等功能。
+author: stevessr
+description: Matrix 协议适配器，支持端到端加密、消息线程等功能。暂不支持密钥交换，暂不支持 Oauth2 登录。
+desc: Matrix 协议适配器
 version: 0.1.0
 repo: https://github.com/AstrBot/astrbot_plugin_matrix_adapter

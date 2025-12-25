@@ -209,6 +209,7 @@ def _inject_astrbot_field_metadata():
     },
     adapter_display_name="Matrix",
     support_streaming_message=True,
+    logo_path="matrix.svg",
 )
 class MatrixPlatformAdapter(Platform):
     def __init__(
@@ -525,7 +526,13 @@ class MatrixPlatformAdapter(Platform):
 
     def meta(self) -> PlatformMetadata:
         id_ = getattr(self._matrix_config, "id", None) or "matrix"
-        return PlatformMetadata(name="matrix", description="Matrix 协议适配器", id=id_)
+        return PlatformMetadata(
+            name="matrix",
+            description="Matrix 协议适配器",
+            id=id_,
+            adapter_display_name="Matrix",
+            logo_path="matrix.svg",
+        )
 
     async def run(self):
         try:
