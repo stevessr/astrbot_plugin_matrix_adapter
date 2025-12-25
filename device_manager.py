@@ -22,7 +22,7 @@ class MatrixDeviceManager:
     """
 
     def __init__(
-        self, user_id: str, homeserver: str, store_path: str = "./data/matrix_store"
+        self, user_id: str, homeserver: str, store_path: str | None = None
     ):
         """
         初始化设备管理器
@@ -30,12 +30,17 @@ class MatrixDeviceManager:
         Args:
             user_id: Matrix 用户 ID
             homeserver: Matrix 服务器地址
-            store_path: 存储路径
+            store_path: 存储路径（如果为 None，将使用 plugin_config 中的默认路径）
         """
 
         self.user_id = user_id
 
         self.homeserver = homeserver.rstrip("/")
+
+        # 如果未提供 store_path，从 plugin_config 获取
+        if store_path is None:
+            from .plugin_config import get_plugin_config
+            store_path = get_plugin_config().store_path
 
         self.store_path = Path(store_path)
 

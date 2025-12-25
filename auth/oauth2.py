@@ -4,7 +4,6 @@ Implements OAuth2 authentication flow with HTTP callback server
 """
 
 import asyncio
-import logging
 import secrets
 from typing import Any
 from urllib.parse import urlencode
@@ -12,7 +11,7 @@ from urllib.parse import urlencode
 import aiohttp
 from aiohttp import web
 
-logger = logging.getLogger("astrbot.matrix.oauth2")
+from astrbot.api import logger
 
 
 def _log(level: str, msg: str):
@@ -600,7 +599,13 @@ class MatrixOAuth2:
             else:
                 # Manual code entry (for custom redirect URIs)
                 _log("info", "Enter the authorization code:")
-                code = input().strip()
+                _log("info", "⚠️  Manual code entry is not supported in async context.")
+                _log("info", "Please use the callback server or provide a redirect_uri.")
+                raise RuntimeError(
+                    "Manual code entry not supported in async context. "
+                    "Either use the callback server (don't provide redirect_uri) "
+                    "or implement your own async input method."
+                )
 
             # Exchange code for token
             token_data = {

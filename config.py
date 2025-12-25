@@ -35,8 +35,8 @@ class MatrixConfig:
             del self.config["matrix_device_id"]
 
         # 初始化设备管理器（延迟到有 user_id 时）
-        self._device_manager: MatrixDeviceManager = None
-        self._device_id: str = None
+        self._device_manager: MatrixDeviceManager | None = None
+        self._device_id: str | None = None
 
         # OAuth2 configuration - all parameters auto-discovered from server
         # Only refresh_token is stored locally (auto-saved after login)

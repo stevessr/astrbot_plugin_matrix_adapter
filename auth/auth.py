@@ -281,14 +281,14 @@ class MatrixAuth:
                         )
                         # Fall through to fatal error
 
-                # No password available or password login also failed - panic
+                # No password available or password login also failed - raise exception
                 self._log(
                     "error",
                     f"FATAL: Access token is invalid or expired and all recovery methods failed. Error: {e}",
                 )
-                import sys
-
-                sys.exit(1)
+                raise RuntimeError(
+                    f"All authentication methods failed. Access token invalid/expired and no fallback available. Original error: {e}"
+                )
             self._log("error", f"Token validation failed: {e}")
             raise RuntimeError(f"Token validation failed: {e}")
 
