@@ -30,11 +30,13 @@ class MatrixPlatformEvent(AstrMessageEvent):
         client,
         enable_threading: bool = False,
         e2ee_manager=None,
+        use_notice: bool = False,
     ):
         super().__init__(message_str, message_obj, platform_meta, session_id)
         self.client = client  # MatrixHTTPClient instance
         self.enable_threading = enable_threading  # 试验性：是否默认开启嘟文串模式
         self.e2ee_manager = e2ee_manager
+        self.use_notice = use_notice  # 使用 m.notice 而不是 m.text
 
     @staticmethod
     async def send_with_client(
@@ -47,6 +49,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
         original_message_info: dict | None = None,
         e2ee_manager=None,
         max_upload_size: int | None = None,
+        use_notice: bool = False,
     ) -> int:
         """使用提供的 client 将指定消息链发送到指定房间。
 
@@ -60,6 +63,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
             original_message_info: 可选，原始消息信息（用于回复）
             e2ee_manager: 可选，E2EEManager 实例（用于加密消息）
             max_upload_size: 可选，最大上传文件大小（字节），超过此大小将压缩
+            use_notice: 是否使用 m.notice 类型发送消息（默认 m.text）
 
         Returns:
             已发送的消息段数量
@@ -107,8 +111,10 @@ class MatrixPlatformEvent(AstrMessageEvent):
                 continue
             if isinstance(segment, Plain):
                 # 发送支持 Markdown 渲染的文本消息
+                # 根据配置选择消息类型：m.notice 或 m.text
+                msg_type = "m.notice" if use_notice else "m.text"
                 content = {
-                    "msgtype": "m.text",
+                    "msgtype": msg_type,
                     "body": segment.text,
                 }
 
@@ -453,6 +459,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
             thread_root=thread_root,
             use_thread=use_thread,
             original_message_info=original_message_info,
+            use_notice=self.use_notice,
         )
 
         return await super().send(message_chain)
@@ -497,8 +504,10 @@ class MatrixPlatformEvent(AstrMessageEvent):
                 display_text = text + ("..." if is_streaming else "")
                 formatted_body = display_text.replace("\n", "<br>")
 
+            # 根据配置选择消息类型：m.notice 或 m.text
+            msg_type = "m.notice" if self.use_notice else "m.text"
             content: dict[str, Any] = {
-                "msgtype": "m.text",
+                "msgtype": msg_type,
                 "body": display_text,
                 "format": "org.matrix.custom.html",
                 "formatted_body": formatted_body,
@@ -751,6 +760,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                     thread_root=thread_root,
                     use_thread=use_thread,
                     original_message_info=original_message_info,
+                    use_notice=self.use_notice,
                 )
             except Exception as e:
                 logger.error(f"发送非文本组件失败：{e}")

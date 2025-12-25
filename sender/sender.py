@@ -20,6 +20,7 @@ class MatrixSender:
         reply_to: str = None,
         thread_root: str = None,
         use_thread: bool = False,
+        use_notice: bool = False,
     ) -> int:
         """
         Send a message to a room
@@ -31,4 +32,5 @@ class MatrixSender:
             reply_to=reply_to,
             thread_root=thread_root,
             use_thread=use_thread,
+            use_notice=use_notice,
         )

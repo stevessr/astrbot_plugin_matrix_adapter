@@ -102,6 +102,11 @@ def _inject_astrbot_field_metadata():
                 "type": "bool",
                 "hint": "是否使用消息线程（Threading）回复，默认 False",
             },
+            "matrix_use_notice": {
+                "description": "使用通知类型消息",
+                "type": "bool",
+                "hint": "启用后机器人将使用 m.notice 类型发送消息，而不是 m.text。m.notice 通常用于机器人消息，不会触发通知声音",
+            },
             # E2EE 配置
             "matrix_enable_e2ee": {
                 "description": "启用端到端加密",
@@ -178,6 +183,7 @@ def _inject_astrbot_field_metadata():
         "matrix_auto_join_rooms": True,
         "matrix_sync_timeout": 30000,
         "matrix_enable_threading": False,
+        "matrix_use_notice": False,
         # E2EE 配置
         "matrix_enable_e2ee": False,
         "matrix_e2ee_auto_verify": "auto_accept",
@@ -433,6 +439,7 @@ class MatrixPlatformAdapter(Platform):
                     original_message_info=original_message_info,
                     e2ee_manager=self.e2ee_manager,
                     max_upload_size=self.max_upload_size,
+                    use_notice=self._matrix_config.use_notice,
                 )
 
             await super().send_by_session(session, message_chain)
@@ -499,6 +506,7 @@ class MatrixPlatformAdapter(Platform):
             original_message_info=original_message_info,
             e2ee_manager=self.e2ee_manager,
             max_upload_size=self.max_upload_size,
+            use_notice=self._matrix_config.use_notice,
         )
 
     def meta(self) -> PlatformMetadata:
@@ -686,6 +694,7 @@ class MatrixPlatformAdapter(Platform):
                 client=self.client,
                 enable_threading=self._matrix_config.enable_threading,
                 e2ee_manager=self.e2ee_manager,
+                use_notice=self._matrix_config.use_notice,
             )
             self.commit_event(message_event)
             logger.debug(

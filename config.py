@@ -57,6 +57,11 @@ class MatrixConfig:
         # 这是一个试验性功能，可能不是所有 Matrix 客户端都支持
         self.enable_threading = self.config.get("matrix_enable_threading", False)
 
+        # 消息类型配置
+        # 当启用时，机器人使用 m.notice 而不是 m.text 发送消息
+        # m.notice 通常用于机器人消息，不会触发通知声音
+        self.use_notice = self.config.get("matrix_use_notice", False)
+
         # E2EE 端到端加密配置（试验性）
         # 启用后 Bot 可以在加密房间中接收和发送消息
         self.enable_e2ee = self.config.get("matrix_enable_e2ee", False)
