@@ -619,6 +619,14 @@ class MatrixPlatformAdapter(Platform):
             event: Parsed event object
         """
         try:
+            # Send typing notification while processing
+            try:
+                await self.client.set_typing(
+                    room.room_id, typing=True, timeout=DEFAULT_TYPING_TIMEOUT_MS
+                )
+            except Exception as e:
+                logger.debug(f"发送输入通知失败：{e}")
+
             # Convert to AstrBot message format
             abm = await self.receiver.convert_message(room, event)
             if abm is None:

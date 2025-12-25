@@ -748,4 +748,10 @@ class MatrixPlatformEvent(AstrMessageEvent):
             except Exception as e:
                 logger.error(f"发送非文本组件失败：{e}")
 
+        # Stop typing notification after streaming completes
+        try:
+            await self.client.set_typing(room_id, typing=False)
+        except Exception as e:
+            logger.debug(f"取消输入通知失败：{e}")
+
         return await super().send_streaming(generator, use_fallback)
