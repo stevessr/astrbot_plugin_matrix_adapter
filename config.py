@@ -15,7 +15,8 @@ class MatrixConfig:
 
         Supported authentication methods: 'password', 'token', and 'oauth2'.
         """
-        self.config = config or {}
+        # 创建配置副本以避免修改原始配置对象
+        self.config = (config or {}).copy()
         self.homeserver = self.config.get("matrix_homeserver", "https://matrix.org")
         self.user_id = self.config.get("matrix_user_id")
         self.password = self.config.get("matrix_password")
@@ -31,7 +32,7 @@ class MatrixConfig:
                 "matrix_device_id 配置选项已弃用，设备 ID 现在由系统自动生成和管理",
                 extra={"plugin_tag": "matrix", "short_levelname": "WARN"},
             )
-            # 从配置中移除旧的 device_id
+            # 从内部配置副本中移除旧的 device_id，不影响原始配置
             del self.config["matrix_device_id"]
 
         # 初始化设备管理器（延迟到有 user_id 时）

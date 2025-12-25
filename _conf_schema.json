@@ -19,7 +19,7 @@
   },
   "matrix_oauth2_callback_port": {
     "description": "OAuth2 回调服务器端口",
-    "type": "number",
+    "type": "int",
     "hint": "OAuth2 认证回调服务器监听端口，用于接收认证重定向",
     "default": 8765
   }
