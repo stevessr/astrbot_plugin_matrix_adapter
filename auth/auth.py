@@ -26,6 +26,8 @@ class MatrixAuth:
         # OAuth2 specific attributes
         # All OAuth2 configuration is auto-discovered from server
         self.refresh_token: str | None = getattr(config, "refresh_token", None)
+        self.client_id: str | None = None
+        self.client_secret: str | None = None
         self.oauth2_handler = None
 
     def _log(self, level, msg):
@@ -82,6 +84,12 @@ class MatrixAuth:
             if self.refresh_token:
                 data["refresh_token"] = self.refresh_token
 
+            # Save OAuth2 client credentials if available
+            if self.client_id:
+                data["client_id"] = self.client_id
+            if self.client_secret:
+                data["client_secret"] = self.client_secret
+
             with open(path, "w") as f:
                 json.dump(data, f, indent=2)
             self._log("info", f"Saved auth token to {path}")
@@ -92,6 +100,24 @@ class MatrixAuth:
         """Load access token from disk"""
         try:
             path = self._get_token_store_path()
+
+            # Smart discovery for OAuth2 users without configured user_id
+            if not self.user_id:
+                from ..storage_paths import MatrixStoragePaths
+                base = Path(self.config.store_path)
+                hs_dir = MatrixStoragePaths.sanitize_homeserver(self.config.homeserver)
+                hs_path = base / hs_dir
+
+                if hs_path.exists() and hs_path.is_dir():
+                    # Find user directories
+                    subdirs = [d for d in hs_path.iterdir() if d.is_dir()]
+                    if len(subdirs) == 1:
+                        # Found exactly one user, assume it's us
+                        discovered_path = subdirs[0] / "auth.json"
+                        if discovered_path.exists():
+                            path = str(discovered_path)
+                            self._log("info", f"Auto-discovered auth file: {path}")
+
             if not Path(path).exists():
                 return False
 
@@ -107,9 +133,21 @@ class MatrixAuth:
 
             self.access_token = data.get("access_token")
             device_id = data.get("device_id")
+
+            # If we discovered the file, we should update our user_id
+            stored_user_id = data.get("user_id")
+            if stored_user_id and not self.user_id:
+                self.user_id = stored_user_id
+                self.config.user_id = stored_user_id
+                self._log("info", f"Auto-detected user_id: {self.user_id}")
+
             if device_id:
                 self.config.set_device_id(device_id)
             self.refresh_token = data.get("refresh_token")
+
+            # Load OAuth2 client credentials
+            self.client_id = data.get("client_id")
+            self.client_secret = data.get("client_secret")
 
             if self.access_token:
                 self._log("info", f"Loaded auth token from {path}")
@@ -127,13 +165,18 @@ class MatrixAuth:
         return self._login_wrapper()
 
     async def _login_wrapper(self):
+        # Always try to load token first for potential restoration
+        self._load_token()
+
         if self.auth_method == "oauth2":
+            if await self._restore_oauth2_session():
+                return
             await self._login_via_oauth2()
         elif self.auth_method == "token":
             await self._login_via_token()
         elif self.auth_method == "password":
-            # Try to load token first
-            if self._load_token():
+            # Token loaded at start of function
+            if self.access_token:
                 try:
                     await self._login_via_token()
                     return
@@ -150,8 +193,8 @@ class MatrixAuth:
             if self.access_token:
                 await self._login_via_token()
             elif self.password:
-                # Try to load token first
-                if self._load_token():
+                # Token loaded at start of function
+                if self.access_token:
                     try:
                         await self._login_via_token()
                         return
@@ -168,6 +211,68 @@ class MatrixAuth:
                     "Either matrix_access_token or matrix_password is required. "
                     "For OAuth2, set matrix_auth_method='oauth2'"
                 )
+
+    async def _restore_oauth2_session(self) -> bool:
+        """
+        Attempt to restore OAuth2 session from stored tokens
+        Returns True if successful
+        """
+        if not self.access_token:
+            return False
+
+        self._log("info", "Attempting to restore OAuth2 session...")
+
+        # Initialize handler if not already
+        if not self.oauth2_handler:
+            from .oauth2 import MatrixOAuth2
+            self.oauth2_handler = MatrixOAuth2(
+                client=self.client,
+                homeserver=self.config.homeserver,
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+                callback_port=self.config.oauth2_callback_port,
+                callback_host=self.config.oauth2_callback_host,
+            )
+
+        try:
+            # 1. Try to use current access token
+            self.client.restore_login(
+                user_id=self.user_id,
+                device_id=self.device_id,
+                access_token=self.access_token,
+            )
+
+            # Verify with whoami
+            whoami = await self.client.whoami()
+            user_id = whoami.get("user_id")
+            if user_id:
+                self.user_id = user_id
+                self.config.user_id = user_id
+
+            self._log("info", f"Restored OAuth2 session for {self.user_id}")
+            return True
+
+        except Exception as e:
+            self._log("info", f"Stored Access Token invalid: {e}")
+
+            # 2. Try to refresh
+            if self.refresh_token:
+                self._log("info", "Attempting to refresh OAuth2 token...")
+                if await self.refresh_session():
+                    # Refresh successful, token updated in client by refresh_oauth2_token
+                    # Now get user info to ensure we have user_id
+                    try:
+                        whoami = await self.client.whoami()
+                        if whoami.get("user_id"):
+                            self.user_id = whoami.get("user_id")
+                            self.config.user_id = self.user_id
+                    except Exception as e:
+                        self._log("warning", f"Could not verify user after refresh: {e}")
+
+                    self._log("info", "OAuth2 session restored via refresh")
+                    return True
+
+        return False
 
     async def _login_via_password(self):
         self._log("info", "Logging in with password...")
@@ -322,6 +427,8 @@ class MatrixAuth:
             self.oauth2_handler = MatrixOAuth2(
                 client=self.client,
                 homeserver=self.config.homeserver,
+                client_id=self.client_id, # Use stored client_id if available
+                client_secret=self.client_secret, # Use stored client_secret if available
                 callback_port=self.config.oauth2_callback_port,
                 callback_host=self.config.oauth2_callback_host,
             )
@@ -331,13 +438,23 @@ class MatrixAuth:
 
             # Update credentials
             self.user_id = response.get("user_id")
+            if self.user_id:
+                self.config.user_id = self.user_id
+
             device_id = response.get("device_id")
             if device_id:
                 self.config.set_device_id(device_id)
             self.access_token = response.get("access_token")
             self.refresh_token = response.get("refresh_token")
 
+            # Save client credentials if they were discovered/registered
+            if self.oauth2_handler.client_id:
+                self.client_id = self.oauth2_handler.client_id
+            if self.oauth2_handler.client_secret:
+                self.client_secret = self.oauth2_handler.client_secret
+
             self._log("info", f"✅ Successfully logged in via OAuth2 as {self.user_id}")
+            self._save_token() # Save everything
             self._config_needs_save = True
 
         except Exception as e:
@@ -370,6 +487,9 @@ class MatrixAuth:
             if "refresh_token" in response:
                 self.refresh_token = response["refresh_token"]
 
+            # IMPORTANT: Update client's access token for subsequent requests
+            self.client.access_token = self.access_token
+
             self._log("info", "OAuth2 token refreshed successfully")
             self._config_needs_save = True
 
@@ -377,7 +497,7 @@ class MatrixAuth:
             self._log("error", f"Failed to refresh OAuth2 token: {e}")
             raise RuntimeError(f"Token refresh failed: {e}")
 
-    async def refresh_token(self) -> bool:
+    async def refresh_session(self) -> bool:
         """
         Unified method to refresh access token regardless of auth method
         Returns True if successful, False otherwise

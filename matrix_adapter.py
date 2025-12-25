@@ -249,7 +249,7 @@ class MatrixPlatformAdapter(Platform):
             homeserver=self._matrix_config.homeserver,
             user_id=self._matrix_config.user_id,
             store_path=self._matrix_config.store_path,
-            on_token_invalid=self.auth.refresh_token,
+            on_token_invalid=self.auth.refresh_session,
         )
 
         # Initialize event processor
@@ -514,6 +514,43 @@ class MatrixPlatformAdapter(Platform):
     async def run(self):
         try:
             await self.auth.login()
+
+            # Update components with authenticated user_id (critical for OAuth2)
+            if self.auth.user_id:
+                current_user_id = self.auth.user_id
+
+                # Update Event Processor
+                if hasattr(self.event_processor, "user_id"):
+                    self.event_processor.user_id = current_user_id
+
+                # Update Receiver
+                if hasattr(self.receiver, "user_id"):
+                    self.receiver.user_id = current_user_id
+
+                # Update Sync Manager and recalculate storage path
+                if hasattr(self.sync_manager, "user_id"):
+                    self.sync_manager.user_id = current_user_id
+
+                    # Update sync store path if we have config
+                    if (
+                        self._matrix_config.store_path
+                        and self._matrix_config.homeserver
+                    ):
+                        try:
+                            from .storage_paths import MatrixStoragePaths
+
+                            new_sync_path = str(
+                                MatrixStoragePaths.get_sync_file_path(
+                                    self._matrix_config.store_path,
+                                    self._matrix_config.homeserver,
+                                    current_user_id,
+                                )
+                            )
+                            self.sync_manager.sync_store_path = new_sync_path
+                            # Try to load sync token from the new path
+                            self.sync_manager._load_sync_token()
+                        except Exception as e:
+                            logger.warning(f"Failed to update sync storage path: {e}")
 
             # 获取媒体服务器配置（最大上传大小）
             try:
