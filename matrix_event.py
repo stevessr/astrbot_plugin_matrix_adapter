@@ -465,7 +465,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
         non_text_components = []  # 非文本组件列表
 
         # 流式编辑控制参数
-        edit_interval = 0.5  # 编辑间隔（秒），避免过于频繁的编辑导致 rate limit
+        edit_interval = 1.0  # 编辑间隔（秒），避免过于频繁的编辑导致 rate limit
         last_edit_time = 0.0
         message_event_id = None  # 已发送消息的 event_id，用于后续编辑
         initial_message_sent = False

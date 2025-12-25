@@ -14,9 +14,9 @@ class PluginConfig:
     _initialized: bool = False
 
     # 默认值
-    DEFAULT_STORE_PATH = "./data/matrix_store"
-    DEFAULT_E2EE_STORE_PATH = "./data/matrix_e2ee"
-    DEFAULT_MEDIA_CACHE_DIR = "./data/temp/matrix_media"
+    DEFAULT_STORE_PATH = "./data/matrix/store"
+    DEFAULT_E2EE_STORE_PATH = "./data/matrix/e2ee"
+    DEFAULT_MEDIA_CACHE_DIR = "./data/matrix/media"
 
     def __new__(cls):
         if cls._instance is None:
