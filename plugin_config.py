@@ -40,6 +40,7 @@ class PluginConfig:
         self._store_path: str | None = None
         self._e2ee_store_path: str | None = None
         self._media_cache_dir: str | None = None
+        self._oauth2_callback_port: int = 8765
 
     def _ensure_default_paths(self):
         """确保默认路径已初始化"""
@@ -66,6 +67,7 @@ class PluginConfig:
         self._store_path = config.get("matrix_store_path", default_store)
         self._e2ee_store_path = config.get("matrix_e2ee_store_path", default_e2ee)
         self._media_cache_dir = config.get("matrix_media_cache_dir", default_media)
+        self._oauth2_callback_port = config.get("matrix_oauth2_callback_port", 8765)
 
     @property
     def store_path(self) -> str:
@@ -84,6 +86,11 @@ class PluginConfig:
         """获取媒体缓存目录"""
         self._ensure_default_paths()
         return self._media_cache_dir
+
+    @property
+    def oauth2_callback_port(self) -> int:
+        """获取 OAuth2 回调服务器端口"""
+        return self._oauth2_callback_port
 
 
 # 全局单例实例

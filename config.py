@@ -80,6 +80,9 @@ class MatrixConfig:
         # 媒体文件缓存目录从插件级别配置读取
         self.media_cache_dir = plugin_cfg.media_cache_dir
 
+        # OAuth2 回调服务器监听端口（从插件级别配置读取）
+        self.oauth2_callback_port = plugin_cfg.oauth2_callback_port
+
         self._validate()
 
     @property

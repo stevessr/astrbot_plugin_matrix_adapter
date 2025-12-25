@@ -305,6 +305,7 @@ class MatrixAuth:
             self.oauth2_handler = MatrixOAuth2(
                 client=self.client,
                 homeserver=self.config.homeserver,
+                callback_port=self.config.oauth2_callback_port,
             )
 
             # Perform OAuth2 login flow (includes discovery and registration)

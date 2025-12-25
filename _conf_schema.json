@@ -16,5 +16,11 @@
     "type": "string",
     "hint": "媒体文件缓存目录，用于临时存储下载的媒体文件",
     "default": "./data/matrix/media"
+  },
+  "matrix_oauth2_callback_port": {
+    "description": "OAuth2 回调服务器端口",
+    "type": "number",
+    "hint": "OAuth2 认证回调服务器监听端口，用于接收认证重定向",
+    "default": 8765
   }
 }

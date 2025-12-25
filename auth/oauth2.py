@@ -206,6 +206,7 @@ class MatrixOAuth2:
         client_secret: str | None = None,
         redirect_uri: str | None = None,
         scopes: list | None = None,
+        callback_port: int = 8765,
     ):
         """
         Initialize OAuth2 handler
@@ -217,6 +218,7 @@ class MatrixOAuth2:
             client_secret: OAuth2 client secret (optional for PKCE)
             redirect_uri: OAuth2 redirect URI (optional, will use callback server)
             scopes: OAuth2 scopes (default: ["openid", "urn:matrix:org.matrix.msc2967.client:api:*"])
+            callback_port: OAuth2 callback server port (default: 8765)
         """
         self.client = client
         self.homeserver = homeserver.rstrip("/")
@@ -227,6 +229,7 @@ class MatrixOAuth2:
             "openid",
             "urn:matrix:org.matrix.msc2967.client:api:*",
         ]
+        self.callback_port = callback_port
 
         self.callback_server: OAuth2CallbackServer | None = None
         self.access_token: str | None = None
@@ -547,7 +550,7 @@ class MatrixOAuth2:
             # Step 2: Start callback server if no redirect URI provided
             if not self.redirect_uri:
                 _log("info", "Starting local OAuth2 callback server...")
-                self.callback_server = OAuth2CallbackServer()
+                self.callback_server = OAuth2CallbackServer(port=self.callback_port)
                 self.redirect_uri = await self.callback_server.start()
                 _log("info", f"Callback server listening at {self.redirect_uri}")
 
