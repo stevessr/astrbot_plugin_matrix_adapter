@@ -1,3 +1,4 @@
+import asyncio
 import mimetypes
 import time
 from pathlib import Path
@@ -221,19 +222,25 @@ class MatrixPlatformEvent(AstrMessageEvent):
                     # 猜测内容类型，默认使用 image/png
                     content_type = mimetypes.guess_type(filename)[0] or "image/png"
 
-                    # 如果图片过大，尝试压缩
-                    image_data, content_type, was_compressed = compress_image_if_needed(
-                        image_data, content_type, max_size=upload_size_limit
+                    # 如果图片过大，尝试压缩（在线程池中执行以避免阻塞事件循环）
+                    logger.debug("开始图像压缩（异步执行）...")
+                    (
+                        image_data,
+                        content_type,
+                        was_compressed,
+                    ) = await asyncio.get_running_loop().run_in_executor(
+                        None,
+                        compress_image_if_needed,
+                        image_data,
+                        content_type,
+                        upload_size_limit,
                     )
+                    logger.debug("图像压缩完成")
                     if was_compressed:
                         # 更新文件名扩展名为 .jpg
                         filename = Path(filename).stem + ".jpg"
                         # 重新获取压缩后的图片尺寸
                         try:
-                            import io
-
-                            from PIL import Image as PILImage
-
                             with PILImage.open(io.BytesIO(image_data)) as img:
                                 width, height = img.size
                         except Exception as e:
