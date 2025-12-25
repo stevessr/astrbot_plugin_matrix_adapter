@@ -3,7 +3,8 @@ Matrix 工具方法组件
 """
 
 import io
-import logging
+
+from astrbot.api import logger
 
 from ..constants import (
     DEFAULT_MAX_UPLOAD_SIZE_BYTES,
@@ -11,8 +12,6 @@ from ..constants import (
     IMAGE_MIN_QUALITY,
     IMAGE_QUALITY_STEP,
 )
-
-logger = logging.getLogger("astrbot.matrix.utils")
 
 
 def compress_image_if_needed(

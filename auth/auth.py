@@ -4,10 +4,9 @@ Matrix 登录认证组件（不依赖 matrix-nio）
 """
 
 import json
-import logging
 from pathlib import Path
 
-logger = logging.getLogger("astrbot.matrix.auth")
+from astrbot.api import logger
 
 
 class MatrixAuth:

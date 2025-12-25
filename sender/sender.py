@@ -2,15 +2,11 @@
 Matrix 消息发送组件
 """
 
-import logging
-
 from astrbot.api.event import MessageChain
 
 from ..matrix_event import MatrixPlatformEvent
 
 # Update import: markdown_utils is now in ..utils.markdown_utils
-
-logger = logging.getLogger("astrbot.matrix.sender")
 
 
 class MatrixSender:

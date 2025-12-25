@@ -2,9 +2,7 @@
 Matrix 事件处理组件（如自动加群、消息分发等）（不依赖 matrix-nio）
 """
 
-import logging
-
-logger = logging.getLogger("astrbot.matrix.event_handler")
+from astrbot.api import logger
 
 
 class MatrixEventHandler:
