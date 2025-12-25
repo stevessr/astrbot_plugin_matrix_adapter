@@ -219,77 +219,94 @@ class MatrixAuth:
 
     async def _login_via_token(self):
         self._log("info", "Logging in with access token...")
+        original_error = None
+
         try:
+            # 尝试使用现有 token 登录
             self.client.restore_login(
                 user_id=self.user_id,
                 device_id=self.device_id,
                 access_token=self.access_token,
             )
-            # Validate token by doing a quick sync or whoami
+
+            # 验证 token 有效性
             sync_response = await self.client.sync(timeout=0, full_state=False)
             if "error" in sync_response or "errcode" in sync_response:
                 error_msg = sync_response.get("error", "Unknown error")
                 raise RuntimeError(f"Token validation failed: {error_msg}")
 
+            # 获取用户信息
             whoami = await self.client.whoami()
             self.user_id = whoami.get("user_id", self.user_id)
             device_id = whoami.get("device_id")
             if device_id:
                 self.config.set_device_id(device_id)
             self._log("info", f"Successfully logged in as {self.user_id}")
-        except Exception as e:
-            error_str = str(e)
-            # Try to refresh token if we have a refresh token
-            if "M_UNKNOWN_TOKEN" in error_str or "Unknown access token" in error_str:
-                if self.refresh_token:
-                    self._log("info", "Access token expired, attempting to refresh...")
-                    try:
-                        refresh_response = await self.client.refresh_access_token(
-                            self.refresh_token
-                        )
-                        self.access_token = refresh_response.get("access_token")
-                        # Update refresh token if a new one is provided
-                        if "refresh_token" in refresh_response:
-                            self.refresh_token = refresh_response.get("refresh_token")
-                        self._save_token()
-                        self._log("info", "Successfully refreshed access token")
-                        # Retry login with new token
-                        await self._login_via_token()
-                        return
-                    except Exception as refresh_error:
-                        self._log(
-                            "error",
-                            f"Token refresh failed: {refresh_error}",
-                        )
-                # No refresh token or refresh failed
-                # Try password re-login if password is available
-                if self.password:
-                    self._log(
-                        "info",
-                        "Access token invalid and refresh failed. Attempting password re-login...",
-                    )
-                    try:
-                        await self._login_via_password()
-                        self._save_token()
-                        self._log("info", "Successfully re-logged in with password")
-                        return
-                    except Exception as password_error:
-                        self._log(
-                            "error",
-                            f"Password re-login also failed: {password_error}",
-                        )
-                        # Fall through to fatal error
+            return
 
-                # No password available or password login also failed - raise exception
-                self._log(
-                    "error",
-                    f"FATAL: Access token is invalid or expired and all recovery methods failed. Error: {e}",
-                )
+        except Exception as e:
+            original_error = e
+            error_str = str(e)
+            self._log("error", f"Token login failed: {error_str}")
+
+            # 检查是否是 token 无效错误
+            is_token_invalid = (
+                "M_UNKNOWN_TOKEN" in error_str
+                or "Unknown access token" in error_str
+                or "Token validation failed" in error_str
+            )
+
+            if not is_token_invalid:
+                # 非 token 无效错误，直接抛出
                 raise RuntimeError(
-                    f"All authentication methods failed. Access token invalid/expired and no fallback available. Original error: {e}"
+                    f"Token login failed: {error_str}"
+                ) from original_error
+
+        # 尝试刷新 token
+        if self.refresh_token:
+            self._log("info", "Attempting to refresh access token...")
+            try:
+                refresh_response = await self.client.refresh_access_token(
+                    self.refresh_token
                 )
-            self._log("error", f"Token validation failed: {e}")
-            raise RuntimeError(f"Token validation failed: {e}")
+                self.access_token = refresh_response.get("access_token")
+                if "refresh_token" in refresh_response:
+                    self.refresh_token = refresh_response.get("refresh_token")
+                self._save_token()
+                self._log("info", "Successfully refreshed access token")
+
+                # 使用新 token 重新尝试登录
+                await self._login_via_token()
+                return
+
+            except Exception as refresh_error:
+                self._log("error", f"Token refresh failed: {refresh_error}")
+
+        # 尝试使用密码重新登录
+        if self.password:
+            self._log("info", "Attempting password re-login...")
+            try:
+                await self._login_via_password()
+                self._save_token()
+                self._log("info", "Successfully re-logged in with password")
+                return
+
+            except Exception as password_error:
+                self._log("error", f"Password re-login failed: {password_error}")
+
+        # 所有认证方法都失败了
+        failure_reasons = []
+        failure_reasons.append("Token validation failed")
+        if self.refresh_token:
+            failure_reasons.append("Token refresh failed")
+        if self.password:
+            failure_reasons.append("Password re-login failed")
+        else:
+            failure_reasons.append("No password available for fallback")
+
+        error_msg = f"Authentication failed: {'; '.join(failure_reasons)}. Original error: {original_error}"
+        self._log("error", error_msg)
+        raise RuntimeError(error_msg) from original_error
 
     async def _login_via_oauth2(self):
         """

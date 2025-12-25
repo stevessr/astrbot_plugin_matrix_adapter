@@ -603,7 +603,9 @@ class MatrixOAuth2:
                 # Manual code entry (for custom redirect URIs)
                 _log("info", "Enter the authorization code:")
                 _log("info", "⚠️  Manual code entry is not supported in async context.")
-                _log("info", "Please use the callback server or provide a redirect_uri.")
+                _log(
+                    "info", "Please use the callback server or provide a redirect_uri."
+                )
                 raise RuntimeError(
                     "Manual code entry not supported in async context. "
                     "Either use the callback server (don't provide redirect_uri) "

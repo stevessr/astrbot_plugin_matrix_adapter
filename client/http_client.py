@@ -1066,17 +1066,15 @@ class MatrixHTTPClient:
 
                 # Log summary for diagnostics
                 try:
-                    from astrbot.api import logger as api_logger
-
-                    api_logger.debug(
+                    logger.debug(
                         f"send_to_device response for {event_type} txn {txn_id}: status={status} body={_short(resp_body)}"
                     )
 
                     if verbose:
-                        api_logger.debug(
+                        logger.debug(
                             f"send_to_device request payload: {_short(data, maxlen=2000)}"
                         )
-                        api_logger.debug(
+                        logger.debug(
                             f"send_to_device full response: {_short(resp_body, maxlen=2000)}"
                         )
                 except Exception:

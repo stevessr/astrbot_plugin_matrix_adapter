@@ -3,8 +3,9 @@ import time
 
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
-from astrbot.api.message_components import Plain
+from astrbot.api.message_components import Plain, Reply
 from astrbot.api.platform import Platform, PlatformMetadata, register_platform_adapter
+from astrbot.core.config.astrbot_config import AstrBotConfig
 from astrbot.core.platform.astr_message_event import MessageSesion
 
 from .auth.auth import MatrixAuth
@@ -327,10 +328,8 @@ class MatrixPlatformAdapter(Platform):
 
             if reply_to is None:
                 try:
-                    from astrbot.api.message_components import Reply as _Reply
-
                     for seg in message_chain.chain:
-                        if isinstance(seg, _Reply) and getattr(seg, "id", None):
+                        if isinstance(seg, Reply) and getattr(seg, "id", None):
                             reply_to = str(seg.id)
                             break
                 except Exception:
@@ -586,7 +585,6 @@ class MatrixPlatformAdapter(Platform):
         """Save configuration changes back to the platform config"""
         try:
             # Import here to avoid circular dependency
-            from astrbot.core.config.astrbot_config import AstrBotConfig
 
             # Load the main config
             main_config = AstrBotConfig()

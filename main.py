@@ -22,11 +22,17 @@ class MatrixPlugin(Star):
                 .get("astrbot_plugin_matrix_adapter", {})
             )
             init_plugin_config(plugin_config)
-        except Exception:
-            pass  # 配置初始化失败时使用默认值
+        except Exception as e:
+            from astrbot.api import logger
+
+            logger.error(
+                f"Matrix 插件配置初始化失败，将使用默认配置：{e}",
+                extra={"plugin_tag": "matrix", "short_levelname": "ERROR"},
+            )
 
         try:
             from .matrix_adapter import _inject_astrbot_field_metadata
+
             _inject_astrbot_field_metadata()
             from .matrix_adapter import MatrixPlatformAdapter  # noqa
             from .matrix_event import MatrixPlatformEvent  # noqa

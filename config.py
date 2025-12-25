@@ -98,7 +98,9 @@ class MatrixConfig:
         if self._device_manager is None and self.user_id:
             # 使用插件级别配置的存储路径
             self._device_manager = MatrixDeviceManager(
-                user_id=self.user_id, homeserver=self.homeserver, store_path=self.store_path
+                user_id=self.user_id,
+                homeserver=self.homeserver,
+                store_path=self.store_path,
             )
 
     def set_device_id(self, device_id: str):

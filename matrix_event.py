@@ -1,8 +1,9 @@
 import mimetypes
+import time
 from pathlib import Path
 from typing import Any
 
-from astrbot import logger
+from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageChain
 from astrbot.api.message_components import File, Image, Plain, Reply
 from astrbot.api.platform import AstrBotMessage, PlatformMetadata
@@ -455,7 +456,6 @@ class MatrixPlatformEvent(AstrMessageEvent):
         通过先发送初始消息，然后不断编辑该消息来实现流式输出效果。
         类似于 Telegram/Discord 机器人的实时打字效果。
         """
-        import time
 
         logger.info(
             f"Matrix send_streaming 开始 (编辑模式)，use_fallback={use_fallback}"

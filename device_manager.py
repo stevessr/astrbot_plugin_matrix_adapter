@@ -6,6 +6,7 @@ Matrix Device ID 管理器
 import base64
 import json
 import secrets
+import time
 from pathlib import Path
 
 from astrbot.api import logger
@@ -21,9 +22,7 @@ class MatrixDeviceManager:
     - 在需要时生成新的设备 ID
     """
 
-    def __init__(
-        self, user_id: str, homeserver: str, store_path: str | None = None
-    ):
+    def __init__(self, user_id: str, homeserver: str, store_path: str | None = None):
         """
         初始化设备管理器
 
@@ -40,6 +39,7 @@ class MatrixDeviceManager:
         # 如果未提供 store_path，从 plugin_config 获取
         if store_path is None:
             from .plugin_config import get_plugin_config
+
             store_path = get_plugin_config().store_path
 
         self.store_path = Path(store_path)
@@ -151,7 +151,7 @@ class MatrixDeviceManager:
                 "device_id": device_id,
                 "user_id": self.user_id,
                 "homeserver": self.homeserver,
-                "created_at": int(__import__("time").time() * 1000),  # 毫秒时间戳
+                "created_at": int(time.time() * 1000),  # 毫秒时间戳
             }
             # 确保目录存在
             Path(self.device_info_path).parent.mkdir(parents=True, exist_ok=True)
