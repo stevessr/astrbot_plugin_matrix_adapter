@@ -111,9 +111,12 @@ class MatrixReceiver:
         message.message_id = event.event_id  # Set message ID for replies
         message.self_id = self.user_id  # Set bot's self ID
 
-        # 默认设为群组消息 (Matrix 房间概念)
-        # TODO: 未来可根据房间人数判断是否为私聊
-        message.type = MessageType.FRIEND_MESSAGE
+        # 根据房间成员数量判断是否为群聊
+        # is_group 属性：member_count > 2 则为群聊，否则为私聊
+        if room.is_group:
+            message.type = MessageType.GROUP_MESSAGE
+        else:
+            message.type = MessageType.FRIEND_MESSAGE
 
         # 发送者信息
         sender_id = event.sender
