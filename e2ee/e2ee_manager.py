@@ -321,6 +321,12 @@ class E2EEManager:
             txn_id,
         )
 
+        # 注册到 SASVerification 以跟踪状态
+        if self._verification:
+            self._verification.initiate_verification(
+                txn_id, self.user_id, target_device_id
+            )
+
         logger.info(f"已向设备 {target_device_id} 发起验证请求 (txn={txn_id[:8]}...)")
 
     async def _upload_device_keys(self):

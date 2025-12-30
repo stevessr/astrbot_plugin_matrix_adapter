@@ -180,6 +180,16 @@ class SASVerification:
         self._sessions: dict[str, dict[str, Any]] = {}
         self.device_store = DeviceStore(store_path)
 
+    def initiate_verification(self, transaction_id: str, to_user: str, to_device: str):
+        """记录主动发起的验证会话"""
+        self._sessions[transaction_id] = {
+            "sender": to_user,  # 目标用户
+            "their_device": to_device,
+            "state": "request_sent",
+            "we_started_it": True,  # 标记我们发起了 request
+            "we_are_initiator": True,  # 通常发起 request 的也会发 start，所以也是 SAS initiator
+        }
+
     async def handle_verification_event(
         self, event_type: str, sender: str, content: dict
     ) -> bool:
@@ -507,6 +517,22 @@ class SASVerification:
         session["state"] = "ready"
         session["their_device"] = from_device
 
+        # 如果是我们发起的验证（即我们在等待 ready），我们需要发送 start
+        if session.get("we_started_it"):
+            logger.info(f"[E2EE-Verify] 作为发起者，开始验证流程 (sending start)")
+            # 选择一个共同的验证方法
+            if M_SAS_V1_METHOD in methods:
+                await self._send_start(sender, from_device, transaction_id)
+            else:
+                logger.warning(f"[E2EE-Verify] 无共同验证方法：{methods}")
+                await self._send_cancel(
+                    sender,
+                    from_device,
+                    transaction_id,
+                    "m.unknown_method",
+                    "No common methods",
+                )
+
     async def _handle_start(self, sender: str, content: dict, transaction_id: str):
         """处理验证开始"""
         from_device = content.get("from_device")
@@ -523,6 +549,7 @@ class SASVerification:
         session["method"] = method
         session["their_commitment"] = their_commitment
         session["start_content"] = content
+        session["we_are_initiator"] = False  # 收到 start，说明对方是 Initiator
 
         # Check if this is an in-room verification
         is_in_room = session.get("is_in_room", False)
@@ -608,10 +635,23 @@ class SASVerification:
                 # 构造 SAS info 字符串
                 their_user = sender
 
+                # 确定 Initiator 和 Recipient
+                # 发送 m.key.verification.start 的是 Initiator
+                if session.get("we_are_initiator"):
+                    init_user, init_dev, init_key = (
+                        self.user_id,
+                        self.device_id,
+                        our_key,
+                    )
+                    rec_user, rec_dev, rec_key = their_user, their_device, their_key
+                else:
+                    init_user, init_dev, init_key = their_user, their_device, their_key
+                    rec_user, rec_dev, rec_key = self.user_id, self.device_id, our_key
+
                 info = (
                     f"{INFO_PREFIX_SAS}"
-                    f"{self.user_id}|{self.device_id}|{our_key}|"
-                    f"{their_user}|{their_device}|{their_key}|"
+                    f"{init_user}|{init_dev}|{init_key}|"
+                    f"{rec_user}|{rec_dev}|{rec_key}|"
                     f"{transaction_id}"
                 )
 
@@ -763,6 +803,55 @@ class SASVerification:
             M_KEY_VERIFICATION_READY, to_user, to_device, content
         )
         logger.info("[E2EE-Verify] 已发送 ready")
+
+    async def _send_start(self, to_user: str, to_device: str, transaction_id: str):
+        """发送 start 消息 (作为发起者)"""
+        # 生成 commitment
+        import secrets
+
+        # 1. 生成公钥 (start 时不发送，但在 start 后发送 key 时会用到)
+        # 此时我们需要创建一个 SAS 对象
+        sas = None
+        if VODOZEMAC_SAS_AVAILABLE:
+            try:
+                sas = Sas()
+                our_public_key = sas.public_key.to_base64()
+            except Exception as e:
+                logger.warning(f"Failed to create SAS: {e}")
+                our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
+        else:
+            our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
+
+        session = self._sessions.get(transaction_id, {})
+        session["sas"] = sas
+        session["our_public_key"] = our_public_key
+
+        # 2. 构造 start 内容
+        content = {
+            "from_device": self.device_id,
+            "method": M_SAS_V1_METHOD,
+            "key_agreement_protocols": KEY_AGREEMENT_PROTOCOLS,
+            "hashes": HASHES,
+            "message_authentication_codes": MESSAGE_AUTHENTICATION_CODES,
+            "short_authentication_string": SHORT_AUTHENTICATION_STRING,
+            "transaction_id": transaction_id,
+        }
+
+        # 3. 计算 commitment (注意：start 消息本身不包含 commitment，
+        # 而是 accept 消息包含。但是等等，根据 Matrix 流程：
+        # Initiator sends start.
+        # Responder sends accept (with commitment).
+        # Initiator sends key.
+        # Responder sends key.
+        # 所以 start 消息只需要包含支持的算法)
+
+        # 实际上 start 消息不需要 commitment。
+        # Commitment 是 Responder 发送的。
+
+        await self._send_to_device(
+            M_KEY_VERIFICATION_START, to_user, to_device, content
+        )
+        logger.info(f"[E2EE-Verify] 已发送 start")
 
     async def _send_accept(
         self, to_user: str, to_device: str, transaction_id: str, start_content: dict
