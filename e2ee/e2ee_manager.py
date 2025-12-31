@@ -550,7 +550,13 @@ class E2EEManager:
 
                 return json.loads(plaintext)
             except Exception as e:
+                error_msg = str(e)
                 logger.error(f"Olm 解密失败：{e}")
+
+                # 如果是未知一次性密钥错误，发送 m.dummy 请求对方重新建立会话
+                if "unknown one-time key" in error_msg.lower():
+                    await self._request_new_session(sender_key, sender)
+
                 return None
 
         else:
@@ -585,6 +591,106 @@ class E2EEManager:
             room_id, session_id, session_key, sender_key
         )
         logger.info(f"收到房间 {room_id} 的 Megolm 密钥")
+
+    async def _find_device_by_sender_key(
+        self, sender_key: str, sender_user_id: str | None = None
+    ) -> tuple[str, str] | None:
+        """
+        通过 sender_key 查找对应的用户和设备
+
+        首先检查本地缓存，如果找不到则尝试从服务器查询。
+
+        Args:
+            sender_key: 发送者的 curve25519 密钥
+            sender_user_id: 可选的发送者用户 ID（如果已知）
+
+        Returns:
+            (user_id, device_id) 元组，或 None
+        """
+        # 1. 首先从本地缓存查找
+        device_keys = self._store.get_all_device_keys()
+        for user_id, devices in device_keys.items():
+            for device_id, keys in devices.items():
+                device_curve_key = keys.get("keys", {}).get(f"curve25519:{device_id}")
+                if device_curve_key == sender_key:
+                    return (user_id, device_id)
+
+        # 2. 如果本地没有，且知道发送者用户 ID，则从服务器查询
+        if sender_user_id:
+            try:
+                logger.info(f"本地缓存中未找到 sender_key，正在查询 {sender_user_id} 的设备...")
+                response = await self.client.query_keys({sender_user_id: []})
+                user_devices = response.get("device_keys", {}).get(sender_user_id, {})
+
+                for device_id, device_info in user_devices.items():
+                    keys = device_info.get("keys", {})
+                    curve_key = keys.get(f"curve25519:{device_id}")
+
+                    # 缓存到本地
+                    if self._store:
+                        self._store.save_device_keys(sender_user_id, device_id, device_info)
+                        logger.debug(f"缓存设备密钥：{sender_user_id}/{device_id}")
+
+                    if curve_key == sender_key:
+                        logger.info(
+                            f"从服务器找到 sender_key 对应的设备：{sender_user_id}/{device_id}"
+                        )
+                        return (sender_user_id, device_id)
+
+                logger.warning(
+                    f"服务器返回的设备中没有匹配的 sender_key：{sender_key[:8]}..."
+                )
+            except Exception as e:
+                logger.warning(f"从服务器查询设备密钥失败：{e}")
+
+        return None
+
+    async def _request_new_session(self, sender_key: str, sender_user_id: str | None = None):
+        """
+        当检测到未知一次性密钥时，请求发送方重新建立会话
+
+        通过发送 m.dummy to-device 事件，通知对方我们无法解密其消息，
+        需要重新 claim 一次性密钥并建立新的 Olm 会话。
+
+        Args:
+            sender_key: 发送者的 curve25519 密钥
+            sender_user_id: 可选的发送者用户 ID（如果已知，可用于查询设备）
+        """
+        import secrets
+
+        try:
+            # 查找拥有这个 sender_key 的用户和设备
+            result = await self._find_device_by_sender_key(sender_key, sender_user_id)
+
+            if not result:
+                logger.warning(
+                    f"无法找到 sender_key {sender_key[:8]}... 对应的设备，"
+                    "无法请求新会话"
+                )
+                return
+
+            target_user, target_device = result
+
+            # 发送 m.dummy 事件
+            # m.dummy 是一个空事件，用于触发对方重新建立 Olm 会话
+            content = {}
+
+            txn_id = secrets.token_hex(16)
+            await self.client.send_to_device(
+                "m.dummy",
+                {target_user: {target_device: content}},
+                txn_id,
+            )
+
+            logger.info(
+                f"已向 {target_user}/{target_device} 发送 m.dummy 请求新会话"
+            )
+            logger.info(
+                "提示：如果问题持续，请在对方客户端中删除与 bot 的加密会话后重试"
+            )
+
+        except Exception as e:
+            logger.warning(f"发送 m.dummy 请求失败：{e}")
 
     async def _request_room_key(
         self,
