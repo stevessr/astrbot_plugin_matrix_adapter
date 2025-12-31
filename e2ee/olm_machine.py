@@ -94,6 +94,12 @@ class OlmMachine:
 
     def _init_account(self):
         """初始化或加载 Olm 账户"""
+        # 如果 device_id 变化了，需要创建新账户
+        if self.store.device_id_changed:
+            logger.info("由于 device_id 变化，创建新的 Olm 账户")
+            self._create_new_account()
+            return
+
         pickle = self.store.get_account_pickle()
 
         if pickle:
