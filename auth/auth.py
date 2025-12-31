@@ -104,6 +104,7 @@ class MatrixAuth:
             # Smart discovery for OAuth2 users without configured user_id
             if not self.user_id:
                 from ..storage_paths import MatrixStoragePaths
+
                 base = Path(self.config.store_path)
                 hs_dir = MatrixStoragePaths.sanitize_homeserver(self.config.homeserver)
                 hs_path = base / hs_dir
@@ -225,6 +226,7 @@ class MatrixAuth:
         # Initialize handler if not already
         if not self.oauth2_handler:
             from .oauth2 import MatrixOAuth2
+
             self.oauth2_handler = MatrixOAuth2(
                 client=self.client,
                 homeserver=self.config.homeserver,
@@ -267,7 +269,9 @@ class MatrixAuth:
                             self.user_id = whoami.get("user_id")
                             self.config.user_id = self.user_id
                     except Exception as e:
-                        self._log("warning", f"Could not verify user after refresh: {e}")
+                        self._log(
+                            "warning", f"Could not verify user after refresh: {e}"
+                        )
 
                     self._log("info", "OAuth2 session restored via refresh")
                     return True
@@ -427,8 +431,8 @@ class MatrixAuth:
             self.oauth2_handler = MatrixOAuth2(
                 client=self.client,
                 homeserver=self.config.homeserver,
-                client_id=self.client_id, # Use stored client_id if available
-                client_secret=self.client_secret, # Use stored client_secret if available
+                client_id=self.client_id,  # Use stored client_id if available
+                client_secret=self.client_secret,  # Use stored client_secret if available
                 callback_port=self.config.oauth2_callback_port,
                 callback_host=self.config.oauth2_callback_host,
             )
@@ -454,7 +458,7 @@ class MatrixAuth:
                 self.client_secret = self.oauth2_handler.client_secret
 
             self._log("info", f"✅ Successfully logged in via OAuth2 as {self.user_id}")
-            self._save_token() # Save everything
+            self._save_token()  # Save everything
             self._config_needs_save = True
 
         except Exception as e:

@@ -314,7 +314,9 @@ class SASVerification:
                     )
                     # 标记会话为已由其他设备处理，停止本地处理
                     if transaction_id in self._sessions:
-                        self._sessions[transaction_id]["state"] = "handled_by_other_device"
+                        self._sessions[transaction_id]["state"] = (
+                            "handled_by_other_device"
+                        )
                     return True  # 已处理（忽略）
 
         handlers = {
@@ -537,7 +539,7 @@ class SASVerification:
 
         # 如果是我们发起的验证（即我们在等待 ready），我们需要发送 start
         if session.get("we_started_it"):
-            logger.info(f"[E2EE-Verify] 作为发起者，开始验证流程 (sending start)")
+            logger.info("[E2EE-Verify] 作为发起者，开始验证流程 (sending start)")
             # 选择一个共同的验证方法
             if M_SAS_V1_METHOD in methods:
                 await self._send_start(sender, from_device, transaction_id)
@@ -869,7 +871,7 @@ class SASVerification:
         await self._send_to_device(
             M_KEY_VERIFICATION_START, to_user, to_device, content
         )
-        logger.info(f"[E2EE-Verify] 已发送 start")
+        logger.info("[E2EE-Verify] 已发送 start")
 
     async def _send_accept(
         self, to_user: str, to_device: str, transaction_id: str, start_content: dict

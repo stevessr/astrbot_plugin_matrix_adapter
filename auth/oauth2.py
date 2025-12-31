@@ -634,9 +634,9 @@ class MatrixOAuth2:
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    token_endpoint, 
+                    token_endpoint,
                     data=urlencode(token_data),
-                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
@@ -704,9 +704,9 @@ class MatrixOAuth2:
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    token_endpoint, 
+                    token_endpoint,
                     data=urlencode(token_data),
-                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
