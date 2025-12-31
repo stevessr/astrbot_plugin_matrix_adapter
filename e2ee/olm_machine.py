@@ -27,6 +27,8 @@ try:
         GroupSession,  # 出站会话 (vodozemac 中称为 GroupSession)
         InboundGroupSession,
         MegolmMessage,  # 解密时需要将密文转换为此类型
+        Message,
+        PreKeyMessage,
         Session,
     )
 
@@ -236,8 +238,8 @@ class OlmMachine:
             raise RuntimeError("Olm 账户未初始化")
 
         # Convert keys from base64 string to Curve25519PublicKey
-        identity_key = Curve25519PublicKey(their_identity_key)
-        one_time_key = Curve25519PublicKey(their_one_time_key)
+        identity_key = Curve25519PublicKey.from_base64(their_identity_key)
+        one_time_key = Curve25519PublicKey.from_base64(their_one_time_key)
 
         session = self._account.create_outbound_session(identity_key, one_time_key)
 
@@ -342,7 +344,12 @@ class OlmMachine:
         sessions = self._olm_sessions.get(sender_key, [])
         for i, session in enumerate(sessions):
             try:
-                plaintext = session.decrypt(message_type, ciphertext)
+                if message_type == 0:
+                    message = PreKeyMessage.from_base64(ciphertext)
+                else:
+                    message = Message.from_base64(ciphertext)
+
+                plaintext = session.decrypt(message)
                 logger.debug(f"使用现有会话 {i} 解密成功")
                 # 更新会话
                 self.store.update_olm_session(
@@ -357,8 +364,10 @@ class OlmMachine:
         if message_type == 0:
             logger.info(f"收到 PreKey 消息，尝试从 {sender_key[:8]}... 创建入站会话")
             try:
-                session = self._account.create_inbound_session(sender_key, ciphertext)
-                plaintext = session.decrypt(message_type, ciphertext)
+                identity_key = Curve25519PublicKey.from_base64(sender_key)
+                message = PreKeyMessage.from_base64(ciphertext)
+                session = self._account.create_inbound_session(identity_key, message)
+                plaintext = session.decrypt(message)
                 logger.info("创建入站会话并解密成功")
 
                 # 移除已使用的一次性密钥
