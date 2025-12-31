@@ -365,6 +365,13 @@ class MatrixEventProcessor:
                                     inner_content, sender_key
                                 )
                                 logger.debug("成功处理加密的 m.forwarded_room_key 事件")
+                            elif inner_type and inner_type.startswith(
+                                "m.key.verification."
+                            ):
+                                logger.info(f"收到加密的验证事件：{inner_type}")
+                                await self.e2ee_manager.handle_verification_event(
+                                    inner_type, sender, inner_content
+                                )
                             else:
                                 logger.debug(
                                     f"收到未知的加密 to_device 事件类型：{inner_type}"
