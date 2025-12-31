@@ -81,8 +81,16 @@ class OlmMachine:
         self._megolm_inbound: dict[str, InboundGroupSession] = {}
         self._megolm_outbound: dict[str, GroupSession] = {}
 
+        # 标记账户是否是新创建的（用于判断是否需要上传设备密钥）
+        self._is_new_account = False
+
         # 初始化或加载账户
         self._init_account()
+
+    @property
+    def is_new_account(self) -> bool:
+        """返回账户是否是新创建的"""
+        return self._is_new_account
 
     def _init_account(self):
         """初始化或加载 Olm 账户"""
@@ -92,7 +100,15 @@ class OlmMachine:
             # 从 pickle 恢复账户
             try:
                 self._account = Account.from_pickle(pickle, self._pickle_key)
+                self._is_new_account = False
                 logger.info("从存储恢复 Olm 账户")
+
+                # 显示恢复的账户信息
+                try:
+                    curve_key = self._account.curve25519_key.to_base64()
+                    logger.info(f"账户 curve25519 密钥：{curve_key[:16]}...")
+                except Exception:
+                    pass
             except Exception as e:
                 logger.warning(f"恢复 Olm 账户失败（可能是密钥不匹配或数据损坏）：{e}")
                 logger.info("将创建新的 Olm 账户")
@@ -109,8 +125,16 @@ class OlmMachine:
     def _create_new_account(self):
         """创建新的 Olm 账户"""
         self._account = Account()
+        self._is_new_account = True
         self._save_account()
         logger.info("创建了新的 Olm 账户")
+
+        # 显示新账户信息
+        try:
+            curve_key = self._account.curve25519_key.to_base64()
+            logger.info(f"新账户 curve25519 密钥：{curve_key[:16]}...")
+        except Exception:
+            pass
 
     def _save_account(self):
         """保存 Olm 账户到存储"""
@@ -218,6 +242,57 @@ class OlmMachine:
         if self._account:
             self._account.mark_keys_as_published()
             self._save_account()
+
+    def generate_fallback_key(self) -> dict[str, dict]:
+        """
+        生成 fallback key（备用密钥）
+
+        Fallback key 是一个特殊的密钥，当一次性密钥用尽时可以使用。
+        与一次性密钥不同，fallback key 可以被多次使用。
+
+        Returns:
+            签名的 fallback key 字典
+        """
+        if not self._account:
+            raise RuntimeError("Olm 账户未初始化")
+
+        # 生成新的 fallback key
+        self._account.generate_fallback_key()
+
+        # 获取 fallback key
+        fallback_key = self._account.fallback_key
+
+        if not fallback_key:
+            logger.warning("没有可用的 fallback key")
+            return {}
+
+        # 签名 fallback key
+        signed_keys = {}
+        for key_id, key in fallback_key.items():
+            key_str = key.to_base64()
+            signed_key = {
+                "key": key_str,
+                "fallback": True,  # 标记为 fallback key
+            }
+
+            # 生成签名
+            key_json = self._canonical_json(signed_key)
+            signature = self._account.sign(key_json.encode()).to_base64()
+            signed_key["signatures"] = {
+                self.user_id: {f"ed25519:{self.device_id}": signature}
+            }
+
+            signed_keys[f"signed_curve25519:{key_id}"] = signed_key
+
+        logger.info(f"生成了 {len(signed_keys)} 个 fallback key")
+        return signed_keys
+
+    def get_unpublished_fallback_key_count(self) -> int:
+        """获取未发布的 fallback key 数量"""
+        if not self._account:
+            return 0
+        # vodozemac 的 fallback_key 属性返回未标记为已发布的 fallback key
+        return len(self._account.fallback_key) if self._account.fallback_key else 0
 
     # ========== Olm 会话 ==========
 
@@ -363,10 +438,37 @@ class OlmMachine:
         # 如果是 prekey 消息，创建新的入站会话
         if message_type == 0:
             logger.info(f"收到 PreKey 消息，尝试从 {sender_key[:8]}... 创建入站会话")
+
+            # 调试：显示当前账户中的一次性密钥信息
+            try:
+                unpublished_otks = self._account.one_time_keys
+                logger.debug(
+                    f"账户中未发布的一次性密钥数量：{len(unpublished_otks) if unpublished_otks else 0}"
+                )
+                # 注意：已发布的密钥存储在账户内部，无法直接查询数量
+                # 但 create_inbound_session 会查找所有已发布的密钥
+            except Exception as debug_e:
+                logger.debug(f"获取一次性密钥信息失败：{debug_e}")
+
             try:
                 identity_key = Curve25519PublicKey.from_base64(sender_key)
                 message = PreKeyMessage.from_base64(ciphertext)
-                session, plaintext = self._account.create_inbound_session(identity_key, message)
+
+                # 尝试从 PreKey 消息中提取一次性密钥信息用于调试
+                try:
+                    # PreKeyMessage 包含使用的一次性密钥的公钥
+                    otk_used = (
+                        message.one_time_key.to_base64()
+                        if hasattr(message, "one_time_key")
+                        else "未知"
+                    )
+                    logger.debug(f"PreKey 消息中使用的一次性密钥：{otk_used[:16]}...")
+                except Exception:
+                    pass
+
+                session, plaintext = self._account.create_inbound_session(
+                    identity_key, message
+                )
                 logger.info("创建入站会话并解密成功")
 
                 # 移除已使用的一次性密钥 (vodozemac 会自动处理)
@@ -381,7 +483,21 @@ class OlmMachine:
 
                 return plaintext
             except Exception as e:
+                error_msg = str(e)
                 logger.error(f"创建入站会话失败：{e}")
+
+                # 提供更详细的错误诊断
+                if "unknown one-time key" in error_msg.lower():
+                    logger.error(
+                        "诊断：发送方使用的一次性密钥不在本账户中。"
+                        "可能原因：1) 账户被重新创建导致密钥丢失 "
+                        "2) 发送方缓存了旧密钥 "
+                        "3) 一次性密钥已被其他会话使用"
+                    )
+                    logger.error(
+                        "建议：请在 FluffyChat 中删除与 bot 的现有会话，"
+                        "然后重新发起对话以建立新的加密会话"
+                    )
                 raise
 
         raise RuntimeError(f"无法解密来自 {sender_key} 的 Olm 消息")
