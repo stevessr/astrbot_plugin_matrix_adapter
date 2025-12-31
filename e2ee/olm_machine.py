@@ -156,7 +156,12 @@ class OlmMachine:
         }
 
         # 生成签名 (vodozemac sign 需要 bytes 输入，返回 Ed25519Signature 对象)
-        device_keys_json = self._canonical_json(device_keys)
+        # 注意：签名时必须排除 unsigned 和 signatures 字段
+        payload_to_sign = device_keys.copy()
+        payload_to_sign.pop("unsigned", None)
+        payload_to_sign.pop("signatures", None)
+
+        device_keys_json = self._canonical_json(payload_to_sign)
         signature = self._account.sign(device_keys_json.encode()).to_base64()
 
         device_keys["signatures"] = {

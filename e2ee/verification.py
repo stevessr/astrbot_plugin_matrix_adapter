@@ -299,6 +299,24 @@ class SASVerification:
         self._sessions[transaction_id]["room_id"] = room_id
         self._sessions[transaction_id]["is_in_room"] = True
 
+        # Check if this event is from our own user but another device
+        if sender == self.user_id:
+            from_device = content.get("from_device")
+            if from_device and from_device != self.device_id:
+                # 只有当事件明确表明另一个设备正在进行交互时（例如 ready/start/accept/key），我们才退出
+                # 忽略 request 事件（因为那是发起请求，不代表接管）
+                if event_type not in (
+                    M_KEY_VERIFICATION_REQUEST,
+                    M_KEY_VERIFICATION_CANCEL,
+                ):
+                    logger.info(
+                        f"[E2EE-Verify] 检测到其他设备 {from_device} 正在处理验证 txn={transaction_id[:8]}...，本设备将静默退出"
+                    )
+                    # 标记会话为已由其他设备处理，停止本地处理
+                    if transaction_id in self._sessions:
+                        self._sessions[transaction_id]["state"] = "handled_by_other_device"
+                    return True  # 已处理（忽略）
+
         handlers = {
             M_KEY_VERIFICATION_REQUEST: self._handle_in_room_request,
             M_KEY_VERIFICATION_READY: self._handle_ready,
