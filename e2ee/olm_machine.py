@@ -366,12 +366,11 @@ class OlmMachine:
             try:
                 identity_key = Curve25519PublicKey.from_base64(sender_key)
                 message = PreKeyMessage.from_base64(ciphertext)
-                session = self._account.create_inbound_session(identity_key, message)
-                plaintext = session.decrypt(message)
+                session, plaintext = self._account.create_inbound_session(identity_key, message)
                 logger.info("创建入站会话并解密成功")
 
-                # 移除已使用的一次性密钥
-                self._account.remove_one_time_keys(session)
+                # 移除已使用的一次性密钥 (vodozemac 会自动处理)
+                # self._account.remove_one_time_keys(session)
 
                 # 缓存和保存会话
                 if sender_key not in self._olm_sessions:
