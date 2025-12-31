@@ -503,6 +503,7 @@ class OlmMachine:
                     logger.error(
                         "建议：请在 FluffyChat 中删除与 bot 的现有会话，"
                         "然后重新发起对话以建立新的加密会话"
+                        "当然，最好不要这么做，因为交换还是有 bug"
                     )
                 raise
 
