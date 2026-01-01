@@ -1,0 +1,20 @@
+# Matrix 协议适配器依赖
+
+# 异步 HTTP 客户端
+aiohttp>=3.8.0
+
+# 端到端加密（可选，用于 E2EE 功能）
+vodozemac>=0.8.0
+
+# Markdown 解析和渲染（用于消息格式化）
+markdown-it-py>=4.0.0
+
+# HTML 清理（用于防止 XSS 攻击）
+bleach>=6.0.0
+
+# 图片处理（用于图片压缩）
+Pillow>=10.0.0
+
+# AstrBot 核心依赖（由主项目提供，此处仅作参考）
+# astrbot-core
+# astrbot-api
