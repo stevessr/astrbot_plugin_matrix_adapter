@@ -5,6 +5,7 @@ Olm Machine - Olm/Megolm 加密操作封装
 注意：此模块需要安装 vodozemac 库。
 """
 
+import base64
 import json
 from typing import Any
 
@@ -431,8 +432,10 @@ class OlmMachine:
         logger.debug(f"开始 Olm 解密：sender={sender_key[:8]}... type={message_type}")
 
         # 将 base64 密文转换为 bytes，然后创建 AnyOlmMessage
-        import base64
-        ciphertext_bytes = base64.b64decode(ciphertext)
+        # Matrix 使用 unpadded base64，需要添加填充
+        # 添加 base64 填充
+        padded_ciphertext = ciphertext + "=" * (-len(ciphertext) % 4)
+        ciphertext_bytes = base64.b64decode(padded_ciphertext)
 
         # 尝试使用现有会话解密
         sessions = self._olm_sessions.get(sender_key, [])
