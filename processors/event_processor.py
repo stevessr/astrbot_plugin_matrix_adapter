@@ -3,6 +3,7 @@ Matrix Event Processor
 Handles processing of Matrix events (messages, etc.)
 """
 
+import json
 from collections.abc import Callable
 
 from astrbot.api import logger

@@ -548,14 +548,33 @@ class E2EEManager:
                 )
                 import json
 
-                return json.loads(plaintext)
+                logger.info(
+                    f"Olm 解密成功，明文长度：{len(plaintext) if plaintext else 0}"
+                )
+                logger.debug(f"Olm 解密明文类型：{type(plaintext)}")
+
+                # 解析 JSON
+                if isinstance(plaintext, bytes):
+                    plaintext = plaintext.decode("utf-8")
+
+                decrypted = json.loads(plaintext)
+                inner_type = decrypted.get("type")
+                logger.info(f"Olm 解密后事件类型：{inner_type}")
+
+                return decrypted
+            except json.JSONDecodeError as je:
+                logger.error(f"Olm 解密后 JSON 解析失败：{je}")
+                logger.error(
+                    f"明文内容（前 200 字符）：{str(plaintext)[:200] if plaintext else 'None'}"
+                )
+                return None
             except Exception as e:
                 error_msg = str(e)
                 logger.error(f"Olm 解密失败：{e}")
 
-                # 如果是未知一次性密钥错误，发送 m.dummy 请求对方重新建立会话
-                if "unknown one-time key" in error_msg.lower():
-                    await self._request_new_session(sender_key, sender)
+                # 对于任何 Olm 解密失败，都尝试请求新会话
+                # 包括：未知一次性密钥、没有可用会话等情况
+                await self._request_new_session(sender_key, sender)
 
                 return None
 

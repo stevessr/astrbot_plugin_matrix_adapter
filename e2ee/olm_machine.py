@@ -512,6 +512,13 @@ class OlmMachine:
                     logger.info("正在尝试主动建立新的 Olm 会话...")
                 raise
 
+        # 普通消息（type=1）但没有可用的会话
+        if message_type == 1:
+            logger.warning(
+                f"收到普通 Olm 消息但没有可用的会话：sender={sender_key[:8]}... "
+                "可能原因：对方认为已有会话，但本端没有。需要请求新会话。"
+            )
+
         raise RuntimeError(f"无法解密来自 {sender_key} 的 Olm 消息")
 
     # ========== Megolm 会话 ==========
