@@ -4,6 +4,7 @@ E2EE Manager - 端到端加密管理器
 整合 OlmMachine 和 HTTP 客户端，提供高层 E2EE 操作接口。
 """
 
+import json
 from pathlib import Path
 from typing import Literal
 
@@ -546,7 +547,6 @@ class E2EEManager:
                 plaintext = self._olm.decrypt_olm_message(
                     sender_key, message_type, body
                 )
-                import json
 
                 logger.info(
                     f"Olm 解密成功，明文长度：{len(plaintext) if plaintext else 0}"

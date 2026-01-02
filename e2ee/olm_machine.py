@@ -22,12 +22,12 @@ from .crypto_store import CryptoStore
 try:
     from vodozemac import (
         Account,
+        AnyOlmMessage,
         Curve25519PublicKey,
         ExportedSessionKey,  # 构造函数接受 base64 字符串
         GroupSession,  # 出站会话 (vodozemac 中称为 GroupSession)
         InboundGroupSession,
         MegolmMessage,  # 解密时需要将密文转换为此类型
-        Message,
         PreKeyMessage,
         Session,
     )
@@ -430,15 +430,16 @@ class OlmMachine:
 
         logger.debug(f"开始 Olm 解密：sender={sender_key[:8]}... type={message_type}")
 
+        # 将 base64 密文转换为 bytes，然后创建 AnyOlmMessage
+        import base64
+        ciphertext_bytes = base64.b64decode(ciphertext)
+
         # 尝试使用现有会话解密
         sessions = self._olm_sessions.get(sender_key, [])
         for i, session in enumerate(sessions):
             try:
-                if message_type == 0:
-                    message = PreKeyMessage.from_base64(ciphertext)
-                else:
-                    message = Message.from_base64(ciphertext)
-
+                # 使用 AnyOlmMessage.from_parts 创建消息对象
+                message = AnyOlmMessage.from_parts(message_type, ciphertext_bytes)
                 plaintext = session.decrypt(message)
                 logger.debug(f"使用现有会话 {i} 解密成功")
                 # 更新会话
