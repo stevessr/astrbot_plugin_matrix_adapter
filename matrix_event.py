@@ -290,11 +290,37 @@ class MatrixPlatformEvent(AstrMessageEvent):
                             "m.in_reply_to": {"event_id": reply_to}
                         }
 
-                    # 发送未加密消息
-                    await client.send_message(
-                        room_id=room_id, msg_type="m.room.message", content=content
-                    )
-                    sent_count += 1
+                    # 发送图片消息（支持加密房间）
+                    if is_encrypted_room and e2ee_manager:
+                        try:
+                            encrypted = await e2ee_manager.encrypt_message(
+                                room_id, "m.room.message", content
+                            )
+                            if encrypted:
+                                await client.send_message(
+                                    room_id=room_id,
+                                    msg_type="m.room.encrypted",
+                                    content=encrypted,
+                                )
+                                sent_count += 1
+                                logger.debug(f"加密图片消息发送成功，房间：{room_id}")
+                            else:
+                                logger.warning("加密图片消息失败，尝试发送未加密消息")
+                                await client.send_message(
+                                    room_id=room_id, msg_type="m.room.message", content=content
+                                )
+                                sent_count += 1
+                        except Exception as encrypt_e:
+                            logger.warning(f"加密图片失败：{encrypt_e}，发送未加密消息")
+                            await client.send_message(
+                                room_id=room_id, msg_type="m.room.message", content=content
+                            )
+                            sent_count += 1
+                    else:
+                        await client.send_message(
+                            room_id=room_id, msg_type="m.room.message", content=content
+                        )
+                        sent_count += 1
                     logger.debug(f"图片消息发送成功，房间：{room_id}")
                 except Exception as e:
                     logger.error(f"发送图片消息失败：{e}")
@@ -341,11 +367,29 @@ class MatrixPlatformEvent(AstrMessageEvent):
                         }
 
                     try:
-                        # 发送未加密消息
-                        await client.send_message(
-                            room_id=room_id, msg_type="m.room.message", content=content
-                        )
-                        sent_count += 1
+                        # 发送文件消息（支持加密房间）
+                        if is_encrypted_room and e2ee_manager:
+                            encrypted = await e2ee_manager.encrypt_message(
+                                room_id, "m.room.message", content
+                            )
+                            if encrypted:
+                                await client.send_message(
+                                    room_id=room_id,
+                                    msg_type="m.room.encrypted",
+                                    content=encrypted,
+                                )
+                                sent_count += 1
+                            else:
+                                logger.warning("加密文件消息失败，尝试发送未加密消息")
+                                await client.send_message(
+                                    room_id=room_id, msg_type="m.room.message", content=content
+                                )
+                                sent_count += 1
+                        else:
+                            await client.send_message(
+                                room_id=room_id, msg_type="m.room.message", content=content
+                            )
+                            sent_count += 1
                     except Exception as e:
                         logger.error(f"发送文件消息失败：{e}")
                 except Exception as e:
@@ -420,6 +464,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                 logger.debug(f"处理回复模式时出错：{e}")
 
         # 如果有回复，检查是否需要使用嘟文串模式
+        original_message_info = None
         if reply_to:
             try:
                 # 获取被回复消息的事件信息
@@ -431,25 +476,23 @@ class MatrixPlatformEvent(AstrMessageEvent):
                         "body": resp.get("content", {}).get("body", ""),
                     }
 
-                if resp and "content" in resp:
                     # 检查被回复消息是否已经是嘟文串的一部分
-                    relates_to = resp["content"].get("m.relates_to", {})
-                    if relates_to.get("rel_type") == "m.thread":
-                        # 如果是嘟文串的一部分，获取根消息 ID
-                        thread_root = relates_to.get("event_id")
-                        use_thread = True
-                    elif self.enable_threading:
-                        # 试验性功能：如果启用嘟文串模式，创建新的嘟文串
-                        use_thread = True
-                        thread_root = reply_to  # 将被回复的消息作为嘟文串根
-                    else:
-                        # 如果不是嘟文串，不要强制开启嘟文串模式，使用标准回复
-                        use_thread = False
-                        thread_root = None
+                    if "content" in resp:
+                        relates_to = resp["content"].get("m.relates_to", {})
+                        if relates_to.get("rel_type") == "m.thread":
+                            # 如果是嘟文串的一部分，获取根消息 ID
+                            thread_root = relates_to.get("event_id")
+                            use_thread = True
+                        elif self.enable_threading:
+                            # 试验性功能：如果启用嘟文串模式，创建新的嘟文串
+                            use_thread = True
+                            thread_root = reply_to  # 将被回复的消息作为嘟文串根
+                        else:
+                            # 如果不是嘟文串，不要强制开启嘟文串模式，使用标准回复
+                            use_thread = False
+                            thread_root = None
             except Exception as e:
                 logger.warning(f"Failed to get event for threading: {e}")
-        else:
-            original_message_info = None
 
         await MatrixPlatformEvent.send_with_client(
             self.client,
