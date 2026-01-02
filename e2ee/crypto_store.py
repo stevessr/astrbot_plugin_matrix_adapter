@@ -191,6 +191,12 @@ class CryptoStore:
             self._olm_sessions[sender_key][index] = session_pickle
             self._save_json(self._sessions_file, self._olm_sessions)
 
+    def clear_olm_sessions(self, sender_key: str):
+        """清除与特定发送者的所有 Olm 会话"""
+        if sender_key in self._olm_sessions:
+            del self._olm_sessions[sender_key]
+            self._save_json(self._sessions_file, self._olm_sessions)
+
     # ========== Megolm 入站会话 ==========
 
     def get_megolm_inbound(self, session_id: str) -> str | None:

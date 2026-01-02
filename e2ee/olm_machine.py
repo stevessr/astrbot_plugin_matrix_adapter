@@ -439,6 +439,7 @@ class OlmMachine:
 
         # 尝试使用现有会话解密
         sessions = self._olm_sessions.get(sender_key, [])
+        mac_length_error = False
         for i, session in enumerate(sessions):
             try:
                 # 使用 AnyOlmMessage.from_parts 创建消息对象
@@ -451,8 +452,24 @@ class OlmMachine:
                 )
                 return plaintext
             except Exception as e:
+                error_msg = str(e).lower()
                 logger.debug(f"会话 {i} 解密失败：{e}")
+                # 检测 MAC 长度不匹配错误（vodozemac 与 libolm 兼容性问题）
+                if "mac length" in error_msg or "invalid mac" in error_msg:
+                    mac_length_error = True
+                    logger.warning(
+                        f"检测到 MAC 长度不匹配（vodozemac/libolm 兼容性问题）：{e}"
+                    )
                 continue
+
+        # 如果 MAC 长度错误，清除该发送者的旧会话并等待新的 PreKey 消息
+        if mac_length_error and sender_key in self._olm_sessions:
+            logger.warning(
+                f"清除与 {sender_key[:8]}... 的旧 Olm 会话（MAC 格式不兼容）"
+            )
+            self._olm_sessions[sender_key] = []
+            # 同时清除存储中的会话
+            self.store.clear_olm_sessions(sender_key)
 
         # 如果是 prekey 消息，创建新的入站会话
         if message_type == 0:
