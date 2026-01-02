@@ -382,8 +382,17 @@ class OlmMachine:
         payload_json = json.dumps(wrapper, ensure_ascii=False)
         ciphertext = session.encrypt(payload_json.encode())
 
+        # vodozemac 返回 AnyOlmMessage，需要使用 to_parts() 获取消息类型和密文
+        # to_parts() 返回 (message_type: int, ciphertext: bytes)
+        message_type, ciphertext_bytes = ciphertext.to_parts()
+
+        # 将密文转换为 base64 字符串
+        import base64
+
+        ciphertext_b64 = base64.b64encode(ciphertext_bytes).decode()
+
         logger.debug(
-            f"Olm 加密完成：type={ciphertext.message_type} payload_len={len(payload_json)}"
+            f"Olm 加密完成：type={message_type} payload_len={len(payload_json)}"
         )
 
         # 更新存储
@@ -396,8 +405,8 @@ class OlmMachine:
             "sender_key": self.curve25519_key,
             "ciphertext": {
                 their_identity_key: {
-                    "type": ciphertext.message_type,
-                    "body": ciphertext.ciphertext,
+                    "type": message_type,
+                    "body": ciphertext_b64,
                 }
             },
         }
@@ -500,11 +509,7 @@ class OlmMachine:
                         "2) 发送方缓存了旧密钥 "
                         "3) 一次性密钥已被其他会话使用"
                     )
-                    logger.error(
-                        "建议：请在 FluffyChat 中删除与 bot 的现有会话，"
-                        "然后重新发起对话以建立新的加密会话"
-                        "当然，最好不要这么做，因为交换还是有 bug"
-                    )
+                    logger.info("正在尝试主动建立新的 Olm 会话...")
                 raise
 
         raise RuntimeError(f"无法解密来自 {sender_key} 的 Olm 消息")

@@ -618,7 +618,9 @@ class E2EEManager:
         # 2. 如果本地没有，且知道发送者用户 ID，则从服务器查询
         if sender_user_id:
             try:
-                logger.info(f"本地缓存中未找到 sender_key，正在查询 {sender_user_id} 的设备...")
+                logger.info(
+                    f"本地缓存中未找到 sender_key，正在查询 {sender_user_id} 的设备..."
+                )
                 response = await self.client.query_keys({sender_user_id: []})
                 user_devices = response.get("device_keys", {}).get(sender_user_id, {})
 
@@ -628,7 +630,9 @@ class E2EEManager:
 
                     # 缓存到本地
                     if self._store:
-                        self._store.save_device_keys(sender_user_id, device_id, device_info)
+                        self._store.save_device_keys(
+                            sender_user_id, device_id, device_info
+                        )
                         logger.debug(f"缓存设备密钥：{sender_user_id}/{device_id}")
 
                     if curve_key == sender_key:
@@ -645,12 +649,14 @@ class E2EEManager:
 
         return None
 
-    async def _request_new_session(self, sender_key: str, sender_user_id: str | None = None):
+    async def _request_new_session(
+        self, sender_key: str, sender_user_id: str | None = None
+    ):
         """
-        当检测到未知一次性密钥时，请求发送方重新建立会话
+        当检测到未知一次性密钥时，主动建立新的 Olm 会话
 
-        通过发送 m.dummy to-device 事件，通知对方我们无法解密其消息，
-        需要重新 claim 一次性密钥并建立新的 Olm 会话。
+        通过 claim 对方的一次性密钥，创建新的出站 Olm 会话，
+        然后发送加密的 m.dummy 消息，通知对方使用新会话通信。
 
         Args:
             sender_key: 发送者的 curve25519 密钥
@@ -670,27 +676,131 @@ class E2EEManager:
                 return
 
             target_user, target_device = result
+            logger.info(f"尝试与 {target_user}/{target_device} 建立新的 Olm 会话")
 
-            # 发送 m.dummy 事件
-            # m.dummy 是一个空事件，用于触发对方重新建立 Olm 会话
-            content = {}
-
-            txn_id = secrets.token_hex(16)
-            await self.client.send_to_device(
-                "m.dummy",
-                {target_user: {target_device: content}},
-                txn_id,
+            # 1. 获取对方设备的身份密钥
+            resp = await self.client.query_keys({target_user: []})
+            devices = resp.get("device_keys", {}).get(target_user, {})
+            device_info = devices.get(target_device, {})
+            their_curve_key = device_info.get("keys", {}).get(
+                f"{PREFIX_CURVE25519}{target_device}"
             )
 
-            logger.info(
-                f"已向 {target_user}/{target_device} 发送 m.dummy 请求新会话"
+            if not their_curve_key:
+                logger.warning(
+                    f"无法获取 {target_user}/{target_device} 的 curve25519 密钥"
+                )
+                # 回退到发送未加密的 m.dummy
+                txn_id = secrets.token_hex(16)
+                await self.client.send_to_device(
+                    "m.dummy",
+                    {target_user: {target_device: {}}},
+                    txn_id,
+                )
+                logger.info(f"已向 {target_user}/{target_device} 发送未加密的 m.dummy")
+                return
+
+            # 2. Claim 对方的一次性密钥
+            claim_resp = await self.client.claim_keys(
+                {target_user: {target_device: "signed_curve25519"}}
             )
-            logger.info(
-                "提示：如果问题持续，请在对方客户端中删除与 bot 的加密会话后重试"
+            one_time_keys = (
+                claim_resp.get("one_time_keys", {})
+                .get(target_user, {})
+                .get(target_device, {})
             )
+
+            if not one_time_keys:
+                logger.warning(f"无法获取 {target_user}/{target_device} 的一次性密钥")
+                # 回退到发送未加密的 m.dummy
+                txn_id = secrets.token_hex(16)
+                await self.client.send_to_device(
+                    "m.dummy",
+                    {target_user: {target_device: {}}},
+                    txn_id,
+                )
+                logger.info(
+                    f"已向 {target_user}/{target_device} 发送未加密的 m.dummy（无可用一次性密钥）"
+                )
+                return
+
+            # 获取第一个一次性密钥
+            otk_key_id = list(one_time_keys.keys())[0]
+            otk_data = one_time_keys[otk_key_id]
+            their_one_time_key = (
+                otk_data.get("key") if isinstance(otk_data, dict) else otk_data
+            )
+
+            logger.debug(f"获取到一次性密钥：{otk_key_id}")
+
+            # 3. 创建新的出站 Olm 会话
+            try:
+                session = self._olm.create_outbound_session(
+                    their_curve_key, their_one_time_key
+                )
+                logger.info(f"成功创建与 {target_user}/{target_device} 的新 Olm 会话")
+            except Exception as session_e:
+                logger.error(f"创建 Olm 会话失败：{session_e}")
+                # 回退到发送未加密的 m.dummy
+                txn_id = secrets.token_hex(16)
+                await self.client.send_to_device(
+                    "m.dummy",
+                    {target_user: {target_device: {}}},
+                    txn_id,
+                )
+                return
+
+            # 4. 使用新会话发送加密的 m.dummy 消息
+            try:
+                # m.dummy 内容为空
+                dummy_content = {}
+                encrypted = self._olm.encrypt_olm(
+                    their_curve_key,
+                    dummy_content,
+                    session=session,
+                    recipient_user_id=target_user,
+                    event_type="m.dummy",
+                )
+
+                txn_id = secrets.token_hex(16)
+                await self.client.send_to_device(
+                    "m.room.encrypted",
+                    {target_user: {target_device: encrypted}},
+                    txn_id,
+                )
+
+                logger.info(
+                    f"已向 {target_user}/{target_device} 发送加密的 m.dummy，新会话已建立"
+                )
+                logger.info("提示：对方客户端应该会自动使用新会话重新发送消息")
+
+            except Exception as encrypt_e:
+                logger.error(f"发送加密 m.dummy 失败：{encrypt_e}")
+                # 回退到发送未加密的 m.dummy
+                txn_id = secrets.token_hex(16)
+                await self.client.send_to_device(
+                    "m.dummy",
+                    {target_user: {target_device: {}}},
+                    txn_id,
+                )
 
         except Exception as e:
-            logger.warning(f"发送 m.dummy 请求失败：{e}")
+            logger.warning(f"建立新会话失败：{e}")
+            # 最后尝试发送未加密的 m.dummy
+            try:
+                if result:
+                    target_user, target_device = result
+                    txn_id = secrets.token_hex(16)
+                    await self.client.send_to_device(
+                        "m.dummy",
+                        {target_user: {target_device: {}}},
+                        txn_id,
+                    )
+                    logger.info(
+                        f"已向 {target_user}/{target_device} 发送未加密的 m.dummy（回退）"
+                    )
+            except Exception:
+                pass
 
     async def _request_room_key(
         self,

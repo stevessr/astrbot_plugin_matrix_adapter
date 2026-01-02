@@ -350,9 +350,11 @@ class MatrixEventProcessor:
                         decrypted = await self.e2ee_manager.decrypt_event(
                             content, sender, ""
                         )
+                        logger.debug(f"解密 to_device 结果：{decrypted is not None}")
                         if decrypted:
                             inner_type = decrypted.get("type")
                             inner_content = decrypted.get("content", decrypted)
+                            logger.debug(f"解密后的事件类型：{inner_type}")
                             if inner_type == "m.room_key":
                                 sender_key = content.get("sender_key", "")
                                 await self.e2ee_manager.handle_room_key(
@@ -372,9 +374,11 @@ class MatrixEventProcessor:
                                 await self.e2ee_manager.handle_verification_event(
                                     inner_type, sender, inner_content
                                 )
+                            elif inner_type == "m.dummy":
+                                logger.debug("收到 m.dummy 事件，忽略")
                             else:
-                                logger.debug(
-                                    f"收到未知的加密 to_device 事件类型：{inner_type}"
+                                logger.info(
+                                    f"收到未知的加密 to_device 事件类型：{inner_type}，内容键：{list(decrypted.keys()) if isinstance(decrypted, dict) else type(decrypted)}"
                                 )
                     except Exception as e:
                         logger.error(f"处理加密 to_device 事件失败：{e}")
