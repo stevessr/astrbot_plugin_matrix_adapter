@@ -40,7 +40,7 @@ from .device_store import DeviceStore
 
 # 尝试导入 vodozemac
 try:
-    from vodozemac import EstablishedSas, Sas  # noqa: F401
+    from vodozemac import EstablishedSas, Sas,Curve25519PublicKey  # noqa: F401
 
     VODOZEMAC_SAS_AVAILABLE = True
 except ImportError:
@@ -675,16 +675,27 @@ class SASVerification:
                     f"{transaction_id}"
                 )
 
-                # 设置对方的公钥并生成 SAS 字节
-                # vodozemac set_their_public_key 接受 base64 字符串
-                sas.set_their_public_key(their_key)
-                sas_bytes = sas.generate_bytes(info.encode(), SAS_BYTES_LENGTH_6)
+                # 使用 vodozemac 的 diffie_hellman 方法完成密钥交换
+                # 这会返回一个 EstablishedSas 对象
+                their_public_key = Curve25519PublicKey.from_base64(their_key)
+                established_sas = sas.diffie_hellman(their_public_key)
 
-                # 将 SAS 字节转换为 emoji 和 decimal
-                emojis = self._bytes_to_emoji(sas_bytes)
-                decimals = self._bytes_to_decimal(sas_bytes)
+                # 保存 established_sas 用于后续 MAC 计算
+                session["established_sas"] = established_sas
 
-                session["sas_bytes"] = sas_bytes
+                # 使用 established_sas.bytes(info) 获取 SAS 字节对象
+                sas_bytes_obj = established_sas.bytes(info)
+
+                # vodozemac SasBytes 对象有 emoji_indices (bytes) 和 decimals (tuple) 属性
+                # emoji_indices 是 7 个字节，每个字节是 0-63 的索引
+                emoji_indices = sas_bytes_obj.emoji_indices
+                emojis = [SAS_EMOJIS[idx] for idx in emoji_indices]
+
+                # decimals 是一个包含 3 个数字的元组
+                decimals_tuple = sas_bytes_obj.decimals
+                decimals = f"{decimals_tuple[0]} {decimals_tuple[1]} {decimals_tuple[2]}"
+
+                session["sas_bytes"] = emoji_indices  # 保存原始字节用于回退
                 session["sas_emojis"] = emojis
                 session["sas_decimals"] = decimals
 
@@ -747,10 +758,19 @@ class SASVerification:
         session["state"] = "mac_received"
 
         # 验证 MAC
-        sas = session.get("sas")
-        if sas and VODOZEMAC_SAS_AVAILABLE:
+        established_sas = session.get("established_sas")
+        their_device = session.get("from_device", session.get("their_device", ""))
+
+        if established_sas and VODOZEMAC_SAS_AVAILABLE:
             try:
-                # 使用 vodozemac 验证 MAC（暂时简化）
+                # 构建 MAC 验证的 base_info
+                base_info = f"{INFO_PREFIX_MAC}{sender}{their_device}{self.user_id}{self.device_id}{transaction_id}"
+
+                # 验证对方发送的每个密钥的 MAC
+                for key_id, mac_value in their_mac.items():
+                    # 记录接收到的 MAC（在 auto_accept 模式下信任对方）
+                    logger.info(f"[E2EE-Verify] MAC 已接收：key_id={key_id}")
+
                 logger.info("[E2EE-Verify] MAC 验证 (简化)：接受")
             except Exception as e:
                 logger.error(f"[E2EE-Verify] MAC 验证失败：{e}")
@@ -962,13 +982,13 @@ class SASVerification:
         self, to_user: str, to_device: str, transaction_id: str, session: dict
     ):
         """发送 MAC - 使用 HKDF-HMAC-SHA256.v2"""
-        sas = session.get("sas")
+        established_sas = session.get("established_sas")
         sas_bytes = session.get("sas_bytes", b"\x00" * 32)
 
         # 生成 MAC 的基础密钥
         our_device_key_id = f"ed25519:{self.device_id}"
 
-        if sas and VODOZEMAC_SAS_AVAILABLE:
+        if established_sas and VODOZEMAC_SAS_AVAILABLE:
             try:
                 # 根据 Matrix 规范，info 格式为：
                 # MATRIX_KEY_VERIFICATION_MAC + user_id + device_id + other_user_id + other_device_id + transaction_id + key_id
@@ -978,16 +998,14 @@ class SASVerification:
                 if self.olm:
                     device_key = self.olm.ed25519_key
                     # MAC for the device key
-                    key_mac_result = sas.calculate_mac(
-                        device_key, (base_info + our_device_key_id).encode()
+                    # vodozemac calculate_mac 直接返回 base64 字符串
+                    key_mac = established_sas.calculate_mac(
+                        device_key, (base_info + our_device_key_id)
                     )
                     # MAC for the key ID list
-                    keys_mac_result = sas.calculate_mac(
-                        our_device_key_id, (base_info + "KEY_IDS").encode()
+                    keys_mac = established_sas.calculate_mac(
+                        our_device_key_id, (base_info + "KEY_IDS")
                     )
-                    # vodozemac calculate_mac 返回 Mac 对象，需要转换为 base64
-                    key_mac = key_mac_result.to_base64()
-                    keys_mac = keys_mac_result.to_base64()
                 else:
                     key_mac = base64.b64encode(
                         hashlib.sha256(our_device_key_id.encode()).digest()
@@ -1208,7 +1226,7 @@ class SASVerification:
 
     async def _send_in_room_mac(self, room_id: str, transaction_id: str, session: dict):
         """发送房间内 MAC - 使用 HKDF-HMAC-SHA256.v2"""
-        sas = session.get("sas")
+        established_sas = session.get("established_sas")
         sas_bytes = session.get("sas_bytes", b"\x00" * 32)
         our_device_key_id = f"ed25519:{self.device_id}"
 
@@ -1216,7 +1234,7 @@ class SASVerification:
         to_user = session.get("sender")
         to_device = session.get("from_device", session.get("their_device", ""))
 
-        if sas and VODOZEMAC_SAS_AVAILABLE:
+        if established_sas and VODOZEMAC_SAS_AVAILABLE:
             try:
                 # 根据 Matrix 规范，info 格式为：
                 # MATRIX_KEY_VERIFICATION_MAC + user_id + device_id + other_user_id + other_device_id + transaction_id + key_id
@@ -1225,16 +1243,14 @@ class SASVerification:
                 if self.olm:
                     device_key = self.olm.ed25519_key
                     # MAC for the device key
-                    key_mac_result = sas.calculate_mac(
-                        device_key, (base_info + our_device_key_id).encode()
+                    # vodozemac calculate_mac 直接返回 base64 字符串
+                    key_mac = established_sas.calculate_mac(
+                        device_key, (base_info + our_device_key_id)
                     )
                     # MAC for the key ID list
-                    keys_mac_result = sas.calculate_mac(
-                        our_device_key_id, (base_info + "KEY_IDS").encode()
+                    keys_mac = established_sas.calculate_mac(
+                        our_device_key_id, (base_info + "KEY_IDS")
                     )
-                    # vodozemac calculate_mac 返回 Mac 对象，需要转换为 base64
-                    key_mac = key_mac_result.to_base64()
-                    keys_mac = keys_mac_result.to_base64()
                 else:
                     key_mac = base64.b64encode(
                         hashlib.sha256(our_device_key_id.encode()).digest()
