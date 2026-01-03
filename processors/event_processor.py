@@ -99,22 +99,15 @@ class MatrixEventProcessor:
         content = event_data.get("content", {})
         msgtype = content.get("msgtype", "")
 
-        # Debug: Log all event types for troubleshooting
-        logger.debug(
-            f"[EventProcessor] 收到房间事件：type={event_type} msgtype={msgtype} room={room.room_id[:16]}..."
-        )
-
         # Handle in-room verification events
         # Matrix spec: standalone verification events have type m.key.verification.*
         # But in-room verification REQUEST is sent as m.room.message with msgtype m.key.verification.request
         if event_type and event_type.startswith("m.key.verification."):
-            logger.info(f"[EventProcessor] 检测到验证事件：{event_type}")
             await self._handle_in_room_verification(room, event_data)
             return
 
         # Check for in-room verification request (m.room.message with msgtype m.key.verification.request)
         if event_type == "m.room.message" and msgtype == "m.key.verification.request":
-            logger.info(f"[EventProcessor] 检测到房间内验证请求 (msgtype={msgtype})")
             await self._handle_in_room_verification(room, event_data)
             return
 
@@ -174,7 +167,7 @@ class MatrixEventProcessor:
                                 ):
                                     return  # Ignore own echo
 
-                            logger.info(
+                            logger.debug(
                                 f"[EventProcessor] 检测到加密的验证事件 (type={event.event_type})"
                             )
 
@@ -185,17 +178,6 @@ class MatrixEventProcessor:
                             cleartext_relates_to = event_content.get("m.relates_to")
                             if cleartext_relates_to:
                                 event.content["m.relates_to"] = cleartext_relates_to
-                                logger.debug(
-                                    f"[EventProcessor] 从加密事件明文部分复制 m.relates_to: {cleartext_relates_to}"
-                                )
-
-                            # 调试：记录解密后的内容
-                            logger.debug(
-                                f"[EventProcessor] 解密后的 content: {event.content}"
-                            )
-                            logger.debug(
-                                f"[EventProcessor] 解密后的 content keys: {list(event.content.keys())}"
-                            )
 
                             # Reconstruct event_data for verification handler
                             verification_event = {
@@ -293,14 +275,11 @@ class MatrixEventProcessor:
                     "m.key.verification.cancel",
                     "m.key.verification.done",
                 ):
-                    logger.debug(f"忽略来自自身的验证事件：{event_type} (可能是回声)")
                     return
             elif self.e2ee_manager and from_device == self.e2ee_manager.device_id:
                 # from_device matches our device_id, definitely our own echo
                 return
             # If from_device is different, proceed (it's from another session of the same user)
-
-        logger.info(f"收到房间内验证事件：{event_type} from {sender}")
 
         if self.e2ee_manager:
             try:

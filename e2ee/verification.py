@@ -268,27 +268,19 @@ class SASVerification:
                         or sender == self.user_id  # 或者是我们自己的其他设备发送的
                     ):
                         transaction_id = txn_id
-                        logger.info(
+                        logger.debug(
                             f"[E2EE-Verify] 从活跃会话推断 transaction_id: {txn_id[:16]}..."
                         )
                         break
 
         if not transaction_id:
-            # 调试：列出所有活跃会话
-            active_sessions_info = [
-                f"txn={txn[:8]}...,room={s.get('room_id', 'N/A')[:8] if s.get('room_id') else 'N/A'},sender={s.get('sender', 'N/A')},state={s.get('state', 'N/A')}"
-                for txn, s in self._sessions.items()
-                if s.get("state") not in ("done", "cancelled")
-            ]
             logger.warning(
-                f"[E2EE-Verify] 房间内验证事件缺少 transaction_id, "
-                f"event_type={event_type}, sender={sender}, room={room_id[:16]}..., "
-                f"relates_to={relates_to}, content_keys={list(content.keys())}, "
-                f"active_sessions=[{', '.join(active_sessions_info) if active_sessions_info else 'none'}]"
+                f"[E2EE-Verify] 房间内验证事件缺少 transaction_id: "
+                f"type={event_type}, sender={sender}"
             )
             return False
 
-        logger.info(
+        logger.debug(
             f"[E2EE-Verify] 收到房间内验证事件：{event_type} "
             f"from={sender} room={room_id[:16]}... txn={transaction_id[:16]}..."
         )
@@ -728,13 +720,8 @@ class SASVerification:
                 session["sas_emojis"] = emojis
                 session["sas_decimals"] = decimals
 
-                logger.info("[E2EE-Verify] ===== SAS 验证码 (使用 vodozemac) =====")
-                logger.info(f"[E2EE-Verify] Emoji: {' '.join(e[0] for e in emojis)}")
-                logger.info(
-                    f"[E2EE-Verify] Emoji 名称：{', '.join(e[1] for e in emojis)}"
-                )
-                logger.info(f"[E2EE-Verify] 数字：{decimals}")
-                logger.info("[E2EE-Verify] ==========================================")
+                emoji_str = " ".join(e[0] for e in emojis)
+                logger.info(f"[E2EE-Verify] SAS 验证码：{emoji_str} | 数字：{decimals}")
 
             except Exception as e:
                 logger.error(f"[E2EE-Verify] 计算 SAS 失败：{e}")
@@ -770,19 +757,15 @@ class SASVerification:
         session["sas_emojis"] = emojis
         session["sas_decimals"] = decimals
 
-        logger.info("[E2EE-Verify] ===== SAS 验证码 (简化实现) =====")
-        logger.info(f"[E2EE-Verify] Emoji: {' '.join(e[0] for e in emojis)}")
-        logger.info(f"[E2EE-Verify] Emoji 名称：{', '.join(e[1] for e in emojis)}")
-        logger.info(f"[E2EE-Verify] 数字：{decimals}")
-        logger.info("[E2EE-Verify] =====================================")
+        emoji_str = " ".join(e[0] for e in emojis)
+        logger.info(f"[E2EE-Verify] SAS 验证码 (fallback): {emoji_str} | 数字：{decimals}")
 
     async def _handle_mac(self, sender: str, content: dict, transaction_id: str):
         """处理 MAC 验证"""
         their_mac = content.get("mac", {})
         their_keys = content.get("keys")
 
-        logger.info(f"[E2EE-Verify] 收到 MAC: keys={their_keys}")
-        logger.debug(f"[E2EE-Verify] MAC 内容：{their_mac}")
+        logger.debug(f"[E2EE-Verify] 收到 MAC: keys={their_keys}")
 
         session = self._sessions.get(transaction_id, {})
         session["their_mac"] = their_mac
@@ -800,9 +783,8 @@ class SASVerification:
                 # 验证对方发送的每个密钥的 MAC
                 for key_id, mac_value in their_mac.items():
                     # 记录接收到的 MAC（在 auto_accept 模式下信任对方）
-                    logger.info(f"[E2EE-Verify] MAC 已接收：key_id={key_id}")
+                    logger.debug(f"[E2EE-Verify] MAC 已接收：key_id={key_id}")
 
-                logger.info("[E2EE-Verify] MAC 验证 (简化)：接受")
             except Exception as e:
                 logger.error(f"[E2EE-Verify] MAC 验证失败：{e}")
 
@@ -1174,10 +1156,10 @@ class SASVerification:
                 await self.client.send_room_event(
                     room_id, M_ROOM_ENCRYPTED, encrypted_content
                 )
-                logger.info(f"[E2EE-Verify] 已发送加密的房间内事件：{event_type}")
+                logger.debug(f"[E2EE-Verify] 已发送加密的房间内事件：{event_type}")
             else:
                 await self.client.send_room_event(room_id, event_type, content)
-                logger.info(f"[E2EE-Verify] 已发送房间内事件：{event_type}")
+                logger.debug(f"[E2EE-Verify] 已发送房间内事件：{event_type}")
 
         except Exception as e:
             logger.error(f"[E2EE-Verify] 发送房间内事件 {event_type} 失败：{e}")
@@ -1188,13 +1170,10 @@ class SASVerification:
             "from_device": self.device_id,
             "methods": SAS_METHODS,
         }
-        logger.debug(
-            f"[E2EE-Verify] 发送 ready: device_id={self.device_id} methods={SAS_METHODS}"
-        )
         await self._send_in_room_event(
             room_id, M_KEY_VERIFICATION_READY, content, transaction_id
         )
-        logger.info("[E2EE-Verify] 已发送房间内 ready")
+        logger.info("[E2EE-Verify] 已发送 ready")
 
     async def _send_in_room_accept(
         self, room_id: str, transaction_id: str, start_content: dict
@@ -1220,13 +1199,8 @@ class SASVerification:
 
         sas = session.get("sas")
         if sas and VODOZEMAC_SAS_AVAILABLE:
-            # vodozemac 返回 Key 对象，需要转换为 base64 字符串
             our_public_key = sas.public_key.to_base64()
-            logger.info(
-                f"[E2EE-Verify] Using existing SAS object, public_key: {our_public_key}"
-            )
         elif VODOZEMAC_SAS_AVAILABLE:
-            # SAS object not in session, create new one
             logger.warning(
                 "[E2EE-Verify] SAS object not in session, creating new SAS for accept"
             )
@@ -1234,15 +1208,9 @@ class SASVerification:
                 sas = Sas()
                 our_public_key = sas.public_key.to_base64()
                 session["sas"] = sas
-                logger.info(
-                    f"[E2EE-Verify] Created new SAS, public_key: {our_public_key}"
-                )
             except Exception as e:
                 logger.error(f"[E2EE-Verify] Failed to create SAS: {e}")
                 our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
-                logger.warning(
-                    "[E2EE-Verify] Using fallback random key (commitment will fail!)"
-                )
         else:
             logger.warning(
                 "[E2EE-Verify] vodozemac not available, using fallback random key"
@@ -1257,41 +1225,18 @@ class SASVerification:
 
         # 计算 commitment = UnpaddedBase64(SHA256(public_key || canonical_json(start_content)))
         # 根据 Matrix 规范和 matrix-rust-sdk 实现，m.relates_to 应该包含在 canonical JSON 中
-        # 先记录原始内容以便调试
-        logger.info(f"[E2EE-Verify] Raw start_content: {start_content}")
-        logger.info(f"[E2EE-Verify] start_content keys: {sorted(start_content.keys())}")
-
-        # 检查是否有 m.relates_to
-        has_relates_to = "m.relates_to" in start_content
-        logger.info(f"[E2EE-Verify] Has m.relates_to: {has_relates_to}")
-
-        # IMPORTANT: Do NOT strip m.relates_to for in-room verification!
-        # The initiator (Element) includes m.relates_to when calculating commitment,
-        # so we must also include it to get the same hash.
-        start_content_for_commitment = start_content
-        canonical_start = _canonical_json(start_content_for_commitment)
-        logger.info(
-            f"[E2EE-Verify] Commitment public_key ({len(our_public_key)} chars): {our_public_key}"
-        )
-        logger.info(
-            f"[E2EE-Verify] Commitment canonical_json ({len(canonical_start)} chars): {canonical_start}"
-        )
-
-        # 详细记录每个字段，帮助调试
-        for key in sorted(start_content_for_commitment.keys()):
-            value = start_content_for_commitment[key]
-            logger.debug(f"[E2EE-Verify] Field '{key}': {value}")
-
-        # 使用 base64 编码的公钥字符串 + canonical JSON 字符串
+        canonical_start = _canonical_json(start_content)
         commitment_data = our_public_key + canonical_start
-        commitment_bytes = commitment_data.encode("utf-8")
-        logger.info(
-            f"[E2EE-Verify] Commitment data ({len(commitment_bytes)} bytes) hex: {commitment_bytes.hex()[:100]}..."
+        commitment = (
+            base64.b64encode(hashlib.sha256(commitment_data.encode("utf-8")).digest())
+            .decode()
+            .rstrip("=")
         )
-        hash_result = hashlib.sha256(commitment_bytes).digest()
-        logger.info(f"[E2EE-Verify] SHA256 hash hex: {hash_result.hex()}")
-        commitment = base64.b64encode(hash_result).decode().rstrip("=")
-        logger.info(f"[E2EE-Verify] Calculated commitment: {commitment}")
+
+        logger.debug(
+            f"[E2EE-Verify] Commitment: public_key={our_public_key[:16]}..., "
+            f"has_m.relates_to={'m.relates_to' in start_content}"
+        )
 
         content = {
             "method": "m.sas.v1",
@@ -1329,11 +1274,10 @@ class SASVerification:
             "key": our_public_key,
         }
 
-        logger.info(f"[E2EE-Verify] Sending key (same as commitment): {our_public_key}")
         await self._send_in_room_event(
             room_id, M_KEY_VERIFICATION_KEY, content, transaction_id
         )
-        logger.info(f"[E2EE-Verify] 已发送房间内 key: {our_public_key[:20]}...")
+        logger.info("[E2EE-Verify] 已发送 key")
 
     async def _send_in_room_mac(self, room_id: str, transaction_id: str, session: dict):
         """发送房间内 MAC - 使用 HKDF-HMAC-SHA256.v2"""
@@ -1399,7 +1343,7 @@ class SASVerification:
         await self._send_in_room_event(
             room_id, M_KEY_VERIFICATION_MAC, content, transaction_id
         )
-        logger.info("[E2EE-Verify] 已发送房间内 mac")
+        logger.info("[E2EE-Verify] 已发送 mac")
 
     async def _send_in_room_done(self, room_id: str, transaction_id: str):
         """发送房间内 done"""
@@ -1407,7 +1351,7 @@ class SASVerification:
         await self._send_in_room_event(
             room_id, M_KEY_VERIFICATION_DONE, content, transaction_id
         )
-        logger.info("[E2EE-Verify] 已发送房间内 done")
+        logger.info("[E2EE-Verify] 已发送 done")
 
     async def _send_in_room_cancel(
         self, room_id: str, transaction_id: str, code: str, reason: str
