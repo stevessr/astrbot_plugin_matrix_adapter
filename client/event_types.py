@@ -122,6 +122,7 @@ class MatrixRoom:
     topic: str = ""
     member_count: int = 0
     members: dict[str, str] = field(default_factory=dict)  # user_id -> display_name
+    member_avatars: dict[str, str] = field(default_factory=dict)  # user_id -> mxc url
 
     def user_name(self, user_id: str) -> str:
         """Get display name for a user"""

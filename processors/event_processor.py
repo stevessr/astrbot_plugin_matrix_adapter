@@ -8,6 +8,7 @@ from collections.abc import Callable
 from astrbot.api import logger
 
 from ..constants import MAX_PROCESSED_MESSAGES_1000, TIMESTAMP_BUFFER_MS_1000
+from ..user_store import MatrixUserStore
 
 
 class MatrixEventProcessor:
@@ -51,6 +52,7 @@ class MatrixEventProcessor:
         self.receipts: dict[str, dict] = {}
         self.device_lists: dict[str, set[str]] = {"changed": set(), "left": set()}
         self.one_time_keys_count: dict[str, int] = {}
+        self.user_store = MatrixUserStore()
 
     def set_message_callback(self, callback: Callable):
         """
@@ -87,6 +89,9 @@ class MatrixEventProcessor:
                 if content.get("membership") == "join":
                     display_name = content.get("displayname", user_id)
                     room.members[user_id] = display_name
+                    avatar_url = content.get("avatar_url")
+                    if avatar_url:
+                        room.member_avatars[user_id] = avatar_url
                     room.member_count += 1
 
         # Process timeline events
@@ -180,6 +185,11 @@ class MatrixEventProcessor:
         event_type = event_data.get("type")
         content = event_data.get("content", {})
         msgtype = content.get("msgtype", "")
+
+        # Handle membership updates to keep profile cache fresh
+        if event_type == "m.room.member":
+            await self._handle_member_event(room, event_data)
+            return
 
         # Handle in-room verification events
         # Matrix spec: standalone verification events have type m.key.verification.*
@@ -320,6 +330,7 @@ class MatrixEventProcessor:
 
             # Call message callback
             if self.on_message:
+                await self._persist_interacted_user(room, event)
                 await self.on_message(room, event)
 
                 # Send read receipt after successful processing
@@ -532,3 +543,43 @@ class MatrixEventProcessor:
     def get_processed_message_count(self) -> int:
         """Get the number of processed messages in cache"""
         return len(self._processed_messages)
+
+    async def _persist_interacted_user(self, room, event):
+        """Persist profile info for interacted users."""
+        user_id = getattr(event, "sender", None)
+        if not user_id:
+            return
+        display_name = room.members.get(user_id, user_id)
+        avatar_url = room.member_avatars.get(user_id)
+        if not avatar_url and self.client:
+            try:
+                avatar_url = await self.client.get_avatar_url(user_id)
+            except Exception:
+                avatar_url = None
+        self.user_store.upsert(user_id, display_name, avatar_url)
+
+    async def _handle_member_event(self, room, event_data: dict):
+        """Handle m.room.member changes and persist profile updates."""
+        user_id = event_data.get("state_key")
+        if not user_id:
+            return
+        content = event_data.get("content", {})
+        membership = content.get("membership")
+        display_name = content.get("displayname") or room.members.get(user_id, user_id)
+        avatar_url = content.get("avatar_url") or room.member_avatars.get(user_id)
+
+        if membership == "join":
+            room.members[user_id] = display_name
+            if avatar_url:
+                room.member_avatars[user_id] = avatar_url
+            self.user_store.upsert(user_id, display_name, avatar_url)
+        elif membership in ("leave", "ban"):
+            room.members.pop(user_id, None)
+            room.member_avatars.pop(user_id, None)
+        else:
+            # Membership changes without join/leave still update profile fields if present.
+            if content.get("displayname") or content.get("avatar_url"):
+                room.members[user_id] = display_name
+                if avatar_url:
+                    room.member_avatars[user_id] = avatar_url
+                self.user_store.upsert(user_id, display_name, avatar_url)
