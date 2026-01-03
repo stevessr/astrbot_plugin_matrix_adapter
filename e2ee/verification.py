@@ -40,7 +40,7 @@ from .device_store import DeviceStore
 
 # 尝试导入 vodozemac
 try:
-    from vodozemac import EstablishedSas, Sas,Curve25519PublicKey  # noqa: F401
+    from vodozemac import EstablishedSas, Sas, Curve25519PublicKey  # noqa: F401
 
     VODOZEMAC_SAS_AVAILABLE = True
 except ImportError:
@@ -299,11 +299,23 @@ class SASVerification:
         self._sessions[transaction_id]["room_id"] = room_id
         self._sessions[transaction_id]["is_in_room"] = True
 
-        # Check if this event is from our own user but another device
+        # Check if this event is from our own user
         if sender == self.user_id:
             from_device = content.get("from_device")
+
+            # Skip our own key/mac/done/accept events (these are echoes of what we sent)
+            # We only need to process these events from the OTHER party
+            if event_type in (
+                M_KEY_VERIFICATION_KEY,
+                M_KEY_VERIFICATION_MAC,
+                M_KEY_VERIFICATION_DONE,
+                M_KEY_VERIFICATION_ACCEPT,
+            ):
+                logger.debug(f"[E2EE-Verify] 跳过自己发送的事件：{event_type}")
+                return True  # Ignore our own echoed events
+
             if from_device and from_device != self.device_id:
-                # 只有当事件明确表明另一个设备正在进行交互时（例如 ready/start/accept/key），我们才退出
+                # 只有当事件明确表明另一个设备正在进行交互时（例如 ready/start/accept），我们才退出
                 # 忽略 request 事件（因为那是发起请求，不代表接管）
                 if event_type not in (
                     M_KEY_VERIFICATION_REQUEST,
@@ -649,6 +661,11 @@ class SASVerification:
         sas = session.get("sas")
         our_key = session.get("our_public_key")
 
+        # Safety check: Skip if SAS already computed (defensive measure)
+        if session.get("established_sas") or session.get("sas_emojis"):
+            logger.debug("[E2EE-Verify] SAS 已计算，跳过重复计算")
+            return
+
         if sas and VODOZEMAC_SAS_AVAILABLE and their_key:
             try:
                 # 使用 vodozemac 计算共享密钥
@@ -693,7 +710,9 @@ class SASVerification:
 
                 # decimals 是一个包含 3 个数字的元组
                 decimals_tuple = sas_bytes_obj.decimals
-                decimals = f"{decimals_tuple[0]} {decimals_tuple[1]} {decimals_tuple[2]}"
+                decimals = (
+                    f"{decimals_tuple[0]} {decimals_tuple[1]} {decimals_tuple[2]}"
+                )
 
                 session["sas_bytes"] = emoji_indices  # 保存原始字节用于回退
                 session["sas_emojis"] = emojis
@@ -715,7 +734,9 @@ class SASVerification:
             # 使用简化实现
             self._compute_sas_fallback(session, their_key)
 
-        if self.auto_verify_mode == "auto_accept":
+        # Send MAC only if not already sent
+        if self.auto_verify_mode == "auto_accept" and not session.get("mac_sent"):
+            session["mac_sent"] = True
             if is_in_room and room_id:
                 await self._send_in_room_mac(room_id, transaction_id, session)
             else:
@@ -775,7 +796,8 @@ class SASVerification:
             except Exception as e:
                 logger.error(f"[E2EE-Verify] MAC 验证失败：{e}")
 
-        if self.auto_verify_mode == "auto_accept":
+        if self.auto_verify_mode == "auto_accept" and not session.get("done_sent"):
+            session["done_sent"] = True
             # Check if this is an in-room verification
             is_in_room = session.get("is_in_room", False)
             room_id = session.get("room_id")
@@ -920,7 +942,31 @@ class SASVerification:
         if sas and VODOZEMAC_SAS_AVAILABLE:
             # vodozemac 返回 Key 对象，需要转换为 base64 字符串
             our_public_key = sas.public_key.to_base64()
+            logger.info(
+                f"[E2EE-Verify] Using existing SAS object, public_key: {our_public_key}"
+            )
+        elif VODOZEMAC_SAS_AVAILABLE:
+            # SAS object not in session, create new one
+            logger.warning(
+                "[E2EE-Verify] SAS object not in session, creating new SAS for accept"
+            )
+            try:
+                sas = Sas()
+                our_public_key = sas.public_key.to_base64()
+                session["sas"] = sas
+                logger.info(
+                    f"[E2EE-Verify] Created new SAS, public_key: {our_public_key}"
+                )
+            except Exception as e:
+                logger.error(f"[E2EE-Verify] Failed to create SAS: {e}")
+                our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
+                logger.warning(
+                    "[E2EE-Verify] Using fallback random key (commitment will fail!)"
+                )
         else:
+            logger.warning(
+                "[E2EE-Verify] vodozemac not available, using fallback random key"
+            )
             # 回退：生成随机密钥 (仅用于显示)
             our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
 
@@ -1166,7 +1212,31 @@ class SASVerification:
         if sas and VODOZEMAC_SAS_AVAILABLE:
             # vodozemac 返回 Key 对象，需要转换为 base64 字符串
             our_public_key = sas.public_key.to_base64()
+            logger.info(
+                f"[E2EE-Verify] Using existing SAS object, public_key: {our_public_key}"
+            )
+        elif VODOZEMAC_SAS_AVAILABLE:
+            # SAS object not in session, create new one
+            logger.warning(
+                "[E2EE-Verify] SAS object not in session, creating new SAS for accept"
+            )
+            try:
+                sas = Sas()
+                our_public_key = sas.public_key.to_base64()
+                session["sas"] = sas
+                logger.info(
+                    f"[E2EE-Verify] Created new SAS, public_key: {our_public_key}"
+                )
+            except Exception as e:
+                logger.error(f"[E2EE-Verify] Failed to create SAS: {e}")
+                our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
+                logger.warning(
+                    "[E2EE-Verify] Using fallback random key (commitment will fail!)"
+                )
         else:
+            logger.warning(
+                "[E2EE-Verify] vodozemac not available, using fallback random key"
+            )
             our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
 
         session["our_public_key"] = our_public_key
@@ -1176,12 +1246,29 @@ class SASVerification:
         session["sas_methods"] = sas_methods
 
         # 计算 commitment = UnpaddedBase64(SHA256(public_key || canonical_json(start_content)))
-        commitment_data = our_public_key + _canonical_json(start_content)
-        commitment = (
-            base64.b64encode(hashlib.sha256(commitment_data.encode()).digest())
-            .decode()
-            .rstrip("=")
+        # 根据 Matrix 规范，对于房间内验证，排除 m.relates_to
+        # 先记录原始内容以便调试
+        logger.info(f"[E2EE-Verify] Raw start_content: {start_content}")
+        start_content_for_commitment = {
+            k: v for k, v in start_content.items() if k != "m.relates_to"
+        }
+        canonical_start = _canonical_json(start_content_for_commitment)
+        logger.info(
+            f"[E2EE-Verify] Commitment public_key ({len(our_public_key)} chars): {our_public_key}"
         )
+        logger.info(
+            f"[E2EE-Verify] Commitment canonical_json ({len(canonical_start)} chars): {canonical_start}"
+        )
+        # 使用 base64 编码的公钥字符串 + canonical JSON 字符串
+        commitment_data = our_public_key + canonical_start
+        commitment_bytes = commitment_data.encode("utf-8")
+        logger.info(
+            f"[E2EE-Verify] Commitment data ({len(commitment_bytes)} bytes) hex: {commitment_bytes.hex()[:100]}..."
+        )
+        hash_result = hashlib.sha256(commitment_bytes).digest()
+        logger.info(f"[E2EE-Verify] SHA256 hash hex: {hash_result.hex()}")
+        commitment = base64.b64encode(hash_result).decode().rstrip("=")
+        logger.info(f"[E2EE-Verify] Calculated commitment: {commitment}")
 
         content = {
             "method": "m.sas.v1",
@@ -1203,22 +1290,23 @@ class SASVerification:
         """发送房间内公钥"""
         session = self._sessions.get(transaction_id, {})
 
-        sas = session.get("sas")
-        if sas and VODOZEMAC_SAS_AVAILABLE:
-            # vodozemac 返回 Key 对象，需要转换为 base64 字符串
-            our_public_key = sas.public_key.to_base64()
-        else:
-            our_public_key = session.get(
-                "our_public_key", base64.b64encode(secrets.token_bytes(32)).decode()
-            )
+        # 优先使用已存储的公钥（在 accept 中计算 commitment 时使用的同一个）
+        our_public_key = session.get("our_public_key")
+        if not our_public_key:
+            sas = session.get("sas")
+            if sas and VODOZEMAC_SAS_AVAILABLE:
+                our_public_key = sas.public_key.to_base64()
+            else:
+                our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
+            session["our_public_key"] = our_public_key
 
-        session["our_public_key"] = our_public_key
         session["key_sent"] = True
 
         content = {
             "key": our_public_key,
         }
 
+        logger.info(f"[E2EE-Verify] Sending key (same as commitment): {our_public_key}")
         await self._send_in_room_event(
             room_id, M_KEY_VERIFICATION_KEY, content, transaction_id
         )

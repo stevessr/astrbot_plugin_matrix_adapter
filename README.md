@@ -193,3 +193,5 @@ MIT License
 # P.S.
 
 如果你想要使用加密，请安装 vodozemac 库
+
+对于贴纸功能的支持，请移步 https://github.com/stevessr/astrbot_plugin_matrix_sticker
