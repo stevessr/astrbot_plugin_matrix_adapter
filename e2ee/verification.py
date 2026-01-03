@@ -40,7 +40,7 @@ from .device_store import DeviceStore
 
 # 尝试导入 vodozemac
 try:
-    from vodozemac import EstablishedSas, Sas, Curve25519PublicKey  # noqa: F401
+    from vodozemac import Curve25519PublicKey, EstablishedSas, Sas  # noqa: F401
 
     VODOZEMAC_SAS_AVAILABLE = True
 except ImportError:
@@ -758,7 +758,9 @@ class SASVerification:
         session["sas_decimals"] = decimals
 
         emoji_str = " ".join(e[0] for e in emojis)
-        logger.info(f"[E2EE-Verify] SAS 验证码 (fallback): {emoji_str} | 数字：{decimals}")
+        logger.info(
+            f"[E2EE-Verify] SAS 验证码 (fallback): {emoji_str} | 数字：{decimals}"
+        )
 
     async def _handle_mac(self, sender: str, content: dict, transaction_id: str):
         """处理 MAC 验证"""

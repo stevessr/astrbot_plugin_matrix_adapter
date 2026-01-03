@@ -5,8 +5,6 @@ Provides room-related API methods
 
 from typing import Any
 
-from astrbot.api import logger
-
 
 class RoomMixin:
     """Room-related methods for Matrix client"""

@@ -8,4 +8,10 @@ from .component import Sticker, StickerInfo
 from .storage import StickerStorage
 from .syncer import StickerPackInfo, StickerPackSyncer
 
-__all__ = ["Sticker", "StickerInfo", "StickerStorage", "StickerPackSyncer", "StickerPackInfo"]
+__all__ = [
+    "Sticker",
+    "StickerInfo",
+    "StickerStorage",
+    "StickerPackSyncer",
+    "StickerPackInfo",
+]

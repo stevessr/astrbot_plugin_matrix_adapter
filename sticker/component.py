@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from astrbot.api import logger
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 from astrbot.core.utils.io import download_image_by_url
 
@@ -58,8 +57,10 @@ class Sticker:
     @staticmethod
     def fromURL(url: str, body: str = "", **kwargs) -> "Sticker":
         """从 URL 创建 Sticker"""
-        if url.startswith("http://") or url.startswith("https://") or url.startswith(
-            "mxc://"
+        if (
+            url.startswith("http://")
+            or url.startswith("https://")
+            or url.startswith("mxc://")
         ):
             return Sticker(body=body, url=url, **kwargs)
         raise ValueError("not a valid url")
@@ -70,18 +71,17 @@ class Sticker:
         abs_path = os.path.abspath(path)
         if not os.path.exists(abs_path):
             raise FileNotFoundError(f"File not found: {abs_path}")
-        return Sticker(body=body or Path(path).stem, url=f"file:///{abs_path}", **kwargs)
+        return Sticker(
+            body=body or Path(path).stem, url=f"file:///{abs_path}", **kwargs
+        )
 
     @staticmethod
-    def fromBase64(base64_data: str, body: str = "", mimetype: str = "image/png", **kwargs) -> "Sticker":
+    def fromBase64(
+        base64_data: str, body: str = "", mimetype: str = "image/png", **kwargs
+    ) -> "Sticker":
         """从 base64 数据创建 Sticker"""
         info = StickerInfo(mimetype=mimetype)
-        return Sticker(
-            body=body,
-            url=f"base64://{base64_data}",
-            info=info,
-            **kwargs
-        )
+        return Sticker(body=body, url=f"base64://{base64_data}", info=info, **kwargs)
 
     @staticmethod
     def fromMXC(mxc_url: str, body: str = "", **kwargs) -> "Sticker":
@@ -240,4 +240,6 @@ class Sticker:
         )
 
     def __repr__(self) -> str:
-        return f"Sticker(body={self.body!r}, url={self.url[:50]}..., id={self.sticker_id})"
+        return (
+            f"Sticker(body={self.body!r}, url={self.url[:50]}..., id={self.sticker_id})"
+        )

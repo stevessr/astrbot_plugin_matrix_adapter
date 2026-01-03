@@ -657,7 +657,9 @@ class MatrixPlatformAdapter(Platform):
                     total_synced = 0
                     for room_id in joined_rooms:
                         try:
-                            count = await self.sticker_syncer.sync_room_stickers(room_id)
+                            count = await self.sticker_syncer.sync_room_stickers(
+                                room_id
+                            )
                             total_synced += count
                         except Exception as room_e:
                             logger.debug(f"同步房间 {room_id} sticker 失败：{room_e}")

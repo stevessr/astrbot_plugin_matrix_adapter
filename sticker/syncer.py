@@ -227,9 +227,7 @@ class StickerPackSyncer:
 
         return synced_count
 
-    def _get_pack_name(
-        self, content: dict, state_key: str, room_id: str
-    ) -> str:
+    def _get_pack_name(self, content: dict, state_key: str, room_id: str) -> str:
         """从事件内容提取包名称"""
         # 优先使用 pack 中的 display_name
         pack_info = content.get("pack", {})

@@ -5,7 +5,6 @@ Matrix Sticker 存储管理
 类似 image 的缓存方案
 """
 
-import hashlib
 import json
 import os
 import time

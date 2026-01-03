@@ -118,6 +118,7 @@ class MatrixReceiver:
             message.type = MessageType.GROUP_MESSAGE
             # 设置 group 以支持白名单的 group_id 匹配
             from astrbot.core.platform.astrbot_message import Group
+
             message.group = Group(group_id=room.room_id)
         else:
             message.type = MessageType.FRIEND_MESSAGE
@@ -253,7 +254,9 @@ class MatrixReceiver:
             ):
                 try:
                     cache_path = await self._download_media_file(
-                        mxc_url, event.content.get("body", "sticker.png"), sticker_info.mimetype
+                        mxc_url,
+                        event.content.get("body", "sticker.png"),
+                        sticker_info.mimetype,
                     )
                     # 创建 Sticker 对象
                     sticker = Sticker(

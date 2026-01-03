@@ -456,6 +456,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                             if width is None or height is None:
                                 try:
                                     import io
+
                                     from PIL import Image as PILImage
 
                                     with PILImage.open(io.BytesIO(sticker_data)) as img:
