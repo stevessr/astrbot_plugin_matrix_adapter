@@ -116,6 +116,9 @@ class MatrixReceiver:
         # is_group 属性：member_count > 2 则为群聊，否则为私聊
         if room.is_group:
             message.type = MessageType.GROUP_MESSAGE
+            # 设置 group 以支持白名单的 group_id 匹配
+            from astrbot.core.platform.astrbot_message import Group
+            message.group = Group(group_id=room.room_id)
         else:
             message.type = MessageType.FRIEND_MESSAGE
 
