@@ -780,7 +780,7 @@ class SASVerification:
         if established_sas and VODOZEMAC_SAS_AVAILABLE:
             try:
                 # 构建 MAC 验证的 base_info
-                base_info = f"{INFO_PREFIX_MAC}{sender}{their_device}{self.user_id}{self.device_id}{transaction_id}"
+                _base_info = f"{INFO_PREFIX_MAC}{sender}{their_device}{self.user_id}{self.device_id}{transaction_id}"
 
                 # 验证对方发送的每个密钥的 MAC
                 for key_id, mac_value in their_mac.items():

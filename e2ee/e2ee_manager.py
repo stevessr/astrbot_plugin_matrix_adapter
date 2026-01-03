@@ -569,7 +569,7 @@ class E2EEManager:
                 )
                 return None
             except Exception as e:
-                error_msg = str(e)
+                _error_msg = str(e)
                 logger.error(f"Olm 解密失败：{e}")
 
                 # 对于任何 Olm 解密失败，都尝试请求新会话
