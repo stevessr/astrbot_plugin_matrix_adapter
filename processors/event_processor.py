@@ -8,10 +8,11 @@ from collections.abc import Callable
 from astrbot.api import logger
 
 from ..constants import MAX_PROCESSED_MESSAGES_1000, TIMESTAMP_BUFFER_MS_1000
-from ..user_store import MatrixUserStore
+from .event_processor_members import MatrixEventProcessorMembers
+from .event_processor_streams import MatrixEventProcessorStreams
 
 
-class MatrixEventProcessor:
+class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMembers):
     """
     Processes Matrix events
     """
@@ -52,7 +53,7 @@ class MatrixEventProcessor:
         self.receipts: dict[str, dict] = {}
         self.device_lists: dict[str, set[str]] = {"changed": set(), "left": set()}
         self.one_time_keys_count: dict[str, int] = {}
-        self.user_store = MatrixUserStore()
+        self._init_member_storage()
 
     def set_message_callback(self, callback: Callable):
         """
@@ -97,80 +98,6 @@ class MatrixEventProcessor:
         # Process timeline events
         for event_data in events:
             await self._handle_event(room, event_data)
-
-    async def process_account_data_events(self, events: list):
-        """Process global account data events from /sync."""
-        for event in events:
-            event_type = event.get("type")
-            content = event.get("content", {})
-            if not event_type:
-                continue
-            self.global_account_data[event_type] = content
-            logger.debug(f"更新全局 account_data: {event_type}")
-
-    async def process_room_account_data_events(self, room_id: str, events: list):
-        """Process room account data events from /sync."""
-        room_data = self.room_account_data.setdefault(room_id, {})
-        for event in events:
-            event_type = event.get("type")
-            content = event.get("content", {})
-            if not event_type:
-                continue
-            room_data[event_type] = content
-            logger.debug(f"更新房间 {room_id} account_data: {event_type}")
-
-    async def process_presence_events(self, events: list):
-        """Process presence events from /sync."""
-        for event in events:
-            user_id = event.get("sender") or event.get("user_id")
-            if not user_id:
-                continue
-            self.presence[user_id] = event
-        if events:
-            logger.debug(f"更新 {len(events)} 条 presence 事件")
-
-    async def process_ephemeral_events(self, room_id: str, events: list):
-        """Process ephemeral events (typing, receipts) from /sync."""
-        for event in events:
-            event_type = event.get("type")
-            content = event.get("content", {})
-            if event_type == "m.typing":
-                user_ids = content.get("user_ids", [])
-                if isinstance(user_ids, list):
-                    self.typing[room_id] = set(user_ids)
-                    logger.debug(
-                        f"房间 {room_id} typing: {len(self.typing[room_id])} users"
-                    )
-            elif event_type == "m.receipt":
-                room_receipts = self.receipts.setdefault(room_id, {})
-                for event_id, receipt_types in content.items():
-                    room_receipts[event_id] = receipt_types
-                logger.debug(f"房间 {room_id} receipt 更新 {len(content)} 条事件")
-            else:
-                logger.debug(f"未处理的 ephemeral 事件：{event_type}")
-
-    async def process_device_lists(self, device_lists: dict):
-        """Process device list updates from /sync."""
-        changed = device_lists.get("changed", []) or []
-        left = device_lists.get("left", []) or []
-        if isinstance(changed, list):
-            self.device_lists["changed"].update(changed)
-        if isinstance(left, list):
-            self.device_lists["left"].update(left)
-        logger.debug(f"设备列表更新：changed={len(changed)} left={len(left)}")
-
-    async def process_device_one_time_keys_count(self, counts: dict):
-        """Process one-time keys count updates from /sync."""
-        if isinstance(counts, dict):
-            self.one_time_keys_count = counts
-            logger.debug(f"更新 device_one_time_keys_count: {list(counts.keys())}")
-
-    async def process_leave_events(self, room_id: str, room_data: dict):
-        """Process room leave events from /sync."""
-        self.room_account_data.pop(room_id, None)
-        self.typing.pop(room_id, None)
-        self.receipts.pop(room_id, None)
-        logger.info(f"已离开房间 {room_id}，清理相关缓存")
 
     async def _handle_event(self, room, event_data: dict):
         """
@@ -543,43 +470,3 @@ class MatrixEventProcessor:
     def get_processed_message_count(self) -> int:
         """Get the number of processed messages in cache"""
         return len(self._processed_messages)
-
-    async def _persist_interacted_user(self, room, event):
-        """Persist profile info for interacted users."""
-        user_id = getattr(event, "sender", None)
-        if not user_id:
-            return
-        display_name = room.members.get(user_id, user_id)
-        avatar_url = room.member_avatars.get(user_id)
-        if not avatar_url and self.client:
-            try:
-                avatar_url = await self.client.get_avatar_url(user_id)
-            except Exception:
-                avatar_url = None
-        self.user_store.upsert(user_id, display_name, avatar_url)
-
-    async def _handle_member_event(self, room, event_data: dict):
-        """Handle m.room.member changes and persist profile updates."""
-        user_id = event_data.get("state_key")
-        if not user_id:
-            return
-        content = event_data.get("content", {})
-        membership = content.get("membership")
-        display_name = content.get("displayname") or room.members.get(user_id, user_id)
-        avatar_url = content.get("avatar_url") or room.member_avatars.get(user_id)
-
-        if membership == "join":
-            room.members[user_id] = display_name
-            if avatar_url:
-                room.member_avatars[user_id] = avatar_url
-            self.user_store.upsert(user_id, display_name, avatar_url)
-        elif membership in ("leave", "ban"):
-            room.members.pop(user_id, None)
-            room.member_avatars.pop(user_id, None)
-        else:
-            # Membership changes without join/leave still update profile fields if present.
-            if content.get("displayname") or content.get("avatar_url"):
-                room.members[user_id] = display_name
-                if avatar_url:
-                    room.member_avatars[user_id] = avatar_url
-                self.user_store.upsert(user_id, display_name, avatar_url)
