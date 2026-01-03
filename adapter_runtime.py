@@ -4,7 +4,6 @@ Matrix adapter runtime lifecycle helpers.
 
 from astrbot.api import logger
 
-from .constants import DEFAULT_TYPING_TIMEOUT_MS
 from .storage_paths import MatrixStoragePaths
 
 
@@ -25,7 +24,10 @@ class MatrixAdapterRuntimeMixin:
                 if hasattr(self.sync_manager, "user_id"):
                     self.sync_manager.user_id = current_user_id
 
-                    if self._matrix_config.store_path and self._matrix_config.homeserver:
+                    if (
+                        self._matrix_config.store_path
+                        and self._matrix_config.homeserver
+                    ):
                         try:
                             new_sync_path = str(
                                 MatrixStoragePaths.get_sync_file_path(

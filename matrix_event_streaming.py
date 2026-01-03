@@ -13,9 +13,7 @@ from .utils.utils import MatrixUtils
 async def send_streaming_impl(self, generator, use_fallback: bool = False):
     """Matrix streaming send implementation using message edits."""
 
-    logger.info(
-        f"Matrix send_streaming 开始 (编辑模式)，use_fallback={use_fallback}"
-    )
+    logger.info(f"Matrix send_streaming 开始 (编辑模式)，use_fallback={use_fallback}")
     room_id = self.session_id
     accumulated_text = ""
     non_text_components = []
@@ -108,19 +106,16 @@ async def send_streaming_impl(self, generator, use_fallback: bool = False):
                                     my_user_id = whoami.get("user_id")
 
                                     if my_user_id:
-                                        messages_resp = (
-                                            await self.client.room_messages(
-                                                room_id=room_id,
-                                                direction="b",
-                                                limit=50,
-                                            )
+                                        messages_resp = await self.client.room_messages(
+                                            room_id=room_id,
+                                            direction="b",
+                                            limit=50,
                                         )
 
                                         chunk = messages_resp.get("chunk", [])
                                         for event in chunk:
                                             if (
-                                                event.get("type")
-                                                == "m.room.message"
+                                                event.get("type") == "m.room.message"
                                                 and event.get("sender") == my_user_id
                                                 and event.get("content", {}).get(
                                                     "msgtype"
@@ -153,9 +148,7 @@ async def send_streaming_impl(self, generator, use_fallback: bool = False):
                                     "body": resp.get("content", {}).get("body", ""),
                                 }
                                 if resp and "content" in resp:
-                                    relates_to = resp["content"].get(
-                                        "m.relates_to", {}
-                                    )
+                                    relates_to = resp["content"].get("m.relates_to", {})
                                     if relates_to.get("rel_type") == "m.thread":
                                         thread_root = relates_to.get("event_id")
                                         use_thread = True
@@ -191,9 +184,7 @@ async def send_streaming_impl(self, generator, use_fallback: bool = False):
                             message_event_id = result.get("event_id")
                             initial_message_sent = True
                             last_edit_time = current_time
-                            logger.debug(
-                                f"流式消息初始发送成功：{message_event_id}"
-                            )
+                            logger.debug(f"流式消息初始发送成功：{message_event_id}")
                         except Exception as e:
                             logger.error(f"发送初始流式消息失败：{e}")
                     elif (

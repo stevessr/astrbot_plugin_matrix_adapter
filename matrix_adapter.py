@@ -340,9 +340,7 @@ class MatrixPlatformAdapter(
         self.sync_manager.set_invite_callback(
             self.event_handler.invite_callback
         )  # Fixed: using event_handler method
-        self.sync_manager.set_leave_callback(
-            self.event_processor.process_leave_events
-        )
+        self.sync_manager.set_leave_callback(self.event_processor.process_leave_events)
         self.sync_manager.set_ephemeral_callback(
             self.event_processor.process_ephemeral_events
         )
@@ -381,7 +379,6 @@ class MatrixPlatformAdapter(
 
         logger.info("Matrix Adapter 初始化完成")
 
-
     def meta(self) -> PlatformMetadata:
         id_ = getattr(self._matrix_config, "id", None) or "matrix"
         return PlatformMetadata(
@@ -391,7 +388,6 @@ class MatrixPlatformAdapter(
             adapter_display_name="Matrix",
             logo_path="matrix.svg",
         )
-
 
     async def _handle_invite(self, room_id: str, invite_data: dict):
         """处理房间邀请"""
@@ -434,7 +430,6 @@ class MatrixPlatformAdapter(
             logger.debug("Matrix 适配器配置保存成功")
         except Exception as e:
             logger.warning(f"保存 Matrix 配置失败：{e}")
-
 
     def get_client(self):
         return self.client

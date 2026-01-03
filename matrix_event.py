@@ -1,17 +1,10 @@
-import time
-from typing import Any
-
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageChain
-from astrbot.api.message_components import File, Image, Plain, Reply
 from astrbot.api.platform import AstrBotMessage, PlatformMetadata
-
-from .constants import TEXT_TRUNCATE_LENGTH_50
 
 # 导入 Sticker 组件
 from .matrix_event_send import send_with_client_impl
 from .matrix_event_streaming import send_streaming_impl
-from .utils.markdown_utils import markdown_to_html
 
 
 class MatrixPlatformEvent(AstrMessageEvent):

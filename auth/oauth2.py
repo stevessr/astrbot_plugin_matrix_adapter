@@ -68,7 +68,6 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
         self.registration_endpoint: str | None = None
         self.account_management_uri: str | None = None
 
-
     async def login(self) -> dict[str, Any]:
         """
         Perform OAuth2 login flow with automatic server discovery
