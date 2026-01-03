@@ -620,7 +620,13 @@ class OlmMachine:
                 message = ciphertext
             plaintext = session.decrypt(message)
             # 解析解密后的 JSON
-            return json.loads(plaintext.plaintext)
+            decrypted = json.loads(plaintext.plaintext)
+            # 调试：记录解密后的完整内容
+            logger.debug(
+                f"[OlmMachine] Megolm 解密成功，type={decrypted.get('type')}, "
+                f"content keys={list(decrypted.get('content', {}).keys())}"
+            )
+            return decrypted
         except Exception as e:
             logger.error(f"Megolm 解密失败：{e}")
             return None

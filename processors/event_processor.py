@@ -177,6 +177,26 @@ class MatrixEventProcessor:
                             logger.info(
                                 f"[EventProcessor] 检测到加密的验证事件 (type={event.event_type})"
                             )
+
+                            # CRITICAL: For encrypted in-room verification events,
+                            # m.relates_to is in the CLEARTEXT portion of the encrypted event
+                            # (event_content), not in the decrypted payload.
+                            # We need to copy it to the decrypted content for commitment calculation.
+                            cleartext_relates_to = event_content.get("m.relates_to")
+                            if cleartext_relates_to:
+                                event.content["m.relates_to"] = cleartext_relates_to
+                                logger.debug(
+                                    f"[EventProcessor] 从加密事件明文部分复制 m.relates_to: {cleartext_relates_to}"
+                                )
+
+                            # 调试：记录解密后的内容
+                            logger.debug(
+                                f"[EventProcessor] 解密后的 content: {event.content}"
+                            )
+                            logger.debug(
+                                f"[EventProcessor] 解密后的 content keys: {list(event.content.keys())}"
+                            )
+
                             # Reconstruct event_data for verification handler
                             verification_event = {
                                 "type": event.event_type,

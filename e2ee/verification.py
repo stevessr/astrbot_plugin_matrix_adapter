@@ -1246,12 +1246,19 @@ class SASVerification:
         session["sas_methods"] = sas_methods
 
         # 计算 commitment = UnpaddedBase64(SHA256(public_key || canonical_json(start_content)))
-        # 根据 Matrix 规范，对于房间内验证，排除 m.relates_to
+        # 根据 Matrix 规范和 matrix-rust-sdk 实现，m.relates_to 应该包含在 canonical JSON 中
         # 先记录原始内容以便调试
         logger.info(f"[E2EE-Verify] Raw start_content: {start_content}")
-        start_content_for_commitment = {
-            k: v for k, v in start_content.items() if k != "m.relates_to"
-        }
+        logger.info(f"[E2EE-Verify] start_content keys: {sorted(start_content.keys())}")
+
+        # 检查是否有 m.relates_to
+        has_relates_to = "m.relates_to" in start_content
+        logger.info(f"[E2EE-Verify] Has m.relates_to: {has_relates_to}")
+
+        # IMPORTANT: Do NOT strip m.relates_to for in-room verification!
+        # The initiator (Element) includes m.relates_to when calculating commitment,
+        # so we must also include it to get the same hash.
+        start_content_for_commitment = start_content
         canonical_start = _canonical_json(start_content_for_commitment)
         logger.info(
             f"[E2EE-Verify] Commitment public_key ({len(our_public_key)} chars): {our_public_key}"
@@ -1259,6 +1266,12 @@ class SASVerification:
         logger.info(
             f"[E2EE-Verify] Commitment canonical_json ({len(canonical_start)} chars): {canonical_start}"
         )
+
+        # 详细记录每个字段，帮助调试
+        for key in sorted(start_content_for_commitment.keys()):
+            value = start_content_for_commitment[key]
+            logger.debug(f"[E2EE-Verify] Field '{key}': {value}")
+
         # 使用 base64 编码的公钥字符串 + canonical JSON 字符串
         commitment_data = our_public_key + canonical_start
         commitment_bytes = commitment_data.encode("utf-8")
