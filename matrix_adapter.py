@@ -2,12 +2,12 @@ import asyncio
 import time
 
 from astrbot.api import logger
-from astrbot.api.event import MessageChain
-from astrbot.api.message_components import Plain, Reply
 from astrbot.api.platform import Platform, PlatformMetadata, register_platform_adapter
 from astrbot.core.config.astrbot_config import AstrBotConfig
-from astrbot.core.platform.astr_message_event import MessageSession
 
+from .adapter_message import MatrixAdapterMessageMixin
+from .adapter_runtime import MatrixAdapterRuntimeMixin
+from .adapter_send import MatrixAdapterSendMixin
 from .auth.auth import MatrixAuth
 
 # 自定义 Matrix 客户端（不依赖 matrix-nio）
@@ -18,11 +18,7 @@ from .client import MatrixHTTPClient
 from .config import MatrixConfig
 from .constants import (
     DEFAULT_MAX_UPLOAD_SIZE_BYTES,
-    DEFAULT_TYPING_TIMEOUT_MS,
-    MATRIX_HTML_FORMAT,
-    REL_TYPE_THREAD,
 )
-from .matrix_event import MatrixPlatformEvent
 from .processors.event_handler import MatrixEventHandler
 from .processors.event_processor import MatrixEventProcessor
 from .receiver.receiver import MatrixReceiver
@@ -225,7 +221,12 @@ def _inject_astrbot_field_metadata():
     support_streaming_message=True,
     logo_path="matrix.svg",
 )
-class MatrixPlatformAdapter(Platform):
+class MatrixPlatformAdapter(
+    MatrixAdapterSendMixin,
+    MatrixAdapterRuntimeMixin,
+    MatrixAdapterMessageMixin,
+    Platform,
+):
     def __init__(
         self, platform_config: dict, platform_settings: dict, event_queue: asyncio.Queue
     ) -> None:
@@ -380,198 +381,6 @@ class MatrixPlatformAdapter(Platform):
 
         logger.info("Matrix Adapter 初始化完成")
 
-    async def send_by_session(
-        self, session: MessageSession, message_chain: MessageChain, reply_to: str = None
-    ):
-        try:
-            room_id = session.session_id
-            thread_root = None
-            use_thread = False
-            original_message_info = None
-
-            # Send typing notification
-            try:
-                await self.client.set_typing(
-                    room_id, typing=True, timeout=DEFAULT_TYPING_TIMEOUT_MS
-                )
-            except Exception as e:
-                logger.debug(f"发送输入通知失败：{e}")
-
-            if reply_to is None:
-                try:
-                    for seg in message_chain.chain:
-                        if isinstance(seg, Reply) and getattr(seg, "id", None):
-                            reply_to = str(seg.id)
-                            break
-                except Exception:
-                    pass
-
-            # 检查是否需要使用嘟文串模式
-            if reply_to:
-                try:
-                    # 获取被回复消息的事件信息
-                    resp = await self.client.get_event(room_id, reply_to)
-                    if resp:
-                        # 提取原始消息信息用于 fallback
-                        original_message_info = {
-                            "sender": resp.get("sender", ""),
-                            "body": resp.get("content", {}).get("body", ""),
-                        }
-
-                        if "content" in resp:
-                            # 检查被回复消息是否已经是嘟文串的一部分
-                            relates_to = resp["content"].get("m.relates_to", {})
-                            if relates_to.get("rel_type") == REL_TYPE_THREAD:
-                                # 如果是嘟文串的一部分，获取根消息 ID
-                                thread_root = relates_to.get("event_id")
-                                use_thread = True
-                            else:
-                                # 如果不是嘟文串，检查是否应该创建新的嘟文串
-                                # 可以通过配置或消息内容来判断是否使用嘟文串模式
-                                # 这里默认对长对话使用嘟文串模式
-                                use_thread = (
-                                    self._matrix_config.enable_threading
-                                    if hasattr(self._matrix_config, "enable_threading")
-                                    else False
-                                )
-                                if use_thread:
-                                    thread_root = reply_to  # 将当前消息作为嘟文串的根
-                except Exception as e:
-                    logger.warning(f"获取事件用于嘟文串失败：{e}")
-
-            # 检查是否有 Markdown 内容，渲染为 HTML
-            # Updated import
-            from .utils.markdown_utils import (
-                markdown_to_html,
-            )
-
-            # 提取 Reply 和 At 组件作为头部，只保留第一个消息的引用关系
-            header_comps = []
-            plain_comps = []
-            other_comps = []
-
-            for seg in message_chain.chain:
-                if isinstance(seg, Plain):
-                    plain_comps.append(seg)
-                elif seg.type in ["Reply", "At"]:
-                    header_comps.append(seg)
-                else:
-                    other_comps.append(seg)
-
-            # 合并所有 Plain 组件为单个文本
-            merged_text = "".join(seg.text for seg in plain_comps)
-
-            # 构建新的消息链
-            if merged_text or other_comps:
-                new_chain = []
-
-                # 添加合并后的文本
-                if merged_text:
-                    # 检查是否需要 Markdown 渲染
-                    if (
-                        any(
-                            x in merged_text
-                            for x in ["**", "*", "`", "#", "- ", "> ", "[", "]("]
-                        )
-                        or reply_to
-                    ):
-                        html = markdown_to_html(merged_text)
-                        new_chain.append(
-                            Plain(
-                                text=merged_text,
-                                format=MATRIX_HTML_FORMAT,
-                                formatted_body=html,
-                                convert=True,
-                            )
-                        )
-                    else:
-                        new_chain.append(Plain(merged_text))
-
-                # 添加非文本组件
-                new_chain.extend(other_comps)
-
-                new_message_chain = MessageChain(new_chain)
-
-                # 发送消息
-                await MatrixPlatformEvent.send_with_client(
-                    self.client,
-                    new_message_chain,
-                    room_id,
-                    reply_to=reply_to,
-                    thread_root=thread_root,
-                    use_thread=use_thread,
-                    original_message_info=original_message_info,
-                    e2ee_manager=self.e2ee_manager,
-                    max_upload_size=self.max_upload_size,
-                    use_notice=self._matrix_config.use_notice,
-                )
-
-            await super().send_by_session(session, message_chain)
-
-            # Stop typing notification
-            try:
-                await self.client.set_typing(room_id, typing=False)
-            except Exception as e:
-                logger.debug(f"停止输入通知失败：{e}")
-        except Exception as e:
-            logger.error(f"通过会话发送消息失败：{e}")
-
-    async def _send_segment(
-        self,
-        room_id: str,
-        segment,
-        header_comps: list,
-        reply_to: str,
-        thread_root: str,
-        use_thread: bool,
-        original_message_info: dict | None = None,
-    ):
-        """发送单个消息段落"""
-        # Updated import
-        from .utils.markdown_utils import (
-            markdown_to_html,
-        )
-
-        # 处理 Markdown 渲染
-        if isinstance(segment, Plain):
-            text = segment.text
-            if any(x in text for x in ["**", "*", "`", "#", "- ", "> ", "[", "]("]) or (
-                reply_to and len(header_comps) > 0
-            ):
-                html = markdown_to_html(text)
-                full_text = text
-                full_html = html
-
-                # 创建包含 format 和 formatted_body 的 Plain 对象
-                processed_segment = Plain(
-                    text=full_text,
-                    format=MATRIX_HTML_FORMAT,
-                    formatted_body=full_html,
-                    convert=True,
-                )
-            else:
-                processed_segment = segment
-        else:
-            processed_segment = segment
-
-        # 构建消息链
-        chain = (
-            [*header_comps, processed_segment] if header_comps else [processed_segment]
-        )
-
-        # 发送消息
-        await MatrixPlatformEvent.send_with_client(
-            self.client,
-            MessageChain(chain),
-            room_id,
-            reply_to=reply_to,
-            thread_root=thread_root,
-            use_thread=use_thread,
-            original_message_info=original_message_info,
-            e2ee_manager=self.e2ee_manager,
-            max_upload_size=self.max_upload_size,
-            use_notice=self._matrix_config.use_notice,
-        )
 
     def meta(self) -> PlatformMetadata:
         id_ = getattr(self._matrix_config, "id", None) or "matrix"
@@ -583,124 +392,6 @@ class MatrixPlatformAdapter(Platform):
             logo_path="matrix.svg",
         )
 
-    async def run(self):
-        try:
-            await self.auth.login()
-
-            # Update components with authenticated user_id (critical for OAuth2)
-            if self.auth.user_id:
-                current_user_id = self.auth.user_id
-
-                # Update Event Processor
-                if hasattr(self.event_processor, "user_id"):
-                    self.event_processor.user_id = current_user_id
-
-                # Update Receiver
-                if hasattr(self.receiver, "user_id"):
-                    self.receiver.user_id = current_user_id
-
-                # Update Sync Manager and recalculate storage path
-                if hasattr(self.sync_manager, "user_id"):
-                    self.sync_manager.user_id = current_user_id
-
-                    # Update sync store path if we have config
-                    if (
-                        self._matrix_config.store_path
-                        and self._matrix_config.homeserver
-                    ):
-                        try:
-                            from .storage_paths import MatrixStoragePaths
-
-                            new_sync_path = str(
-                                MatrixStoragePaths.get_sync_file_path(
-                                    self._matrix_config.store_path,
-                                    self._matrix_config.homeserver,
-                                    current_user_id,
-                                )
-                            )
-                            self.sync_manager.sync_store_path = new_sync_path
-                            # Try to load sync token from the new path
-                            self.sync_manager._load_sync_token()
-                        except Exception as e:
-                            logger.warning(f"Failed to update sync storage path: {e}")
-
-            # 获取媒体服务器配置（最大上传大小）
-            try:
-                media_config = await self.client.get_media_config()
-                server_max_size = media_config.get("m.upload.size")
-                if server_max_size and isinstance(server_max_size, int):
-                    self.max_upload_size = server_max_size
-                    logger.info(
-                        f"Matrix 媒体服务器最大上传大小：{self.max_upload_size / 1024 / 1024:.1f}MB"
-                    )
-                else:
-                    logger.info(
-                        f"使用默认最大上传大小：{self.max_upload_size / 1024 / 1024:.1f}MB"
-                    )
-            except Exception as e:
-                logger.debug(f"获取媒体配置失败，使用默认值：{e}")
-
-            # 设置在线状态
-            try:
-                await self.client.set_presence("online")
-                logger.info("Matrix 在线状态已设置为 online")
-            except Exception as e:
-                logger.debug(f"设置在线状态失败：{e}")
-
-            # 初始化 E2EE
-            if self.e2ee_manager:
-                try:
-                    # 登录后更新 E2EE Manager 的 device_id
-                    # 因为服务器可能返回了不同的 device_id
-                    actual_device_id = (
-                        self.client.device_id or self._matrix_config.device_id
-                    )
-                    if actual_device_id != self.e2ee_manager.device_id:
-                        logger.info(
-                            f"更新 E2EE device_id：{self.e2ee_manager.device_id} -> {actual_device_id}"
-                        )
-                        self.e2ee_manager.device_id = actual_device_id
-                    await self.e2ee_manager.initialize()
-                except Exception as e:
-                    logger.error(f"E2EE 初始化失败：{e}")
-
-            # Sticker 包同步（如果启用）
-            if self._matrix_config.sticker_auto_sync:
-                try:
-                    # 同步用户级别的 sticker（如果启用）
-                    if self._matrix_config.sticker_sync_user_emotes:
-                        user_count = await self.sticker_syncer.sync_user_stickers()
-                        if user_count > 0:
-                            logger.info(f"同步了 {user_count} 个用户 sticker")
-
-                    # 同步已加入房间的 sticker 包
-                    joined_rooms = await self.client.get_joined_rooms()
-                    total_synced = 0
-                    for room_id in joined_rooms:
-                        try:
-                            count = await self.sticker_syncer.sync_room_stickers(
-                                room_id
-                            )
-                            total_synced += count
-                        except Exception as room_e:
-                            logger.debug(f"同步房间 {room_id} sticker 失败：{room_e}")
-
-                    if total_synced > 0:
-                        logger.info(f"同步了 {total_synced} 个房间 sticker")
-                except Exception as e:
-                    logger.warning(f"Sticker 包同步失败：{e}")
-
-            logger.info(
-                f"Matrix 平台适配器正在为 {self._matrix_config.user_id} 在 {self._matrix_config.homeserver} 上运行"
-            )
-            await self.sync_manager.sync_forever()
-        except KeyboardInterrupt:
-            logger.info("Matrix 适配器收到关闭信号")
-            raise
-        except Exception as e:
-            logger.error(f"Matrix 适配器错误：{e}")
-            logger.error("Matrix 适配器启动失败。请检查配置并查看上方详细错误信息。")
-            raise
 
     async def _handle_invite(self, room_id: str, invite_data: dict):
         """处理房间邀请"""
@@ -744,76 +435,6 @@ class MatrixPlatformAdapter(Platform):
         except Exception as e:
             logger.warning(f"保存 Matrix 配置失败：{e}")
 
-    async def message_callback(self, room, event):
-        """
-        Process a message event (called by event processor after filtering)
-
-        Args:
-            room: Room object
-            event: Parsed event object
-        """
-        try:
-            # Send typing notification while processing
-            try:
-                await self.client.set_typing(
-                    room.room_id, typing=True, timeout=DEFAULT_TYPING_TIMEOUT_MS
-                )
-            except Exception as e:
-                logger.debug(f"发送输入通知失败：{e}")
-
-            # Convert to AstrBot message format
-            abm = await self.receiver.convert_message(room, event)
-            if abm is None:
-                logger.warning(f"转换消息失败：{event}")
-                return
-            await self.handle_msg(abm)
-        except Exception as e:
-            logger.error(f"消息回调时出错：{e}")
-
-    # 消息转换已由 receiver 组件处理
-
-    # mxc_to_http 已由 utils 组件处理
-
-    async def handle_msg(self, message):
-        try:
-            message_event = MatrixPlatformEvent(
-                message_str=message.message_str,
-                message_obj=message,
-                platform_meta=self.meta(),
-                session_id=message.session_id,
-                client=self.client,
-                enable_threading=self._matrix_config.enable_threading,
-                e2ee_manager=self.e2ee_manager,
-                use_notice=self._matrix_config.use_notice,
-            )
-            self.commit_event(message_event)
-            logger.debug(
-                f"Message event committed: session={getattr(message, 'session_id', 'N/A')}, type={getattr(message, 'type', 'N/A')}, sender={getattr(message.sender, 'user_id', 'N/A') if hasattr(message, 'sender') else 'N/A'}"
-            )
-        except Exception as e:
-            logger.error(f"处理消息失败：{e}")
 
     def get_client(self):
         return self.client
-
-    async def terminate(self):
-        try:
-            logger.info("正在关闭 Matrix 适配器...")
-
-            # 设置离线状态
-            try:
-                await self.client.set_presence("offline")
-            except Exception as e:
-                logger.debug(f"设置离线状态失败：{e}")
-
-            # Stop sync manager
-            if hasattr(self, "sync_manager"):
-                self.sync_manager.stop()
-
-            # Close HTTP client
-            if self.client:
-                await self.client.close()
-
-            logger.info("Matrix 适配器已被优雅地关闭")
-        except Exception as e:
-            logger.error(f"Matrix 适配器关闭时出错：{e}")
