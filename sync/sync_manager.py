@@ -66,6 +66,13 @@ class MatrixSyncManager:
         self.on_room_event: Callable | None = None
         self.on_to_device_event: Callable | None = None
         self.on_invite: Callable | None = None
+        self.on_leave: Callable | None = None
+        self.on_ephemeral_event: Callable | None = None
+        self.on_room_account_data: Callable | None = None
+        self.on_account_data: Callable | None = None
+        self.on_presence_event: Callable | None = None
+        self.on_device_lists: Callable | None = None
+        self.on_device_one_time_keys_count: Callable | None = None
         self.on_sync: Callable | None = None
 
         # Sync state
@@ -136,6 +143,69 @@ class MatrixSyncManager:
         """
         self.on_invite = callback
 
+    def set_leave_callback(self, callback: Callable):
+        """
+        Set callback for room leave events
+
+        Args:
+            callback: Async function(room_id, room_data) -> None
+        """
+        self.on_leave = callback
+
+    def set_ephemeral_callback(self, callback: Callable):
+        """
+        Set callback for room ephemeral events
+
+        Args:
+            callback: Async function(room_id, events) -> None
+        """
+        self.on_ephemeral_event = callback
+
+    def set_room_account_data_callback(self, callback: Callable):
+        """
+        Set callback for room account data events
+
+        Args:
+            callback: Async function(room_id, events) -> None
+        """
+        self.on_room_account_data = callback
+
+    def set_account_data_callback(self, callback: Callable):
+        """
+        Set callback for global account data events
+
+        Args:
+            callback: Async function(events) -> None
+        """
+        self.on_account_data = callback
+
+    def set_presence_callback(self, callback: Callable):
+        """
+        Set callback for presence events
+
+        Args:
+            callback: Async function(events) -> None
+        """
+        self.on_presence_event = callback
+
+    def set_device_lists_callback(self, callback: Callable):
+        """
+        Set callback for device list updates
+
+        Args:
+            callback: Async function(device_lists) -> None
+        """
+        self.on_device_lists = callback
+
+    def set_device_one_time_keys_count_callback(self, callback: Callable):
+        """
+        Set callback for one-time keys count updates
+
+        Args:
+            callback: Async function(counts) -> None
+        """
+        self.on_device_one_time_keys_count = callback
+
     async def sync_forever(self):
         """
         Run the sync loop forever
@@ -159,6 +229,34 @@ class MatrixSyncManager:
                 # Save sync token for resumption
                 self._save_sync_token()
 
+                # Process global account data
+                if self.on_account_data:
+                    account_data_events = sync_response.get("account_data", {}).get(
+                        "events", []
+                    )
+                    if account_data_events:
+                        await self.on_account_data(account_data_events)
+
+                # Process presence updates
+                if self.on_presence_event:
+                    presence_events = sync_response.get("presence", {}).get(
+                        "events", []
+                    )
+                    if presence_events:
+                        await self.on_presence_event(presence_events)
+
+                # Process device list updates
+                if self.on_device_lists:
+                    device_lists = sync_response.get("device_lists", {})
+                    if device_lists:
+                        await self.on_device_lists(device_lists)
+
+                # Process one-time keys count updates
+                if self.on_device_one_time_keys_count:
+                    otk_counts = sync_response.get("device_one_time_keys_count", {})
+                    if otk_counts:
+                        await self.on_device_one_time_keys_count(otk_counts)
+
                 # Process to-device messages
                 to_device_events = sync_response.get("to_device", {}).get("events", [])
                 if to_device_events and self.on_to_device_event:
@@ -171,12 +269,29 @@ class MatrixSyncManager:
                 for room_id, room_data in rooms.get("join", {}).items():
                     if self.on_room_event:
                         await self.on_room_event(room_id, room_data)
+                    if self.on_ephemeral_event:
+                        ephemeral_events = room_data.get("ephemeral", {}).get(
+                            "events", []
+                        )
+                        if ephemeral_events:
+                            await self.on_ephemeral_event(room_id, ephemeral_events)
+                    if self.on_room_account_data:
+                        room_account_data = room_data.get("account_data", {}).get(
+                            "events", []
+                        )
+                        if room_account_data:
+                            await self.on_room_account_data(room_id, room_account_data)
 
                 # Process invited rooms
                 if self.auto_join_rooms:
                     for room_id, invite_data in rooms.get("invite", {}).items():
                         if self.on_invite:
                             await self.on_invite(room_id, invite_data)
+
+                # Process left rooms
+                for room_id, room_data in rooms.get("leave", {}).items():
+                    if self.on_leave:
+                        await self.on_leave(room_id, room_data)
 
             except MatrixAPIError as e:
                 # Handle token expiration

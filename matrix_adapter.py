@@ -339,6 +339,27 @@ class MatrixPlatformAdapter(Platform):
         self.sync_manager.set_invite_callback(
             self.event_handler.invite_callback
         )  # Fixed: using event_handler method
+        self.sync_manager.set_leave_callback(
+            self.event_processor.process_leave_events
+        )
+        self.sync_manager.set_ephemeral_callback(
+            self.event_processor.process_ephemeral_events
+        )
+        self.sync_manager.set_room_account_data_callback(
+            self.event_processor.process_room_account_data_events
+        )
+        self.sync_manager.set_account_data_callback(
+            self.event_processor.process_account_data_events
+        )
+        self.sync_manager.set_presence_callback(
+            self.event_processor.process_presence_events
+        )
+        self.sync_manager.set_device_lists_callback(
+            self.event_processor.process_device_lists
+        )
+        self.sync_manager.set_device_one_time_keys_count_callback(
+            self.event_processor.process_device_one_time_keys_count
+        )
         self.event_processor.set_message_callback(self.message_callback)
 
         # 最大上传文件大小（将在 run 时从服务器获取）
