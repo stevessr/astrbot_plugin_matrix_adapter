@@ -51,7 +51,6 @@ class OlmMachineMegolmMixin:
         except Exception as e:
             logger.error(f"添加 Megolm 入站会话失败：{e}")
 
-
     def decrypt_megolm(self, session_id: str, ciphertext: str) -> dict | None:
         """
         解密 Megolm 消息
@@ -100,7 +99,6 @@ class OlmMachineMegolmMixin:
             logger.error(f"Megolm 解密失败：{e}")
             return None
 
-
     def get_megolm_inbound_session(self, session_id: str):
         """
         获取 Megolm 入站会话对象（用于导出会话密钥等操作）
@@ -129,7 +127,6 @@ class OlmMachineMegolmMixin:
 
         return None
 
-
     def create_megolm_outbound_session(self, room_id: str) -> tuple[str, str]:
         """
         创建 Megolm 出站会话
@@ -145,7 +142,6 @@ class OlmMachineMegolmMixin:
         self.store.save_megolm_outbound(room_id, session.pickle(self._pickle_key))
 
         return session.session_id, session.session_key.to_base64()
-
 
     def encrypt_megolm(self, room_id: str, event_type: str, content: dict) -> dict:
         """
