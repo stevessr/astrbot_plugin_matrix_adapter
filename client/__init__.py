@@ -12,6 +12,7 @@ This package provides a modular Matrix HTTP client composed of:
 - DeviceMixin: Device management
 - E2EEMixin: End-to-end encryption
 - WidgetMixin: Widget management
+- UserMixin: User management and moderation
 """
 
 from .event_types import InviteEvent, MatrixEvent, RoomMessageEvent
@@ -26,6 +27,7 @@ from .http_client import (
     MessageMixin,
     ProfileMixin,
     RoomMixin,
+    UserMixin,
     WidgetMixin,
 )
 
@@ -43,6 +45,7 @@ __all__ = [
     "DeviceMixin",
     "E2EEMixin",
     "WidgetMixin",
+    "UserMixin",
     # Event types
     "MatrixEvent",
     "RoomMessageEvent",

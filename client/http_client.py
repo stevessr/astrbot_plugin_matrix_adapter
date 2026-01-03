@@ -12,6 +12,7 @@ This module provides a modular HTTP client for Matrix, composed of:
 - DeviceMixin: Device management
 - E2EEMixin: End-to-end encryption
 - WidgetMixin: Widget management
+- UserMixin: User management and moderation
 """
 
 from .auth_mixin import AuthMixin
@@ -22,6 +23,7 @@ from .media_mixin import MediaMixin
 from .message_mixin import MessageMixin
 from .profile_mixin import ProfileMixin
 from .room_mixin import RoomMixin
+from .user_mixin import UserMixin
 from .widget_mixin import WidgetMixin
 
 
@@ -35,6 +37,7 @@ class MatrixHTTPClient(
     DeviceMixin,
     E2EEMixin,
     WidgetMixin,
+    UserMixin,
 ):
     """
     Complete Matrix HTTP client combining all API modules.
@@ -66,4 +69,5 @@ __all__ = [
     "DeviceMixin",
     "E2EEMixin",
     "WidgetMixin",
+    "UserMixin",
 ]
