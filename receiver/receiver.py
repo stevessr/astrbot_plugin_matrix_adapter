@@ -17,6 +17,7 @@ from astrbot.core.utils import astrbot_path
 # Update import: Client event types are in ..client.event_types
 from ..client.event_types import MatrixRoom
 from ..constants import REL_TYPE_THREAD
+from ..sticker import Sticker, StickerInfo
 from ..utils.utils import MatrixUtils
 
 
@@ -228,23 +229,57 @@ class MatrixReceiver:
                 chain.chain.append(Plain(f"[图片：{event.body}]"))
 
         elif msgtype == "m.sticker":
-            # 贴纸处理：与 m.image 类似
+            # 贴纸处理：创建 Sticker 对象
             mxc_url = event.content.get("url")
+            info_data = event.content.get("info", {})
+
+            # 创建 StickerInfo
+            sticker_info = StickerInfo(
+                mimetype=info_data.get("mimetype", "image/png"),
+                width=info_data.get("w"),
+                height=info_data.get("h"),
+                size=info_data.get("size"),
+                thumbnail_url=info_data.get("thumbnail_url"),
+                thumbnail_info=info_data.get("thumbnail_info"),
+            )
+
             if (
                 mxc_url
                 and self.client
                 and self._should_auto_download_media("m.sticker")
             ):
                 try:
-                    info = event.content.get("info", {})
-                    mimetype = info.get("mimetype", "image/png")
                     cache_path = await self._download_media_file(
-                        mxc_url, event.content.get("body", "sticker.png"), mimetype
+                        mxc_url, event.content.get("body", "sticker.png"), sticker_info.mimetype
                     )
-                    chain.chain.append(Image.fromFileSystem(str(cache_path)))
+                    # 创建 Sticker 对象
+                    sticker = Sticker(
+                        body=event.body,
+                        url=f"file:///{cache_path}",
+                        info=sticker_info,
+                        mxc_url=mxc_url,
+                    )
+                    chain.chain.append(sticker)
+                    logger.debug(f"收到 sticker: {event.body}")
                 except Exception as e:
                     logger.error(f"Failed to download Matrix sticker: {e}")
-                    chain.chain.append(Plain(f"[贴纸：{event.body}]"))
+                    # 降级为 Sticker 对象，使用 MXC URL
+                    sticker = Sticker(
+                        body=event.body,
+                        url=mxc_url,
+                        info=sticker_info,
+                        mxc_url=mxc_url,
+                    )
+                    chain.chain.append(sticker)
+            elif mxc_url:
+                # 创建使用 MXC URL 的 Sticker
+                sticker = Sticker(
+                    body=event.body,
+                    url=mxc_url,
+                    info=sticker_info,
+                    mxc_url=mxc_url,
+                )
+                chain.chain.append(sticker)
             else:
                 chain.chain.append(Plain(f"[贴纸：{event.body}]"))
 

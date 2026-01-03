@@ -28,5 +28,17 @@
     "type": "string",
     "hint": "OAuth2 认证回调服务器监听主机地址，默认 127.0.0.1 仅限本地访问，0.0.0.0 允许所有地址访问（适用于远程服务器部署）",
     "default": "127.0.0.1"
+  },
+  "matrix_sticker_auto_sync": {
+    "description": "自动同步 Sticker 包",
+    "type": "bool",
+    "hint": "是否自动同步房间的 Sticker 包（im.ponies.room_emotes），启用后会在加入房间时自动下载房间的自定义贴纸",
+    "default": false
+  },
+  "matrix_sticker_sync_user_emotes": {
+    "description": "同步用户 Sticker",
+    "type": "bool",
+    "hint": "是否同步用户级别的 Sticker 包（im.ponies.user_emotes）",
+    "default": false
   }
 }

@@ -11,6 +11,9 @@ from astrbot.api.platform import AstrBotMessage, PlatformMetadata
 
 from .constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES, TEXT_TRUNCATE_LENGTH_50
 
+# 导入 Sticker 组件
+from .sticker import Sticker
+
 # Update import: markdown_utils is now in utils.markdown_utils
 from .utils.markdown_utils import (
     markdown_to_html,
@@ -394,6 +397,119 @@ class MatrixPlatformEvent(AstrMessageEvent):
                         logger.error(f"发送文件消息失败：{e}")
                 except Exception as e:
                     logger.error(f"处理文件消息过程出错：{e}")
+
+            elif isinstance(segment, Sticker):
+                # 发送 Sticker（使用 m.sticker 事件类型）
+                try:
+                    # 获取 sticker 文件
+                    sticker_data = None
+                    filename = "sticker.png"
+                    content_type = segment.info.mimetype or "image/png"
+
+                    if segment.mxc_url and segment.mxc_url.startswith("mxc://"):
+                        # 已经上传到 Matrix 服务器，直接使用
+                        content_uri = segment.mxc_url
+                    else:
+                        # 需要上传
+                        try:
+                            sticker_path = await segment.convert_to_file_path()
+                            filename = Path(sticker_path).name
+                            with open(sticker_path, "rb") as f:
+                                sticker_data = f.read()
+                        except ValueError as e:
+                            if "MXC URL" in str(e) and segment.url.startswith("mxc://"):
+                                # 使用 MXC URL
+                                content_uri = segment.url
+                            else:
+                                raise
+
+                        if sticker_data:
+                            # 获取 sticker 尺寸
+                            width, height = segment.info.width, segment.info.height
+                            if width is None or height is None:
+                                try:
+                                    import io
+                                    from PIL import Image as PILImage
+
+                                    with PILImage.open(io.BytesIO(sticker_data)) as img:
+                                        width, height = img.size
+                                except Exception as e:
+                                    logger.debug(f"无法获取 sticker 尺寸：{e}")
+
+                            # 猜测内容类型
+                            guessed_type = mimetypes.guess_type(filename)[0]
+                            if guessed_type:
+                                content_type = guessed_type
+
+                            # 上传 sticker
+                            upload_resp = await client.upload_file(
+                                data=sticker_data,
+                                content_type=content_type,
+                                filename=filename,
+                            )
+                            content_uri = upload_resp["content_uri"]
+
+                            # 更新 segment 的 mxc_url
+                            segment.mxc_url = content_uri
+
+                            # 更新尺寸信息
+                            if width and height:
+                                segment.info.width = width
+                                segment.info.height = height
+
+                    # 构建 sticker 事件内容
+                    content = segment.to_matrix_content(content_uri)
+
+                    # 处理回复关系
+                    if use_thread and thread_root:
+                        content["m.relates_to"] = {
+                            "rel_type": "m.thread",
+                            "event_id": thread_root,
+                            "m.in_reply_to": {"event_id": reply_to} if reply_to else None,
+                        }
+                    elif reply_to:
+                        content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
+
+                    # 发送 sticker（注意：使用 m.sticker 事件类型，不是 m.room.message）
+                    if is_encrypted_room and e2ee_manager:
+                        try:
+                            encrypted = await e2ee_manager.encrypt_message(
+                                room_id, "m.sticker", content
+                            )
+                            if encrypted:
+                                await client.send_message(
+                                    room_id=room_id,
+                                    msg_type="m.room.encrypted",
+                                    content=encrypted,
+                                )
+                                sent_count += 1
+                                logger.debug(f"加密 sticker 发送成功，房间：{room_id}")
+                            else:
+                                logger.warning("加密 sticker 失败，尝试发送未加密消息")
+                                await client.send_message(
+                                    room_id=room_id,
+                                    msg_type="m.sticker",
+                                    content=content,
+                                )
+                                sent_count += 1
+                        except Exception as encrypt_e:
+                            logger.warning(f"加密 sticker 失败：{encrypt_e}，发送未加密消息")
+                            await client.send_message(
+                                room_id=room_id,
+                                msg_type="m.sticker",
+                                content=content,
+                            )
+                            sent_count += 1
+                    else:
+                        await client.send_message(
+                            room_id=room_id,
+                            msg_type="m.sticker",
+                            content=content,
+                        )
+                        sent_count += 1
+                    logger.debug(f"Sticker 发送成功，房间：{room_id}")
+                except Exception as e:
+                    logger.error(f"发送 sticker 失败：{e}")
 
         return sent_count
 

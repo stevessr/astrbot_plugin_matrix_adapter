@@ -86,6 +86,10 @@ class MatrixConfig:
         # 媒体文件缓存目录从插件级别配置读取
         self.media_cache_dir = plugin_cfg.media_cache_dir
 
+        # Sticker 包同步配置（从插件级别配置读取）
+        self.sticker_auto_sync = plugin_cfg.sticker_auto_sync
+        self.sticker_sync_user_emotes = plugin_cfg.sticker_sync_user_emotes
+
         # OAuth2 回调服务器监听端口（从插件级别配置读取）
         self.oauth2_callback_port = plugin_cfg.oauth2_callback_port
 

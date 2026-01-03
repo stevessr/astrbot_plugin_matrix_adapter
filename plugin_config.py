@@ -42,6 +42,9 @@ class PluginConfig:
         self._media_cache_dir: str | None = None
         self._oauth2_callback_port: int = 8765
         self._oauth2_callback_host: str = "127.0.0.1"
+        # Sticker 相关配置
+        self._sticker_auto_sync: bool = False
+        self._sticker_sync_user_emotes: bool = False
 
     def _ensure_default_paths(self):
         """确保默认路径已初始化"""
@@ -72,6 +75,11 @@ class PluginConfig:
         self._oauth2_callback_host = config.get(
             "matrix_oauth2_callback_host", "127.0.0.1"
         )
+        # Sticker 相关配置
+        self._sticker_auto_sync = config.get("matrix_sticker_auto_sync", False)
+        self._sticker_sync_user_emotes = config.get(
+            "matrix_sticker_sync_user_emotes", False
+        )
 
     @property
     def store_path(self) -> str:
@@ -100,6 +108,16 @@ class PluginConfig:
     def oauth2_callback_host(self) -> str:
         """获取 OAuth2 回调服务器主机地址"""
         return self._oauth2_callback_host
+
+    @property
+    def sticker_auto_sync(self) -> bool:
+        """是否自动同步房间 Sticker 包"""
+        return self._sticker_auto_sync
+
+    @property
+    def sticker_sync_user_emotes(self) -> bool:
+        """是否同步用户级别 Sticker 包"""
+        return self._sticker_sync_user_emotes
 
 
 # 全局单例实例

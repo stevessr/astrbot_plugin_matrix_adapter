@@ -27,6 +27,9 @@ from .processors.event_handler import MatrixEventHandler
 from .processors.event_processor import MatrixEventProcessor
 from .receiver.receiver import MatrixReceiver
 from .sender.sender import MatrixSender
+
+# Sticker 支持
+from .sticker import StickerPackSyncer, StickerStorage
 from .sync.sync_manager import MatrixSyncManager
 from .utils.utils import MatrixUtils
 
@@ -314,6 +317,19 @@ class MatrixPlatformAdapter(Platform):
         # 最大上传文件大小（将在 run 时从服务器获取）
         self.max_upload_size: int = DEFAULT_MAX_UPLOAD_SIZE_BYTES
 
+        # Sticker 存储和同步器
+        self.sticker_storage = StickerStorage()
+        self.sticker_syncer = StickerPackSyncer(
+            storage=self.sticker_storage,
+            client=self.client,
+        )
+
+        # 将 sticker 同步器传递给事件处理器
+        self.event_handler.set_sticker_syncer(
+            self.sticker_syncer,
+            auto_sync=self._matrix_config.sticker_auto_sync,
+        )
+
         logger.info("Matrix Adapter 初始化完成")
 
     async def send_by_session(
@@ -599,6 +615,30 @@ class MatrixPlatformAdapter(Platform):
                     await self.e2ee_manager.initialize()
                 except Exception as e:
                     logger.error(f"E2EE 初始化失败：{e}")
+
+            # Sticker 包同步（如果启用）
+            if self._matrix_config.sticker_auto_sync:
+                try:
+                    # 同步用户级别的 sticker（如果启用）
+                    if self._matrix_config.sticker_sync_user_emotes:
+                        user_count = await self.sticker_syncer.sync_user_stickers()
+                        if user_count > 0:
+                            logger.info(f"同步了 {user_count} 个用户 sticker")
+
+                    # 同步已加入房间的 sticker 包
+                    joined_rooms = await self.client.get_joined_rooms()
+                    total_synced = 0
+                    for room_id in joined_rooms:
+                        try:
+                            count = await self.sticker_syncer.sync_room_stickers(room_id)
+                            total_synced += count
+                        except Exception as room_e:
+                            logger.debug(f"同步房间 {room_id} sticker 失败：{room_e}")
+
+                    if total_synced > 0:
+                        logger.info(f"同步了 {total_synced} 个房间 sticker")
+                except Exception as e:
+                    logger.warning(f"Sticker 包同步失败：{e}")
 
             logger.info(
                 f"Matrix 平台适配器正在为 {self._matrix_config.user_id} 在 {self._matrix_config.homeserver} 上运行"
