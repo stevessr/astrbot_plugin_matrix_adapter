@@ -76,6 +76,19 @@ class ProfileMixin:
         except Exception:
             return None
 
+    async def set_avatar_url(self, avatar_url: str) -> dict[str, Any]:
+        """
+        Set user avatar URL
+
+        Args:
+            avatar_url: New avatar URL (mxc:// format)
+
+        Returns:
+            Response data
+        """
+        endpoint = f"/_matrix/client/v3/profile/{self.user_id}/avatar_url"
+        return await self._request("PUT", endpoint, data={"avatar_url": avatar_url})
+
     async def set_presence(
         self, status: str = "online", status_msg: str | None = None
     ) -> dict[str, Any]:
