@@ -257,20 +257,23 @@ class StickerStorage:
             height=meta.height,
         )
 
-        # 优先使用本地路径
-        url = (
-            meta.local_path
-            if meta.local_path and os.path.exists(meta.local_path)
-            else meta.mxc_url
-        )
+        # 优先使用 mxc:// URL（Matrix 发送时直接使用，无需重新上传）
+        # 如果没有 mxc URL，则使用本地路径
+        has_mxc = meta.mxc_url and meta.mxc_url.startswith("mxc://")
+        has_local = meta.local_path and os.path.exists(meta.local_path)
+
+        if has_mxc:
+            url = meta.mxc_url
+        elif has_local:
+            url = f"file:///{meta.local_path}"
+        else:
+            url = meta.mxc_url or ""
 
         return Sticker(
             body=meta.body,
-            url=f"file:///{url}"
-            if meta.local_path and os.path.exists(meta.local_path)
-            else url,
+            url=url,
             info=info,
-            mxc_url=meta.mxc_url if meta.mxc_url.startswith("mxc://") else None,
+            mxc_url=meta.mxc_url if has_mxc else None,
             sticker_id=sticker_id,
             pack_name=meta.pack_name,
         )
