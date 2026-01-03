@@ -14,9 +14,26 @@ from pathlib import Path
 from typing import Any
 
 from astrbot.api import logger
-from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+from astrbot.api.star import StarTools
 
 from .component import Sticker, StickerInfo
+
+
+def _get_sticker_storage_path() -> Path:
+    """获取 sticker 存储路径
+
+    优先使用 StarTools.get_data_dir() 获取插件数据目录，
+    如果失败则回退到默认路径。
+    """
+    try:
+        # 使用插件数据目录：data/plugin_data/astrbot_plugin_matrix_adapter/sticker
+        data_dir = StarTools.get_data_dir("astrbot_plugin_matrix_adapter")
+        return data_dir / "sticker"
+    except Exception:
+        # 回退到旧路径（兼容性）
+        from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+
+        return Path(get_astrbot_data_path()) / "matrix_sticker"
 
 
 @dataclass
@@ -57,7 +74,7 @@ class StickerStorage:
         if storage_path:
             self.storage_dir = Path(storage_path)
         else:
-            self.storage_dir = Path(get_astrbot_data_path()) / "matrix_sticker"
+            self.storage_dir = _get_sticker_storage_path()
 
         # 确保目录存在
         self.storage_dir.mkdir(parents=True, exist_ok=True)
@@ -77,6 +94,7 @@ class StickerStorage:
             try:
                 with open(self.index_file, encoding="utf-8") as f:
                     data = json.load(f)
+                    self._index = {}
                     for sticker_id, meta_dict in data.items():
                         # 兼容旧版本，添加缺失的字段
                         if "tags" not in meta_dict:
@@ -85,6 +103,10 @@ class StickerStorage:
             except Exception as e:
                 logger.warning(f"加载 sticker 索引失败：{e}")
                 self._index = {}
+
+    def reload_index(self):
+        """重新加载索引（用于同步多个实例）"""
+        self._load_index()
 
     def _save_index(self):
         """保存索引到文件"""
