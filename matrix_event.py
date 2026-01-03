@@ -14,6 +14,33 @@ from .constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES, TEXT_TRUNCATE_LENGTH_50
 # 导入 Sticker 组件
 from .sticker import Sticker
 
+
+def _is_sticker_component(obj) -> bool:
+    """使用鸭子类型检查对象是否为 Sticker 组件
+
+    由于跨插件导入可能导致类实例不同，使用 isinstance 可能失败。
+    通过检查必要的属性和方法来判断是否为 Sticker。
+    """
+    # 首先尝试 isinstance（同一模块导入时有效）
+    if isinstance(obj, Sticker):
+        logger.debug(f"_is_sticker_component: isinstance 检查通过")
+        return True
+
+    # 鸭子类型检查：检查类名和必要属性
+    class_name = type(obj).__name__
+    if class_name != "Sticker":
+        return False
+
+    # 检查 Sticker 的必要属性
+    required_attrs = ["body", "url", "info", "to_matrix_content"]
+    has_all_attrs = all(hasattr(obj, attr) for attr in required_attrs)
+    if has_all_attrs:
+        logger.debug(
+            f"_is_sticker_component: 鸭子类型检查通过 (module: {type(obj).__module__})"
+        )
+    return has_all_attrs
+
+
 # Update import: markdown_utils is now in utils.markdown_utils
 from .utils.markdown_utils import (
     markdown_to_html,
@@ -109,6 +136,11 @@ class MatrixPlatformEvent(AstrMessageEvent):
         chain_to_send = merged_chain
 
         for segment in chain_to_send:
+            # 调试：记录每个组件的类型和模块信息
+            logger.debug(
+                f"处理消息组件：{type(segment).__name__} (module: {type(segment).__module__})"
+            )
+
             # Reply 段仅用于标注引用关系，实际发送时跳过
             if isinstance(segment, Reply):
                 continue
@@ -310,13 +342,17 @@ class MatrixPlatformEvent(AstrMessageEvent):
                             else:
                                 logger.warning("加密图片消息失败，尝试发送未加密消息")
                                 await client.send_message(
-                                    room_id=room_id, msg_type="m.room.message", content=content
+                                    room_id=room_id,
+                                    msg_type="m.room.message",
+                                    content=content,
                                 )
                                 sent_count += 1
                         except Exception as encrypt_e:
                             logger.warning(f"加密图片失败：{encrypt_e}，发送未加密消息")
                             await client.send_message(
-                                room_id=room_id, msg_type="m.room.message", content=content
+                                room_id=room_id,
+                                msg_type="m.room.message",
+                                content=content,
                             )
                             sent_count += 1
                     else:
@@ -385,12 +421,16 @@ class MatrixPlatformEvent(AstrMessageEvent):
                             else:
                                 logger.warning("加密文件消息失败，尝试发送未加密消息")
                                 await client.send_message(
-                                    room_id=room_id, msg_type="m.room.message", content=content
+                                    room_id=room_id,
+                                    msg_type="m.room.message",
+                                    content=content,
                                 )
                                 sent_count += 1
                         else:
                             await client.send_message(
-                                room_id=room_id, msg_type="m.room.message", content=content
+                                room_id=room_id,
+                                msg_type="m.room.message",
+                                content=content,
                             )
                             sent_count += 1
                     except Exception as e:
@@ -398,17 +438,21 @@ class MatrixPlatformEvent(AstrMessageEvent):
                 except Exception as e:
                     logger.error(f"处理文件消息过程出错：{e}")
 
-            elif isinstance(segment, Sticker):
+            elif _is_sticker_component(segment):
                 # 发送 Sticker（使用 m.sticker 事件类型）
+                logger.debug(
+                    f"检测到 Sticker 组件：{segment.body}, mxc_url={getattr(segment, 'mxc_url', None)}"
+                )
                 try:
                     # 获取 sticker 文件
                     sticker_data = None
                     filename = "sticker.png"
                     content_type = segment.info.mimetype or "image/png"
+                    mxc_url = getattr(segment, "mxc_url", None)
 
-                    if segment.mxc_url and segment.mxc_url.startswith("mxc://"):
+                    if mxc_url and mxc_url.startswith("mxc://"):
                         # 已经上传到 Matrix 服务器，直接使用
-                        content_uri = segment.mxc_url
+                        content_uri = mxc_url
                     else:
                         # 需要上传
                         try:
@@ -465,10 +509,14 @@ class MatrixPlatformEvent(AstrMessageEvent):
                         content["m.relates_to"] = {
                             "rel_type": "m.thread",
                             "event_id": thread_root,
-                            "m.in_reply_to": {"event_id": reply_to} if reply_to else None,
+                            "m.in_reply_to": {"event_id": reply_to}
+                            if reply_to
+                            else None,
                         }
                     elif reply_to:
-                        content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
+                        content["m.relates_to"] = {
+                            "m.in_reply_to": {"event_id": reply_to}
+                        }
 
                     # 发送 sticker（注意：使用 m.sticker 事件类型，不是 m.room.message）
                     if is_encrypted_room and e2ee_manager:
@@ -493,7 +541,9 @@ class MatrixPlatformEvent(AstrMessageEvent):
                                 )
                                 sent_count += 1
                         except Exception as encrypt_e:
-                            logger.warning(f"加密 sticker 失败：{encrypt_e}，发送未加密消息")
+                            logger.warning(
+                                f"加密 sticker 失败：{encrypt_e}，发送未加密消息"
+                            )
                             await client.send_message(
                                 room_id=room_id,
                                 msg_type="m.sticker",
@@ -510,6 +560,12 @@ class MatrixPlatformEvent(AstrMessageEvent):
                     logger.debug(f"Sticker 发送成功，房间：{room_id}")
                 except Exception as e:
                     logger.error(f"发送 sticker 失败：{e}")
+
+            else:
+                # 未知组件类型
+                logger.debug(
+                    f"跳过未知组件类型：{type(segment).__name__} (module: {type(segment).__module__})"
+                )
 
         return sent_count
 
@@ -609,6 +665,11 @@ class MatrixPlatformEvent(AstrMessageEvent):
                             thread_root = None
             except Exception as e:
                 logger.warning(f"Failed to get event for threading: {e}")
+
+        # 调试：记录消息链内容
+        logger.debug(
+            f"MatrixPlatformEvent.send() 开始发送，消息链组件：{[type(c).__name__ for c in message_chain.chain]}"
+        )
 
         await MatrixPlatformEvent.send_with_client(
             self.client,
