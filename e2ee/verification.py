@@ -299,6 +299,16 @@ class SASVerification:
         self._sessions[transaction_id]["room_id"] = room_id
         self._sessions[transaction_id]["is_in_room"] = True
 
+        # CRITICAL: Check if this session was already taken over by another device
+        # If so, ignore ALL subsequent events for this transaction (except cancel)
+        session_state = self._sessions[transaction_id].get("state")
+        if session_state == "handled_by_other_device":
+            if event_type != M_KEY_VERIFICATION_CANCEL:
+                logger.debug(
+                    f"[E2EE-Verify] 会话已由其他设备处理，忽略事件：{event_type}"
+                )
+                return True  # Ignore this event
+
         # Check if this event is from our own user
         if sender == self.user_id:
             from_device = content.get("from_device")
