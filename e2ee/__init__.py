@@ -6,9 +6,10 @@ Matrix E2EE (End-to-End Encryption) Module
 警告：这是试验性功能，需要充分测试后才能用于生产环境。
 """
 
+from .cross_signing import CrossSigning
 from .crypto_store import CryptoStore
 from .e2ee_manager import E2EEManager
-from .key_backup import CrossSigning, KeyBackup
+from .key_backup import KeyBackup
 from .olm_machine import VODOZEMAC_AVAILABLE, OlmMachine
 from .verification import SASVerification
 
