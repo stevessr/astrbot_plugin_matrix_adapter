@@ -5,6 +5,7 @@ import secrets
 from astrbot.api import logger
 
 from ..constants import (
+    INFO_PREFIX_MAC,
     KEY_AGREEMENT_PROTOCOLS,
     M_KEY_VERIFICATION_ACCEPT,
     M_KEY_VERIFICATION_CANCEL,
@@ -22,7 +23,7 @@ from .verification_constants import (
     VODOZEMAC_SAS_AVAILABLE,
     Sas,
 )
-from .verification_utils import _canonical_json
+from .verification_utils import _canonical_json, _compute_hkdf
 
 
 class SASVerificationSendRoomMixin:

@@ -33,11 +33,17 @@ except ImportError:
 
 # 尝试导入 vodozemac (用于 Matrix 兼容的 PkDecryption)
 try:
-    from vodozemac import Curve25519SecretKey, PkDecodeException, PkDecryption
+    from vodozemac import (  # noqa: F401
+        Curve25519SecretKey,
+        PkDecodeException,
+        PkDecryption,
+    )
 
     VODOZEMAC_PK_AVAILABLE = True
 except ImportError:
     VODOZEMAC_PK_AVAILABLE = False
+    Curve25519SecretKey = None
+    PkDecryption = None
     PkDecodeException = Exception  # 回退到通用异常
     logger.debug("vodozemac PkDecryption 不可用")
 

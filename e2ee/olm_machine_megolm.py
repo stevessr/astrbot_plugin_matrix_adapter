@@ -1,4 +1,3 @@
-import base64
 import json
 
 from astrbot.api import logger
@@ -199,5 +198,3 @@ class OlmMachineMegolmMixin:
         }
 
     # ========== 辅助方法 ==========
-
-    @staticmethod

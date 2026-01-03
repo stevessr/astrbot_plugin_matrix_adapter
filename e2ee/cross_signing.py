@@ -24,7 +24,11 @@ class CrossSigning:
         password: str | None = None,
     ):
         self.client = client
-        self.user_id = user_id
+        self.user_id = (
+            user_id
+            if isinstance(user_id, str) and user_id.startswith("@")
+            else f"@{user_id}"
+        )
         self.device_id = device_id
         self.olm = olm_machine
         self.password = password
@@ -345,26 +349,30 @@ class CrossSigning:
         if not self._self_signing_priv or not self._self_signing_key:
             logger.debug("[E2EE-CrossSign] self-signing key 不可用，跳过设备签名")
             return
+        try:
+            response = await self.client.query_keys({self.user_id: [device_id]})
+            device_keys = (
+                response.get("device_keys", {}).get(self.user_id, {}).get(device_id)
+            )
+            if not device_keys:
+                logger.debug("[E2EE-CrossSign] 未找到设备密钥，无法签名")
+                return
 
-        response = await self.client.query_keys({self.user_id: [device_id]})
-        device_keys = (
-            response.get("device_keys", {}).get(self.user_id, {}).get(device_id)
-        )
-        if not device_keys:
-            logger.debug("[E2EE-CrossSign] 未找到设备密钥，无法签名")
-            return
+            sig = self._sign(self._self_signing_priv, device_keys)
+            device_keys["signatures"] = {
+                self.user_id: {f"ed25519:{self._self_signing_key}": sig}
+            }
 
-        sig = self._sign(self._self_signing_priv, device_keys)
-        device_keys["signatures"] = {
-            self.user_id: {f"ed25519:{self._self_signing_key}": sig}
-        }
-
-        await self.client._request(
-            "POST",
-            "/_matrix/client/v3/keys/signatures/upload",
-            {"device_keys": {self.user_id: {device_id: device_keys}}},
-        )
-        logger.debug(f"[E2EE-CrossSign] 已签名设备：{device_id}")
+            await self.client._request(
+                "POST",
+                "/_matrix/client/v3/keys/signatures/upload",
+                {"device_keys": {self.user_id: {device_id: device_keys}}},
+            )
+            logger.debug(f"[E2EE-CrossSign] 已签名设备：{device_id}")
+        except MatrixAPIError as e:
+            logger.warning(f"[E2EE-CrossSign] 设备签名失败：{e}")
+        except Exception as e:
+            logger.warning(f"[E2EE-CrossSign] 设备签名异常：{e}")
 
     async def verify_user(self, target_user_id: str):
         if not self._user_signing_priv or not self._user_signing_key:
