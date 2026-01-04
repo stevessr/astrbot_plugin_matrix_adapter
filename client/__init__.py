@@ -17,15 +17,18 @@ This package provides a modular Matrix HTTP client composed of:
 
 from .event_types import InviteEvent, MatrixEvent, RoomMessageEvent
 from .http_client import (
+    AccountMixin,
     AuthMixin,
     DeviceMixin,
     E2EEMixin,
+    KeyBackupMixin,
     MatrixAPIError,
     MatrixClientBase,
     MatrixHTTPClient,
     MediaMixin,
     MessageMixin,
     ProfileMixin,
+    PushMixin,
     RoomMixin,
     UserMixin,
     WidgetMixin,
@@ -37,6 +40,7 @@ __all__ = [
     "MatrixAPIError",
     "MatrixClientBase",
     # Mixins
+    "AccountMixin",
     "AuthMixin",
     "RoomMixin",
     "MessageMixin",
@@ -44,6 +48,8 @@ __all__ = [
     "ProfileMixin",
     "DeviceMixin",
     "E2EEMixin",
+    "KeyBackupMixin",
+    "PushMixin",
     "WidgetMixin",
     "UserMixin",
     # Event types

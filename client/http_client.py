@@ -15,13 +15,16 @@ This module provides a modular HTTP client for Matrix, composed of:
 - UserMixin: User management and moderation
 """
 
+from .account_mixin import AccountMixin
 from .auth_mixin import AuthMixin
 from .base import MatrixAPIError, MatrixClientBase
 from .device_mixin import DeviceMixin
 from .e2ee_mixin import E2EEMixin
+from .key_backup_mixin import KeyBackupMixin
 from .media_mixin import MediaMixin
 from .message_mixin import MessageMixin
 from .profile_mixin import ProfileMixin
+from .push_mixin import PushMixin
 from .room_mixin import RoomMixin
 from .user_mixin import UserMixin
 from .widget_mixin import WidgetMixin
@@ -29,6 +32,7 @@ from .widget_mixin import WidgetMixin
 
 class MatrixHTTPClient(
     MatrixClientBase,
+    AccountMixin,
     AuthMixin,
     RoomMixin,
     MessageMixin,
@@ -36,6 +40,8 @@ class MatrixHTTPClient(
     ProfileMixin,
     DeviceMixin,
     E2EEMixin,
+    KeyBackupMixin,
+    PushMixin,
     WidgetMixin,
     UserMixin,
 ):
@@ -61,6 +67,7 @@ __all__ = [
     "MatrixHTTPClient",
     "MatrixAPIError",
     "MatrixClientBase",
+    "AccountMixin",
     "AuthMixin",
     "RoomMixin",
     "MessageMixin",
@@ -68,6 +75,8 @@ __all__ = [
     "ProfileMixin",
     "DeviceMixin",
     "E2EEMixin",
+    "KeyBackupMixin",
+    "PushMixin",
     "WidgetMixin",
     "UserMixin",
 ]
