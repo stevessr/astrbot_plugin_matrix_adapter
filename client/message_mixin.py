@@ -156,6 +156,161 @@ class MessageMixin:
         endpoint = f"/_matrix/client/v3/rooms/{room_id}/receipt/m.read/{event_id}"
         return await self._request("POST", endpoint, data={})
 
+    async def send_read_receipt_private(
+        self, room_id: str, event_id: str
+    ) -> dict[str, Any]:
+        """
+        Send private read receipt for an event
+
+        Args:
+            room_id: Room ID
+            event_id: Event ID to acknowledge
+
+        Returns:
+            Response data
+        """
+        endpoint = (
+            f"/_matrix/client/v3/rooms/{room_id}/receipt/m.read.private/{event_id}"
+        )
+        return await self._request("POST", endpoint, data={})
+
+    async def send_read_markers(
+        self,
+        room_id: str,
+        fully_read: str | None = None,
+        read: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Set read markers for a room
+
+        Args:
+            room_id: Room ID
+            fully_read: Event ID for fully_read marker
+            read: Event ID for read marker
+
+        Returns:
+            Response data
+        """
+        endpoint = f"/_matrix/client/v3/rooms/{room_id}/read_markers"
+        data: dict[str, Any] = {}
+        if fully_read:
+            data["m.fully_read"] = fully_read
+        if read:
+            data["m.read"] = read
+        return await self._request("POST", endpoint, data=data)
+
+    async def redact_event(
+        self,
+        room_id: str,
+        event_id: str,
+        reason: str | None = None,
+        txn_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Redact an event
+
+        Args:
+            room_id: Room ID
+            event_id: Event ID to redact
+            reason: Optional reason
+            txn_id: Optional transaction ID
+
+        Returns:
+            Response with event_id
+        """
+        if txn_id is None:
+            txn_id = f"redact_{int(time.time() * 1000)}"
+        endpoint = f"/_matrix/client/v3/rooms/{room_id}/redact/{event_id}/{txn_id}"
+        data: dict[str, Any] = {}
+        if reason:
+            data["reason"] = reason
+        return await self._request("PUT", endpoint, data=data)
+
+    async def report_event(
+        self, room_id: str, event_id: str, score: int = 0, reason: str | None = None
+    ) -> dict[str, Any]:
+        """
+        Report an event
+
+        Args:
+            room_id: Room ID
+            event_id: Event ID to report
+            score: Negative score for abuse (-100..0)
+            reason: Optional reason
+
+        Returns:
+            Response data
+        """
+        endpoint = f"/_matrix/client/v3/rooms/{room_id}/report/{event_id}"
+        data: dict[str, Any] = {"score": score}
+        if reason:
+            data["reason"] = reason
+        return await self._request("POST", endpoint, data=data)
+
+    async def get_event_context(
+        self,
+        room_id: str,
+        event_id: str,
+        limit: int | None = None,
+        filter: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Get context around an event
+
+        Args:
+            room_id: Room ID
+            event_id: Event ID
+            limit: Optional limit
+            filter: Optional filter
+
+        Returns:
+            Context response
+        """
+        endpoint = f"/_matrix/client/v3/rooms/{room_id}/context/{event_id}"
+        params: dict[str, Any] = {}
+        if limit is not None:
+            params["limit"] = limit
+        if filter is not None:
+            params["filter"] = json.dumps(filter, ensure_ascii=False)
+        return await self._request("GET", endpoint, params=params)
+
+    async def get_event_relations(
+        self,
+        room_id: str,
+        event_id: str,
+        rel_type: str,
+        event_type: str | None = None,
+        from_token: str | None = None,
+        to_token: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Get relations for an event
+
+        Args:
+            room_id: Room ID
+            event_id: Event ID
+            rel_type: Relation type (e.g., m.annotation)
+            event_type: Optional event type filter
+            from_token: Pagination token
+            to_token: Pagination token
+            limit: Optional limit
+
+        Returns:
+            Relations response
+        """
+        path = f"/_matrix/client/v3/rooms/{room_id}/relations/{event_id}/{rel_type}"
+        if event_type:
+            path += f"/{event_type}"
+        params: dict[str, Any] = {}
+        if from_token:
+            params["from"] = from_token
+        if to_token:
+            params["to"] = to_token
+        if limit is not None:
+            params["limit"] = limit
+        return await self._request("GET", path, params=params)
+
     async def set_typing(
         self, room_id: str, typing: bool = True, timeout: int = DEFAULT_TIMEOUT_MS_30000
     ) -> dict[str, Any]:

@@ -32,6 +32,68 @@ class ProfileMixin:
             # Return empty dict if not found (404)
             return {}
 
+    async def set_global_account_data(
+        self, type: str, content: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Set user global account data
+
+        Args:
+            type: Account data type (e.g., m.direct)
+            content: Account data content
+
+        Returns:
+            Empty dict on success
+        """
+        if not hasattr(self, "user_id") or not self.user_id:
+            raise Exception("Client not logged in or user_id not set")
+        endpoint = f"/_matrix/client/v3/user/{self.user_id}/account_data/{type}"
+        return await self._request("PUT", endpoint, data=content)
+
+    async def get_room_account_data(
+        self, room_id: str, type: str
+    ) -> dict[str, Any]:
+        """
+        Get room account data for current user
+
+        Args:
+            room_id: Room ID
+            type: Account data type
+
+        Returns:
+            Account data content
+        """
+        if not hasattr(self, "user_id") or not self.user_id:
+            raise Exception("Client not logged in or user_id not set")
+        endpoint = (
+            f"/_matrix/client/v3/user/{self.user_id}/rooms/{room_id}/account_data/{type}"
+        )
+        try:
+            return await self._request("GET", endpoint)
+        except Exception:
+            return {}
+
+    async def set_room_account_data(
+        self, room_id: str, type: str, content: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Set room account data for current user
+
+        Args:
+            room_id: Room ID
+            type: Account data type
+            content: Account data content
+
+        Returns:
+            Empty dict on success
+        """
+        if not hasattr(self, "user_id") or not self.user_id:
+            raise Exception("Client not logged in or user_id not set")
+        endpoint = (
+            f"/_matrix/client/v3/user/{self.user_id}/rooms/{room_id}/account_data/{type}"
+        )
+        return await self._request("PUT", endpoint, data=content)
+
     async def set_display_name(self, display_name: str) -> dict[str, Any]:
         """
         Set user display name
@@ -117,6 +179,19 @@ class ProfileMixin:
         if currently_active is not None:
             data["currently_active"] = currently_active
         return await self._request("PUT", endpoint, data=data)
+
+    async def get_presence(self, user_id: str) -> dict[str, Any]:
+        """
+        Get user presence status
+
+        Args:
+            user_id: Matrix user ID
+
+        Returns:
+            Presence response
+        """
+        endpoint = f"/_matrix/client/v3/presence/{user_id}/status"
+        return await self._request("GET", endpoint)
 
     async def get_user_room(self, user_id: str) -> str | None:
         """

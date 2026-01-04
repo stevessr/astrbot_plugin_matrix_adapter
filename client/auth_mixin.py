@@ -13,6 +13,24 @@ from ..constants import DEFAULT_TIMEOUT_MS_30000
 class AuthMixin:
     """Authentication methods for Matrix client"""
 
+    async def get_versions(self) -> dict[str, Any]:
+        """
+        Get supported Matrix client-server API versions
+
+        Returns:
+            Versions response
+        """
+        return await self._request("GET", "/_matrix/client/versions", authenticated=False)
+
+    async def get_capabilities(self) -> dict[str, Any]:
+        """
+        Get server capabilities
+
+        Returns:
+            Capabilities response
+        """
+        return await self._request("GET", "/_matrix/client/v3/capabilities")
+
     async def get_login_flows(self) -> dict[str, Any]:
         """
         Get supported login flows from the server
@@ -83,6 +101,99 @@ class AuthMixin:
                     f"  - Consult your server administrator about password login availability"
                 )
             raise
+
+    async def login_token(
+        self,
+        token: str,
+        device_name: str = "AstrBot",
+        device_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Login with a token
+
+        Args:
+            token: Login token
+            device_name: Device display name
+            device_id: Optional device ID to reuse
+
+        Returns:
+            Login response with access_token, device_id, etc.
+        """
+        data = {
+            "type": "m.login.token",
+            "token": token,
+            "initial_device_display_name": device_name,
+        }
+        if device_id:
+            data["device_id"] = device_id
+
+        response = await self._request(
+            "POST", "/_matrix/client/v3/login", data=data, authenticated=False
+        )
+        self.access_token = response.get("access_token")
+        self.user_id = response.get("user_id")
+        self.device_id = response.get("device_id")
+        return response
+
+    async def register(
+        self,
+        username: str | None = None,
+        password: str | None = None,
+        device_name: str | None = None,
+        inhibit_login: bool = False,
+        auth: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Register a new account
+
+        Args:
+            username: Optional localpart
+            password: Optional password
+            device_name: Optional device display name
+            inhibit_login: If True, do not log in after registration
+            auth: Optional UIA auth dict
+
+        Returns:
+            Registration response
+        """
+        data: dict[str, Any] = {}
+        if username:
+            data["username"] = username
+        if password:
+            data["password"] = password
+        if device_name:
+            data["initial_device_display_name"] = device_name
+        if inhibit_login:
+            data["inhibit_login"] = True
+        if auth:
+            data["auth"] = auth
+
+        response = await self._request(
+            "POST", "/_matrix/client/v3/register", data=data, authenticated=False
+        )
+        if not inhibit_login:
+            self.access_token = response.get("access_token")
+            self.user_id = response.get("user_id")
+            self.device_id = response.get("device_id")
+        return response
+
+    async def logout(self) -> dict[str, Any]:
+        """
+        Logout the current device
+
+        Returns:
+            Empty dict on success
+        """
+        return await self._request("POST", "/_matrix/client/v3/logout")
+
+    async def logout_all(self) -> dict[str, Any]:
+        """
+        Logout all devices
+
+        Returns:
+            Empty dict on success
+        """
+        return await self._request("POST", "/_matrix/client/v3/logout/all")
 
     def restore_login(
         self, user_id: str, access_token: str, device_id: str | None = None
@@ -169,3 +280,31 @@ class AuthMixin:
         self._next_batch = response.get("next_batch")
 
         return response
+
+    async def create_filter(self, user_id: str, filter_data: dict[str, Any]) -> dict[str, Any]:
+        """
+        Create a sync filter for a user
+
+        Args:
+            user_id: Matrix user ID
+            filter_data: Filter definition
+
+        Returns:
+            Response with filter_id
+        """
+        endpoint = f"/_matrix/client/v3/user/{user_id}/filter"
+        return await self._request("POST", endpoint, data=filter_data)
+
+    async def get_filter(self, user_id: str, filter_id: str) -> dict[str, Any]:
+        """
+        Get a sync filter definition
+
+        Args:
+            user_id: Matrix user ID
+            filter_id: Filter ID
+
+        Returns:
+            Filter definition
+        """
+        endpoint = f"/_matrix/client/v3/user/{user_id}/filter/{filter_id}"
+        return await self._request("GET", endpoint)

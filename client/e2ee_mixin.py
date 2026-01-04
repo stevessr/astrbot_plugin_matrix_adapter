@@ -87,3 +87,20 @@ class E2EEMixin:
         endpoint = "/_matrix/client/v3/keys/claim"
         data = {"one_time_keys": one_time_keys, "timeout": timeout}
         return await self._request("POST", endpoint, data=data)
+
+    async def get_keys_changes(
+        self, from_token: str, to_token: str
+    ) -> dict[str, Any]:
+        """
+        Get key changes between two sync tokens
+
+        Args:
+            from_token: Start token
+            to_token: End token
+
+        Returns:
+            Keys changes response
+        """
+        endpoint = "/_matrix/client/v3/keys/changes"
+        params = {"from": from_token, "to": to_token}
+        return await self._request("GET", endpoint, params=params)
