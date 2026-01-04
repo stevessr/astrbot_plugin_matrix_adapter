@@ -90,7 +90,11 @@ class ProfileMixin:
         return await self._request("PUT", endpoint, data={"avatar_url": avatar_url})
 
     async def set_presence(
-        self, status: str = "online", status_msg: str | None = None
+        self,
+        status: str = "online",
+        status_msg: str | None = None,
+        last_active_ts: int | None = None,
+        currently_active: bool | None = None,
     ) -> dict[str, Any]:
         """
         Set user presence status
@@ -98,6 +102,8 @@ class ProfileMixin:
         Args:
             status: Presence status ('online', 'unavailable', 'offline')
             status_msg: Optional status message
+            last_active_ts: Optional last active timestamp (ms)
+            currently_active: Optional active flag
 
         Returns:
             Empty dict on success
@@ -106,6 +112,10 @@ class ProfileMixin:
         data: dict[str, Any] = {"presence": status}
         if status_msg:
             data["status_msg"] = status_msg
+        if last_active_ts is not None:
+            data["last_active_ts"] = last_active_ts
+        if currently_active is not None:
+            data["currently_active"] = currently_active
         return await self._request("PUT", endpoint, data=data)
 
     async def get_user_room(self, user_id: str) -> str | None:
