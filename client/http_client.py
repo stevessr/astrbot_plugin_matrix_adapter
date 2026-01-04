@@ -26,7 +26,10 @@ from .message_mixin import MessageMixin
 from .profile_mixin import ProfileMixin
 from .push_mixin import PushMixin
 from .room_mixin import RoomMixin
+from .tags_mixin import TagsMixin
+from .thirdparty_mixin import ThirdPartyMixin
 from .user_mixin import UserMixin
+from .voip_mixin import VoipMixin
 from .widget_mixin import WidgetMixin
 
 
@@ -42,8 +45,11 @@ class MatrixHTTPClient(
     E2EEMixin,
     KeyBackupMixin,
     PushMixin,
+    TagsMixin,
+    ThirdPartyMixin,
     WidgetMixin,
     UserMixin,
+    VoipMixin,
 ):
     """
     Complete Matrix HTTP client combining all API modules.
@@ -77,6 +83,9 @@ __all__ = [
     "E2EEMixin",
     "KeyBackupMixin",
     "PushMixin",
+    "TagsMixin",
+    "ThirdPartyMixin",
     "WidgetMixin",
     "UserMixin",
+    "VoipMixin",
 ]

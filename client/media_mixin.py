@@ -254,3 +254,107 @@ class MediaMixin:
         error_msg = f"Matrix media download error: {last_error} (last status: {last_status}) for {mxc_url}"
         logger.error(error_msg)
         raise Exception(error_msg)
+
+    async def get_thumbnail(
+        self,
+        mxc_url: str,
+        width: int,
+        height: int,
+        method: str | None = None,
+        animated: bool | None = None,
+    ) -> bytes:
+        """
+        Get a thumbnail for media
+
+        Args:
+            mxc_url: MXC URL (mxc://server/media_id)
+            width: Thumbnail width
+            height: Thumbnail height
+            method: Optional method (crop, scale)
+            animated: Optional animated flag
+
+        Returns:
+            Thumbnail bytes
+        """
+        await self._ensure_session()
+
+        if not mxc_url.startswith("mxc://"):
+            raise ValueError(f"Invalid MXC URL: {mxc_url}")
+
+        parts = mxc_url[6:].split("/", 1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid MXC URL format: {mxc_url}")
+
+        server_name, media_id = parts
+        query = f"width={width}&height={height}"
+        if method:
+            query += f"&method={method}"
+        if animated is not None:
+            query += f"&animated={'true' if animated else 'false'}"
+
+        endpoints = [
+            f"/_matrix/client/v1/media/thumbnail/{server_name}/{media_id}?{query}",
+            f"/_matrix/media/v3/thumbnail/{server_name}/{media_id}?{query}",
+            f"/_matrix/media/r0/thumbnail/{server_name}/{media_id}?{query}",
+        ]
+
+        last_error = None
+        last_status = None
+
+        for endpoint in endpoints:
+            url = f"{self.homeserver}{endpoint}"
+            headers = {"User-Agent": "AstrBot Matrix Client/1.0"}
+            if self.access_token:
+                headers["Authorization"] = f"Bearer {self.access_token}"
+
+            try:
+                async with self.session.get(
+                    url, headers=headers, allow_redirects=True
+                ) as response:
+                    last_status = response.status
+                    if response.status == 200:
+                        return await response.read()
+                    last_error = f"HTTP {response.status}"
+            except Exception as e:
+                last_error = str(e)
+                continue
+
+        error_msg = (
+            f"Matrix thumbnail error: {last_error} (last status: {last_status}) "
+            f"for {mxc_url}"
+        )
+        logger.error(error_msg)
+        raise Exception(error_msg)
+
+    async def get_url_preview(
+        self, url: str, timestamp_ms: int | None = None
+    ) -> dict[str, Any]:
+        """
+        Get URL preview metadata
+
+        Args:
+            url: URL to preview
+            timestamp_ms: Optional timestamp in milliseconds
+
+        Returns:
+            Preview response
+        """
+        params: dict[str, Any] = {"url": url}
+        if timestamp_ms is not None:
+            params["ts"] = timestamp_ms
+
+        endpoints = [
+            "/_matrix/client/v1/media/preview_url",
+            "/_matrix/media/v3/preview_url",
+            "/_matrix/media/r0/preview_url",
+        ]
+
+        last_error: Exception | None = None
+        for endpoint in endpoints:
+            try:
+                return await self._request("GET", endpoint, params=params)
+            except Exception as e:
+                last_error = e
+                continue
+
+        raise Exception(f"Matrix URL preview error: {last_error}")

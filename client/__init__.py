@@ -30,7 +30,10 @@ from .http_client import (
     ProfileMixin,
     PushMixin,
     RoomMixin,
+    TagsMixin,
+    ThirdPartyMixin,
     UserMixin,
+    VoipMixin,
     WidgetMixin,
 )
 
@@ -52,6 +55,9 @@ __all__ = [
     "PushMixin",
     "WidgetMixin",
     "UserMixin",
+    "TagsMixin",
+    "ThirdPartyMixin",
+    "VoipMixin",
     # Event types
     "MatrixEvent",
     "RoomMessageEvent",
