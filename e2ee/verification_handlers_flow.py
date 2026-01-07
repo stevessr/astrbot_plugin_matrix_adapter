@@ -56,7 +56,17 @@ class SASVerificationFlowMixin:
             return
 
         if self.auto_verify_mode == "manual":
-            logger.info("[E2EE-Verify] 手动模式，记录验证请求但不响应 (mode=manual)")
+            logger.info("[E2EE-Verify] 手动模式，发送 ready 并等待管理员确认 (mode=manual)")
+            if "m.sas.v1" in methods:
+                await self._send_ready(sender, from_device, transaction_id)
+            else:
+                await self._send_cancel(
+                    sender,
+                    from_device,
+                    transaction_id,
+                    "m.unknown_method",
+                    "不支持的验证方法",
+                )
             return
 
         # auto_accept: 发送 ready
@@ -263,6 +273,10 @@ class SASVerificationFlowMixin:
         else:
             # 使用简化实现
             self._compute_sas_fallback(session, their_key)
+
+        if self.auto_verify_mode == "manual" and not session.get("manual_notified"):
+            session["manual_notified"] = True
+            await self._notify_admin_for_verification(session, transaction_id)
 
         # Send MAC only if not already sent
         if self.auto_verify_mode == "auto_accept" and not session.get("mac_sent"):

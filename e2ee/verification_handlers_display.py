@@ -10,6 +10,35 @@ from .verification_constants import (
 
 
 class SASVerificationDisplayMixin:
+    async def _notify_admin_for_verification(self, session: dict, transaction_id: str):
+        room_id = getattr(self, "admin_notify_room_id", None)
+        if not room_id:
+            return
+
+        sender = session.get("sender", "")
+        device_id = session.get("from_device") or session.get("their_device") or ""
+        emojis = session.get("sas_emojis") or []
+        decimals = session.get("sas_decimals") or ""
+        emoji_str = " ".join(e[0] for e in emojis) if emojis else ""
+
+        lines = [
+            "SAS 验证请求（手动确认）",
+            f"用户：{sender}",
+            f"设备：{device_id}",
+        ]
+        if emoji_str:
+            lines.append(f"Emoji:{emoji_str}")
+        if decimals:
+            lines.append(f"数字：{decimals}")
+        lines.append(f"事务：{transaction_id}")
+        if device_id:
+            lines.append(f"使用命令：/admin verify {device_id}")
+
+        message = "\n".join(lines)
+        try:
+            await self.client.send_room_message(room_id, message)
+        except Exception as e:
+            logger.warning(f"发送验证通知失败：{e}")
     async def _notify_user_for_approval(
         self, sender: str, device_id: str, room_id: str | None = None
     ):

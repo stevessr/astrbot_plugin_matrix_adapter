@@ -69,7 +69,7 @@ SAS（Short Authentication String）是 Matrix 端到端加密中用于验证设
 
    **如果配置为 `manual`：**
    - 机器人会记录验证请求但不响应
-   - 需要管理员手动处理（当前版本暂不支持手动确认）
+   - 需要管理员手动处理（可使用 /admin verify <device_id> 进行确认）
    - 建议使用 `auto_accept` 模式
 
    **如果配置为 `auto_reject`：**
