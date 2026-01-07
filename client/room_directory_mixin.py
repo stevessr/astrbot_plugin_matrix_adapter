@@ -115,7 +115,9 @@ class RoomDirectoryMixin:
         endpoint = f"/_matrix/client/v3/directory/list/room/{room_id}"
         return await self._request("GET", endpoint)
 
-    async def set_room_visibility(self, room_id: str, visibility: str) -> dict[str, Any]:
+    async def set_room_visibility(
+        self, room_id: str, visibility: str
+    ) -> dict[str, Any]:
         """
         Set a room's visibility in the public directory
 

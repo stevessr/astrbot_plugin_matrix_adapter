@@ -25,7 +25,9 @@ class AccountMixin:
         data: dict[str, Any] = {"new_password": new_password}
         if auth:
             data["auth"] = auth
-        return await self._request("POST", "/_matrix/client/v3/account/password", data=data)
+        return await self._request(
+            "POST", "/_matrix/client/v3/account/password", data=data
+        )
 
     async def deactivate_account(
         self, auth: dict[str, Any] | None = None, erase: bool | None = None
@@ -45,7 +47,9 @@ class AccountMixin:
             data["auth"] = auth
         if erase is not None:
             data["erase"] = erase
-        return await self._request("POST", "/_matrix/client/v3/account/deactivate", data=data)
+        return await self._request(
+            "POST", "/_matrix/client/v3/account/deactivate", data=data
+        )
 
     async def get_3pid(self) -> dict[str, Any]:
         """
@@ -56,7 +60,9 @@ class AccountMixin:
         """
         return await self._request("GET", "/_matrix/client/v3/account/3pid")
 
-    async def add_3pid(self, threepid_creds: dict[str, Any], bind: bool | None = None) -> dict[str, Any]:
+    async def add_3pid(
+        self, threepid_creds: dict[str, Any], bind: bool | None = None
+    ) -> dict[str, Any]:
         """
         Add a third-party identifier
 
@@ -70,7 +76,9 @@ class AccountMixin:
         data: dict[str, Any] = {"threepid_creds": threepid_creds}
         if bind is not None:
             data["bind"] = bind
-        return await self._request("POST", "/_matrix/client/v3/account/3pid/add", data=data)
+        return await self._request(
+            "POST", "/_matrix/client/v3/account/3pid/add", data=data
+        )
 
     async def delete_3pid(self, medium: str, address: str) -> dict[str, Any]:
         """
@@ -84,7 +92,9 @@ class AccountMixin:
             Response data
         """
         data = {"medium": medium, "address": address}
-        return await self._request("POST", "/_matrix/client/v3/account/3pid/delete", data=data)
+        return await self._request(
+            "POST", "/_matrix/client/v3/account/3pid/delete", data=data
+        )
 
     async def bind_3pid(self, medium: str, address: str) -> dict[str, Any]:
         """
@@ -98,7 +108,9 @@ class AccountMixin:
             Response data
         """
         data = {"medium": medium, "address": address}
-        return await self._request("POST", "/_matrix/client/v3/account/3pid/bind", data=data)
+        return await self._request(
+            "POST", "/_matrix/client/v3/account/3pid/bind", data=data
+        )
 
     async def unbind_3pid(self, medium: str, address: str) -> dict[str, Any]:
         """
@@ -112,7 +124,9 @@ class AccountMixin:
             Response data
         """
         data = {"medium": medium, "address": address}
-        return await self._request("POST", "/_matrix/client/v3/account/3pid/unbind", data=data)
+        return await self._request(
+            "POST", "/_matrix/client/v3/account/3pid/unbind", data=data
+        )
 
     async def request_email_token(
         self,

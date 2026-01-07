@@ -20,7 +20,9 @@ class AuthMixin:
         Returns:
             Versions response
         """
-        return await self._request("GET", "/_matrix/client/versions", authenticated=False)
+        return await self._request(
+            "GET", "/_matrix/client/versions", authenticated=False
+        )
 
     async def get_capabilities(self) -> dict[str, Any]:
         """
@@ -65,7 +67,10 @@ class AuthMixin:
         """
         params = {"username": username}
         return await self._request(
-            "GET", "/_matrix/client/v3/register/available", params=params, authenticated=False
+            "GET",
+            "/_matrix/client/v3/register/available",
+            params=params,
+            authenticated=False,
         )
 
     async def register_guest(self) -> dict[str, Any]:
@@ -321,7 +326,9 @@ class AuthMixin:
 
         return response
 
-    async def create_filter(self, user_id: str, filter_data: dict[str, Any]) -> dict[str, Any]:
+    async def create_filter(
+        self, user_id: str, filter_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Create a sync filter for a user
 

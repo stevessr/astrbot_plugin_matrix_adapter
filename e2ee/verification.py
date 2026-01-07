@@ -73,7 +73,10 @@ class SASVerification(
         """手动确认某个设备的 SAS 验证（发送 MAC 与 DONE）。"""
         candidates: list[tuple[str, dict[str, Any]]] = []
         for txn_id, session in self._sessions.items():
-            if session.get("from_device") == device_id or session.get("their_device") == device_id:
+            if (
+                session.get("from_device") == device_id
+                or session.get("their_device") == device_id
+            ):
                 candidates.append((txn_id, session))
 
         if not candidates:
@@ -87,7 +90,9 @@ class SASVerification(
                 break
 
         sender = session.get("sender", "")
-        target_device = session.get("from_device") or session.get("their_device") or device_id
+        target_device = (
+            session.get("from_device") or session.get("their_device") or device_id
+        )
         if not sender or not target_device:
             return False, "会话信息不完整，无法发送验证消息"
 

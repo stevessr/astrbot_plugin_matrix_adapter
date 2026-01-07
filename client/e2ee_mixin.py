@@ -132,9 +132,7 @@ class E2EEMixin:
             data["auth"] = auth
         return await self._request("POST", endpoint, data=data)
 
-    async def get_keys_changes(
-        self, from_token: str, to_token: str
-    ) -> dict[str, Any]:
+    async def get_keys_changes(self, from_token: str, to_token: str) -> dict[str, Any]:
         """
         Get key changes between two sync tokens
 

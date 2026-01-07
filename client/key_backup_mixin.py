@@ -41,7 +41,9 @@ class KeyBackupMixin:
         Returns:
             Response with version
         """
-        return await self._request("POST", "/_matrix/client/v3/room_keys/version", data=data)
+        return await self._request(
+            "POST", "/_matrix/client/v3/room_keys/version", data=data
+        )
 
     async def update_key_backup_version(
         self, version: str, data: dict[str, Any]
@@ -85,7 +87,9 @@ class KeyBackupMixin:
         endpoint = f"/_matrix/client/v3/room_keys/keys?version={version}"
         return await self._request("GET", endpoint)
 
-    async def get_room_keys_for_room(self, version: str, room_id: str) -> dict[str, Any]:
+    async def get_room_keys_for_room(
+        self, version: str, room_id: str
+    ) -> dict[str, Any]:
         """
         Get all room keys for a specific room
 
@@ -113,12 +117,12 @@ class KeyBackupMixin:
         Returns:
             Session data
         """
-        endpoint = (
-            f"/_matrix/client/v3/room_keys/keys/{room_id}/{session_id}?version={version}"
-        )
+        endpoint = f"/_matrix/client/v3/room_keys/keys/{room_id}/{session_id}?version={version}"
         return await self._request("GET", endpoint)
 
-    async def store_room_keys(self, version: str, data: dict[str, Any]) -> dict[str, Any]:
+    async def store_room_keys(
+        self, version: str, data: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Store room keys for a backup version
 
@@ -175,7 +179,5 @@ class KeyBackupMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = (
-            f"/_matrix/client/v3/room_keys/keys/{room_id}/{session_id}?version={version}"
-        )
+        endpoint = f"/_matrix/client/v3/room_keys/keys/{room_id}/{session_id}?version={version}"
         return await self._request("DELETE", endpoint)

@@ -288,7 +288,9 @@ class SASVerificationEventMixin:
             return
 
         if self.auto_verify_mode == "manual":
-            logger.info("[E2EE-Verify] 手动模式，发送 ready 并等待管理员确认 (mode=manual)")
+            logger.info(
+                "[E2EE-Verify] 手动模式，发送 ready 并等待管理员确认 (mode=manual)"
+            )
             if "m.sas.v1" in methods:
                 # 触发一次自身设备密钥查询，帮助服务器同步我们的设备信息
                 try:

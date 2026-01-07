@@ -154,9 +154,7 @@ class RoomStateMixin:
             content={"url": avatar_url},
         )
 
-    async def set_room_join_rules(
-        self, room_id: str, join_rule: str
-    ) -> dict[str, Any]:
+    async def set_room_join_rules(self, room_id: str, join_rule: str) -> dict[str, Any]:
         """
         Set room join rules
 

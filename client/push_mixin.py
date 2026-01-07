@@ -102,7 +102,9 @@ class PushMixin:
         """
         Create or update a pusher
         """
-        return await self._request("POST", "/_matrix/client/v3/pushers/set", data=pusher)
+        return await self._request(
+            "POST", "/_matrix/client/v3/pushers/set", data=pusher
+        )
 
     async def get_notifications(
         self, from_token: str, limit: int | None = None, only: str | None = None
@@ -115,4 +117,6 @@ class PushMixin:
             params["limit"] = limit
         if only:
             params["only"] = only
-        return await self._request("GET", "/_matrix/client/v3/notifications", params=params)
+        return await self._request(
+            "GET", "/_matrix/client/v3/notifications", params=params
+        )

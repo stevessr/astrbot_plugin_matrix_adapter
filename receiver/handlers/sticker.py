@@ -17,7 +17,11 @@ async def handle_sticker(receiver, chain, event, _: str):
         thumbnail_info=info_data.get("thumbnail_info"),
     )
 
-    if mxc_url and receiver.client and receiver._should_auto_download_media("m.sticker"):
+    if (
+        mxc_url
+        and receiver.client
+        and receiver._should_auto_download_media("m.sticker")
+    ):
         try:
             cache_path = await receiver._download_media_file(
                 mxc_url,

@@ -19,9 +19,7 @@ class TagsMixin:
         Returns:
             Tags response
         """
-        endpoint = (
-            f"/_matrix/client/v3/user/{self.user_id}/rooms/{room_id}/tags"
-        )
+        endpoint = f"/_matrix/client/v3/user/{self.user_id}/rooms/{room_id}/tags"
         return await self._request("GET", endpoint)
 
     async def set_room_tag(
@@ -38,9 +36,7 @@ class TagsMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = (
-            f"/_matrix/client/v3/user/{self.user_id}/rooms/{room_id}/tags/{tag}"
-        )
+        endpoint = f"/_matrix/client/v3/user/{self.user_id}/rooms/{room_id}/tags/{tag}"
         return await self._request("PUT", endpoint, data=content or {})
 
     async def delete_room_tag(self, room_id: str, tag: str) -> dict[str, Any]:
@@ -54,7 +50,5 @@ class TagsMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = (
-            f"/_matrix/client/v3/user/{self.user_id}/rooms/{room_id}/tags/{tag}"
-        )
+        endpoint = f"/_matrix/client/v3/user/{self.user_id}/rooms/{room_id}/tags/{tag}"
         return await self._request("DELETE", endpoint)

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
+from astrbot.api.message_components import Image
 from astrbot.api.platform import AstrBotMessage
 from astrbot.core.platform.astrbot_message import MessageMember
 from astrbot.core.platform.message_type import MessageType

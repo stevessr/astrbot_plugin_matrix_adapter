@@ -50,9 +50,7 @@ class ProfileMixin:
         endpoint = f"/_matrix/client/v3/user/{self.user_id}/account_data/{type}"
         return await self._request("PUT", endpoint, data=content)
 
-    async def get_room_account_data(
-        self, room_id: str, type: str
-    ) -> dict[str, Any]:
+    async def get_room_account_data(self, room_id: str, type: str) -> dict[str, Any]:
         """
         Get room account data for current user
 
@@ -65,9 +63,7 @@ class ProfileMixin:
         """
         if not hasattr(self, "user_id") or not self.user_id:
             raise Exception("Client not logged in or user_id not set")
-        endpoint = (
-            f"/_matrix/client/v3/user/{self.user_id}/rooms/{room_id}/account_data/{type}"
-        )
+        endpoint = f"/_matrix/client/v3/user/{self.user_id}/rooms/{room_id}/account_data/{type}"
         try:
             return await self._request("GET", endpoint)
         except Exception:
@@ -89,9 +85,7 @@ class ProfileMixin:
         """
         if not hasattr(self, "user_id") or not self.user_id:
             raise Exception("Client not logged in or user_id not set")
-        endpoint = (
-            f"/_matrix/client/v3/user/{self.user_id}/rooms/{room_id}/account_data/{type}"
-        )
+        endpoint = f"/_matrix/client/v3/user/{self.user_id}/rooms/{room_id}/account_data/{type}"
         return await self._request("PUT", endpoint, data=content)
 
     async def set_display_name(self, display_name: str) -> dict[str, Any]:

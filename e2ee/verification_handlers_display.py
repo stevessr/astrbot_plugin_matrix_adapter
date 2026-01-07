@@ -39,6 +39,7 @@ class SASVerificationDisplayMixin:
             await self.client.send_room_message(room_id, message)
         except Exception as e:
             logger.warning(f"发送验证通知失败：{e}")
+
     async def _notify_user_for_approval(
         self, sender: str, device_id: str, room_id: str | None = None
     ):
