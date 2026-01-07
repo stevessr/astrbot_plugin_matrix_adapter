@@ -20,6 +20,7 @@ from .handlers import (
     handle_audio,
     handle_file,
     handle_image,
+    handle_location,
     handle_reaction,
     handle_sticker,
     handle_text,
@@ -211,12 +212,15 @@ class MatrixReceiver:
         msgtype = event.content.get("msgtype")
         handlers = {
             "m.text": handle_text,
+            "m.notice": handle_text,
+            "m.emote": handle_text,
             "m.image": handle_image,
             "m.sticker": handle_sticker,
             "m.video": handle_video,
             "m.audio": handle_audio,
             "m.file": handle_file,
             "m.reaction": handle_reaction,
+            "m.location": handle_location,
         }
         handler = handlers.get(msgtype, handle_unknown)
         await handler(self, chain, event, msgtype)

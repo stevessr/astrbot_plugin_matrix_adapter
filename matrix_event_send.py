@@ -1,12 +1,23 @@
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
-from astrbot.api.message_components import File, Image, Plain, Record, Reply, Video
+from astrbot.api.message_components import (
+    At,
+    File,
+    Image,
+    Location,
+    Plain,
+    Record,
+    Reply,
+    Video,
+)
 
 from .constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES
 from .sender.handlers import (
+    send_at,
     send_audio,
     send_file,
     send_image,
+    send_location,
     send_plain,
     send_sticker,
     send_video,
@@ -107,6 +118,22 @@ async def send_with_client_impl(
             except Exception as e:
                 logger.error(f"发送图片消息失败：{e}")
 
+        elif isinstance(segment, At):
+            try:
+                await send_at(
+                    client,
+                    segment,
+                    room_id,
+                    reply_to,
+                    thread_root,
+                    use_thread,
+                    is_encrypted_room,
+                    e2ee_manager,
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"处理 @ 消息过程出错：{e}")
+
         elif isinstance(segment, File):
             try:
                 await send_file(
@@ -122,6 +149,22 @@ async def send_with_client_impl(
                 sent_count += 1
             except Exception as e:
                 logger.error(f"处理文件消息过程出错：{e}")
+
+        elif isinstance(segment, Location):
+            try:
+                await send_location(
+                    client,
+                    segment,
+                    room_id,
+                    reply_to,
+                    thread_root,
+                    use_thread,
+                    is_encrypted_room,
+                    e2ee_manager,
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"处理位置消息过程出错：{e}")
 
         elif isinstance(segment, Video):
             try:
