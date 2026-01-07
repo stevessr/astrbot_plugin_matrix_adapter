@@ -172,3 +172,16 @@ class MatrixPlatformEvent(AstrMessageEvent):
         """
         await send_streaming_impl(self, generator, use_fallback)
         return await super().send_streaming(generator, use_fallback)
+
+    async def react(self, emoji: str):
+        """对消息添加表情回应。"""
+        try:
+            event_id = getattr(self.message_obj, "message_id", None)
+            if not event_id and hasattr(self.message_obj, "raw_message"):
+                event_id = getattr(self.message_obj.raw_message, "event_id", None)
+            if not event_id:
+                logger.warning("无法添加反应：缺少 event_id")
+                return
+            await self.client.send_reaction(self.session_id, event_id, emoji)
+        except Exception as e:
+            logger.error(f"发送表情反应失败：{e}")

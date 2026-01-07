@@ -81,3 +81,7 @@ class MatrixSender:
             use_thread=use_thread,
             use_notice=use_notice,
         )
+
+    async def send_reaction(self, room_id: str, event_id: str, emoji: str) -> dict:
+        """Send a reaction to a message in a room."""
+        return await self.client.send_reaction(room_id, event_id, emoji)
