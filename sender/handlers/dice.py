@@ -1,3 +1,5 @@
+import random
+
 from astrbot.api.message_components import Dice
 
 from .common import send_content
@@ -13,7 +15,8 @@ async def send_dice(
     is_encrypted_room: bool,
     e2ee_manager,
 ) -> None:
-    content_data = {"msgtype": "m.text", "body": "[dice]"}
+    roll = random.randint(1, 6)
+    content_data = {"msgtype": "m.text", "body": f"[dice] {roll}"}
 
     await send_content(
         client,

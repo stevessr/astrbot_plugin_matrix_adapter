@@ -121,6 +121,7 @@ class MatrixRoom:
     display_name: str = ""
     topic: str = ""
     member_count: int = 0
+    is_direct: bool | None = None
     members: dict[str, str] = field(default_factory=dict)  # user_id -> display_name
     member_avatars: dict[str, str] = field(default_factory=dict)  # user_id -> mxc url
 
@@ -131,7 +132,10 @@ class MatrixRoom:
     @property
     def is_group(self) -> bool:
         """Check if room is a group (more than 2 members)"""
-        return self.member_count > GROUP_CHAT_MIN_MEMBERS_2
+        if self.is_direct is True:
+            return False
+        effective_count = self.member_count or len(self.members)
+        return effective_count > GROUP_CHAT_MIN_MEMBERS_2
 
 
 def parse_event(event_data: dict[str, Any], room_id: str) -> MatrixEvent:

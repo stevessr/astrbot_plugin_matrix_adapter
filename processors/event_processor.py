@@ -81,6 +81,27 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         # Build simplified room object
         room = MatrixRoom(room_id=room_id)
 
+        # Prefer /sync summary counts to avoid lazy-loading member lists
+        summary = room_data.get("summary", {})
+        joined_count = summary.get("m.joined_member_count") or summary.get(
+            "joined_member_count"
+        )
+        invited_count = summary.get("m.invited_member_count") or summary.get(
+            "invited_member_count"
+        )
+        if isinstance(joined_count, int):
+            room.member_count = joined_count + (
+                invited_count if isinstance(invited_count, int) else 0
+            )
+
+        # Flag direct rooms from account data (m.direct)
+        direct_data = self.global_account_data.get("m.direct")
+        if isinstance(direct_data, dict):
+            room.is_direct = any(
+                isinstance(room_ids, list) and room_id in room_ids
+                for room_ids in direct_data.values()
+            )
+
         # Process state events to get room information
         state_events = room_data.get("state", {}).get("events", [])
         for event in state_events:
@@ -93,7 +114,11 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                     avatar_url = content.get("avatar_url")
                     if avatar_url:
                         room.member_avatars[user_id] = avatar_url
-                    room.member_count += 1
+                    if not isinstance(joined_count, int):
+                        room.member_count += 1
+
+        if room.member_count == 0 and room.members:
+            room.member_count = len(room.members)
 
         # Process timeline events
         for event_data in events:

@@ -1,3 +1,5 @@
+import random
+
 from astrbot.api.message_components import RPS
 
 from .common import send_content
@@ -13,7 +15,9 @@ async def send_rps(
     is_encrypted_room: bool,
     e2ee_manager,
 ) -> None:
-    content_data = {"msgtype": "m.text", "body": "[rps]"}
+    choices = ["rock", "paper", "scissors"]
+    choice = random.choice(choices)
+    content_data = {"msgtype": "m.text", "body": f"[rps] {choice}"}
 
     await send_content(
         client,

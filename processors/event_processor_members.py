@@ -36,13 +36,19 @@ class MatrixEventProcessorMembers:
         avatar_url = content.get("avatar_url") or room.member_avatars.get(user_id)
 
         if membership == "join":
+            is_new_member = user_id not in room.members
             room.members[user_id] = display_name
             if avatar_url:
                 room.member_avatars[user_id] = avatar_url
             self.user_store.upsert(user_id, display_name, avatar_url)
+            if is_new_member:
+                room.member_count += 1
         elif membership in ("leave", "ban"):
+            was_member = user_id in room.members
             room.members.pop(user_id, None)
             room.member_avatars.pop(user_id, None)
+            if was_member and room.member_count > 0:
+                room.member_count -= 1
         else:
             # Membership changes without join/leave still update profile fields if present.
             if content.get("displayname") or content.get("avatar_url"):

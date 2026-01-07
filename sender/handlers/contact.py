@@ -16,8 +16,18 @@ async def send_contact(
     contact_type = getattr(segment, "_type", "") or ""
     contact_id = getattr(segment, "id", "") or ""
     body = f"[contact] type={contact_type} id={contact_id}".strip()
-
     content_data = {"msgtype": "m.text", "body": body}
+
+    if isinstance(contact_id, str) and contact_id.startswith("@") and ":" in contact_id:
+        link = f"https://matrix.to/#/{contact_id}"
+        display = contact_id
+        content_data = {
+            "msgtype": "m.text",
+            "body": display,
+            "format": "org.matrix.custom.html",
+            "formatted_body": f'<a href="{link}">{display}</a>',
+            "m.mentions": {"user_ids": [contact_id]},
+        }
 
     await send_content(
         client,

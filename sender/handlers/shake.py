@@ -13,7 +13,7 @@ async def send_shake(
     is_encrypted_room: bool,
     e2ee_manager,
 ) -> None:
-    content_data = {"msgtype": "m.text", "body": "[shake]"}
+    content_data = {"msgtype": "m.emote", "body": "shakes the chat"}
 
     await send_content(
         client,
