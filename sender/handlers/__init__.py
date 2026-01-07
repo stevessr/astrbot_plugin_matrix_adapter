@@ -1,8 +1,14 @@
 from .at import send_at as send_at
 from .audio import send_audio as send_audio
+from .contact import send_contact as send_contact
+from .dice import send_dice as send_dice
 from .file import send_file as send_file
 from .image import send_image as send_image
 from .location import send_location as send_location
+from .music import send_music as send_music
 from .plain import send_plain as send_plain
+from .rps import send_rps as send_rps
+from .shake import send_shake as send_shake
+from .share import send_share as send_share
 from .sticker import send_sticker as send_sticker
 from .video import send_video as send_video

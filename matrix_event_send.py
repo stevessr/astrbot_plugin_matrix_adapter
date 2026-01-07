@@ -1,13 +1,19 @@
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
 from astrbot.api.message_components import (
+    RPS,
     At,
+    Contact,
+    Dice,
     File,
     Image,
     Location,
+    Music,
     Plain,
     Record,
     Reply,
+    Shake,
+    Share,
     Video,
 )
 
@@ -15,10 +21,16 @@ from .constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES
 from .sender.handlers import (
     send_at,
     send_audio,
+    send_contact,
+    send_dice,
     send_file,
     send_image,
     send_location,
+    send_music,
     send_plain,
+    send_rps,
+    send_shake,
+    send_share,
     send_sticker,
     send_video,
 )
@@ -165,6 +177,102 @@ async def send_with_client_impl(
                 sent_count += 1
             except Exception as e:
                 logger.error(f"处理位置消息过程出错：{e}")
+
+        elif isinstance(segment, Share):
+            try:
+                await send_share(
+                    client,
+                    segment,
+                    room_id,
+                    reply_to,
+                    thread_root,
+                    use_thread,
+                    is_encrypted_room,
+                    e2ee_manager,
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"处理分享消息过程出错：{e}")
+
+        elif isinstance(segment, Music):
+            try:
+                await send_music(
+                    client,
+                    segment,
+                    room_id,
+                    reply_to,
+                    thread_root,
+                    use_thread,
+                    is_encrypted_room,
+                    e2ee_manager,
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"处理音乐消息过程出错：{e}")
+
+        elif isinstance(segment, Contact):
+            try:
+                await send_contact(
+                    client,
+                    segment,
+                    room_id,
+                    reply_to,
+                    thread_root,
+                    use_thread,
+                    is_encrypted_room,
+                    e2ee_manager,
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"处理联系人消息过程出错：{e}")
+
+        elif isinstance(segment, RPS):
+            try:
+                await send_rps(
+                    client,
+                    segment,
+                    room_id,
+                    reply_to,
+                    thread_root,
+                    use_thread,
+                    is_encrypted_room,
+                    e2ee_manager,
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"处理 RPS 消息过程出错：{e}")
+
+        elif isinstance(segment, Dice):
+            try:
+                await send_dice(
+                    client,
+                    segment,
+                    room_id,
+                    reply_to,
+                    thread_root,
+                    use_thread,
+                    is_encrypted_room,
+                    e2ee_manager,
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"处理骰子消息过程出错：{e}")
+
+        elif isinstance(segment, Shake):
+            try:
+                await send_shake(
+                    client,
+                    segment,
+                    room_id,
+                    reply_to,
+                    thread_root,
+                    use_thread,
+                    is_encrypted_room,
+                    e2ee_manager,
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"处理震动消息过程出错：{e}")
 
         elif isinstance(segment, Video):
             try:
