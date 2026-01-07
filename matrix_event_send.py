@@ -1,3 +1,5 @@
+import json
+
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
 from astrbot.api.message_components import (
@@ -5,16 +7,24 @@ from astrbot.api.message_components import (
     At,
     Contact,
     Dice,
+    Face,
     File,
+    Forward,
     Image,
+    Json,
     Location,
     Music,
+    Node,
+    Nodes,
     Plain,
+    Poke,
     Record,
     Reply,
     Shake,
     Share,
+    Unknown,
     Video,
+    WechatEmoji,
 )
 
 from .constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES
@@ -46,6 +56,58 @@ def _is_sticker_component(obj) -> bool:
         return False
     required_attrs = ["body", "url", "info", "to_matrix_content"]
     return all(hasattr(obj, attr) for attr in required_attrs)
+
+
+def _truncate_text(text: str, max_len: int = 400) -> str:
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 20] + "... (truncated)"
+
+
+def _summarize_components(components: list, max_len: int = 300) -> str:
+    parts: list[str] = []
+    for comp in components or []:
+        if isinstance(comp, Plain):
+            parts.append(comp.text)
+        else:
+            parts.append(f"[{type(comp).__name__}]")
+    return _truncate_text(" ".join(parts).strip(), max_len=max_len)
+
+
+def _fallback_text_for_segment(segment) -> str:
+    if isinstance(segment, Face):
+        return f"[face:{getattr(segment, 'id', '')}]".strip()
+    if isinstance(segment, Poke):
+        poke_type = getattr(segment, "type", "") or ""
+        return f"[poke:{poke_type}]" if poke_type else "[poke]"
+    if isinstance(segment, Forward):
+        forward_id = getattr(segment, "id", "") or ""
+        return f"[forward:{forward_id}]" if forward_id else "[forward]"
+    if isinstance(segment, Node):
+        name = getattr(segment, "name", "") or ""
+        uin = getattr(segment, "uin", "") or ""
+        prefix = " ".join(x for x in [name, f"({uin})" if uin else ""] if x).strip()
+        summary = _summarize_components(getattr(segment, "content", []))
+        body = " ".join(x for x in [prefix, summary] if x).strip()
+        return f"[node] {body}".strip()
+    if isinstance(segment, Nodes):
+        count = len(getattr(segment, "nodes", []) or [])
+        return f"[nodes] count={count}"
+    if isinstance(segment, Json):
+        try:
+            payload = json.dumps(segment.data, ensure_ascii=True)
+        except Exception:
+            payload = str(segment.data)
+        return _truncate_text(f"[json] {payload}")
+    if isinstance(segment, WechatEmoji):
+        md5 = getattr(segment, "md5", "") or ""
+        cdnurl = getattr(segment, "cdnurl", "") or ""
+        body = " ".join(x for x in [md5, cdnurl] if x).strip()
+        return f"[wechat_emoji] {body}".strip()
+    if isinstance(segment, Unknown):
+        return getattr(segment, "text", "") or "[unknown]"
+    return f"[{type(segment).__name__}]"
+
 
 async def send_with_client_impl(
     client,
@@ -324,5 +386,35 @@ async def send_with_client_impl(
                 sent_count += 1
             except Exception as e:
                 logger.error(f"发送 sticker 失败：{e}")
+        elif isinstance(
+            segment,
+            (
+                Face,
+                Poke,
+                Forward,
+                Node,
+                Nodes,
+                Json,
+                Unknown,
+                WechatEmoji,
+            ),
+        ):
+            try:
+                fallback_text = _fallback_text_for_segment(segment)
+                await send_plain(
+                    client,
+                    Plain(fallback_text),
+                    room_id,
+                    reply_to,
+                    thread_root,
+                    use_thread,
+                    original_message_info,
+                    is_encrypted_room,
+                    e2ee_manager,
+                    use_notice,
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"发送兼容消息失败：{e}")
 
     return sent_count
