@@ -130,7 +130,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             await self._handle_in_room_verification(room, event_data)
             return
 
-        if event_type in ("m.room.message", "m.room.encrypted", "m.sticker"):
+        if event_type in ("m.room.message", "m.room.encrypted", "m.sticker", "m.reaction"):
             # Parse plaintext message event, encrypted event, or sticker
             event = parse_event(event_data, room.room_id)
             await self._process_message_event(room, event)

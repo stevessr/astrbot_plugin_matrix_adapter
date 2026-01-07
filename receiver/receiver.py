@@ -20,6 +20,7 @@ from .handlers import (
     handle_audio,
     handle_file,
     handle_image,
+    handle_reaction,
     handle_sticker,
     handle_text,
     handle_unknown,
@@ -215,6 +216,7 @@ class MatrixReceiver:
             "m.video": handle_video,
             "m.audio": handle_audio,
             "m.file": handle_file,
+            "m.reaction": handle_reaction,
         }
         handler = handlers.get(msgtype, handle_unknown)
         await handler(self, chain, event, msgtype)

@@ -147,6 +147,17 @@ def parse_event(event_data: dict[str, Any], room_id: str) -> MatrixEvent:
     """
     event_type = event_data.get("type", "")
     content = event_data.get("content", {})
+    relates_to = content.get("m.relates_to", {})
+
+    # Treat edits (m.replace) as normal messages with new content.
+    if (
+        event_type == "m.room.message"
+        and relates_to.get("rel_type") == "m.replace"
+        and content.get("m.new_content")
+    ):
+        content = dict(content.get("m.new_content", {}))
+        event_data = dict(event_data)
+        event_data["content"] = content
 
     if event_type == "m.room.message":
         msgtype = content.get("msgtype", "")
@@ -162,10 +173,18 @@ def parse_event(event_data: dict[str, Any], room_id: str) -> MatrixEvent:
         # 贴纸事件使用 RoomMessageEvent 结构，设置 msgtype 为 m.sticker
         event = RoomMessageEvent.from_dict(event_data, room_id)
         event.msgtype = "m.sticker"
-        # 确保content中的msgtype也被设置（用于接收器处理）
+        # 确保 content 中的 msgtype 也被设置（用于接收器处理）
         if "msgtype" not in event.content:
             event.content["msgtype"] = "m.sticker"
         return event
+    elif event_type == "m.reaction":
+        reaction = content.get("m.relates_to", {}).get("key", "")
+        reaction_content = dict(content)
+        reaction_content["msgtype"] = "m.reaction"
+        reaction_content["body"] = reaction
+        event_data = dict(event_data)
+        event_data["content"] = reaction_content
+        return RoomMessageEvent.from_dict(event_data, room_id)
     elif event_type == "m.room.member" and content.get("membership") == "invite":
         return InviteEvent.from_dict(event_data, room_id)
     else:
