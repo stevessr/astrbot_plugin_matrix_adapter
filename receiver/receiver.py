@@ -51,8 +51,8 @@ class MatrixReceiver:
 
     def _should_auto_download_media(self, msgtype: str) -> bool:
         """检查是否应该自动下载该类型的媒体文件"""
-        # 默认自动下载图片、贴纸和视频
-        return msgtype in ["m.image", "m.sticker", "m.video"]
+        # 默认自动下载图片、贴纸、视频、语音、文件
+        return msgtype in ["m.image", "m.sticker", "m.video", "m.audio", "m.file"]
 
     async def _download_media_file(
         self, mxc_url: str, filename: str = None, mimetype: str = None
@@ -202,90 +202,82 @@ class MatrixReceiver:
 
         # 处理消息内容
         msgtype = event.content.get("msgtype")
+        handlers = {
+            "m.text": self._handle_text,
+            "m.image": self._handle_image,
+            "m.sticker": self._handle_sticker,
+            "m.video": self._handle_video,
+            "m.audio": self._handle_audio,
+            "m.file": self._handle_file,
+        }
+        handler = handlers.get(msgtype, self._handle_unknown)
+        await handler(chain, event, msgtype)
 
-        if msgtype == "m.text":
-            text = event.body
+        message.message = (
+            chain.chain
+        )  # AstrBotMessage 需要列表格式的消息链 (list[BaseMessageComponent])
+        return message
 
-            # 处理 @提及
-            # 简单实现：检查文本是否以 @bot_name 开头
-            if self.bot_name and text.startswith(f"@{self.bot_name}"):
-                from astrbot.api.message_components import At
+    async def _handle_text(self, chain: MessageChain, event, _: str):
+        text = event.body
 
-                # 移除 @bot_name 前缀
-                text = text[len(self.bot_name) + 1 :].lstrip()
-                # 添加 At 组件 (self)
-                chain.chain.append(At(user_id=self.user_id))  # bot self
+        # 处理 @提及：检查文本是否以 @bot_name 开头
+        if self.bot_name and text.startswith(f"@{self.bot_name}"):
+            from astrbot.api.message_components import At
 
-            if text:
-                chain.chain.append(Plain(text))
+            text = text[len(self.bot_name) + 1 :].lstrip()
+            chain.chain.append(At(user_id=self.user_id))  # bot self
 
-        elif msgtype == "m.image":
-            mxc_url = event.content.get("url")
-            if mxc_url and self.client and self._should_auto_download_media("m.image"):
-                try:
-                    cache_path = await self._download_media_file(
-                        mxc_url, event.content.get("body", "image.jpg")
-                    )
-                    chain.chain.append(Image.fromFileSystem(str(cache_path)))
-                except Exception as e:
-                    logger.error(f"Failed to download Matrix image: {e}")
-                    # Fallback to plain text
-                    chain.chain.append(Plain(f"[图片下载失败：{event.body}]"))
-            elif mxc_url and self.mxc_converter:
-                # Fallback to URL if no client or auto-download disabled
-                http_url = self.mxc_converter(mxc_url)
-                chain.chain.append(Image.fromURL(http_url))
-            else:
-                # No download and no converter fallback
-                chain.chain.append(Plain(f"[图片：{event.body}]"))
+        if text:
+            chain.chain.append(Plain(text))
 
-        elif msgtype == "m.sticker":
-            # 贴纸处理：创建 Sticker 对象
-            mxc_url = event.content.get("url")
-            info_data = event.content.get("info", {})
+    async def _handle_image(self, chain: MessageChain, event, _: str):
+        mxc_url = event.content.get("url")
+        if mxc_url and self.client and self._should_auto_download_media("m.image"):
+            try:
+                cache_path = await self._download_media_file(
+                    mxc_url, event.content.get("body", "image.jpg")
+                )
+                chain.chain.append(Image.fromFileSystem(str(cache_path)))
+            except Exception as e:
+                logger.error(f"Failed to download Matrix image: {e}")
+                chain.chain.append(Plain(f"[图片下载失败：{event.body}]"))
+        elif mxc_url and self.mxc_converter:
+            http_url = self.mxc_converter(mxc_url)
+            chain.chain.append(Image.fromURL(http_url))
+        else:
+            chain.chain.append(Plain(f"[图片：{event.body}]"))
 
-            # 创建 StickerInfo
-            sticker_info = StickerInfo(
-                mimetype=info_data.get("mimetype", "image/png"),
-                width=info_data.get("w"),
-                height=info_data.get("h"),
-                size=info_data.get("size"),
-                thumbnail_url=info_data.get("thumbnail_url"),
-                thumbnail_info=info_data.get("thumbnail_info"),
-            )
+    async def _handle_sticker(self, chain: MessageChain, event, _: str):
+        mxc_url = event.content.get("url")
+        info_data = event.content.get("info", {})
 
-            if (
-                mxc_url
-                and self.client
-                and self._should_auto_download_media("m.sticker")
-            ):
-                try:
-                    cache_path = await self._download_media_file(
-                        mxc_url,
-                        event.content.get("body", "sticker.png"),
-                        sticker_info.mimetype,
-                    )
-                    # 创建 Sticker 对象
-                    sticker = Sticker(
-                        body=event.body,
-                        url=f"file:///{cache_path}",
-                        info=sticker_info,
-                        mxc_url=mxc_url,
-                    )
-                    chain.chain.append(sticker)
-                    logger.debug(f"收到 sticker: {event.body}")
-                except Exception as e:
-                    logger.error(f"Failed to download Matrix sticker: {e}")
-                    # 降级为 Sticker 对象，使用 MXC URL
-                    sticker = Sticker(
-                        body=event.body,
-                        url=mxc_url,
-                        info=sticker_info,
-                        mxc_url=mxc_url,
-                    )
-                    chain.chain.append(sticker)
-            elif mxc_url:
-                # 创建使用 MXC URL 的 Sticker
+        sticker_info = StickerInfo(
+            mimetype=info_data.get("mimetype", "image/png"),
+            width=info_data.get("w"),
+            height=info_data.get("h"),
+            size=info_data.get("size"),
+            thumbnail_url=info_data.get("thumbnail_url"),
+            thumbnail_info=info_data.get("thumbnail_info"),
+        )
+
+        if mxc_url and self.client and self._should_auto_download_media("m.sticker"):
+            try:
+                cache_path = await self._download_media_file(
+                    mxc_url,
+                    event.content.get("body", "sticker.png"),
+                    sticker_info.mimetype,
+                )
+                sticker = Sticker(
+                    body=event.body,
+                    url=f"file:///{cache_path}",
+                    info=sticker_info,
+                    mxc_url=mxc_url,
+                )
+                chain.chain.append(sticker)
+                logger.debug(f"收到 sticker: {event.body}")
+            except Exception as e:
+                logger.error(f"Failed to download Matrix sticker: {e}")
                 sticker = Sticker(
                     body=event.body,
                     url=mxc_url,
@@ -293,81 +285,81 @@ class MatrixReceiver:
                     mxc_url=mxc_url,
                 )
                 chain.chain.append(sticker)
-            else:
-                chain.chain.append(Plain(f"[贴纸：{event.body}]"))
-
-        elif msgtype == "m.video":
-            mxc_url = event.content.get("url")
-            info_data = event.content.get("info", {})
-            if mxc_url and self.client and self._should_auto_download_media("m.video"):
-                try:
-                    cache_path = await self._download_media_file(
-                        mxc_url,
-                        event.content.get("body", "video.mp4"),
-                        info_data.get("mimetype"),
-                    )
-                    chain.chain.append(Video.fromFileSystem(str(cache_path)))
-                except Exception as e:
-                    logger.error(f"Failed to download Matrix video: {e}")
-                    chain.chain.append(Plain(f"[视频下载失败：{event.body}]"))
-            elif mxc_url and self.mxc_converter:
-                http_url = self.mxc_converter(mxc_url)
-                try:
-                    chain.chain.append(Video.fromURL(http_url))
-                except Exception:
-                    chain.chain.append(Plain(f"[视频：{event.body}]"))
-            else:
-                chain.chain.append(Plain(f"[视频：{event.body}]"))
-
-        elif msgtype == "m.audio":
-            mxc_url = event.content.get("url")
-            info_data = event.content.get("info", {})
-            if mxc_url and self.client and self._should_auto_download_media("m.audio"):
-                try:
-                    cache_path = await self._download_media_file(
-                        mxc_url,
-                        event.content.get("body", "audio.mp3"),
-                        info_data.get("mimetype"),
-                    )
-                    chain.chain.append(Record.fromFileSystem(str(cache_path)))
-                except Exception as e:
-                    logger.error(f"Failed to download Matrix audio: {e}")
-                    chain.chain.append(Plain(f"[语音下载失败：{event.body}]"))
-            elif mxc_url and self.mxc_converter:
-                http_url = self.mxc_converter(mxc_url)
-                try:
-                    chain.chain.append(Record.fromURL(http_url))
-                except Exception:
-                    chain.chain.append(Plain(f"[语音：{event.body}]"))
-            else:
-                chain.chain.append(Plain(f"[语音：{event.body}]"))
-
-        elif msgtype == "m.file":
-            mxc_url = event.content.get("url")
-            info_data = event.content.get("info", {})
-            filename = event.content.get("body", "file.bin")
-            if mxc_url and self.client and self._should_auto_download_media("m.file"):
-                try:
-                    cache_path = await self._download_media_file(
-                        mxc_url, filename, info_data.get("mimetype")
-                    )
-                    chain.chain.append(File(name=filename, file=str(cache_path)))
-                except Exception as e:
-                    logger.error(f"Failed to download Matrix file: {e}")
-                    chain.chain.append(Plain(f"[文件下载失败：{event.body}]"))
-            elif mxc_url and self.mxc_converter:
-                http_url = self.mxc_converter(mxc_url)
-                chain.chain.append(File(name=filename, url=http_url))
-            else:
-                chain.chain.append(Plain(f"[文件：{event.body}]"))
-
-        else:
-            # 未知类型，直接作为文本
-            chain.chain.append(
-                Plain(event.body or f"[Unknown message type: {msgtype}]")
+        elif mxc_url:
+            sticker = Sticker(
+                body=event.body,
+                url=mxc_url,
+                info=sticker_info,
+                mxc_url=mxc_url,
             )
+            chain.chain.append(sticker)
+        else:
+            chain.chain.append(Plain(f"[贴纸：{event.body}]"))
 
-        message.message = (
-            chain.chain
-        )  # AstrBotMessage 需要列表格式的消息链 (list[BaseMessageComponent])
-        return message
+    async def _handle_video(self, chain: MessageChain, event, _: str):
+        mxc_url = event.content.get("url")
+        info_data = event.content.get("info", {})
+        if mxc_url and self.client and self._should_auto_download_media("m.video"):
+            try:
+                cache_path = await self._download_media_file(
+                    mxc_url,
+                    event.content.get("body", "video.mp4"),
+                    info_data.get("mimetype"),
+                )
+                chain.chain.append(Video.fromFileSystem(str(cache_path)))
+            except Exception as e:
+                logger.error(f"Failed to download Matrix video: {e}")
+                chain.chain.append(Plain(f"[视频下载失败：{event.body}]"))
+        elif mxc_url and self.mxc_converter:
+            http_url = self.mxc_converter(mxc_url)
+            try:
+                chain.chain.append(Video.fromURL(http_url))
+            except Exception:
+                chain.chain.append(Plain(f"[视频：{event.body}]"))
+        else:
+            chain.chain.append(Plain(f"[视频：{event.body}]"))
+
+    async def _handle_audio(self, chain: MessageChain, event, _: str):
+        mxc_url = event.content.get("url")
+        info_data = event.content.get("info", {})
+        if mxc_url and self.client and self._should_auto_download_media("m.audio"):
+            try:
+                cache_path = await self._download_media_file(
+                    mxc_url,
+                    event.content.get("body", "audio.mp3"),
+                    info_data.get("mimetype"),
+                )
+                chain.chain.append(Record.fromFileSystem(str(cache_path)))
+            except Exception as e:
+                logger.error(f"Failed to download Matrix audio: {e}")
+                chain.chain.append(Plain(f"[语音下载失败：{event.body}]"))
+        elif mxc_url and self.mxc_converter:
+            http_url = self.mxc_converter(mxc_url)
+            try:
+                chain.chain.append(Record.fromURL(http_url))
+            except Exception:
+                chain.chain.append(Plain(f"[语音：{event.body}]"))
+        else:
+            chain.chain.append(Plain(f"[语音：{event.body}]"))
+
+    async def _handle_file(self, chain: MessageChain, event, _: str):
+        mxc_url = event.content.get("url")
+        info_data = event.content.get("info", {})
+        filename = event.content.get("body", "file.bin")
+        if mxc_url and self.client and self._should_auto_download_media("m.file"):
+            try:
+                cache_path = await self._download_media_file(
+                    mxc_url, filename, info_data.get("mimetype")
+                )
+                chain.chain.append(File(name=filename, file=str(cache_path)))
+            except Exception as e:
+                logger.error(f"Failed to download Matrix file: {e}")
+                chain.chain.append(Plain(f"[文件下载失败：{event.body}]"))
+        elif mxc_url and self.mxc_converter:
+            http_url = self.mxc_converter(mxc_url)
+            chain.chain.append(File(name=filename, url=http_url))
+        else:
+            chain.chain.append(Plain(f"[文件：{event.body}]"))
+
+    async def _handle_unknown(self, chain: MessageChain, event, msgtype: str):
+        chain.chain.append(Plain(event.body or f"[Unknown message type: {msgtype}]"))
