@@ -3,6 +3,7 @@ Matrix 消息发送组件
 """
 
 from astrbot.api.event import MessageChain
+from astrbot.api.message_components import Record, Video
 
 from ..matrix_event import MatrixPlatformEvent
 
@@ -29,6 +30,52 @@ class MatrixSender:
             self.client,
             message_chain,
             room_id,
+            reply_to=reply_to,
+            thread_root=thread_root,
+            use_thread=use_thread,
+            use_notice=use_notice,
+        )
+
+    async def send_video(
+        self,
+        room_id: str,
+        video: str,
+        reply_to: str = None,
+        thread_root: str = None,
+        use_thread: bool = False,
+        use_notice: bool = False,
+    ) -> int:
+        """Send a video to a room (file path or http/https URL)."""
+        if video.startswith("http://") or video.startswith("https://"):
+            segment = Video.fromURL(video)
+        else:
+            segment = Video.fromFileSystem(video)
+        return await self.send_message(
+            room_id,
+            MessageChain([segment]),
+            reply_to=reply_to,
+            thread_root=thread_root,
+            use_thread=use_thread,
+            use_notice=use_notice,
+        )
+
+    async def send_audio(
+        self,
+        room_id: str,
+        audio: str,
+        reply_to: str = None,
+        thread_root: str = None,
+        use_thread: bool = False,
+        use_notice: bool = False,
+    ) -> int:
+        """Send an audio clip to a room (file path or http/https URL)."""
+        if audio.startswith("http://") or audio.startswith("https://"):
+            segment = Record.fromURL(audio)
+        else:
+            segment = Record.fromFileSystem(audio)
+        return await self.send_message(
+            room_id,
+            MessageChain([segment]),
             reply_to=reply_to,
             thread_root=thread_root,
             use_thread=use_thread,

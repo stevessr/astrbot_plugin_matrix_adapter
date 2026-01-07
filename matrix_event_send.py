@@ -5,7 +5,7 @@ from typing import Any
 
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
-from astrbot.api.message_components import File, Image, Plain, Reply
+from astrbot.api.message_components import File, Image, Plain, Record, Reply, Video
 
 from .constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES, TEXT_TRUNCATE_LENGTH_50
 from .sticker import Sticker
@@ -323,6 +323,140 @@ async def send_with_client_impl(
                     logger.error(f"发送文件消息失败：{e}")
             except Exception as e:
                 logger.error(f"处理文件消息过程出错：{e}")
+
+        elif isinstance(segment, Video):
+            try:
+                video_path = await segment.convert_to_file_path()
+                filename = Path(video_path).name
+                with open(video_path, "rb") as f:
+                    video_data = f.read()
+
+                content_type = mimetypes.guess_type(filename)[0] or "video/mp4"
+                video_size = len(video_data)
+                if video_size > upload_size_limit:
+                    logger.warning(
+                        f"视频大小超过限制（{video_size} > {upload_size_limit}），上传可能失败"
+                    )
+
+                upload_resp = await client.upload_file(
+                    data=video_data, content_type=content_type, filename=filename
+                )
+
+                content_uri = upload_resp["content_uri"]
+                content = {
+                    "msgtype": "m.video",
+                    "body": filename,
+                    "url": content_uri,
+                    "info": {"mimetype": content_type, "size": video_size},
+                }
+
+                if use_thread and thread_root:
+                    content["m.relates_to"] = {
+                        "rel_type": "m.thread",
+                        "event_id": thread_root,
+                        "m.in_reply_to": {"event_id": reply_to} if reply_to else None,
+                    }
+                elif reply_to:
+                    content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
+
+                try:
+                    if is_encrypted_room and e2ee_manager:
+                        encrypted = await e2ee_manager.encrypt_message(
+                            room_id, "m.room.message", content
+                        )
+                        if encrypted:
+                            await client.send_message(
+                                room_id=room_id,
+                                msg_type="m.room.encrypted",
+                                content=encrypted,
+                            )
+                            sent_count += 1
+                        else:
+                            logger.warning("加密视频消息失败，尝试发送未加密消息")
+                            await client.send_message(
+                                room_id=room_id,
+                                msg_type="m.room.message",
+                                content=content,
+                            )
+                            sent_count += 1
+                    else:
+                        await client.send_message(
+                            room_id=room_id,
+                            msg_type="m.room.message",
+                            content=content,
+                        )
+                        sent_count += 1
+                except Exception as e:
+                    logger.error(f"发送视频消息失败：{e}")
+            except Exception as e:
+                logger.error(f"处理视频消息过程出错：{e}")
+
+        elif isinstance(segment, Record):
+            try:
+                audio_path = await segment.convert_to_file_path()
+                filename = Path(audio_path).name
+                with open(audio_path, "rb") as f:
+                    audio_data = f.read()
+
+                content_type = mimetypes.guess_type(filename)[0] or "audio/ogg"
+                audio_size = len(audio_data)
+                if audio_size > upload_size_limit:
+                    logger.warning(
+                        f"语音大小超过限制（{audio_size} > {upload_size_limit}），上传可能失败"
+                    )
+
+                upload_resp = await client.upload_file(
+                    data=audio_data, content_type=content_type, filename=filename
+                )
+
+                content_uri = upload_resp["content_uri"]
+                content = {
+                    "msgtype": "m.audio",
+                    "body": filename,
+                    "url": content_uri,
+                    "info": {"mimetype": content_type, "size": audio_size},
+                }
+
+                if use_thread and thread_root:
+                    content["m.relates_to"] = {
+                        "rel_type": "m.thread",
+                        "event_id": thread_root,
+                        "m.in_reply_to": {"event_id": reply_to} if reply_to else None,
+                    }
+                elif reply_to:
+                    content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
+
+                try:
+                    if is_encrypted_room and e2ee_manager:
+                        encrypted = await e2ee_manager.encrypt_message(
+                            room_id, "m.room.message", content
+                        )
+                        if encrypted:
+                            await client.send_message(
+                                room_id=room_id,
+                                msg_type="m.room.encrypted",
+                                content=encrypted,
+                            )
+                            sent_count += 1
+                        else:
+                            logger.warning("加密语音消息失败，尝试发送未加密消息")
+                            await client.send_message(
+                                room_id=room_id,
+                                msg_type="m.room.message",
+                                content=content,
+                            )
+                            sent_count += 1
+                    else:
+                        await client.send_message(
+                            room_id=room_id,
+                            msg_type="m.room.message",
+                            content=content,
+                        )
+                        sent_count += 1
+                except Exception as e:
+                    logger.error(f"发送语音消息失败：{e}")
+            except Exception as e:
+                logger.error(f"处理语音消息过程出错：{e}")
 
         elif _is_sticker_component(segment):
             try:

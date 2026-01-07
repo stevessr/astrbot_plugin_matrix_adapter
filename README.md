@@ -9,7 +9,7 @@ Matrix 协议适配器插件，让 AstrBot 能够连接到 Matrix 网络，支�
 - **消息线程**：支持 Matrix Threading 功能
 - **自动加入房间**：可配置自动接受房间邀请
 - **富文本消息**：支持 Markdown 格式的消息发送
-- **媒体消息**：支持图片、文件等媒体消息的收发
+- **媒体消息**：支持图片、视频、语音、文件等媒体消息的收发
 - **表情回应**：支持消息表情回应（Reaction）
 - **设备管理**：自动生成和管理设备 ID
 
@@ -129,6 +129,44 @@ data/plugins/astrbot_plugin_matrix_adapter/
 **示例**：
 ```
 /approve_device @alice:matrix.org DEVICEID123
+```
+
+## 开发接口
+
+### 发送视频
+
+Matrix 适配器暴露了 `MatrixSender.send_video` 接口用于发送视频（文件路径或 http/https URL）：
+
+```python
+from astrbot.api.event import MessageChain
+from astrbot.api.message_components import Video
+
+# adapter 是 Matrix 平台适配器实例
+await adapter.sender.send_video("!roomid:example.org", "/path/to/video.mp4")
+
+# 或者直接构造 MessageChain
+await adapter.sender.send_message(
+    "!roomid:example.org",
+    MessageChain([Video.fromURL("https://example.org/video.mp4")]),
+)
+```
+
+### 发送语音
+
+Matrix 适配器暴露了 `MatrixSender.send_audio` 接口用于发送语音（文件路径或 http/https URL）：
+
+```python
+from astrbot.api.event import MessageChain
+from astrbot.api.message_components import Record
+
+# adapter 是 Matrix 平台适配器实例
+await adapter.sender.send_audio("!roomid:example.org", "/path/to/audio.ogg")
+
+# 或者直接构造 MessageChain
+await adapter.sender.send_message(
+    "!roomid:example.org",
+    MessageChain([Record.fromURL("https://example.org/audio.ogg")]),
+)
 ```
 
 ## E2EE 端到端加密
