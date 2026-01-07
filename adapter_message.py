@@ -5,7 +5,6 @@ Matrix adapter message helpers.
 from astrbot.api import logger
 
 from .constants import DEFAULT_TYPING_TIMEOUT_MS
-from .matrix_event import MatrixPlatformEvent
 
 
 class MatrixAdapterMessageMixin:
@@ -35,6 +34,8 @@ class MatrixAdapterMessageMixin:
 
     async def handle_msg(self, message):
         try:
+            from .matrix_event import MatrixPlatformEvent
+
             message_event = MatrixPlatformEvent(
                 message_str=message.message_str,
                 message_obj=message,

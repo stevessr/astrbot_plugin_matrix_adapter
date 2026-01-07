@@ -5,7 +5,6 @@ Matrix 消息发送组件
 from astrbot.api.event import MessageChain
 from astrbot.api.message_components import Record, Video
 
-from ..matrix_event import MatrixPlatformEvent
 
 # Update import: markdown_utils is now in ..utils.markdown_utils
 
@@ -26,6 +25,8 @@ class MatrixSender:
         """
         Send a message to a room
         """
+        from ..matrix_event import MatrixPlatformEvent
+
         return await MatrixPlatformEvent.send_with_client(
             self.client,
             message_chain,
