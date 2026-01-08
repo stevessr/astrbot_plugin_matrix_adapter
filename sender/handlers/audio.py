@@ -1,5 +1,6 @@
 import mimetypes
 from pathlib import Path
+from typing import Any
 
 from astrbot.api import logger
 from astrbot.api.message_components import Record
@@ -35,11 +36,39 @@ async def send_audio(
     )
 
     content_uri = upload_resp["content_uri"]
+
+    # 根据 Matrix 规范构建 info 对象
+    info: dict[str, Any] = {"mimetype": content_type, "size": audio_size}
+
+    # 尝试获取音频时长（使用 ffprobe）
+    try:
+        import subprocess
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "quiet", "-print_format", "json",
+                "-show_format", audio_path
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            import json
+            probe_data = json.loads(result.stdout)
+            # 获取时长（毫秒）
+            if "format" in probe_data and "duration" in probe_data["format"]:
+                duration_sec = float(probe_data["format"]["duration"])
+                info["duration"] = int(duration_sec * 1000)
+    except FileNotFoundError:
+        logger.debug("ffprobe 不可用，跳过音频元数据获取")
+    except Exception as e:
+        logger.debug(f"获取音频元数据失败：{e}")
+
     content = {
         "msgtype": "m.audio",
         "body": filename,
         "url": content_uri,
-        "info": {"mimetype": content_type, "size": audio_size},
+        "info": info,
     }
 
     await send_content(

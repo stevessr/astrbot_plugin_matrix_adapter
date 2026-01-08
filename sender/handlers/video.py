@@ -1,5 +1,6 @@
 import mimetypes
 from pathlib import Path
+from typing import Any
 
 from astrbot.api import logger
 from astrbot.api.message_components import Video
@@ -35,11 +36,47 @@ async def send_video(
     )
 
     content_uri = upload_resp["content_uri"]
+
+    # 根据 Matrix 规范构建 info 对象
+    info: dict[str, Any] = {"mimetype": content_type, "size": video_size}
+
+    # 尝试获取视频时长和尺寸（使用 ffprobe 或 moviepy）
+    try:
+        import subprocess
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "quiet", "-print_format", "json",
+                "-show_format", "-show_streams", video_path
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            import json
+            probe_data = json.loads(result.stdout)
+            # 获取时长（毫秒）
+            if "format" in probe_data and "duration" in probe_data["format"]:
+                duration_sec = float(probe_data["format"]["duration"])
+                info["duration"] = int(duration_sec * 1000)
+            # 获取视频流的宽高
+            for stream in probe_data.get("streams", []):
+                if stream.get("codec_type") == "video":
+                    if "width" in stream:
+                        info["w"] = stream["width"]
+                    if "height" in stream:
+                        info["h"] = stream["height"]
+                    break
+    except FileNotFoundError:
+        logger.debug("ffprobe 不可用，跳过视频元数据获取")
+    except Exception as e:
+        logger.debug(f"获取视频元数据失败：{e}")
+
     content = {
         "msgtype": "m.video",
         "body": filename,
         "url": content_uri,
-        "info": {"mimetype": content_type, "size": video_size},
+        "info": info,
     }
 
     await send_content(
