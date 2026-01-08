@@ -171,10 +171,20 @@ class KeyBackupBackupMixin:
                 recovery_key_str = _encode_recovery_key(self._recovery_key_bytes)
 
             # 生成用于备份的公钥
-            # 使用恢复密钥的 SHA256 作为 "公钥" (简化实现)
-            public_key = base64.b64encode(
-                hashlib.sha256(self._recovery_key_bytes).digest()
-            ).decode()
+            # 根据 Matrix 规范，使用 X25519 从私钥派生公钥
+            # 参考：https://spec.matrix.org/latest/client-server-api/#backup-algorithm-mmegolm_backupv1curve25519-aes-sha2
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric import x25519
+
+            private_key = x25519.X25519PrivateKey.from_private_bytes(
+                self._recovery_key_bytes
+            )
+            public_key_bytes = private_key.public_key().public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
+            )
+            # 使用 unpadded base64 编码
+            public_key = base64.b64encode(public_key_bytes).decode().rstrip("=")
 
             # 创建备份
             response = await self.client._request(

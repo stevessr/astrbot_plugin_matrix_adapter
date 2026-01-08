@@ -251,9 +251,11 @@ def _manual_decrypt_v1(
             return None
 
         # 4. AES-256-CTR decrypt
+        # 根据 Matrix 规范，IV 应为 16 字节零向量
+        # 参考：https://spec.matrix.org/latest/client-server-api/#backup-algorithm-mmegolm_backupv1curve25519-aes-sha2
         cipher = Cipher(
             algorithms.AES(encryption_key),
-            modes.CTR(ephemeral_key_bytes),
+            modes.CTR(b"\x00" * 16),  # 16 字节零向量作为 IV
             backend=default_backend(),
         )
         decryptor = cipher.decryptor()

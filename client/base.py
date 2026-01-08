@@ -72,6 +72,7 @@ class MatrixClientBase:
         data: dict | None = None,
         params: dict | None = None,
         authenticated: bool = True,
+        _retry_count: int = 0,
     ) -> dict[str, Any]:
         """
         Make HTTP request to Matrix server
@@ -82,6 +83,7 @@ class MatrixClientBase:
             data: JSON data for request body
             params: URL query parameters
             authenticated: Whether to include access token
+            _retry_count: Internal retry counter for rate limiting
 
         Returns:
             Response JSON data
@@ -89,6 +91,9 @@ class MatrixClientBase:
         Raises:
             Exception: On HTTP errors
         """
+        import asyncio
+
+        MAX_RETRIES = 3
         await self._ensure_session()
 
         url = f"{self.homeserver}{endpoint}"
@@ -105,6 +110,29 @@ class MatrixClientBase:
             async with self.session.request(
                 method, url, json=data, params=params, headers=headers
             ) as response:
+                # 处理 429 速率限制
+                # 参考：https://spec.matrix.org/latest/client-server-api/#rate-limiting
+                if response.status == 429 and _retry_count < MAX_RETRIES:
+                    try:
+                        response_data = await response.json()
+                        retry_after_ms = response_data.get("retry_after_ms", 5000)
+                        retry_after_s = retry_after_ms / 1000
+                        logger.warning(
+                            f"速率限制，等待 {retry_after_s:.1f} 秒后重试 "
+                            f"(retry {_retry_count + 1}/{MAX_RETRIES})"
+                        )
+                        await asyncio.sleep(retry_after_s)
+                        return await self._request(
+                            method,
+                            endpoint,
+                            data=data,
+                            params=params,
+                            authenticated=authenticated,
+                            _retry_count=_retry_count + 1,
+                        )
+                    except Exception:
+                        pass  # 继续正常错误处理
+
                 # 检查响应状态
                 if response.status >= HTTP_ERROR_STATUS_400:
                     # 尝试获取错误信息，但处理非 JSON 响应
@@ -153,3 +181,4 @@ class MatrixClientBase:
         except aiohttp.ClientError as e:
             logger.error(f"Matrix HTTP request failed: {e}")
             raise
+
