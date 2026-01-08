@@ -148,6 +148,17 @@ class E2EEManagerDecryptMixin:
         )
         logger.info(f"收到房间 {room_id} 的 Megolm 密钥")
 
+        # 自动备份新接收到的密钥
+        if self._key_backup and self.enable_key_backup:
+            try:
+                await self._key_backup.upload_single_key(
+                    room_id=room_id,
+                    session_id=session_id,
+                    session_key=session_key,
+                )
+            except Exception as e:
+                logger.warning(f"自动备份密钥失败：{e}")
+
     async def _find_device_by_sender_key(
         self, sender_key: str, sender_user_id: str | None = None
     ) -> tuple[str, str] | None:

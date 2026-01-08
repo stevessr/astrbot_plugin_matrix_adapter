@@ -411,3 +411,59 @@ class KeyBackupBackupMixin:
 
         except Exception as e:
             logger.warning(f"恢复密钥失败：{e}")
+
+    async def upload_single_key(
+        self,
+        room_id: str,
+        session_id: str,
+        session_key: str,
+        algorithm: str = MEGOLM_BACKUP_ALGO,
+    ) -> bool:
+        """
+        上传当个会话密钥到备份
+
+        Args:
+            room_id: 房间 ID
+            session_id: 会话 ID
+            session_key: 会话密钥
+            algorithm: 算法 (默认 m.megolm_backup.v1.curve25519-aes-sha2)
+
+        Returns:
+            bool: 是否成功
+        """
+        if not self._backup_version or not self._encryption_key:
+            return False
+
+        try:
+            # 加密会话数据
+            plaintext = session_key.encode()
+            nonce, ciphertext = _aes_encrypt(self._encryption_key, plaintext)
+
+            session_data = {
+                "first_message_index": 0,
+                "forwarded_count": 0,
+                "is_verified": True,
+                "session_data": {
+                    "ciphertext": base64.b64encode(ciphertext).decode(),
+                    "mac": base64.b64encode(
+                        hmac.new(
+                            self._encryption_key, ciphertext, hashlib.sha256
+                        ).digest()[:RECOVERY_KEY_MAC_TRUNCATED_LEN]
+                    ).decode(),
+                    "ephemeral": base64.b64encode(nonce).decode(),
+                },
+            }
+
+            await self.client._request(
+                "PUT",
+                f"/_matrix/client/v3/room_keys/keys/{room_id}/{session_id}?version={self._backup_version}",
+                data=session_data,
+            )
+            logger.debug(
+                f"[KeyBackup] 已自动备份密钥：room={room_id[:12]}... session={session_id[:8]}..."
+            )
+            return True
+
+        except Exception as e:
+            logger.warning(f"[KeyBackup] 备份单个密钥失败：{e}")
+            return False
