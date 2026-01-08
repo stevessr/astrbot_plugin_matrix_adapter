@@ -2,7 +2,7 @@ import json
 
 from astrbot.api import logger
 
-from ..constants import MEGOLM_ALGO, OLM_ALGO, OLM_ALGO_SHA256
+from ..constants import MEGOLM_ALGO, OLM_ALGO
 
 
 class E2EEManagerDecryptMixin:
@@ -57,8 +57,8 @@ class E2EEManagerDecryptMixin:
 
             return None
 
-        if algorithm in (OLM_ALGO, OLM_ALGO_SHA256):
-            # Olm 消息解密（支持两种算法变体）
+        if algorithm == OLM_ALGO:
+            # Olm 消息解密
             sender_key = event_content.get("sender_key")
             ciphertext_data = event_content.get("ciphertext", {})
 
