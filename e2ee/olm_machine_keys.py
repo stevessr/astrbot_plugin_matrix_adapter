@@ -7,7 +7,6 @@ from ..constants import (
     DEFAULT_ONE_TIME_KEYS_COUNT,
     MEGOLM_ALGO,
     OLM_ALGO,
-    OLM_ALGO_SHA256,
 )
 
 
@@ -40,7 +39,9 @@ class OlmMachineKeysMixin:
         device_keys = {
             "user_id": self.user_id,
             "device_id": self.device_id,
-            "algorithms": [OLM_ALGO, OLM_ALGO_SHA256, MEGOLM_ALGO],
+            # 根据 Matrix 规范，只使用标准算法
+            # 参考：https://spec.matrix.org/latest/client-server-api/#device-keys
+            "algorithms": [OLM_ALGO, MEGOLM_ALGO],
             "keys": keys,
             # 设备显示名称，帮助用户识别设备
             "unsigned": {

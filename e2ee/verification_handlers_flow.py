@@ -188,6 +188,56 @@ class SASVerificationFlowMixin:
         logger.info(f"[E2EE-Verify] 收到对方公钥：{their_key[:20]}...")
 
         session = self._sessions.get(transaction_id, {})
+
+        # 根据 Matrix 规范验证 commitment
+        # commitment = SHA256(公钥 || canonical_json(start_content))
+        # 参考：https://spec.matrix.org/latest/client-server-api/#sas-verification
+        their_commitment = session.get("their_commitment")
+        start_content = session.get("start_content")
+        if their_commitment and start_content and not session.get("we_are_initiator"):
+            # 只有非发起方需要验证 commitment（发起方发送 start，接收方发送 accept）
+            # start_content 需要去掉可能的签名等不稳定字段
+            content_to_hash = {
+                k: v
+                for k, v in start_content.items()
+                if k not in ("signatures", "unsigned")
+            }
+            import json
+
+            canonical_start = json.dumps(
+                content_to_hash,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
+            # commitment = base64(SHA256(公钥 + canonical_json))
+            import base64
+
+            combined = their_key.encode("utf-8") + canonical_start.encode("utf-8")
+            computed = base64.b64encode(hashlib.sha256(combined).digest()).decode(
+                "utf-8"
+            )
+
+            if computed != their_commitment:
+                logger.warning(
+                    f"[E2EE-Verify] Commitment 验证失败！"
+                    f"expected={their_commitment[:16]}... computed={computed[:16]}..."
+                )
+                # 根据规范，commitment 不匹配应该取消验证
+                their_device = session.get(
+                    "from_device", session.get("their_device", "")
+                )
+                await self._send_cancel(
+                    sender,
+                    their_device,
+                    transaction_id,
+                    "m.mismatched_commitment",
+                    "Commitment verification failed",
+                )
+                return
+            else:
+                logger.info("[E2EE-Verify] ✅ Commitment 验证通过")
+
         session["their_key"] = their_key
         session["state"] = "key_exchanged"
 

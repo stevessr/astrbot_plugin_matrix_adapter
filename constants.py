@@ -3,9 +3,9 @@ Matrix 常量集中定义，避免在代码中散落魔数/协议字符串。
 """
 
 # 协议算法与格式
+# 根据 Matrix 规范定义的标准加密算法标识符
+# 参考：https://spec.matrix.org/latest/client-server-api/#end-to-end-encryption
 OLM_ALGO = "m.olm.v1.curve25519-aes-sha2"
-# 历史或兼容用法（部分实现使用带 256 后缀）
-OLM_ALGO_SHA256 = "m.olm.v1.curve25519-aes-sha2-256"
 MEGOLM_ALGO = "m.megolm.v1.aes-sha2"
 MEGOLM_BACKUP_ALGO = "m.megolm_backup.v1.curve25519-aes-sha2"
 MEGOLM_BACKUP_INFO = "m.megolm_backup.v1"
