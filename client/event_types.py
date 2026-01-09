@@ -132,11 +132,10 @@ class MatrixRoom:
     @property
     def is_group(self) -> bool:
         """Check if room is a group (more than 2 members)"""
+        # is_direct=True 明确标记为私聊
         if self.is_direct is True:
             return False
-        if self.is_direct is False:
-            return True
-        # is_direct is None, use member count as fallback
+        # 其他情况用成员数判断
         effective_count = self.member_count or len(self.members)
         return effective_count > GROUP_CHAT_MIN_MEMBERS_2
 
