@@ -350,19 +350,26 @@ class MessageMixin:
 
         # 处理不同的消息格式
         if isinstance(messages, dict):
-            # 检查是否是 user_id -> device_id -> content 格式
-            if messages and isinstance(list(messages.values())[0], dict):
-                # 可能是 user_id -> device_id -> content 格式
-                first_value = list(messages.values())[0]
-                if isinstance(first_value, dict) and not first_value.get("messages"):
-                    # 确保格式正确
+            # 已经是 {"messages": ...} 的结构
+            if "messages" in messages:
+                data = messages
+            else:
+                # 判断是否是 user_id -> device_id -> content（设备映射）
+                is_device_map = True
+                for value in messages.values():
+                    if not isinstance(value, dict):
+                        is_device_map = False
+                        break
+                    if value and not all(isinstance(v, dict) for v in value.values()):
+                        is_device_map = False
+                        break
+
+                if is_device_map:
                     data = {"messages": messages}
                 else:
-                    # 已经是正确格式
-                    data = messages
-            else:
-                # 假设已经是正确格式
-                data = messages
+                    # 视为 user_id -> content，映射到所有设备
+                    normalized = {user: {"*": content} for user, content in messages.items()}
+                    data = {"messages": normalized}
         else:
             data = {"messages": messages}
 

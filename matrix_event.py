@@ -159,6 +159,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
             thread_root=thread_root,
             use_thread=use_thread,
             original_message_info=original_message_info,
+            e2ee_manager=self.e2ee_manager,
             use_notice=self.use_notice,
         )
 

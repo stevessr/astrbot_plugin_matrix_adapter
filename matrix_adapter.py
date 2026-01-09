@@ -325,6 +325,8 @@ class MatrixPlatformAdapter(
                 )
                 # 传递给 event_processor 用于解密
                 self.event_processor.e2ee_manager = self.e2ee_manager
+                # 传递给 sender 用于加密发送
+                self.sender.e2ee_manager = self.e2ee_manager
             else:
                 logger.warning(
                     "E2EE 已启用但 vodozemac 未安装。请运行：pip install vodozemac"

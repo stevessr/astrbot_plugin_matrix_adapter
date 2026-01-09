@@ -10,8 +10,9 @@ from astrbot.api.message_components import Record, Video
 
 
 class MatrixSender:
-    def __init__(self, client):
+    def __init__(self, client, e2ee_manager=None):
         self.client = client
+        self.e2ee_manager = e2ee_manager
 
     async def send_message(
         self,
@@ -34,6 +35,7 @@ class MatrixSender:
             reply_to=reply_to,
             thread_root=thread_root,
             use_thread=use_thread,
+            e2ee_manager=self.e2ee_manager,
             use_notice=use_notice,
         )
 
