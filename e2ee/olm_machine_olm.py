@@ -46,12 +46,41 @@ class OlmMachineOlmMixin:
 
         return session
 
+    def get_olm_session(self, their_identity_key: str) -> Session | None:
+        """
+        获取与指定设备的现有 Olm 会话
+
+        Args:
+            their_identity_key: 对方的 curve25519 身份密钥
+
+        Returns:
+            现有的 Olm 会话，如果不存在则返回 None
+        """
+        sessions = self._olm_sessions.get(their_identity_key, [])
+        if sessions:
+            return sessions[0]
+
+        # 尝试从存储加载
+        pickles = self.store.get_olm_sessions(their_identity_key)
+        if pickles:
+            try:
+                session = Session.from_pickle(pickles[0], self._pickle_key)
+                if their_identity_key not in self._olm_sessions:
+                    self._olm_sessions[their_identity_key] = []
+                self._olm_sessions[their_identity_key].append(session)
+                return session
+            except Exception as e:
+                logger.debug(f"加载 Olm 会话失败：{e}")
+
+        return None
+
     def encrypt_olm(
         self,
         their_identity_key: str,
         content: dict,
         session: Session | None = None,
         recipient_user_id: str = "unknown",
+        recipient_ed25519_key: str = "unknown",
         event_type: str = "m.room_key",
     ) -> dict:
         """
@@ -62,10 +91,11 @@ class OlmMachineOlmMixin:
             content: 要加密的内容 (m.room_key 等)
             session: 可选，已有的 Olm 会话
             recipient_user_id: 接收者用户 ID
+            recipient_ed25519_key: 接收者的 ed25519 密钥
             event_type: 事件类型（默认 m.room_key）
 
         Returns:
-            符合 m.room.encrypted (Olm) 格式 a 字典
+            符合 m.room.encrypted (Olm) 格式的字典
         """
         if not session:
             # 尝试使用现有会话
@@ -78,13 +108,12 @@ class OlmMachineOlmMixin:
                 raise RuntimeError(f"没有可用于 {their_identity_key} 的 Olm 会话")
 
         # 构造 Matrix 协议外壳
-        # 根据 Matrix 规范，type 应放在外层，content 中不应重复
         wrapper = {
             "sender": self.user_id,
             "sender_device": self.device_id,
             "keys": {"ed25519": self.ed25519_key},
             "recipient": recipient_user_id,
-            "recipient_keys": {"ed25519": "unknown"},
+            "recipient_keys": {"ed25519": recipient_ed25519_key},
             "type": event_type,
             "content": content,
         }

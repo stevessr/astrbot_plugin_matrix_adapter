@@ -123,52 +123,68 @@ class E2EEManagerSessionsMixin:
 
             device_keys = response.get("device_keys", {})
             devices_to_send: list[
-                tuple[str, str, str]
-            ] = []  # (user_id, device_id, curve25519_key)
+                tuple[str, str, str, str]
+            ] = []  # (user_id, device_id, curve25519_key, ed25519_key)
 
             for user_id, user_devices in device_keys.items():
                 for device_id, device_info in user_devices.items():
                     keys = device_info.get("keys", {})
                     curve_key = keys.get(f"{PREFIX_CURVE25519}{device_id}")
+                    ed_key = keys.get(f"ed25519:{device_id}")
                     if curve_key:
-                        devices_to_send.append((user_id, device_id, curve_key))
+                        devices_to_send.append((user_id, device_id, curve_key, ed_key or "unknown"))
 
             if not devices_to_send:
                 logger.debug("没有设备需要发送密钥")
                 return
 
-            # 声明一次性密钥
+            # 声明一次性密钥（只为没有现有会话的设备）
             one_time_claim = {}
-            for user_id, device_id, _ in devices_to_send:
-                if user_id not in one_time_claim:
-                    one_time_claim[user_id] = {}
-                one_time_claim[user_id][device_id] = SIGNED_CURVE25519
+            devices_needing_otk = []
+            for user_id, device_id, curve_key, ed_key in devices_to_send:
+                if not self._olm.get_olm_session(curve_key):
+                    if user_id not in one_time_claim:
+                        one_time_claim[user_id] = {}
+                    one_time_claim[user_id][device_id] = SIGNED_CURVE25519
+                    devices_needing_otk.append((user_id, device_id))
 
-            claimed = await self.client.claim_keys(one_time_claim)
-            one_time_keys = claimed.get("one_time_keys", {})
+            one_time_keys = {}
+            if one_time_claim:
+                claimed = await self.client.claim_keys(one_time_claim)
+                one_time_keys = claimed.get("one_time_keys", {})
 
             # 为每个设备发送 m.room_key
             import secrets
 
-            for user_id, device_id, curve_key in devices_to_send:
+            sent_count = 0
+            for user_id, device_id, curve_key, ed_key in devices_to_send:
                 try:
-                    # 获取声明的一次性密钥
-                    user_otks = one_time_keys.get(user_id, {})
-                    device_otks = user_otks.get(device_id, {})
+                    # 检查是否已有 Olm 会话
+                    existing_session = self._olm.get_olm_session(curve_key)
 
-                    if not device_otks:
-                        logger.debug(f"设备 {user_id}/{device_id} 没有可用的一次性密钥")
-                        continue
+                    if existing_session:
+                        # 使用现有会话
+                        session = existing_session
+                        logger.debug(f"复用现有 Olm 会话向 {user_id}/{device_id} 发送密钥")
+                    else:
+                        # 需要创建新会话，获取一次性密钥
+                        user_otks = one_time_keys.get(user_id, {})
+                        device_otks = user_otks.get(device_id, {})
 
-                    # 取第一个一次性密钥
-                    otk_id = list(device_otks.keys())[0]
-                    otk_data = device_otks[otk_id]
-                    one_time_key = (
-                        otk_data.get("key") if isinstance(otk_data, dict) else otk_data
-                    )
+                        if not device_otks:
+                            logger.debug(f"设备 {user_id}/{device_id} 没有可用的一次性密钥")
+                            continue
 
-                    # 创建 Olm 会话
-                    session = self._olm.create_outbound_session(curve_key, one_time_key)
+                        # 取第一个一次性密钥
+                        otk_id = list(device_otks.keys())[0]
+                        otk_data = device_otks[otk_id]
+                        one_time_key = (
+                            otk_data.get("key") if isinstance(otk_data, dict) else otk_data
+                        )
+
+                        # 创建 Olm 会话
+                        session = self._olm.create_outbound_session(curve_key, one_time_key)
+                        logger.debug(f"为 {user_id}/{device_id} 创建新 Olm 会话")
 
                     # 构造 m.room_key 内容
                     room_key_content = {
@@ -185,6 +201,7 @@ class E2EEManagerSessionsMixin:
                         room_key_content,
                         session=session,
                         recipient_user_id=user_id,
+                        recipient_ed25519_key=ed_key,
                     )
 
                     txn_id = secrets.token_hex(16)
@@ -194,12 +211,13 @@ class E2EEManagerSessionsMixin:
                         txn_id,
                     )
 
+                    sent_count += 1
                     logger.debug(f"已向 {user_id}/{device_id} 发送房间密钥")
 
                 except Exception as e:
                     logger.warning(f"向 {user_id}/{device_id} 发送密钥失败：{e}")
 
-            logger.info(f"已向 {len(devices_to_send)} 个设备分发房间 {room_id} 的密钥")
+            logger.info(f"已向 {sent_count}/{len(devices_to_send)} 个设备分发房间 {room_id} 的密钥")
 
         except Exception as e:
             logger.error(f"密钥分发失败：{e}")

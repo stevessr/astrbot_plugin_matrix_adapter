@@ -1,3 +1,4 @@
+import base64
 import json
 
 from astrbot.api import logger
@@ -9,6 +10,27 @@ from .olm_machine_types import (
     InboundGroupSession,
     MegolmMessage,
 )
+
+
+def _convert_session_key_v2_to_v1(session_key_b64: str) -> str:
+    """
+    将 SessionKey 格式（版本 2）转换为 ExportedSessionKey 格式（版本 1）
+
+    m.room_key 事件中的 session_key 使用版本 2 格式（以 "Ag" 开头），
+    但 vodozemac 的 ExportedSessionKey 只接受版本 1 格式（以 "AQ" 开头）。
+    两者的区别只是第一个字节（版本号）不同，其余数据相同。
+    """
+    # 添加 base64 填充
+    padded = session_key_b64 + "=" * (-len(session_key_b64) % 4)
+    raw = base64.b64decode(padded)
+
+    if raw[0] == 2:
+        # 版本 2 -> 版本 1
+        modified = bytes([1]) + raw[1:]
+        return base64.b64encode(modified).decode().rstrip("=")
+    else:
+        # 已经是版本 1 或其他格式，直接返回
+        return session_key_b64
 
 
 class OlmMachineMegolmMixin:
@@ -25,16 +47,17 @@ class OlmMachineMegolmMixin:
             sender_key: 发送者的 curve25519 密钥
         """
         try:
-            # vodozemac ExportedSessionKey constructor accepts base64 strings
-            # Matrix key backups store exported session keys (starting with "AQ")
             if isinstance(session_key, str):
-                # Use ExportedSessionKey constructor which implements from_base64
-                exported_key = ExportedSessionKey(session_key)
+                # 尝试转换版本 2 格式到版本 1 格式
+                # m.room_key 事件使用版本 2，ExportedSessionKey 需要版本 1
+                converted_key = _convert_session_key_v2_to_v1(session_key)
+                exported_key = ExportedSessionKey(converted_key)
                 session = InboundGroupSession.import_session(exported_key)
                 self._megolm_inbound[session_id] = session
                 self.store.save_megolm_inbound(
                     session_id, session.pickle(self._pickle_key)
                 )
+                logger.debug(f"添加 Megolm 入站会话成功：{session_id[:8]}...")
             else:
                 # vodozemac SessionKey object (from m.room_key events)
                 session = InboundGroupSession(session_key)
@@ -130,7 +153,21 @@ class OlmMachineMegolmMixin:
         self._megolm_outbound[room_id] = session
         self.store.save_megolm_outbound(room_id, session.pickle(self._pickle_key))
 
-        return session.session_id, session.session_key.to_base64()
+        session_id = session.session_id
+        session_key = session.session_key
+
+        # 同时创建入站会话，以便能解密自己发送的消息
+        try:
+            inbound_session = InboundGroupSession(session_key)
+            self._megolm_inbound[session_id] = inbound_session
+            self.store.save_megolm_inbound(
+                session_id, inbound_session.pickle(self._pickle_key)
+            )
+            logger.debug(f"为自己创建了入站会话：{session_id[:8]}...")
+        except Exception as e:
+            logger.warning(f"创建自己的入站会话失败：{e}")
+
+        return session_id, session_key.to_base64()
 
     def get_megolm_outbound_session_info(
         self, room_id: str
