@@ -169,9 +169,7 @@ class OlmMachineMegolmMixin:
 
         return session_id, session_key.to_base64()
 
-    def get_megolm_outbound_session_info(
-        self, room_id: str
-    ) -> tuple[str, str] | None:
+    def get_megolm_outbound_session_info(self, room_id: str) -> tuple[str, str] | None:
         """
         获取现有 Megolm 出站会话的信息（不创建新会话）
 

@@ -5,7 +5,6 @@ Matrix 消息发送组件
 from astrbot.api.event import MessageChain
 from astrbot.api.message_components import Record, Video
 
-
 # Update import: markdown_utils is now in ..utils.markdown_utils
 
 

@@ -2,8 +2,10 @@
 Matrix Event Processor - member/profile handlers.
 """
 
-from ..user_store import MatrixUserStore
+from astrbot.api import logger
+
 from ..room_member_store import MatrixRoomMemberStore
+from ..user_store import MatrixUserStore
 
 
 class MatrixEventProcessorMembers:
@@ -34,8 +36,7 @@ class MatrixEventProcessorMembers:
             room.is_direct = room_data.get("is_direct")
 
         logger.debug(
-            f"从存储加载房间 {room.room_id} 成员数据："
-            f"{room.member_count} 个成员"
+            f"从存储加载房间 {room.room_id} 成员数据：{room.member_count} 个成员"
         )
         return True
 

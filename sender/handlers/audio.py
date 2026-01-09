@@ -43,10 +43,16 @@ async def send_audio(
     # 尝试获取音频时长（使用 ffprobe）
     try:
         import subprocess
+
         result = subprocess.run(
             [
-                "ffprobe", "-v", "quiet", "-print_format", "json",
-                "-show_format", audio_path
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                audio_path,
             ],
             capture_output=True,
             text=True,
@@ -54,6 +60,7 @@ async def send_audio(
         )
         if result.returncode == 0:
             import json
+
             probe_data = json.loads(result.stdout)
             # 获取时长（毫秒）
             if "format" in probe_data and "duration" in probe_data["format"]:

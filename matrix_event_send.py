@@ -94,11 +94,7 @@ def _fallback_content_for_segment(segment) -> tuple[str, str | None]:
         summary = _summarize_components(getattr(segment, "content", []))
         body = " ".join(x for x in [prefix, summary] if x).strip()
         html_body = "<br>".join(
-            [
-                html.escape(line)
-                for line in [prefix, summary]
-                if line and line.strip()
-            ]
+            [html.escape(line) for line in [prefix, summary] if line and line.strip()]
         )
         return f"[node] {body}".strip(), (
             f"<blockquote>{html_body}</blockquote>" if html_body else None
@@ -110,9 +106,7 @@ def _fallback_content_for_segment(segment) -> tuple[str, str | None]:
         for node in nodes:
             name = getattr(node, "name", "") or ""
             uin = getattr(node, "uin", "") or ""
-            prefix = " ".join(
-                x for x in [name, f"({uin})" if uin else ""] if x
-            ).strip()
+            prefix = " ".join(x for x in [name, f"({uin})" if uin else ""] if x).strip()
             summary = _summarize_components(getattr(node, "content", []))
             body = " ".join(x for x in [prefix, summary] if x).strip()
             if body:

@@ -132,7 +132,9 @@ class E2EEManagerSessionsMixin:
                     curve_key = keys.get(f"{PREFIX_CURVE25519}{device_id}")
                     ed_key = keys.get(f"ed25519:{device_id}")
                     if curve_key:
-                        devices_to_send.append((user_id, device_id, curve_key, ed_key or "unknown"))
+                        devices_to_send.append(
+                            (user_id, device_id, curve_key, ed_key or "unknown")
+                        )
 
             if not devices_to_send:
                 logger.debug("没有设备需要发送密钥")
@@ -165,25 +167,33 @@ class E2EEManagerSessionsMixin:
                     if existing_session:
                         # 使用现有会话
                         session = existing_session
-                        logger.debug(f"复用现有 Olm 会话向 {user_id}/{device_id} 发送密钥")
+                        logger.debug(
+                            f"复用现有 Olm 会话向 {user_id}/{device_id} 发送密钥"
+                        )
                     else:
                         # 需要创建新会话，获取一次性密钥
                         user_otks = one_time_keys.get(user_id, {})
                         device_otks = user_otks.get(device_id, {})
 
                         if not device_otks:
-                            logger.debug(f"设备 {user_id}/{device_id} 没有可用的一次性密钥")
+                            logger.debug(
+                                f"设备 {user_id}/{device_id} 没有可用的一次性密钥"
+                            )
                             continue
 
                         # 取第一个一次性密钥
                         otk_id = list(device_otks.keys())[0]
                         otk_data = device_otks[otk_id]
                         one_time_key = (
-                            otk_data.get("key") if isinstance(otk_data, dict) else otk_data
+                            otk_data.get("key")
+                            if isinstance(otk_data, dict)
+                            else otk_data
                         )
 
                         # 创建 Olm 会话
-                        session = self._olm.create_outbound_session(curve_key, one_time_key)
+                        session = self._olm.create_outbound_session(
+                            curve_key, one_time_key
+                        )
                         logger.debug(f"为 {user_id}/{device_id} 创建新 Olm 会话")
 
                     # 构造 m.room_key 内容
@@ -217,7 +227,9 @@ class E2EEManagerSessionsMixin:
                 except Exception as e:
                     logger.warning(f"向 {user_id}/{device_id} 发送密钥失败：{e}")
 
-            logger.info(f"已向 {sent_count}/{len(devices_to_send)} 个设备分发房间 {room_id} 的密钥")
+            logger.info(
+                f"已向 {sent_count}/{len(devices_to_send)} 个设备分发房间 {room_id} 的密钥"
+            )
 
         except Exception as e:
             logger.error(f"密钥分发失败：{e}")

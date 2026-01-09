@@ -94,7 +94,9 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         loaded_from_storage = await self.load_room_members_from_storage(room)
 
         if loaded_from_storage:
-            logger.debug(f"从缓存加载房间 {room_id} 成员数据：{room.member_count} 个成员")
+            logger.debug(
+                f"从缓存加载房间 {room_id} 成员数据：{room.member_count} 个成员"
+            )
         else:
             # Fetch complete member list from API to ensure accuracy
             try:

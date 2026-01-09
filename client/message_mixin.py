@@ -368,7 +368,9 @@ class MessageMixin:
                     data = {"messages": messages}
                 else:
                     # 视为 user_id -> content，映射到所有设备
-                    normalized = {user: {"*": content} for user, content in messages.items()}
+                    normalized = {
+                        user: {"*": content} for user, content in messages.items()
+                    }
                     data = {"messages": normalized}
         else:
             data = {"messages": messages}

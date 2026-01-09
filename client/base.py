@@ -181,4 +181,3 @@ class MatrixClientBase:
         except aiohttp.ClientError as e:
             logger.error(f"Matrix HTTP request failed: {e}")
             raise
-
