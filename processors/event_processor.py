@@ -90,63 +90,64 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 for room_ids in direct_data.values()
             )
 
-        # Fetch complete member list from API to ensure accuracy
-        try:
-            members_response = await self.client.get_room_members(room_id)
-            chunk = members_response.get("chunk", [])
+        # Try to load from storage first to avoid unnecessary API calls
+        loaded_from_storage = await self.load_room_members_from_storage(room)
 
-            # Process member events from API response
-            for event in chunk:
-                if event.get("type") == "m.room.member":
-                    user_id = event.get("state_key")
-                    content = event.get("content", {})
-                    membership = content.get("membership")
+        if loaded_from_storage:
+            logger.debug(f"从缓存加载房间 {room_id} 成员数据：{room.member_count} 个成员")
+        else:
+            # Fetch complete member list from API to ensure accuracy
+            try:
+                members_response = await self.client.get_room_members(room_id)
+                chunk = members_response.get("chunk", [])
 
-                    # Check for is_direct flag in member events
-                    if (
-                        user_id == self.user_id
-                        and room.is_direct is None
-                        and "is_direct" in content
-                    ):
-                        room.is_direct = bool(content.get("is_direct"))
+                # Process member events from API response
+                for event in chunk:
+                    if event.get("type") == "m.room.member":
+                        user_id = event.get("state_key")
+                        content = event.get("content", {})
+                        membership = content.get("membership")
 
-                    # Only count joined members
-                    if membership == "join":
-                        display_name = content.get("displayname", user_id)
-                        room.members[user_id] = display_name
-                        avatar_url = content.get("avatar_url")
-                        if avatar_url:
-                            room.member_avatars[user_id] = avatar_url
+                        # Check for is_direct flag in member events
+                        if (
+                            user_id == self.user_id
+                            and room.is_direct is None
+                            and "is_direct" in content
+                        ):
+                            room.is_direct = bool(content.get("is_direct"))
 
-            # Set member count from complete member list
-            room.member_count = len(room.members)
-            logger.info(
-                f"房间 {room_id} 成员列表（从 API）: "
-                f"总人数={room.member_count}, "
-                f"成员列表={list(room.members.keys())}"
-            )
+                        # Only count joined members
+                        if membership == "join":
+                            display_name = content.get("displayname", user_id)
+                            room.members[user_id] = display_name
+                            avatar_url = content.get("avatar_url")
+                            if avatar_url:
+                                room.member_avatars[user_id] = avatar_url
 
-            # Persist room member data to storage
-            self.room_member_store.upsert(
-                room_id=room.room_id,
-                members=room.members,
-                member_avatars=room.member_avatars,
-                member_count=room.member_count,
-                is_direct=room.is_direct,
-            )
+                # Set member count from complete member list
+                room.member_count = len(room.members)
+                logger.info(
+                    f"房间 {room_id} 成员列表（从 API）: "
+                    f"总人数={room.member_count}, "
+                    f"成员列表={list(room.members.keys())}"
+                )
 
-            # Persist individual user profiles to storage
-            for user_id, display_name in room.members.items():
-                avatar_url = room.member_avatars.get(user_id)
-                self.user_store.upsert(user_id, display_name, avatar_url)
+                # Persist room member data to storage
+                self.room_member_store.upsert(
+                    room_id=room.room_id,
+                    members=room.members,
+                    member_avatars=room.member_avatars,
+                    member_count=room.member_count,
+                    is_direct=room.is_direct,
+                )
 
-        except Exception as e:
-            logger.error(f"获取房间 {room_id} 成员列表失败: {e}")
-            # Try to load from storage as fallback
-            loaded = await self.load_room_members_from_storage(room)
-            if loaded:
-                logger.info(f"从存储加载房间 {room_id} 成员数据成功")
-            else:
+                # Persist individual user profiles to storage
+                for user_id, display_name in room.members.items():
+                    avatar_url = room.member_avatars.get(user_id)
+                    self.user_store.upsert(user_id, display_name, avatar_url)
+
+            except Exception as e:
+                logger.error(f"获取房间 {room_id} 成员列表失败：{e}")
                 # Final fallback: use /sync summary counts
                 summary = room_data.get("summary", {})
                 joined_count = summary.get("joined_member_count")

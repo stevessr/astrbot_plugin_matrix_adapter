@@ -72,43 +72,48 @@ class MatrixRoomMemberStore:
         if not room_id:
             return
 
-        existing = self.get(room_id) or {"room_id": room_id}
+        existing = self.get(room_id)
         updated = False
 
-        # Update members if changed
-        if members != existing.get("members"):
+        # If no existing data, this is a new entry
+        if not existing:
+            existing = {"room_id": room_id}
+            updated = True
+        else:
+            # Check if data has changed
+            if members != existing.get("members"):
+                existing["members"] = members
+                updated = True
+
+            if member_avatars != existing.get("member_avatars"):
+                existing["member_avatars"] = member_avatars
+                updated = True
+
+            if member_count != existing.get("member_count"):
+                existing["member_count"] = member_count
+                updated = True
+
+            if is_direct is not None and is_direct != existing.get("is_direct"):
+                existing["is_direct"] = is_direct
+                updated = True
+
+        # Always update the data if it's a new entry or changed
+        if updated:
             existing["members"] = members
-            updated = True
-
-        # Update member avatars if changed
-        if member_avatars != existing.get("member_avatars"):
             existing["member_avatars"] = member_avatars
-            updated = True
-
-        # Update member count if changed
-        if member_count != existing.get("member_count"):
             existing["member_count"] = member_count
-            updated = True
+            if is_direct is not None:
+                existing["is_direct"] = is_direct
+            existing["updated_at"] = int(Path(__file__).stat().st_mtime)
 
-        # Update is_direct if provided and changed
-        if is_direct is not None and is_direct != existing.get("is_direct"):
-            existing["is_direct"] = is_direct
-            updated = True
-
-        if not updated:
-            return
-
-        # Add timestamp
-        existing["updated_at"] = int(Path(__file__).stat().st_mtime)
-
-        path = self._room_path(room_id)
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(existing, ensure_ascii=False, indent=2))
-            self._cache[room_id] = existing
-            logger.debug(f"Saved room member data: {room_id} ({member_count} members)")
-        except Exception as e:
-            logger.debug(f"Failed to save room member data {room_id}: {e}")
+            path = self._room_path(room_id)
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(existing, ensure_ascii=False, indent=2))
+                self._cache[room_id] = existing
+                logger.info(f"已保存房间成员数据：{room_id} ({member_count} 个成员)")
+            except Exception as e:
+                logger.error(f"保存房间成员数据失败 {room_id}: {e}")
 
     def delete(self, room_id: str):
         """Delete room member data from storage."""
