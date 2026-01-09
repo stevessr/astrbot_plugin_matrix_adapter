@@ -192,7 +192,35 @@ class OlmMachineMegolmMixin:
                     return None
 
         if session:
-            return session.session_id, session.session_key.to_base64()
+            session_id = session.session_id
+            session_key = session.session_key
+
+            # 确保对应的入站会话存在，以便能解密自己发送的消息
+            if session_id not in self._megolm_inbound:
+                inbound_pickle = self.store.get_megolm_inbound(session_id)
+                if inbound_pickle:
+                    try:
+                        inbound_session = InboundGroupSession.from_pickle(
+                            inbound_pickle, self._pickle_key
+                        )
+                        self._megolm_inbound[session_id] = inbound_session
+                    except Exception as e:
+                        logger.warning(f"加载入站会话失败，尝试重新创建：{e}")
+                        inbound_pickle = None
+
+                # 如果存储中也没有入站会话，从出站会话密钥创建
+                if not inbound_pickle:
+                    try:
+                        inbound_session = InboundGroupSession(session_key)
+                        self._megolm_inbound[session_id] = inbound_session
+                        self.store.save_megolm_inbound(
+                            session_id, inbound_session.pickle(self._pickle_key)
+                        )
+                        logger.info(f"为出站会话重新创建了入站会话：{session_id[:8]}...")
+                    except Exception as e:
+                        logger.warning(f"重新创建入站会话失败：{e}")
+
+            return session_id, session_key.to_base64()
         return None
 
     def encrypt_megolm(self, room_id: str, event_type: str, content: dict) -> dict:
@@ -220,6 +248,21 @@ class OlmMachineMegolmMixin:
 
         if not session:
             raise RuntimeError(f"房间 {room_id} 没有 Megolm 出站会话")
+
+        # 确保入站会话存在，以便能解密自己发送的消息
+        session_id = session.session_id
+        if session_id not in self._megolm_inbound:
+            inbound_pickle = self.store.get_megolm_inbound(session_id)
+            if not inbound_pickle:
+                try:
+                    inbound_session = InboundGroupSession(session.session_key)
+                    self._megolm_inbound[session_id] = inbound_session
+                    self.store.save_megolm_inbound(
+                        session_id, inbound_session.pickle(self._pickle_key)
+                    )
+                    logger.info(f"为出站会话创建了入站会话：{session_id[:8]}...")
+                except Exception as e:
+                    logger.warning(f"创建入站会话失败：{e}")
 
         # 构造要加密的有效载荷
         payload = {
