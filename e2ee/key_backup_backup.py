@@ -31,7 +31,6 @@ class KeyBackupBackupMixin:
             version = await self._get_current_backup_version()
             if version:
                 self._backup_version = version
-                logger.info(f"发现现有密钥备份：version={version}")
 
                 # 验证现有密钥
                 if self._recovery_key_bytes:
@@ -326,17 +325,10 @@ class KeyBackupBackupMixin:
                     try:
                         encrypted_data = session_data.get("session_data", {})
                         # 记录数据结构以便调试
-                        logger.info(
-                            f"会话 {session_id[:8]}... 数据结构：{list(encrypted_data.keys())}"
-                        )
                         # 获取加密数据
                         ciphertext_b64 = encrypted_data.get("ciphertext", "")
                         ephemeral_b64 = encrypted_data.get("ephemeral", "")
                         mac_b64 = encrypted_data.get("mac", "")
-                        logger.info(
-                            f"ciphertext={bool(ciphertext_b64)}, "
-                            f"ephemeral={bool(ephemeral_b64)}, mac={bool(mac_b64)}"
-                        )
 
                         if not ciphertext_b64:
                             logger.warning(f"会话 {session_id[:8]}... 无 ciphertext")
@@ -368,8 +360,6 @@ class KeyBackupBackupMixin:
                                 plaintext = _decrypt_backup_data(
                                     key_bytes, ephemeral_key, ciphertext, mac
                                 )
-                                if plaintext:
-                                    logger.info(f"成功解密会话：{session_id[:8]}...")
                             except Exception as e:
                                 logger.warning(f"备份解密失败：{e}")
 
@@ -390,9 +380,6 @@ class KeyBackupBackupMixin:
                                     room_id, session_id, session_key, ""
                                 )
                                 restored += 1
-                                logger.debug(
-                                    f"恢复会话：room={room_id[:16]}... session={session_id[:8]}..."
-                                )
                             else:
                                 skipped += 1
                         except json.JSONDecodeError:
@@ -458,9 +445,6 @@ class KeyBackupBackupMixin:
                 "PUT",
                 f"/_matrix/client/v3/room_keys/keys/{room_id}/{session_id}?version={self._backup_version}",
                 data=session_data,
-            )
-            logger.debug(
-                f"[KeyBackup] 已自动备份密钥：room={room_id[:12]}... session={session_id[:8]}..."
             )
             return True
 

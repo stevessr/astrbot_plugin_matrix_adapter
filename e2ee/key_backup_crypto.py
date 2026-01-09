@@ -152,7 +152,7 @@ def _decrypt_backup_data(
         except ImportError:
             pass
 
-        logger.info(
+        logger.debug(
             f"使用 vodozemac 解密：private_key={len(private_key_bytes)}B, "
             f"ephemeral={len(ephemeral_public_key)}B, ciphertext={len(ciphertext)}B, mac={len(mac)}B"
         )
@@ -179,7 +179,6 @@ def _decrypt_backup_data(
             )
             plaintext = pk_decryption.decrypt(message)
 
-            logger.info(f"vodozemac 解密成功！明文长度={len(plaintext)}B")
             return plaintext
 
         except BaseException as e1:
@@ -334,7 +333,6 @@ def _decode_recovery_key(key_str: str) -> bytes:
             raise ValueError("恢复密钥校验失败 (XOR mismatch)")
 
         private_key = decoded[2 : 2 + RECOVERY_KEY_PRIV_LEN]
-        logger.info("成功解析 Base58 恢复密钥")
         return private_key
     except Exception as e:
         logger.warning(f"Base58 恢复密钥解析失败：{e}")
@@ -342,7 +340,6 @@ def _decode_recovery_key(key_str: str) -> bytes:
     # 尝试 Base64（兼容旧格式或直接私钥字符串）
     try:
         decoded = base64.b64decode(key_str + "===")
-        logger.info(f"Base64 解码：{len(decoded)}B")
 
         if (
             len(decoded) >= RECOVERY_KEY_TOTAL_LEN

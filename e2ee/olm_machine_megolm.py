@@ -35,18 +35,12 @@ class OlmMachineMegolmMixin:
                 self.store.save_megolm_inbound(
                     session_id, session.pickle(self._pickle_key)
                 )
-                logger.info(
-                    f"添加 Megolm 入站会话：{session_id[:8]}... 房间：{room_id}"
-                )
             else:
                 # vodozemac SessionKey object (from m.room_key events)
                 session = InboundGroupSession(session_key)
                 self._megolm_inbound[session_id] = session
                 self.store.save_megolm_inbound(
                     session_id, session.pickle(self._pickle_key)
-                )
-                logger.debug(
-                    f"添加 Megolm 入站会话：{session_id[:8]}... 房间：{room_id}"
                 )
         except Exception as e:
             logger.error(f"添加 Megolm 入站会话失败：{e}")
@@ -89,11 +83,6 @@ class OlmMachineMegolmMixin:
             plaintext = session.decrypt(message)
             # 解析解密后的 JSON
             decrypted = json.loads(plaintext.plaintext)
-            # 调试：记录解密后的完整内容
-            logger.debug(
-                f"[OlmMachine] Megolm 解密成功，type={decrypted.get('type')}, "
-                f"content keys={list(decrypted.get('content', {}).keys())}"
-            )
             return decrypted
         except Exception as e:
             logger.error(f"Megolm 解密失败：{e}")

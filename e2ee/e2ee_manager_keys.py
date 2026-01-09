@@ -69,9 +69,6 @@ class E2EEManagerKeysMixin:
                     one_time_keys=one_time_keys if one_time_keys else None,
                     fallback_keys=fallback_keys if fallback_keys else None,
                 )
-
-                logger.info(f"upload_keys 响应：{response}")
-
                 if "error" in response or "errcode" in response:
                     logger.error(f"密钥上传失败：{response}")
                     return
