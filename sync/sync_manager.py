@@ -27,7 +27,7 @@ class MatrixSyncManager:
         sync_store_path: str | None = None,
         homeserver: str | None = None,
         user_id: str | None = None,
-        store_path: str | None = None,
+        store_path: str | Path | None = None,
         on_token_invalid: Callable | None = None,
     ):
         """

@@ -2,6 +2,8 @@
 Matrix 配置与初始化组件
 """
 
+from pathlib import Path
+
 from astrbot.api import logger
 
 from .constants import DEFAULT_TIMEOUT_MS_30000

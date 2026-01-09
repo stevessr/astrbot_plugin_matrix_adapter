@@ -3,6 +3,8 @@ Matrix 登录认证组件（不依赖 matrix-nio）
 支持密码、Token 和 OAuth2 认证
 """
 
+from pathlib import Path
+
 from astrbot.api import logger
 
 from .auth_login import MatrixAuthLogin
@@ -10,7 +12,7 @@ from .auth_store import MatrixAuthStore
 
 
 class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
-    def __init__(self, client, config, token_store_path: str):
+    def __init__(self, client, config, token_store_path: str | Path):
         self.client = client
         self.config = config
         self.user_id = config.user_id

@@ -16,7 +16,7 @@ def _get_default_data_dir() -> Path:
         return StarTools.get_data_dir("astrbot_plugin_matrix_adapter")
     except Exception:
         # 如果 StarTools 未初始化（如在测试环境），返回临时默认值
-        return Path("./data/astrbot_plugin_matrix_adapter")
+        return Path("./data/plugin_data/astrbot_plugin_matrix_adapter")
 
 
 class PluginConfig:
@@ -36,10 +36,11 @@ class PluginConfig:
             return
         PluginConfig._initialized = True
 
-        # 延迟初始化默认值（等待 StarTools 可用）
-        self._store_path: str | None = None
-        self._e2ee_store_path: str | None = None
-        self._media_cache_dir: str | None = None
+        # 初始化默认值
+        self._data_dir = _get_default_data_dir()
+        self._store_path: Path = self._data_dir / "store"
+        self._e2ee_store_path: Path = self._data_dir / "e2ee"
+        self._media_cache_dir: Path = self._data_dir / "media"
         self._oauth2_callback_port: int = 8765
         self._oauth2_callback_host: str = "127.0.0.1"
         # Sticker 相关配置
@@ -50,31 +51,19 @@ class PluginConfig:
         # 流式发送配置
         self._streaming_no_edit: bool = False
 
-    def _ensure_default_paths(self):
-        """确保默认路径已初始化"""
-        if self._data_dir is None:
-            self._data_dir = _get_default_data_dir()
-        if self._store_path is None:
-            self._store_path = str(self._data_dir / "store")
-        if self._e2ee_store_path is None:
-            self._e2ee_store_path = str(self._data_dir / "e2ee")
-        if self._media_cache_dir is None:
-            self._media_cache_dir = str(self._data_dir / "media")
-
     def initialize(self, config: dict):
         """从配置字典初始化插件配置
 
         Args:
             config: 插件配置字典，来自 context.get_config().get("plugin_config", {}).get("astrbot_plugin_matrix_adapter", {})
         """
+        # 路径配置不再允许配置，直接使用默认值
         self._data_dir = _get_default_data_dir()
-        default_store = str(self._data_dir / "store")
-        default_e2ee = str(self._data_dir / "e2ee")
-        default_media = str(self._data_dir / "media")
+        self._store_path = self._data_dir / "store"
+        self._e2ee_store_path = self._data_dir / "e2ee"
+        self._media_cache_dir = self._data_dir / "media"
 
-        self._store_path = config.get("matrix_store_path", default_store)
-        self._e2ee_store_path = config.get("matrix_e2ee_store_path", default_e2ee)
-        self._media_cache_dir = config.get("matrix_media_cache_dir", default_media)
+        # 其他配置仍然允许配置
         self._oauth2_callback_port = config.get("matrix_oauth2_callback_port", 8765)
         self._oauth2_callback_host = config.get(
             "matrix_oauth2_callback_host", "127.0.0.1"
@@ -94,21 +83,18 @@ class PluginConfig:
         )
 
     @property
-    def store_path(self) -> str:
+    def store_path(self) -> Path:
         """获取数据存储路径"""
-        self._ensure_default_paths()
         return self._store_path
 
     @property
-    def e2ee_store_path(self) -> str:
+    def e2ee_store_path(self) -> Path:
         """获取 E2EE 存储路径"""
-        self._ensure_default_paths()
         return self._e2ee_store_path
 
     @property
-    def media_cache_dir(self) -> str:
+    def media_cache_dir(self) -> Path:
         """获取媒体缓存目录"""
-        self._ensure_default_paths()
         return self._media_cache_dir
 
     @property

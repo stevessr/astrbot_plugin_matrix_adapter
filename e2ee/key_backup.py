@@ -31,7 +31,7 @@ class KeyBackup(KeyBackupSSSSMixin, KeyBackupBackupMixin):
         crypto_store,
         olm_machine,
         recovery_key: str = "",
-        store_path: str = "",
+        store_path: str | Path = "",
     ):
         """
         初始化密钥备份
