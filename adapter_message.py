@@ -2,7 +2,14 @@
 Matrix adapter message helpers.
 """
 
-from astrbot.api import logger
+from astrbot.api import logger  # 转换消息链为可序列化格式
+from astrbot.api.message_components import (
+    At,
+    AtAll,
+    Image,
+    Plain,
+    Reply,
+)
 
 from .constants import DEFAULT_TYPING_TIMEOUT_MS
 
@@ -32,6 +39,22 @@ class MatrixAdapterMessageMixin:
                 return
 
             # 保存消息历史到 PlatformMessageHistory
+            # 延迟获取 message_history_manager 以避免初始化顺序问题
+            if not self.message_history_manager:
+                try:
+                    # 通过全局 Context 获取 message_history_manager
+                    from astrbot.core.star.context import context as global_context
+
+                    if global_context and hasattr(
+                        global_context, "message_history_manager"
+                    ):
+                        self.message_history_manager = (
+                            global_context.message_history_manager
+                        )
+                        logger.debug("已从 Context 获取 message_history_manager")
+                except Exception as e:
+                    logger.debug(f"获取 message_history_manager 失败：{e}")
+
             if self.message_history_manager and abm:
                 try:
                     # 构建消息内容
@@ -39,15 +62,6 @@ class MatrixAdapterMessageMixin:
                         "message": [],
                         "raw_message": abm.message_str,
                     }
-
-                    # 转换消息链为可序列化格式
-                    from astrbot.api.message_components import (
-                        At,
-                        AtAll,
-                        Image,
-                        Plain,
-                        Reply,
-                    )
 
                     for component in abm.message:
                         if isinstance(component, Plain):

@@ -232,15 +232,14 @@ class MatrixPlatformAdapter(
         platform_config: dict,
         platform_settings: dict,
         event_queue: asyncio.Queue,
-        message_history_manager=None,
     ) -> None:
         super().__init__(platform_config, event_queue)
         # Store MatrixConfig separately to maintain functionality
         self._matrix_config = MatrixConfig(platform_config)
         # 记录启动时间（毫秒）。用于过滤启动前的历史消息，避免启动时回复历史消息
         self._startup_ts = int(time.time() * 1000)
-        # 保存消息历史管理器
-        self.message_history_manager = message_history_manager
+        # 消息历史管理器（稍后通过 Context 获取）
+        self.message_history_manager = None
 
         # 使用自定义 HTTP 客户端（不依赖 matrix-nio）
         self.client = MatrixHTTPClient(homeserver=self._matrix_config.homeserver)
