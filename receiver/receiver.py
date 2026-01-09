@@ -230,3 +230,29 @@ class MatrixReceiver:
             chain.chain
         )  # AstrBotMessage 需要列表格式的消息链 (list[BaseMessageComponent])
         return message
+
+    async def convert_system_event(self, room: MatrixRoom, event) -> AstrBotMessage:
+        """
+        将 Matrix 非消息事件转换为 AstrBot 消息格式（OtherMessage）
+        """
+        message = AstrBotMessage()
+        message.raw_message = event
+        message.session_id = room.room_id
+        message.message_id = event.event_id
+        message.self_id = self.user_id
+        message.type = MessageType.OTHER_MESSAGE
+
+        if room.is_group:
+            from astrbot.core.platform.astrbot_message import Group
+
+            message.group = Group(group_id=room.room_id)
+
+        sender_id = getattr(event, "sender", None)
+        sender_name = room.members.get(sender_id, sender_id) if sender_id else None
+        message.sender = MessageMember(
+            user_id=sender_id or "",
+            nickname=sender_name,
+        )
+        message.message_str = ""
+        message.message = []
+        return message
