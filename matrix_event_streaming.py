@@ -1,3 +1,7 @@
+"""
+Matrix 流式发送实现
+"""
+
 import time
 from typing import Any
 
@@ -6,6 +10,14 @@ from astrbot.api.event import MessageChain
 from astrbot.api.message_components import Plain, Reply
 
 from .constants import TEXT_TRUNCATE_LENGTH_50
+from .plugin_config import get_plugin_config
+from .streaming_crypto import (
+    check_encrypted_room,
+    edit_message_encrypted,
+    edit_message_plain,
+    send_message_encrypted,
+    send_message_plain,
+)
 from .utils.markdown_utils import markdown_to_html
 from .utils.utils import MatrixUtils
 
@@ -13,7 +25,12 @@ from .utils.utils import MatrixUtils
 async def send_streaming_impl(self, generator, use_fallback: bool = False):
     """Matrix streaming send implementation using message edits."""
 
-    logger.info(f"Matrix send_streaming 开始 (编辑模式)，use_fallback={use_fallback}")
+    # 检查是否禁用编辑模式（等待完成后一次性发送）
+    no_edit_mode = get_plugin_config().streaming_no_edit
+
+    logger.info(
+        f"Matrix send_streaming 开始 ({'一次性发送' if no_edit_mode else '编辑模式'})，use_fallback={use_fallback}"
+    )
     room_id = self.session_id
     accumulated_text = ""
     non_text_components = []
@@ -29,6 +46,29 @@ async def send_streaming_impl(self, generator, use_fallback: bool = False):
     original_message_info = None
 
     first_chain_processed = False
+
+    # 检查是否是加密房间
+    e2ee_manager = getattr(self, "e2ee_manager", None)
+    is_encrypted_room = check_encrypted_room(e2ee_manager, room_id)
+
+    async def send_message(room_id: str, msg_type: str, content: dict) -> dict:
+        """发送消息（自动选择加密/非加密）"""
+        if is_encrypted_room:
+            return await send_message_encrypted(
+                self.client, e2ee_manager, room_id, msg_type, content
+            )
+        return await send_message_plain(self.client, room_id, msg_type, content)
+
+    async def edit_message(room_id: str, original_event_id: str, new_content: dict):
+        """编辑消息（自动选择加密/非加密）"""
+        if is_encrypted_room:
+            await edit_message_encrypted(
+                self.client, e2ee_manager, room_id, original_event_id, new_content
+            )
+        else:
+            await edit_message_plain(
+                self.client, room_id, original_event_id, new_content
+            )
 
     async def build_content(text: str, is_streaming: bool = True) -> dict[str, Any]:
         """Build message content for streaming edits."""
@@ -170,13 +210,14 @@ async def send_streaming_impl(self, generator, use_fallback: bool = False):
                         non_text_components.append(component)
 
                 current_time = time.time()
-                if accumulated_text:
+                if accumulated_text and not no_edit_mode:
+                    # 编辑模式：边生成边发送/编辑
                     if not initial_message_sent:
                         try:
                             content = await build_content(
                                 accumulated_text, is_streaming=True
                             )
-                            result = await self.client.send_message(
+                            result = await send_message(
                                 room_id=room_id,
                                 msg_type="m.room.message",
                                 content=content,
@@ -193,13 +234,14 @@ async def send_streaming_impl(self, generator, use_fallback: bool = False):
                     ):
                         try:
                             new_content = {
+                                "msgtype": "m.notice" if self.use_notice else "m.text",
                                 "body": accumulated_text + "...",
                                 "format": "org.matrix.custom.html",
                                 "formatted_body": markdown_to_html(
                                     accumulated_text + "..."
                                 ),
                             }
-                            await self.client.edit_message(
+                            await edit_message(
                                 room_id=room_id,
                                 original_event_id=message_event_id,
                                 new_content=new_content,
@@ -228,14 +270,16 @@ async def send_streaming_impl(self, generator, use_fallback: bool = False):
                 formatted_body = accumulated_text.replace("\n", "<br>")
 
             final_content = {
+                "msgtype": "m.notice" if self.use_notice else "m.text",
                 "body": accumulated_text,
                 "format": "org.matrix.custom.html",
                 "formatted_body": formatted_body,
             }
 
-            if initial_message_sent and message_event_id:
+            if initial_message_sent and message_event_id and not no_edit_mode:
+                # 编辑模式：编辑已发送的消息
                 try:
-                    await self.client.edit_message(
+                    await edit_message(
                         room_id=room_id,
                         original_event_id=message_event_id,
                         new_content=final_content,
@@ -244,8 +288,9 @@ async def send_streaming_impl(self, generator, use_fallback: bool = False):
                 except Exception as e:
                     logger.error(f"最终编辑失败：{e}")
             else:
+                # 一次性发送模式或未发送过初始消息
                 content = await build_content(accumulated_text, is_streaming=False)
-                await self.client.send_message(
+                await send_message(
                     room_id=room_id,
                     msg_type="m.room.message",
                     content=content,
