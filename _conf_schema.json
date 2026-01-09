@@ -40,5 +40,11 @@
     "type": "bool",
     "hint": "是否同步用户级别的 Sticker 包（im.ponies.user_emotes）",
     "default": false
+  },
+  "matrix_force_private_message": {
+    "description": "强制私聊",
+    "type": "bool",
+    "hint": "是否强制将所有 Matrix 群聊视为私聊，即使群聊人数超过 2 人",
+    "default": false
   }
 }

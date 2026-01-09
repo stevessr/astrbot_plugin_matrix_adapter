@@ -19,13 +19,12 @@ class MatrixPlugin(Star):
         try:
             from .plugin_config import init_plugin_config
 
-            # 从 AstrBot 配置中获取插件配置
-            plugin_config = (
-                self.context.get_config()
-                .get("plugin_config", {})
-                .get("astrbot_plugin_matrix_adapter", {})
-            )
+            # 使用传入的 config 参数（AstrBot 从 astrbot_plugin_matrix_adapter_config.json 加载）
+            plugin_config = config if isinstance(config, dict) else {}
             init_plugin_config(plugin_config)
+            logger.debug(
+                f"Matrix 插件配置已加载：force_private_message={plugin_config.get('matrix_force_private_message', False)}"
+            )
         except Exception as e:
             logger.error(
                 f"Matrix 插件配置初始化失败，将使用默认配置：{e}",

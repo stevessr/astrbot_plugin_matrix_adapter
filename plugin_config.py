@@ -45,6 +45,8 @@ class PluginConfig:
         # Sticker 相关配置
         self._sticker_auto_sync: bool = False
         self._sticker_sync_user_emotes: bool = False
+        # 消息类型配置
+        self._force_private_message: bool = False
 
     def _ensure_default_paths(self):
         """确保默认路径已初始化"""
@@ -79,6 +81,10 @@ class PluginConfig:
         self._sticker_auto_sync = config.get("matrix_sticker_auto_sync", False)
         self._sticker_sync_user_emotes = config.get(
             "matrix_sticker_sync_user_emotes", False
+        )
+        # 消息类型配置
+        self._force_private_message = config.get(
+            "matrix_force_private_message", False
         )
 
     @property
@@ -118,6 +124,11 @@ class PluginConfig:
     def sticker_sync_user_emotes(self) -> bool:
         """是否同步用户级别 Sticker 包"""
         return self._sticker_sync_user_emotes
+
+    @property
+    def force_private_message(self) -> bool:
+        """是否将所有消息强制视为私聊"""
+        return self._force_private_message
 
 
 # 全局单例实例

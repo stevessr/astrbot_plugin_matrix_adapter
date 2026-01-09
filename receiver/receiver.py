@@ -16,6 +16,7 @@ from astrbot.core.utils import astrbot_path
 # Update import: Client event types are in ..client.event_types
 from ..client.event_types import MatrixRoom
 from ..constants import REL_TYPE_THREAD
+from ..plugin_config import get_plugin_config
 from ..utils.utils import MatrixUtils
 from .handlers import (
     handle_audio,
@@ -130,14 +131,22 @@ class MatrixReceiver:
 
         # 根据房间成员数量判断是否为群聊
         # is_group 属性：member_count > 2 则为群聊，否则为私聊
-        if room.is_group:
+        # 如果配置了 force_private_message，则强制视为私聊
+        force_private = get_plugin_config().force_private_message
+        if force_private or not room.is_group:
+            message.type = MessageType.FRIEND_MESSAGE
+            logger.debug(
+                f"消息类型: FRIEND_MESSAGE (force_private={force_private}, is_group={room.is_group})"
+            )
+        else:
             message.type = MessageType.GROUP_MESSAGE
             # 设置 group 以支持白名单的 group_id 匹配
             from astrbot.core.platform.astrbot_message import Group
 
             message.group = Group(group_id=room.room_id)
-        else:
-            message.type = MessageType.FRIEND_MESSAGE
+            logger.debug(
+                f"消息类型: GROUP_MESSAGE (force_private={force_private}, is_group={room.is_group})"
+            )
 
         # 发送者信息
         sender_id = event.sender
@@ -242,7 +251,7 @@ class MatrixReceiver:
         message.self_id = self.user_id
         message.type = MessageType.OTHER_MESSAGE
 
-        if room.is_group:
+        if room.is_group and not get_plugin_config().force_private_message:
             from astrbot.core.platform.astrbot_message import Group
 
             message.group = Group(group_id=room.room_id)
