@@ -35,6 +35,16 @@ SSSS_BACKUP_SECRET = "m.megolm_backup.v1"
 DEHYDRATED_DEVICE_EVENT = "m.dehydrated_device"
 MSC2697_DEHYDRATED_DEVICE_EVENT = "org.matrix.msc2697.dehydrated_device"
 
+# 秘密传输事件类型 (设备间秘密共享)
+M_SECRET_REQUEST = "m.secret.request"
+M_SECRET_SEND = "m.secret.send"
+
+# 可共享的秘密名称
+SECRET_MEGOLM_BACKUP_V1 = "m.megolm_backup.v1"
+SECRET_CROSS_SIGNING_MASTER = "m.cross_signing.master"
+SECRET_CROSS_SIGNING_SELF_SIGNING = "m.cross_signing.self_signing"
+SECRET_CROSS_SIGNING_USER_SIGNING = "m.cross_signing.user_signing"
+
 # 恢复密钥编码（Base58）
 BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 RECOVERY_KEY_HDR_BYTE1 = 0x8B

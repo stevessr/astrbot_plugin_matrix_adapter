@@ -14,6 +14,7 @@ from .crypto_store import CryptoStore
 from .e2ee_manager_decrypt import E2EEManagerDecryptMixin
 from .e2ee_manager_keys import E2EEManagerKeysMixin
 from .e2ee_manager_requests import E2EEManagerRequestsMixin
+from .e2ee_manager_secrets import E2EEManagerSecretsMixin
 from .e2ee_manager_sessions import E2EEManagerSessionsMixin
 from .e2ee_manager_verification import E2EEManagerVerificationMixin
 from .olm_machine import VODOZEMAC_AVAILABLE, OlmMachine
@@ -24,6 +25,7 @@ class E2EEManager(
     E2EEManagerKeysMixin,
     E2EEManagerDecryptMixin,
     E2EEManagerRequestsMixin,
+    E2EEManagerSecretsMixin,
     E2EEManagerSessionsMixin,
 ):
     """

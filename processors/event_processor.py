@@ -456,10 +456,15 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         Args:
             events: List of to-device events
         """
+        if events:
+            logger.info(f"收到 {len(events)} 个 to_device 事件")
+
         for event in events:
             event_type = event.get("type")
             sender = event.get("sender")
             content = event.get("content", {})
+
+            logger.info(f"处理 to_device 事件：type={event_type} sender={sender}")
 
             # 处理验证事件
             if event_type.startswith("m.key.verification."):
@@ -500,14 +505,21 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             if event_type == "m.room.encrypted":
                 if self.e2ee_manager:
                     try:
+                        algorithm = content.get("algorithm", "unknown")
+                        sender_key = content.get("sender_key", "")[:16]
+                        logger.info(
+                            f"收到加密的 to_device 消息：algorithm={algorithm} "
+                            f"sender_key={sender_key}..."
+                        )
+
                         decrypted = await self.e2ee_manager.decrypt_event(
                             content, sender, ""
                         )
-                        logger.debug(f"解密 to_device 结果：{decrypted is not None}")
+                        logger.info(f"解密 to_device 结果：{decrypted is not None}")
                         if decrypted:
                             inner_type = decrypted.get("type")
                             inner_content = decrypted.get("content", decrypted)
-                            logger.debug(f"解密后的事件类型：{inner_type}")
+                            logger.info(f"解密后的事件类型：{inner_type}")
                             if inner_type == "m.room_key":
                                 sender_key = content.get("sender_key", "")
                                 await self.e2ee_manager.handle_room_key(
@@ -527,12 +539,23 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                                 await self.e2ee_manager.handle_verification_event(
                                     inner_type, sender, inner_content
                                 )
+                            elif inner_type == "m.secret.send":
+                                logger.info("收到加密的 m.secret.send 事件")
+                                await self.e2ee_manager.handle_secret_send(
+                                    sender, inner_content
+                                )
                             elif inner_type == "m.dummy":
                                 logger.debug("收到 m.dummy 事件，忽略")
                             else:
                                 logger.info(
                                     f"收到未知的加密 to_device 事件类型：{inner_type}，内容键：{list(decrypted.keys()) if isinstance(decrypted, dict) else type(decrypted)}"
                                 )
+                        else:
+                            # 解密失败
+                            ciphertext_keys = list(content.get("ciphertext", {}).keys())
+                            logger.warning(
+                                f"解密 to_device 消息失败，ciphertext 目标密钥：{ciphertext_keys}"
+                            )
                     except Exception as e:
                         logger.error(f"处理加密 to_device 事件失败：{e}")
                 continue
@@ -591,6 +614,21 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                             )
                     except Exception as e:
                         logger.error(f"处理 m.room_key_request 事件失败：{e}")
+                continue
+
+            # 处理 m.secret.request 事件 (来自其他设备的秘密请求)
+            if event_type == "m.secret.request":
+                if self.e2ee_manager:
+                    try:
+                        # 获取发送设备 ID
+                        sender_device = content.get("requesting_device_id", "")
+                        await self.e2ee_manager.handle_secret_request(
+                            sender=sender,
+                            content=content,
+                            sender_device=sender_device,
+                        )
+                    except Exception as e:
+                        logger.error(f"处理 m.secret.request 事件失败：{e}")
                 continue
 
             # Log other event types

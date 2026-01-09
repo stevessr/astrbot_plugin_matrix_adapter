@@ -70,7 +70,11 @@ class E2EEManagerDecryptMixin:
             # 找到发给本设备的密文
             my_key = self._olm.curve25519_key
             if my_key not in ciphertext_data:
-                logger.warning("消息不是发给本设备的")
+                target_keys = list(ciphertext_data.keys())
+                logger.warning(
+                    f"消息不是发给本设备的：本设备密钥={my_key[:16]}... "
+                    f"目标密钥={[k[:16] + '...' for k in target_keys]}"
+                )
                 return None
 
             my_ciphertext = ciphertext_data[my_key]
