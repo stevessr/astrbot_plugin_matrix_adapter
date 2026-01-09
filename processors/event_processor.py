@@ -81,17 +81,6 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         # Build simplified room object
         room = MatrixRoom(room_id=room_id)
 
-        # Prefer /sync summary counts to avoid lazy-loading member lists
-        summary = room_data.get("summary", {})
-        # Matrix spec: summary uses field names without m. prefix
-        joined_count = summary.get("joined_member_count")
-        invited_count = summary.get("invited_member_count")
-        use_summary_count = isinstance(joined_count, int)
-        if use_summary_count:
-            room.member_count = joined_count + (
-                invited_count if isinstance(invited_count, int) else 0
-            )
-
         # Flag direct rooms from account data (m.direct)
         direct_data = self.global_account_data.get("m.direct")
         if isinstance(direct_data, dict):
@@ -101,21 +90,83 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 for room_ids in direct_data.values()
             )
 
-        # Process state events to get room information
+        # Fetch complete member list from API to ensure accuracy
+        try:
+            members_response = await self.client.get_room_members(room_id)
+            chunk = members_response.get("chunk", [])
+
+            # Process member events from API response
+            for event in chunk:
+                if event.get("type") == "m.room.member":
+                    user_id = event.get("state_key")
+                    content = event.get("content", {})
+                    membership = content.get("membership")
+
+                    # Check for is_direct flag in member events
+                    if (
+                        user_id == self.user_id
+                        and room.is_direct is None
+                        and "is_direct" in content
+                    ):
+                        room.is_direct = bool(content.get("is_direct"))
+
+                    # Only count joined members
+                    if membership == "join":
+                        display_name = content.get("displayname", user_id)
+                        room.members[user_id] = display_name
+                        avatar_url = content.get("avatar_url")
+                        if avatar_url:
+                            room.member_avatars[user_id] = avatar_url
+
+            # Set member count from complete member list
+            room.member_count = len(room.members)
+            logger.info(
+                f"房间 {room_id} 成员列表（从 API）: "
+                f"总人数={room.member_count}, "
+                f"成员列表={list(room.members.keys())}"
+            )
+
+            # Persist room member data to storage
+            self.room_member_store.upsert(
+                room_id=room.room_id,
+                members=room.members,
+                member_avatars=room.member_avatars,
+                member_count=room.member_count,
+                is_direct=room.is_direct,
+            )
+
+            # Persist individual user profiles to storage
+            for user_id, display_name in room.members.items():
+                avatar_url = room.member_avatars.get(user_id)
+                self.user_store.upsert(user_id, display_name, avatar_url)
+
+        except Exception as e:
+            logger.error(f"获取房间 {room_id} 成员列表失败: {e}")
+            # Try to load from storage as fallback
+            loaded = await self.load_room_members_from_storage(room)
+            if loaded:
+                logger.info(f"从存储加载房间 {room_id} 成员数据成功")
+            else:
+                # Final fallback: use /sync summary counts
+                summary = room_data.get("summary", {})
+                joined_count = summary.get("joined_member_count")
+                invited_count = summary.get("invited_member_count")
+                if isinstance(joined_count, int):
+                    room.member_count = joined_count + (
+                        invited_count if isinstance(invited_count, int) else 0
+                    )
+                    logger.warning(
+                        f"房间 {room_id} 使用备用方案（summary）: "
+                        f"joined={joined_count}, invited={invited_count}, "
+                        f"total={room.member_count}"
+                    )
+
+        # Process state events to get room information (for other state types)
         state_events = room_data.get("state", {}).get("events", [])
         for event in state_events:
             if event.get("type") == "m.room.member":
                 user_id = event.get("state_key")
                 content = event.get("content", {})
-                # Check for is_direct flag in member events (used by some server implementations)
-                # This is a fallback when m.direct is not available
-                if (
-                    user_id == self.user_id
-                    and room.is_direct is None
-                    and "is_direct" in content
-                ):
-                    # Use membership event's is_direct flag as fallback
-                    room.is_direct = bool(content.get("is_direct"))
                 if content.get("membership") == "join":
                     display_name = content.get("displayname", user_id)
                     room.members[user_id] = display_name
@@ -123,9 +174,13 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                     if avatar_url:
                         room.member_avatars[user_id] = avatar_url
 
-        # Fallback: use member count from state events if summary was not available
-        if not use_summary_count and room.members:
-            room.member_count = len(room.members)
+        # Log room type determination
+        logger.info(
+            f"房间 {room_id} 类型判断："
+            f"is_direct={room.is_direct}, "
+            f"member_count={room.member_count}, "
+            f"is_group={room.is_group}"
+        )
 
         # Process timeline events
         for event_data in events:
