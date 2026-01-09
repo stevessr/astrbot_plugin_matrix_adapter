@@ -30,6 +30,92 @@ class MatrixAdapterMessageMixin:
             if abm is None:
                 logger.warning(f"转换消息失败：{event}")
                 return
+
+            # 保存消息历史到 PlatformMessageHistory
+            if self.message_history_manager and abm:
+                try:
+                    # 构建消息内容
+                    content = {
+                        "message": [],
+                        "raw_message": abm.message_str,
+                    }
+
+                    # 转换消息链为可序列化格式
+                    from astrbot.api.message_components import (
+                        At,
+                        AtAll,
+                        Image,
+                        Plain,
+                        Reply,
+                    )
+
+                    for component in abm.message:
+                        if isinstance(component, Plain):
+                            content["message"].append(
+                                {"type": "plain", "text": component.text}
+                            )
+                        elif isinstance(component, Image):
+                            content["message"].append(
+                                {
+                                    "type": "image",
+                                    "path": getattr(component, "path", ""),
+                                }
+                            )
+                        elif isinstance(component, At):
+                            content["message"].append(
+                                {
+                                    "type": "at",
+                                    "qq": component.qq,
+                                    "name": component.name,
+                                }
+                            )
+                        elif isinstance(component, AtAll):
+                            content["message"].append({"type": "at_all"})
+                        elif isinstance(component, Reply):
+                            content["message"].append(
+                                {
+                                    "type": "reply",
+                                    "id": component.id,
+                                    "message_str": component.message_str,
+                                    "sender_id": component.sender_id,
+                                    "sender_nickname": component.sender_nickname,
+                                }
+                            )
+                        else:
+                            # 其他类型组件
+                            content["message"].append(
+                                {
+                                    "type": getattr(component, "type", "unknown"),
+                                    "data": getattr(component, "data", {}),
+                                }
+                            )
+
+                    # 获取发送者信息
+                    sender_id = (
+                        abm.sender.user_id
+                        if hasattr(abm, "sender") and abm.sender
+                        else ""
+                    )
+                    sender_name = (
+                        abm.sender.nickname
+                        if hasattr(abm, "sender") and abm.sender
+                        else ""
+                    )
+
+                    # 保存到数据库
+                    await self.message_history_manager.insert(
+                        platform_id=self.meta().id or "matrix",
+                        user_id=abm.session_id,
+                        content=content,
+                        sender_id=sender_id,
+                        sender_name=sender_name,
+                    )
+                    logger.debug(
+                        f"已保存消息历史：session_id={abm.session_id}, sender={sender_name}"
+                    )
+                except Exception as e:
+                    logger.warning(f"保存消息历史失败：{e}")
+
             await self.handle_msg(abm)
         except Exception as e:
             logger.error(f"消息回调时出错：{e}")
