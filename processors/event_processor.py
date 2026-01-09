@@ -83,13 +83,11 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
         # Prefer /sync summary counts to avoid lazy-loading member lists
         summary = room_data.get("summary", {})
-        joined_count = summary.get("m.joined_member_count") or summary.get(
-            "joined_member_count"
-        )
-        invited_count = summary.get("m.invited_member_count") or summary.get(
-            "invited_member_count"
-        )
-        if isinstance(joined_count, int):
+        # Matrix spec: summary uses field names without m. prefix
+        joined_count = summary.get("joined_member_count")
+        invited_count = summary.get("invited_member_count")
+        use_summary_count = isinstance(joined_count, int)
+        if use_summary_count:
             room.member_count = joined_count + (
                 invited_count if isinstance(invited_count, int) else 0
             )
@@ -97,6 +95,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         # Flag direct rooms from account data (m.direct)
         direct_data = self.global_account_data.get("m.direct")
         if isinstance(direct_data, dict):
+            # Check if room is in m.direct (explicitly marked as DM)
             room.is_direct = any(
                 isinstance(room_ids, list) and room_id in room_ids
                 for room_ids in direct_data.values()
@@ -108,12 +107,14 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             if event.get("type") == "m.room.member":
                 user_id = event.get("state_key")
                 content = event.get("content", {})
+                # Check for is_direct flag in member events (used by some server implementations)
+                # This is a fallback when m.direct is not available
                 if (
                     user_id == self.user_id
                     and room.is_direct is None
                     and "is_direct" in content
                 ):
-                    # Prefer explicit membership flag for DM detection when m.direct is absent.
+                    # Use membership event's is_direct flag as fallback
                     room.is_direct = bool(content.get("is_direct"))
                 if content.get("membership") == "join":
                     display_name = content.get("displayname", user_id)
@@ -121,10 +122,9 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                     avatar_url = content.get("avatar_url")
                     if avatar_url:
                         room.member_avatars[user_id] = avatar_url
-                    if not isinstance(joined_count, int):
-                        room.member_count += 1
 
-        if room.member_count == 0 and room.members:
+        # Fallback: use member count from state events if summary was not available
+        if not use_summary_count and room.members:
             room.member_count = len(room.members)
 
         # Process timeline events
