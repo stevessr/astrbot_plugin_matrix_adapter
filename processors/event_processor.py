@@ -108,6 +108,13 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             if event.get("type") == "m.room.member":
                 user_id = event.get("state_key")
                 content = event.get("content", {})
+                if (
+                    user_id == self.user_id
+                    and room.is_direct is None
+                    and "is_direct" in content
+                ):
+                    # Prefer explicit membership flag for DM detection when m.direct is absent.
+                    room.is_direct = bool(content.get("is_direct"))
                 if content.get("membership") == "join":
                     display_name = content.get("displayname", user_id)
                     room.members[user_id] = display_name
