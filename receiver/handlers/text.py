@@ -18,6 +18,10 @@ async def handle_text(receiver, chain, event, _: str):
     mentions = content.get("m.mentions") or {}
     formatted_body = content.get("formatted_body") or ""
 
+    # 豁免 ! 开头的命令，自动转换为 / 开头
+    if text.startswith("!"):
+        text = "/" + text[1:]
+
     seen_mentions: set[str] = set()
 
     def _add_mention(user_id: str, display_name: str | None = None) -> None:
