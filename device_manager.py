@@ -235,9 +235,8 @@ class MatrixDeviceManager:
     def set_device_id(self, device_id: str):
         """设置设备 ID"""
         self._device_id = device_id
-        # 保存到文件
-        device_info = {"device_id": device_id}
-        self.device_info_path.write_text(json.dumps(device_info, indent=2))
+        # 保存完整的设备信息（包括 user_id 和 homeserver 用于验证）
+        self._save_device_info(device_id)
 
     def delete_device_info(self):
         """删除存储的设备信息"""

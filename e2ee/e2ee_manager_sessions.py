@@ -33,9 +33,18 @@ class E2EEManagerSessionsMixin:
 
         try:
             # 检查是否有出站会话
-            if not self._store or not self._store.get_megolm_outbound(room_id):
+            session_info = self._olm.get_megolm_outbound_session_info(room_id)
+            if not session_info:
                 # 创建新会话并分发密钥
                 await self._create_and_share_session(room_id)
+            else:
+                # 会话已存在，确保密钥已分发给所有成员
+                session_id, session_key = session_info
+                members = await self._get_room_members(room_id)
+                if members:
+                    await self.ensure_room_keys_sent(
+                        room_id, members, session_id, session_key
+                    )
 
             # 加密消息
             return self._olm.encrypt_megolm(room_id, event_type, content)
@@ -101,12 +110,11 @@ class E2EEManagerSessionsMixin:
 
         # 如果没有提供会话信息，获取当前出站会话
         if not session_id or not session_key:
-            outbound = self._store.get_megolm_outbound(room_id) if self._store else None
-            if not outbound:
+            session_info = self._olm.get_megolm_outbound_session_info(room_id)
+            if not session_info:
                 logger.warning(f"房间 {room_id} 没有出站会话")
                 return
-            # 需要从会话中获取信息
-            session_id, session_key = self._olm.create_megolm_outbound_session(room_id)
+            session_id, session_key = session_info
 
         try:
             # 查询所有成员的设备密钥

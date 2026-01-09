@@ -363,10 +363,11 @@ class CrossSigning:
                 self.user_id: {f"ed25519:{self._self_signing_key}": sig}
             }
 
+            # /keys/signatures/upload 请求格式：{user_id: {device_id: device_keys}}
             await self.client._request(
                 "POST",
                 "/_matrix/client/v3/keys/signatures/upload",
-                {"device_keys": {self.user_id: {device_id: device_keys}}},
+                {self.user_id: {device_id: device_keys}},
             )
             logger.debug(f"[E2EE-CrossSign] 已签名设备：{device_id}")
         except MatrixAPIError as e:
@@ -390,9 +391,17 @@ class CrossSigning:
             self.user_id: {f"ed25519:{self._user_signing_key}": sig}
         }
 
+        # 获取 master key 的 key ID
+        keys = master_key.get("keys", {})
+        if not keys:
+            logger.debug("[E2EE-CrossSign] 目标用户 master key 格式无效")
+            return
+        key_id = list(keys.keys())[0]
+
+        # /keys/signatures/upload 请求格式：{user_id: {key_id: master_key}}
         await self.client._request(
             "POST",
             "/_matrix/client/v3/keys/signatures/upload",
-            {"master_keys": {target_user_id: master_key}},
+            {target_user_id: {key_id: master_key}},
         )
         logger.debug(f"[E2EE-CrossSign] 已验证用户：{target_user_id}")

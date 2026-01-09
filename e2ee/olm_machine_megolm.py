@@ -132,6 +132,34 @@ class OlmMachineMegolmMixin:
 
         return session.session_id, session.session_key.to_base64()
 
+    def get_megolm_outbound_session_info(
+        self, room_id: str
+    ) -> tuple[str, str] | None:
+        """
+        获取现有 Megolm 出站会话的信息（不创建新会话）
+
+        Args:
+            room_id: 房间 ID
+
+        Returns:
+            (session_id, session_key_base64) 元组，如果会话不存在则返回 None
+        """
+        session = self._megolm_outbound.get(room_id)
+        if not session:
+            # 尝试从存储加载
+            pickle = self.store.get_megolm_outbound(room_id)
+            if pickle:
+                try:
+                    session = GroupSession.from_pickle(pickle, self._pickle_key)
+                    self._megolm_outbound[room_id] = session
+                except Exception as e:
+                    logger.error(f"加载 Megolm 出站会话失败：{e}")
+                    return None
+
+        if session:
+            return session.session_id, session.session_key.to_base64()
+        return None
+
     def encrypt_megolm(self, room_id: str, event_type: str, content: dict) -> dict:
         """
         使用 Megolm 加密消息
