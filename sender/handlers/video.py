@@ -1,3 +1,4 @@
+import asyncio
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -42,27 +43,23 @@ async def send_video(
 
     # 尝试获取视频时长和尺寸（使用 ffprobe 或 moviepy）
     try:
-        import subprocess
+        import json
 
-        result = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "quiet",
-                "-print_format",
-                "json",
-                "-show_format",
-                "-show_streams",
-                video_path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
+        process = await asyncio.create_subprocess_exec(
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
+            video_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        if result.returncode == 0:
-            import json
-
-            probe_data = json.loads(result.stdout)
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10)
+        if process.returncode == 0:
+            probe_data = json.loads(stdout.decode())
             # 获取时长（毫秒）
             if "format" in probe_data and "duration" in probe_data["format"]:
                 duration_sec = float(probe_data["format"]["duration"])
@@ -77,6 +74,8 @@ async def send_video(
                     break
     except FileNotFoundError:
         logger.debug("ffprobe 不可用，跳过视频元数据获取")
+    except asyncio.TimeoutError:
+        logger.debug("ffprobe 超时，跳过视频元数据获取")
     except Exception as e:
         logger.debug(f"获取视频元数据失败：{e}")
 

@@ -177,14 +177,6 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                     if avatar_url:
                         room.member_avatars[user_id] = avatar_url
 
-        # Log room type determination
-        logger.info(
-            f"房间 {room_id} 类型判断："
-            f"is_direct={room.is_direct}, "
-            f"member_count={room.member_count}, "
-            f"is_group={room.is_group}"
-        )
-
         # Process timeline events
         for event_data in events:
             await self._handle_event(room, event_data)

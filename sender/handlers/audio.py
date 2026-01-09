@@ -1,3 +1,4 @@
+import asyncio
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -42,32 +43,30 @@ async def send_audio(
 
     # 尝试获取音频时长（使用 ffprobe）
     try:
-        import subprocess
+        import json
 
-        result = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "quiet",
-                "-print_format",
-                "json",
-                "-show_format",
-                audio_path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
+        process = await asyncio.create_subprocess_exec(
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_format",
+            audio_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        if result.returncode == 0:
-            import json
-
-            probe_data = json.loads(result.stdout)
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10)
+        if process.returncode == 0:
+            probe_data = json.loads(stdout.decode())
             # 获取时长（毫秒）
             if "format" in probe_data and "duration" in probe_data["format"]:
                 duration_sec = float(probe_data["format"]["duration"])
                 info["duration"] = int(duration_sec * 1000)
     except FileNotFoundError:
         logger.debug("ffprobe 不可用，跳过音频元数据获取")
+    except asyncio.TimeoutError:
+        logger.debug("ffprobe 超时，跳过音频元数据获取")
     except Exception as e:
         logger.debug(f"获取音频元数据失败：{e}")
 
