@@ -122,3 +122,7 @@ IMAGE_MIN_QUALITY = 30
 IMAGE_QUALITY_STEP = 10
 # 图片最大尺寸（宽或高的最大像素数）
 IMAGE_MAX_DIMENSION = 2048
+# 图片缩小尺寸的缩放因子（每次迭代）
+IMAGE_RESIZE_SCALE_FACTOR = 0.7
+# 图片缩小的最小宽度（像素）
+IMAGE_MIN_WIDTH = 100

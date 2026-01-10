@@ -432,7 +432,7 @@ class MatrixPlatformAdapter(
                         logger.info("已保存 access_token 到配置以供将来使用")
                     break
 
-                    # Save the updated config
+            # Save the updated config
             main_config.save_config()
             logger.debug("Matrix 适配器配置保存成功")
         except Exception as e:

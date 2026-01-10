@@ -1,4 +1,6 @@
+import base64
 import hashlib
+import json
 
 from astrbot.api import logger
 
@@ -202,7 +204,6 @@ class SASVerificationFlowMixin:
                 for k, v in start_content.items()
                 if k not in ("signatures", "unsigned")
             }
-            import json
 
             canonical_start = json.dumps(
                 content_to_hash,
@@ -211,7 +212,6 @@ class SASVerificationFlowMixin:
                 ensure_ascii=False,
             )
             # commitment = base64(SHA256(公钥 + canonical_json))
-            import base64
 
             combined = their_key.encode("utf-8") + canonical_start.encode("utf-8")
             computed = base64.b64encode(hashlib.sha256(combined).digest()).decode(

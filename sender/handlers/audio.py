@@ -1,4 +1,5 @@
 import asyncio
+import json
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -43,8 +44,6 @@ async def send_audio(
 
     # 尝试获取音频时长（使用 ffprobe）
     try:
-        import json
-
         process = await asyncio.create_subprocess_exec(
             "ffprobe",
             "-v",

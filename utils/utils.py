@@ -10,7 +10,9 @@ from ..constants import (
     DEFAULT_MAX_UPLOAD_SIZE_BYTES,
     IMAGE_MAX_DIMENSION,
     IMAGE_MIN_QUALITY,
+    IMAGE_MIN_WIDTH,
     IMAGE_QUALITY_STEP,
+    IMAGE_RESIZE_SCALE_FACTOR,
 )
 
 
@@ -70,7 +72,7 @@ def compress_image_if_needed(
 
             # 第二步：逐步降低质量直到满足大小要求
             quality = 85  # 起始质量
-            compressed_data = None
+            compressed_data = b""
 
             while quality >= IMAGE_MIN_QUALITY:
                 buffer = io.BytesIO()
@@ -88,9 +90,9 @@ def compress_image_if_needed(
 
             # 如果最低质量仍然超过限制，进一步缩小尺寸
             current_width, current_height = img.size
-            while len(compressed_data) > max_size and current_width > 100:
-                current_width = int(current_width * 0.7)
-                current_height = int(current_height * 0.7)
+            while len(compressed_data) > max_size and current_width > IMAGE_MIN_WIDTH:
+                current_width = int(current_width * IMAGE_RESIZE_SCALE_FACTOR)
+                current_height = int(current_height * IMAGE_RESIZE_SCALE_FACTOR)
                 img = img.resize(
                     (current_width, current_height), PILImage.Resampling.LANCZOS
                 )
