@@ -82,7 +82,11 @@ class MatrixStoragePaths:
 
     @classmethod
     def get_auth_file_path(
-        cls, store_path: str | Path, homeserver: str, user_id: str, filename: str = "auth.json"
+        cls,
+        store_path: str | Path,
+        homeserver: str,
+        user_id: str,
+        filename: str = "auth.json",
     ) -> Path:
         """
         获取认证文件的路径
@@ -101,7 +105,11 @@ class MatrixStoragePaths:
 
     @classmethod
     def get_sync_file_path(
-        cls, store_path: str | Path, homeserver: str, user_id: str, filename: str = "sync.json"
+        cls,
+        store_path: str | Path,
+        homeserver: str,
+        user_id: str,
+        filename: str = "sync.json",
     ) -> Path:
         """
         获取同步文件的路径

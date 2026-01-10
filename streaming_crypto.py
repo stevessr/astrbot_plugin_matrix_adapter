@@ -33,12 +33,18 @@ async def send_message_encrypted(
         logger.warning("流式发送：加密失败，回退到未加密发送")
     except Exception as e:
         logger.warning(f"流式发送：加密异常 {e}，回退到未加密发送")
-    return await client.send_message(room_id=room_id, msg_type=msg_type, content=content)
+    return await client.send_message(
+        room_id=room_id, msg_type=msg_type, content=content
+    )
 
 
-async def send_message_plain(client, room_id: str, msg_type: str, content: dict) -> dict:
+async def send_message_plain(
+    client, room_id: str, msg_type: str, content: dict
+) -> dict:
     """发送未加密消息"""
-    return await client.send_message(room_id=room_id, msg_type=msg_type, content=content)
+    return await client.send_message(
+        room_id=room_id, msg_type=msg_type, content=content
+    )
 
 
 async def edit_message_encrypted(
@@ -58,7 +64,9 @@ async def edit_message_encrypted(
         }
         if "format" in new_content:
             edit_content["format"] = new_content["format"]
-            edit_content["formatted_body"] = f"* {new_content.get('formatted_body', '')}"
+            edit_content["formatted_body"] = (
+                f"* {new_content.get('formatted_body', '')}"
+            )
 
         encrypted = await e2ee_manager.encrypt_message(
             room_id, "m.room.message", edit_content

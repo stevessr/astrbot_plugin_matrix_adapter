@@ -30,7 +30,7 @@ from .sync.sync_manager import MatrixSyncManager
 from .utils.utils import MatrixUtils
 
 
-def _cleanup_platform_registration(adapter_name: str = "matrix"):
+def _cleanup_platform_registration(adapter_name: str = "matrix") -> None:
     """清理之前的平台适配器注册（用于热重载）
 
     在模块重新加载时，需要清理之前注册的适配器，避免重复注册错误。
@@ -57,7 +57,7 @@ def _cleanup_platform_registration(adapter_name: str = "matrix"):
 _cleanup_platform_registration("matrix")
 
 
-def _inject_astrbot_field_metadata():
+def _inject_astrbot_field_metadata() -> None:
     """注入 Matrix 适配器的字段元数据到 AstrBot 配置系统"""
     try:
         from astrbot.core.config.default import CONFIG_METADATA_2
@@ -246,6 +246,10 @@ class MatrixPlatformAdapter(
 
         # 使用新的存储路径逻辑
         from .storage_paths import MatrixStoragePaths
+
+        # 确保 user_id 存在（在 _validate() 中已验证，但为类型检查器添加断言）
+        if not self._matrix_config.user_id:
+            raise ValueError("user_id is required for storage initialization")
 
         # 获取用户的存储目录
         user_storage_dir = MatrixStoragePaths.get_user_storage_dir(
@@ -438,5 +442,5 @@ class MatrixPlatformAdapter(
         except Exception as e:
             logger.warning(f"保存 Matrix 配置失败：{e}")
 
-    def get_client(self):
+    def get_client(self) -> MatrixHTTPClient:
         return self.client

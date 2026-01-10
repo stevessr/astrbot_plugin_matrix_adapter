@@ -216,7 +216,9 @@ class OlmMachineMegolmMixin:
                         self.store.save_megolm_inbound(
                             session_id, inbound_session.pickle(self._pickle_key)
                         )
-                        logger.info(f"为出站会话重新创建了入站会话：{session_id[:8]}...")
+                        logger.info(
+                            f"为出站会话重新创建了入站会话：{session_id[:8]}..."
+                        )
                     except Exception as e:
                         logger.warning(f"重新创建入站会话失败：{e}")
 

@@ -74,13 +74,9 @@ class PluginConfig:
             "matrix_sticker_sync_user_emotes", False
         )
         # 消息类型配置
-        self._force_private_message = config.get(
-            "matrix_force_private_message", False
-        )
+        self._force_private_message = config.get("matrix_force_private_message", False)
         # 流式发送配置
-        self._streaming_no_edit = config.get(
-            "matrix_streaming_no_edit", False
-        )
+        self._streaming_no_edit = config.get("matrix_streaming_no_edit", False)
 
     @property
     def store_path(self) -> Path:

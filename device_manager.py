@@ -22,7 +22,9 @@ class MatrixDeviceManager:
     - 在需要时生成新的设备 ID
     """
 
-    def __init__(self, user_id: str, homeserver: str, store_path: str | Path | None = None):
+    def __init__(
+        self, user_id: str, homeserver: str, store_path: str | Path | None = None
+    ):
         """
         初始化设备管理器
 

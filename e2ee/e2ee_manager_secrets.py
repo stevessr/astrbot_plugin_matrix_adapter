@@ -275,7 +275,9 @@ class E2EEManagerSecretsMixin:
                 )
 
                 # 创建 Olm 会话
-                session = self._olm.create_outbound_session(curve25519_key, one_time_key)
+                session = self._olm.create_outbound_session(
+                    curve25519_key, one_time_key
+                )
                 logger.debug(f"[E2EE-Secrets] 为 {target_device} 创建新 Olm 会话")
 
             # 使用 Olm 加密
@@ -468,6 +470,8 @@ class E2EEManagerSecretsMixin:
             if missing_devices:
                 # 查询缺失的设备密钥
                 await self.client.query_keys([user_id])
-                logger.debug(f"[E2EE-Secrets] 已查询设备密钥：{user_id}/{missing_devices}")
+                logger.debug(
+                    f"[E2EE-Secrets] 已查询设备密钥：{user_id}/{missing_devices}"
+                )
         except Exception as e:
             logger.error(f"[E2EE-Secrets] 确保设备密钥失败：{e}")
