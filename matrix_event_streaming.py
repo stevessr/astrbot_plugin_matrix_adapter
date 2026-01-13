@@ -34,6 +34,7 @@ async def send_streaming_impl(self, generator, use_fallback: bool = False):
     room_id = self.session_id
     accumulated_text = ""
     non_text_components = []
+    typing_started = False
 
     edit_interval = 1.0
     last_edit_time = 0.0
@@ -123,6 +124,16 @@ async def send_streaming_impl(self, generator, use_fallback: bool = False):
         async for chain in generator:
             chain_count += 1
             if isinstance(chain, MessageChain):
+                if not typing_started:
+                    has_sendable_component = any(
+                        not isinstance(component, Reply) for component in chain.chain
+                    )
+                    if has_sendable_component:
+                        try:
+                            await self.client.set_typing(room_id, typing=True)
+                            typing_started = True
+                        except Exception as e:
+                            logger.debug(f"发送输入通知失败：{e}")
                 if not first_chain_processed:
                     try:
                         from astrbot.api.message_components import Reply as _Reply
