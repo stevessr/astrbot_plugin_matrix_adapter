@@ -117,8 +117,6 @@ class MatrixAdapterSendMixin:
                     use_notice=self._matrix_config.use_notice,
                 )
 
-            await super().send_by_session(session, message_chain)
-
             try:
                 await self.client.set_typing(room_id, typing=False)
             except Exception as e:
