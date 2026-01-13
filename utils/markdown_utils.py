@@ -47,8 +47,13 @@ def markdown_to_html(md_text: str) -> str:
         "a",
         "img",
         "del",
+        "span",
     }
-    allowed_attrs = {"a": ["href", "title"], "img": ["src", "alt", "title"]}
+    allowed_attrs = {
+        "a": ["href", "title", "data-mxid"],
+        "img": ["src", "alt", "title"],
+        "span": ["data-mxid", "data-mx-spoiler"],
+    }
 
     cleaned_html = bleach.clean(
         html,
