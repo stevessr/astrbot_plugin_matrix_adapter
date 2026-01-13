@@ -9,11 +9,18 @@ from pathlib import Path
 
 class MatrixStoragePaths:
     """
-    Matrix 存储路径管理器
+    Matrix 存储路径管理器（静态工具类）
 
     提供统一的路径生成逻辑，确保所有模块使用一致的存储结构：
     matrix_store_path/homeserver/username/
+
+    注意：此类仅包含静态方法和类方法，不应被实例化。
+    所有方法都是无状态的路径转换工具。
     """
+
+    def __init__(self):
+        """禁止实例化此工具类"""
+        raise TypeError("MatrixStoragePaths is a static utility class and should not be instantiated")
 
     @staticmethod
     def sanitize_homeserver(homeserver: str) -> str:

@@ -130,6 +130,19 @@ def compress_image_if_needed(
 
 
 class MatrixUtils:
+    """
+    Matrix 工具类（静态工具类）
+
+    提供 Matrix 协议相关的实用工具方法。
+
+    注意：此类仅包含静态方法，不应被实例化。
+    所有方法都是无状态的转换和处理工具。
+    """
+
+    def __init__(self):
+        """禁止实例化此工具类"""
+        raise TypeError("MatrixUtils is a static utility class and should not be instantiated")
+
     @staticmethod
     def mxc_to_http(mxc_url: str, homeserver: str) -> str:
         if not mxc_url.startswith("mxc://"):
