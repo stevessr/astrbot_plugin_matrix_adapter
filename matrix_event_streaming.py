@@ -106,11 +106,13 @@ async def send_streaming_impl(self, generator, use_fallback: bool = False):
 
         if not initial_message_sent:
             if use_thread and thread_root:
-                content["m.relates_to"] = {
+                relates_to = {
                     "rel_type": "m.thread",
                     "event_id": thread_root,
-                    "m.in_reply_to": {"event_id": reply_to} if reply_to else None,
                 }
+                if reply_to:
+                    relates_to["m.in_reply_to"] = {"event_id": reply_to}
+                content["m.relates_to"] = relates_to
             elif reply_to:
                 content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
 
@@ -160,7 +162,7 @@ async def send_streaming_impl(self, generator, use_fallback: bool = False):
                                                 and event.get("content", {}).get(
                                                     "msgtype"
                                                 )
-                                                == "m.text"
+                                                in ("m.text", "m.notice")
                                             ):
                                                 reply_to = event.get("event_id")
                                                 logger.debug(
@@ -311,6 +313,8 @@ async def send_streaming_impl(self, generator, use_fallback: bool = False):
                 thread_root=thread_root,
                 use_thread=use_thread,
                 original_message_info=original_message_info,
+                e2ee_manager=e2ee_manager,
+                max_upload_size=getattr(self, "max_upload_size", None),
                 use_notice=self.use_notice,
             )
         except Exception as e:

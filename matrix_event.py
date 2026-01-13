@@ -108,7 +108,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                                     event.get("type") == "m.room.message"
                                     and event.get("sender") == my_user_id
                                     and event.get("content", {}).get("msgtype")
-                                    == "m.text"
+                                    in ("m.text", "m.notice")
                                 ):
                                     reply_to = event.get("event_id")
                                     logger.debug(
