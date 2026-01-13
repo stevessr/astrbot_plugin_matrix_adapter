@@ -1,5 +1,7 @@
 import asyncio
+import json
 import time
+from pathlib import Path
 
 from astrbot.api import logger
 from astrbot.api.platform import Platform, PlatformMetadata, register_platform_adapter
@@ -75,96 +77,15 @@ def _inject_astrbot_field_metadata() -> None:
         if not isinstance(items, dict):
             return
 
-        matrix_items = {
-            # 核心认证配置
-            "matrix_homeserver": {
-                "description": "Homeserver URL",
-                "type": "string",
-                "hint": "Matrix 服务器地址，例如 https://matrix.org",
-                "obvious_hint": True,
-            },
-            "matrix_user_id": {
-                "description": "用户 ID",
-                "type": "string",
-                "hint": "Matrix 用户 ID，格式：@username:homeserver.com",
-                "obvious_hint": True,
-            },
-            "matrix_password": {
-                "description": "密码",
-                "type": "string",
-                "hint": "Matrix 账户密码（密码认证模式必填）",
-                "condition": {"matrix_auth_method": "password"},
-            },
-            "matrix_access_token": {
-                "description": "Access Token",
-                "type": "string",
-                "hint": "Matrix Access Token（Token 认证模式必填）",
-                "condition": {"matrix_auth_method": "token"},
-            },
-            "matrix_auth_method": {
-                "description": "认证方式",
-                "type": "string",
-                "hint": "认证方式：password（密码）、token（Token）、oauth2（OAuth2）",
-                "options": ["password", "token", "oauth2"],
-            },
-            "matrix_device_name": {
-                "description": "设备名称",
-                "type": "string",
-                "hint": "设备显示名称，默认 AstrBot",
-            },
-            # 功能配置
-            "matrix_auto_join_rooms": {
-                "description": "自动加入房间",
-                "type": "bool",
-                "hint": "是否自动接受房间邀请，默认 True",
-            },
-            "matrix_sync_timeout": {
-                "description": "同步超时",
-                "type": "int",
-                "hint": "同步超时时间（毫秒），默认 30000",
-            },
-            "matrix_enable_threading": {
-                "description": "启用消息线程",
-                "type": "bool",
-                "hint": "是否使用消息线程（Threading）回复，默认 False",
-            },
-            "matrix_use_notice": {
-                "description": "使用通知类型消息",
-                "type": "bool",
-                "hint": "启用后机器人将使用 m.notice 类型发送消息，而不是 m.text。m.notice 通常用于机器人消息，不会触发通知声音",
-            },
-            # E2EE 配置
-            "matrix_enable_e2ee": {
-                "description": "启用端到端加密",
-                "type": "bool",
-                "hint": "是否启用 E2EE 端到端加密（试验性），默认 False",
-            },
-            "matrix_e2ee_auto_verify": {
-                "description": "自动验证模式",
-                "type": "string",
-                "hint": "自动验证模式：auto_accept / auto_reject / manual，默认 auto_accept",
-                "options": ["auto_accept", "auto_reject", "manual"],
-                "condition": {"matrix_enable_e2ee": True},
-            },
-            "matrix_e2ee_trust_on_first_use": {
-                "description": "首次使用信任",
-                "type": "bool",
-                "hint": "是否自动信任首次使用的设备，默认 False",
-                "condition": {"matrix_enable_e2ee": True},
-            },
-            "matrix_e2ee_key_backup": {
-                "description": "启用密钥备份",
-                "type": "bool",
-                "hint": "是否启用密钥备份，默认 False",
-                "condition": {"matrix_enable_e2ee": True},
-            },
-            "matrix_e2ee_recovery_key": {
-                "description": "恢复密钥",
-                "type": "string",
-                "hint": "E2EE 恢复密钥（Base58 或 Base64 格式），留空则自动生成",
-                "condition": {"matrix_enable_e2ee": True},
-            },
-        }
+        metadata_path = Path(__file__).with_name("config_metadata.json")
+        try:
+            matrix_items = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.debug(f"读取 Matrix 字段元数据失败：{e}")
+            return
+        if not isinstance(matrix_items, dict):
+            logger.debug("Matrix 字段元数据格式错误，期望为 dict")
+            return
 
         # 仅在缺失时新增；若已存在则尽量补齐缺失的字段
         for k, v in matrix_items.items():
