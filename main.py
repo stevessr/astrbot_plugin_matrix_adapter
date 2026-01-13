@@ -9,7 +9,7 @@ from .constants import PREFIX_ED25519
     "astrbot_plugin_matrix_adapter",
     "stevessr",
     "Matrix 协议适配器，支持端到端加密、消息线程等功能",
-    "0.2.4",
+    "0.2.7",
 )
 class MatrixPlugin(Star):
     def __init__(self, context: Context, config=None):

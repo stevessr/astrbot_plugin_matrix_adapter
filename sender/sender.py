@@ -87,3 +87,15 @@ class MatrixSender:
     async def send_reaction(self, room_id: str, event_id: str, emoji: str) -> dict:
         """Send a reaction to a message in a room."""
         return await self.client.send_reaction(room_id, event_id, emoji)
+
+    async def delete_message(
+        self,
+        room_id: str,
+        event_id: str,
+        reason: str | None = None,
+        txn_id: str | None = None,
+    ) -> dict:
+        """Delete (redact) a message in a room."""
+        return await self.client.redact_event(
+            room_id, event_id, reason=reason, txn_id=txn_id
+        )

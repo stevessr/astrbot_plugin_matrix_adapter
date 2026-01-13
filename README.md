@@ -169,6 +169,21 @@ await adapter.sender.send_message(
 )
 ```
 
+### 删除消息
+
+Matrix 适配器暴露了 `MatrixSender.delete_message` 接口用于删除（撤回）消息：
+
+```python
+# adapter 是 Matrix 平台适配器实例
+await adapter.sender.delete_message("!roomid:example.org", "$event_id:example.org")
+```
+
+在事件处理器中，也可以直接删除当前消息：
+
+```python
+await event.delete()
+```
+
 ## E2EE 端到端加密
 
 ### 概述
