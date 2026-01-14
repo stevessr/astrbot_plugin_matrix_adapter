@@ -124,15 +124,15 @@ async def handle_text(receiver, chain, event, _: str):
             chain.chain.append(Plain(tail_text))
             inline_added = True
 
+    if isinstance(mentions, dict) and mentions.get("room"):
+        chain.chain.append(AtAll())
+
+    if isinstance(mentions, dict):
+        for user_id in mentions.get("user_ids", []) or []:
+            if isinstance(user_id, str) and user_id.startswith("@"):
+                _add_mention(user_id)
+
     if not inline_added:
-        if isinstance(mentions, dict) and mentions.get("room"):
-            chain.chain.append(AtAll())
-
-        if isinstance(mentions, dict):
-            for user_id in mentions.get("user_ids", []) or []:
-                if isinstance(user_id, str) and user_id.startswith("@"):
-                    _add_mention(user_id)
-
         # Some clients only emit plain-text MXID mentions without m.mentions.
         if receiver.user_id and receiver.user_id in text:
             _add_mention(receiver.user_id, receiver.bot_name or receiver.user_id)
