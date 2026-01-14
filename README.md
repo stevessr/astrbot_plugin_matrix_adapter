@@ -248,3 +248,8 @@ MIT License
 如果你想要使用加密，请安装 vodozemac 库
 
 对于贴纸功能的支持，请移步 https://github.com/stevessr/astrbot_plugin_matrix_sticker
+请注意：那个插件会注入上下文，依赖 llm 本身的能力
+
+房间类型可能更新不及时，有的时候会被联邦做局
+
+不建议在多人群里面使用加密，这会造成较重的负担
