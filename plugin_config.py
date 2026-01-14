@@ -19,6 +19,19 @@ def _get_default_data_dir() -> Path:
         return Path("./data/plugin_data/astrbot_plugin_matrix_adapter")
 
 
+def _normalize_message_type(value, legacy_value) -> str:
+    """归一化消息类型配置"""
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"auto", "private", "group"}:
+            return normalized
+    if isinstance(value, bool):
+        return "private" if value else "auto"
+    if isinstance(legacy_value, bool):
+        return "private" if legacy_value else "auto"
+    return "auto"
+
+
 class PluginConfig:
     """单例类，存储插件级别的配置"""
 
@@ -48,7 +61,7 @@ class PluginConfig:
         self._sticker_auto_sync: bool = False
         self._sticker_sync_user_emotes: bool = False
         # 消息类型配置
-        self._force_private_message: bool = False
+        self._force_message_type: str = "auto"
         # 流式发送配置
         self._streaming_no_edit: bool = False
 
@@ -76,7 +89,10 @@ class PluginConfig:
             "matrix_sticker_sync_user_emotes", False
         )
         # 消息类型配置
-        self._force_private_message = config.get("matrix_force_private_message", False)
+        self._force_message_type = _normalize_message_type(
+            config.get("matrix_force_message_type"),
+            config.get("matrix_force_private_message"),
+        )
         # 流式发送配置
         self._streaming_no_edit = config.get("matrix_streaming_no_edit", False)
 
@@ -121,9 +137,14 @@ class PluginConfig:
         return self._sticker_sync_user_emotes
 
     @property
+    def force_message_type(self) -> str:
+        """强制消息类型（auto / private / group）"""
+        return self._force_message_type
+
+    @property
     def force_private_message(self) -> bool:
-        """是否将所有消息强制视为私聊"""
-        return self._force_private_message
+        """兼容旧配置：是否将所有消息强制视为私聊"""
+        return self._force_message_type == "private"
 
     @property
     def streaming_no_edit(self) -> bool:

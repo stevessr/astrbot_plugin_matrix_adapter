@@ -23,7 +23,8 @@ class MatrixPlugin(Star):
             plugin_config = config if isinstance(config, dict) else {}
             init_plugin_config(plugin_config)
             logger.debug(
-                f"Matrix 插件配置已加载：force_private_message={plugin_config.get('matrix_force_private_message', False)}"
+                "Matrix 插件配置已加载：force_message_type="
+                f"{plugin_config.get('matrix_force_message_type', 'auto')}"
             )
         except Exception as e:
             logger.error(

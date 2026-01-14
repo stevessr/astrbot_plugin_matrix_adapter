@@ -160,12 +160,16 @@ class MatrixReceiver:
 
         # 根据房间成员数量判断是否为群聊
         # is_group 属性：member_count > 2 则为群聊，否则为私聊
-        # 如果配置了 force_private_message，则强制视为私聊
-        force_private = get_plugin_config().force_private_message
-        if force_private or not room.is_group:
+        # 根据配置强制消息类型，默认为 auto（按房间成员判断）
+        force_type = get_plugin_config().force_message_type
+        is_private = force_type == "private" or (
+            force_type == "auto" and not room.is_group
+        )
+        if is_private:
             message.type = MessageType.FRIEND_MESSAGE
             logger.debug(
-                f"消息类型：FRIEND_MESSAGE (force_private={force_private}, is_group={room.is_group})"
+                "消息类型：FRIEND_MESSAGE "
+                f"(force_type={force_type}, is_group={room.is_group})"
             )
         else:
             message.type = MessageType.GROUP_MESSAGE
@@ -174,7 +178,8 @@ class MatrixReceiver:
 
             message.group = Group(group_id=room.room_id)
             logger.debug(
-                f"消息类型：GROUP_MESSAGE (force_private={force_private}, is_group={room.is_group})"
+                "消息类型：GROUP_MESSAGE "
+                f"(force_type={force_type}, is_group={room.is_group})"
             )
 
         # 发送者信息
@@ -280,7 +285,8 @@ class MatrixReceiver:
         message.self_id = self.user_id
         message.type = MessageType.OTHER_MESSAGE
 
-        if room.is_group and not get_plugin_config().force_private_message:
+        force_type = get_plugin_config().force_message_type
+        if force_type == "group" or (force_type == "auto" and room.is_group):
             from astrbot.core.platform.astrbot_message import Group
 
             message.group = Group(group_id=room.room_id)
