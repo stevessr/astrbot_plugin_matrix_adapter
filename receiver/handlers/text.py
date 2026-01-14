@@ -133,6 +133,11 @@ async def handle_text(receiver, chain, event, _: str):
                 if isinstance(user_id, str) and user_id.startswith("@"):
                     _add_mention(user_id)
 
+        # Some clients only emit plain-text MXID mentions without m.mentions.
+        if receiver.user_id and receiver.user_id in text:
+            _add_mention(receiver.user_id, receiver.bot_name or receiver.user_id)
+            text = text.replace(receiver.user_id, "", 1).lstrip()
+
         if receiver.bot_name and text.startswith(f"@{receiver.bot_name}"):
             text = text[len(receiver.bot_name) + 1 :].lstrip()
             _add_mention(receiver.user_id, receiver.bot_name)
