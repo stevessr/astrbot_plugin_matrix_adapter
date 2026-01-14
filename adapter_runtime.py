@@ -101,6 +101,13 @@ class MatrixAdapterRuntimeMixin:
                 except Exception as e:
                     logger.warning(f"Sticker 包同步失败：{e}")
 
+            try:
+                removed = self.receiver.gc_media_cache()
+                if removed > 0:
+                    logger.info(f"清理了 {removed} 个媒体缓存文件")
+            except Exception as e:
+                logger.debug(f"媒体缓存清理失败：{e}")
+
             logger.info(
                 f"Matrix 平台适配器正在为 {self._matrix_config.user_id} 在 {self._matrix_config.homeserver} 上运行"
             )

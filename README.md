@@ -55,6 +55,7 @@ data/plugins/astrbot_plugin_matrix_adapter/
 | `matrix_store_path` | string | `./data/matrix_store` | 数据存储路径 |
 | `matrix_e2ee_store_path` | string | `./data/matrix_e2ee` | E2EE 数据存储路径 |
 | `matrix_media_cache_dir` | string | `./data/temp/matrix_media` | 媒体文件缓存目录 |
+| `matrix_media_cache_gc_days` | int | `0` | 媒体缓存清理天数，<=0 表示禁用 |
 
 ### E2EE 端到端加密配置
 

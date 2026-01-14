@@ -3,6 +3,7 @@ Matrix 消息接收组件
 """
 
 import hashlib
+import time
 from pathlib import Path
 
 from astrbot.api import logger
@@ -101,6 +102,10 @@ class MatrixReceiver:
         # 检查缓存
         if cache_path.exists() and cache_path.stat().st_size > 0:
             logger.debug(f"Using cached media file: {cache_path}")
+            try:
+                cache_path.touch()
+            except Exception:
+                pass
             return cache_path
 
         # 下载文件
@@ -113,6 +118,30 @@ class MatrixReceiver:
         except Exception as e:
             logger.error(f"Failed to download media file {mxc_url}: {e}")
             raise
+
+    def gc_media_cache(self, older_than_days: int | None = None) -> int:
+        """清理媒体缓存，返回删除文件数"""
+        cache_dir = self._get_media_cache_dir()
+        if older_than_days is None:
+            older_than_days = get_plugin_config().media_cache_gc_days
+
+        if older_than_days <= 0:
+            return 0
+
+        cutoff = time.time() - older_than_days * 86400
+        removed = 0
+
+        for path in cache_dir.iterdir():
+            if not path.is_file():
+                continue
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+                    removed += 1
+            except Exception as e:
+                logger.debug(f"清理媒体缓存失败：{path} ({e})")
+
+        return removed
 
     async def convert_message(self, room: MatrixRoom, event) -> AstrBotMessage:
         """
@@ -136,7 +165,7 @@ class MatrixReceiver:
         if force_private or not room.is_group:
             message.type = MessageType.FRIEND_MESSAGE
             logger.debug(
-                f"消息类型: FRIEND_MESSAGE (force_private={force_private}, is_group={room.is_group})"
+                f"消息类型：FRIEND_MESSAGE (force_private={force_private}, is_group={room.is_group})"
             )
         else:
             message.type = MessageType.GROUP_MESSAGE
@@ -145,7 +174,7 @@ class MatrixReceiver:
 
             message.group = Group(group_id=room.room_id)
             logger.debug(
-                f"消息类型: GROUP_MESSAGE (force_private={force_private}, is_group={room.is_group})"
+                f"消息类型：GROUP_MESSAGE (force_private={force_private}, is_group={room.is_group})"
             )
 
         # 发送者信息

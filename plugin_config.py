@@ -41,6 +41,7 @@ class PluginConfig:
         self._store_path: Path = self._data_dir / "store"
         self._e2ee_store_path: Path = self._data_dir / "e2ee"
         self._media_cache_dir: Path = self._data_dir / "media"
+        self._media_cache_gc_days: int = 30
         self._oauth2_callback_port: int = 8765
         self._oauth2_callback_host: str = "127.0.0.1"
         # Sticker 相关配置
@@ -68,6 +69,7 @@ class PluginConfig:
         self._oauth2_callback_host = config.get(
             "matrix_oauth2_callback_host", "127.0.0.1"
         )
+        self._media_cache_gc_days = config.get("matrix_media_cache_gc_days", 30)
         # Sticker 相关配置
         self._sticker_auto_sync = config.get("matrix_sticker_auto_sync", False)
         self._sticker_sync_user_emotes = config.get(
@@ -92,6 +94,11 @@ class PluginConfig:
     def media_cache_dir(self) -> Path:
         """获取媒体缓存目录"""
         return self._media_cache_dir
+
+    @property
+    def media_cache_gc_days(self) -> int:
+        """媒体缓存 GC 天数，<=0 表示禁用"""
+        return self._media_cache_gc_days
 
     @property
     def oauth2_callback_port(self) -> int:
