@@ -139,6 +139,7 @@ class MediaMixin:
 
         # Strategy 2: 直接从源服务器下载
         direct_endpoints = [
+            f"https://{server_name}/_matrix/client/v1/media/download/{server_name}/{media_id}",
             f"https://{server_name}/_matrix/media/v3/download/{server_name}/{media_id}",
             f"https://{server_name}/_matrix/media/r0/download/{server_name}/{media_id}",
             f"https://{server_name}/_matrix/media/v3/download/{server_name}/{media_id}?allow_redirect=true",
@@ -152,26 +153,20 @@ class MediaMixin:
         ]
 
         all_endpoints = (
-            [(url, True) for url in proxy_endpoints]
-            + [(url, False) for url in direct_endpoints]
-            + [(url, False) for url in public_endpoints]
+            [(url, True, "proxy") for url in proxy_endpoints]
+            + [(url, False, "direct") for url in direct_endpoints]
+            + [(url, False, "public") for url in public_endpoints]
         )
 
         last_error = None
         last_status = None
 
         for endpoint_info in all_endpoints:
-            if isinstance(endpoint_info, tuple):
-                endpoint, use_auth = endpoint_info
-                if use_auth:
-                    url = f"{self.homeserver}{endpoint}"
-                else:
-                    url = endpoint  # 直接使用完整的 URL
-            else:
-                # 兼容旧格式
-                endpoint = endpoint_info
+            endpoint, use_auth, strategy = endpoint_info
+            if use_auth:
                 url = f"{self.homeserver}{endpoint}"
-                use_auth = True
+            else:
+                url = endpoint
 
             # 根据策略决定是否使用认证
             headers = {"User-Agent": "AstrBot Matrix Client/1.0"}
@@ -186,7 +181,7 @@ class MediaMixin:
 
             # 记录详细的下载策略
             logger.info(
-                f"🎯 Attempting download from {url} {auth_status} (strategy: {'proxy' if use_auth else 'direct'})"
+                f"🎯 Attempting download from {url} {auth_status} (strategy: {strategy})"
             )
 
             try:
@@ -197,30 +192,30 @@ class MediaMixin:
                     last_status = response.status
                     if response.status == 200:
                         logger.debug(
-                            f"✅ Successfully downloaded media from {endpoint}"
+                            f"✅ Successfully downloaded media from {url}"
                         )
                         return await response.read()
                     elif response.status == 404:
-                        logger.debug(f"Got 404 on {endpoint}, trying next endpoint...")
+                        logger.debug(f"Got 404 on {url}, trying next endpoint...")
                         last_error = f"Media not found: {response.status}"
                         continue
                     elif response.status == 403:
                         # 403 通常意味着认证问题或权限问题
                         logger.warning(
-                            f"Got 403 on {endpoint} (auth problem or private media)"
+                            f"Got 403 on {url} (auth problem or private media)"
                         )
                         last_error = f"Access denied: {response.status}"
                         continue
                     else:
                         last_error = f"HTTP {response.status}"
-                        logger.debug(f"Got status {response.status} from {endpoint}")
+                        logger.debug(f"Got status {response.status} from {url}")
             except aiohttp.ClientError as e:
                 last_error = str(e)
-                logger.debug(f"Network error downloading from {endpoint}: {e}")
+                logger.debug(f"Network error downloading from {url}: {e}")
                 continue
             except Exception as e:
                 last_error = str(e)
-                logger.debug(f"Exception downloading from {endpoint}: {e}")
+                logger.debug(f"Exception downloading from {url}: {e}")
                 continue
 
         # 所有端点都失败了，尝试缩略图作为最后手段
