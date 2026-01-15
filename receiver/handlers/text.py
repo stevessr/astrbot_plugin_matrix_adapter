@@ -17,9 +17,26 @@ REPLY_EVENT_RE = re.compile(
 )
 
 
-async def handle_text(receiver, chain, event, _: str):
-    text = event.body or ""
-    content = event.content or {}
+def should_append_caption(content: dict, filename: str | None = None) -> bool:
+    body = content.get("body") or ""
+    if not body:
+        return False
+    if content.get("formatted_body"):
+        return True
+    if filename and body != filename:
+        return True
+    return False
+
+
+def append_formatted_text(
+    receiver,
+    chain,
+    text: str,
+    content: dict,
+    allow_command_rewrite: bool = True,
+) -> None:
+    text = text or ""
+    content = content or {}
     mentions = content.get("m.mentions") or {}
     format_type = content.get("format") or ""
     formatted_body = content.get("formatted_body") or ""
@@ -27,7 +44,7 @@ async def handle_text(receiver, chain, event, _: str):
         formatted_body = ""
 
     # 豁免 ! 开头的命令，自动转换为 / 开头
-    if text.startswith("!"):
+    if allow_command_rewrite and text.startswith("!"):
         text = "/" + text[1:]
 
     seen_mentions: set[str] = set()
@@ -148,3 +165,13 @@ async def handle_text(receiver, chain, event, _: str):
 
         if text:
             chain.chain.append(Plain(text))
+
+
+async def handle_text(receiver, chain, event, _: str):
+    append_formatted_text(
+        receiver,
+        chain,
+        event.body or "",
+        event.content or {},
+        allow_command_rewrite=True,
+    )

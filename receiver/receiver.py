@@ -18,6 +18,7 @@ from astrbot.core.utils import astrbot_path
 from ..client.event_types import MatrixRoom
 from ..constants import REL_TYPE_THREAD
 from ..plugin_config import get_plugin_config
+from ..utils.media_crypto import decrypt_encrypted_file
 from ..utils.utils import MatrixUtils
 from .handlers import (
     handle_audio,
@@ -65,18 +66,12 @@ class MatrixReceiver:
         # 默认自动下载图片、贴纸、视频、语音、文件
         return msgtype in ["m.image", "m.sticker", "m.video", "m.audio", "m.file"]
 
-    async def _download_media_file(
-        self, mxc_url: str, filename: str = None, mimetype: str = None
+    def _build_media_cache_path(
+        self, mxc_url: str, filename: str | None = None, mimetype: str | None = None
     ) -> Path:
-        """下载媒体文件并返回缓存路径"""
-        if not self.client:
-            raise Exception("No client available for downloading media")
-
-        # 创建缓存键
         cache_key = hashlib.md5(mxc_url.encode()).hexdigest()
         cache_dir = self._get_media_cache_dir()
 
-        # 确定文件扩展名
         if filename:
             ext = Path(filename).suffix
         elif mimetype:
@@ -97,7 +92,16 @@ class MatrixReceiver:
         else:
             ext = ".jpg"
 
-        cache_path = cache_dir / f"{cache_key}{ext}"
+        return cache_dir / f"{cache_key}{ext}"
+
+    async def _download_media_file(
+        self, mxc_url: str, filename: str = None, mimetype: str = None
+    ) -> Path:
+        """下载媒体文件并返回缓存路径"""
+        if not self.client:
+            raise Exception("No client available for downloading media")
+
+        cache_path = self._build_media_cache_path(mxc_url, filename, mimetype)
 
         # 检查缓存
         if cache_path.exists() and cache_path.stat().st_size > 0:
@@ -118,6 +122,33 @@ class MatrixReceiver:
         except Exception as e:
             logger.error(f"Failed to download media file {mxc_url}: {e}")
             raise
+
+    async def _download_encrypted_media_file(
+        self, file_info: dict, filename: str | None = None, mimetype: str | None = None
+    ) -> Path:
+        """下载并解密媒体文件（E2EE 附件）"""
+        if not self.client:
+            raise Exception("No client available for downloading media")
+
+        mxc_url = file_info.get("url")
+        if not mxc_url:
+            raise Exception("Encrypted media missing mxc url")
+
+        cache_path = self._build_media_cache_path(mxc_url, filename, mimetype)
+        if cache_path.exists() and cache_path.stat().st_size > 0:
+            logger.debug(f"Using cached encrypted media file: {cache_path}")
+            try:
+                cache_path.touch()
+            except Exception:
+                pass
+            return cache_path
+
+        logger.info(f"Downloading encrypted media file: {mxc_url}")
+        ciphertext = await self.client.download_file(mxc_url)
+        plaintext = decrypt_encrypted_file(file_info, ciphertext)
+        cache_path.write_bytes(plaintext)
+        logger.debug(f"Saved decrypted media file to cache: {cache_path}")
+        return cache_path
 
     def gc_media_cache(self, older_than_days: int | None = None) -> int:
         """清理媒体缓存，返回删除文件数"""

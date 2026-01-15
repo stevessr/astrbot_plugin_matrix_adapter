@@ -81,6 +81,7 @@ async def send_video(
     content = {
         "msgtype": "m.video",
         "body": filename,
+        "filename": filename,
         "url": content_uri,
         "info": info,
     }

@@ -6,6 +6,7 @@ from ...sticker import Sticker, StickerInfo
 
 async def handle_sticker(receiver, chain, event, _: str):
     mxc_url = event.content.get("url")
+    file_info = event.content.get("file")
     info_data = event.content.get("info", {})
 
     sticker_info = StickerInfo(
@@ -17,35 +18,46 @@ async def handle_sticker(receiver, chain, event, _: str):
         thumbnail_info=info_data.get("thumbnail_info"),
     )
 
-    if (
-        mxc_url
-        and receiver.client
-        and receiver._should_auto_download_media("m.sticker")
-    ):
-        try:
-            cache_path = await receiver._download_media_file(
-                mxc_url,
-                event.content.get("body", "sticker.png"),
-                sticker_info.mimetype,
-            )
-            sticker = Sticker(
-                body=event.body,
-                url=f"file:///{cache_path}",
-                info=sticker_info,
-                mxc_url=mxc_url,
-            )
-            chain.chain.append(sticker)
-            logger.debug(f"收到 sticker: {event.body}")
-        except Exception as e:
-            logger.error(f"Failed to download Matrix sticker: {e}")
-            sticker = Sticker(
-                body=event.body,
-                url=mxc_url,
-                info=sticker_info,
-                mxc_url=mxc_url,
-            )
-            chain.chain.append(sticker)
-    elif mxc_url:
+    if receiver.client and receiver._should_auto_download_media("m.sticker"):
+        if file_info:
+            try:
+                cache_path = await receiver._download_encrypted_media_file(
+                    file_info,
+                    event.content.get("body", "sticker.png"),
+                    sticker_info.mimetype,
+                )
+                sticker = Sticker(
+                    body=event.body,
+                    url=f"file:///{cache_path}",
+                    info=sticker_info,
+                    mxc_url=file_info.get("url", ""),
+                )
+                chain.chain.append(sticker)
+                logger.debug(f"收到 sticker: {event.body}")
+                return
+            except Exception as e:
+                logger.error(f"Failed to download Matrix encrypted sticker: {e}")
+
+        if mxc_url:
+            try:
+                cache_path = await receiver._download_media_file(
+                    mxc_url,
+                    event.content.get("body", "sticker.png"),
+                    sticker_info.mimetype,
+                )
+                sticker = Sticker(
+                    body=event.body,
+                    url=f"file:///{cache_path}",
+                    info=sticker_info,
+                    mxc_url=mxc_url,
+                )
+                chain.chain.append(sticker)
+                logger.debug(f"收到 sticker: {event.body}")
+                return
+            except Exception as e:
+                logger.error(f"Failed to download Matrix sticker: {e}")
+
+    if mxc_url and not file_info:
         sticker = Sticker(
             body=event.body,
             url=mxc_url,

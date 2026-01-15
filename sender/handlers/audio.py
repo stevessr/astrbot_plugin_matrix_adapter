@@ -72,6 +72,7 @@ async def send_audio(
     content = {
         "msgtype": "m.audio",
         "body": filename,
+        "filename": filename,
         "url": content_uri,
         "info": info,
     }

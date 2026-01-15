@@ -10,3 +10,4 @@
 - Added automatic SSO fallback when OAuth2 auto-discovery is unavailable but `m.login.sso` is supported.
 - Sticker index/cache are global; per-account availability stored separately. Sticker cache is now organized by room/pack name.
 - Sticker list/search now auto-filters to the account's available sticker IDs.
+- Added v1.17-compliant media message handling: encrypted file decryption for media/stickers, media captions parsing, and filename fields for image/audio/video sends.

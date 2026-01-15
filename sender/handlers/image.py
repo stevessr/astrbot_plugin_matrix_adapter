@@ -74,7 +74,13 @@ async def send_image(
         info["w"] = width
         info["h"] = height
 
-    content = {"msgtype": "m.image", "body": filename, "url": content_uri, "info": info}
+    content = {
+        "msgtype": "m.image",
+        "body": filename,
+        "filename": filename,
+        "url": content_uri,
+        "info": info,
+    }
 
     await send_content(
         client,
