@@ -94,7 +94,7 @@ async def send_streaming_impl(self, generator, use_fallback: bool = False):
             orig_body = original_message_info.get("body", "")
             if len(orig_body) > TEXT_TRUNCATE_LENGTH_50:
                 orig_body = orig_body[:TEXT_TRUNCATE_LENGTH_50] + "..."
-            fallback_text = f"> <{orig_sender}> {orig_body}\n\n"
+            fallback_text = f"> <{orig_sender}> {orig_body}"
             content["body"] = fallback_text + content["body"]
 
             fallback_html = MatrixUtils.create_reply_fallback(

@@ -229,14 +229,57 @@ class MatrixAuthLogin:
             error_msg = str(e)
             self._log("error", f"❌ OAuth2 login failed: {error_msg}")
 
-            if "not supported" in error_msg.lower() or "404" in error_msg:
+            if (
+                "authentication configuration" in error_msg.lower()
+                or "not supported" in error_msg.lower()
+                or "404" in error_msg
+            ):
                 self._log(
-                    "error",
-                    "💡 Suggestion: Change matrix_auth_method to 'password' in your configuration "
-                    "and provide matrix_user_id and matrix_password.",
+                    "warning",
+                    "OAuth2 auto-discovery failed. Attempting SSO (m.login.sso) fallback...",
                 )
+                try:
+                    await self._login_via_sso()
+                    return
+                except Exception as sso_error:
+                    self._log("error", f"SSO fallback failed: {sso_error}")
+                    self._log(
+                        "error",
+                        "💡 Suggestion: Change matrix_auth_method to 'password' in your configuration "
+                        "and provide matrix_user_id and matrix_password.",
+                    )
 
             raise RuntimeError(f"OAuth2 login failed: {e}")
+
+    async def _login_via_sso(self):
+        self._log("info", "Logging in with SSO...")
+        from .sso import MatrixSSO
+
+        sso = MatrixSSO(
+            client=self.client,
+            homeserver=self.config.homeserver,
+            callback_port=self.config.oauth2_callback_port,
+            callback_host=self.config.oauth2_callback_host,
+        )
+
+        response = await sso.login(
+            device_name=self.device_name,
+            device_id=self.device_id,
+        )
+
+        self.user_id = response.get("user_id")
+        if self.user_id:
+            self.config.user_id = self.user_id
+
+        device_id = response.get("device_id")
+        if device_id:
+            self.config.set_device_id(device_id)
+        self.access_token = response.get("access_token")
+        self.refresh_token = response.get("refresh_token")
+
+        self._log("info", f"✅ Successfully logged in via SSO as {self.user_id}")
+        self._save_token()
+        self._config_needs_save = True
 
     async def refresh_oauth2_token(self):
         if not self.oauth2_handler:
