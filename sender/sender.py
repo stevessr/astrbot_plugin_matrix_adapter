@@ -88,6 +88,49 @@ class MatrixSender:
         """Send a reaction to a message in a room."""
         return await self.client.send_reaction(room_id, event_id, emoji)
 
+    async def send_poll(
+        self,
+        room_id: str,
+        question: str,
+        answers: list[str],
+        max_selections: int = 1,
+        kind: str = "m.disclosed",
+        reply_to: str | None = None,
+        thread_root: str | None = None,
+        use_thread: bool = False,
+        event_type: str = "m.poll.start",
+        poll_key: str = "m.poll",
+        fallback_text: str | None = None,
+        fallback_html: str | None = None,
+    ) -> dict | None:
+        """Send a poll to a room."""
+        from ..sender.handlers import send_poll
+
+        is_encrypted_room = False
+        if self.e2ee_manager:
+            try:
+                is_encrypted_room = await self.client.is_room_encrypted(room_id)
+            except Exception:
+                is_encrypted_room = False
+
+        return await send_poll(
+            self.client,
+            room_id,
+            question,
+            answers,
+            reply_to,
+            thread_root,
+            use_thread,
+            is_encrypted_room,
+            self.e2ee_manager,
+            max_selections=max_selections,
+            kind=kind,
+            event_type=event_type,
+            poll_key=poll_key,
+            fallback_text=fallback_text,
+            fallback_html=fallback_html,
+        )
+
     async def delete_message(
         self,
         room_id: str,

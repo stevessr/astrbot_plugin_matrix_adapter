@@ -19,6 +19,7 @@ from astrbot.api.message_components import (
     Nodes,
     Plain,
     Poke,
+    Poll,
     Record,
     Reply,
     Shake,
@@ -39,6 +40,7 @@ from .sender.handlers import (
     send_location,
     send_music,
     send_plain,
+    send_poll,
     send_rps,
     send_shake,
     send_share,
@@ -297,6 +299,29 @@ async def send_with_client_impl(
                 sent_count += 1
             except Exception as e:
                 logger.error(f"处理音乐消息过程出错：{e}")
+
+        elif isinstance(segment, Poll):
+            try:
+                await send_poll(
+                    client,
+                    room_id,
+                    segment.question,
+                    segment.answers,
+                    reply_to,
+                    thread_root,
+                    use_thread,
+                    is_encrypted_room,
+                    e2ee_manager,
+                    max_selections=getattr(segment, "max_selections", 1) or 1,
+                    kind=getattr(segment, "kind", None) or "m.disclosed",
+                    event_type=getattr(segment, "event_type", None) or "m.poll.start",
+                    poll_key=getattr(segment, "poll_key", None) or "m.poll",
+                    fallback_text=getattr(segment, "fallback_text", None),
+                    fallback_html=getattr(segment, "fallback_html", None),
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"处理投票消息过程出错：{e}")
 
         elif isinstance(segment, Contact):
             try:

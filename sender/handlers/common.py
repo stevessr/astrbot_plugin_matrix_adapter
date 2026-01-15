@@ -11,7 +11,7 @@ async def send_content(
     is_encrypted_room: bool,
     e2ee_manager,
     msg_type: str = "m.room.message",
-) -> None:
+) -> dict | None:
     if use_thread and thread_root:
         relates_to = {
             "rel_type": "m.thread",
@@ -28,12 +28,13 @@ async def send_content(
     if is_encrypted_room and e2ee_manager:
         encrypted = await e2ee_manager.encrypt_message(room_id, msg_type, content)
         if encrypted:
-            await client.send_message(
+            return await client.send_message(
                 room_id=room_id,
                 msg_type="m.room.encrypted",
                 content=encrypted,
             )
-            return
         logger.warning("加密消息失败，尝试发送未加密消息")
 
-    await client.send_message(room_id=room_id, msg_type=msg_type, content=content)
+    return await client.send_message(
+        room_id=room_id, msg_type=msg_type, content=content
+    )

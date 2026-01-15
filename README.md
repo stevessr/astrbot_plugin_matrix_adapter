@@ -170,6 +170,32 @@ await adapter.sender.send_message(
 )
 ```
 
+### 发送投票
+
+Matrix 适配器暴露了 `MatrixSender.send_poll` 接口用于发送投票：
+
+```python
+# adapter 是 Matrix 平台适配器实例
+await adapter.sender.send_poll(
+    "!roomid:example.org",
+    question="你更喜欢哪种风格？",
+    answers=["简洁", "复古", "未来感"],
+    max_selections=1,
+)
+```
+
+如果你的服务端只支持旧的（不稳定）事件类型，可以指定 `event_type` 和 `poll_key`：
+
+```python
+await adapter.sender.send_poll(
+    "!roomid:example.org",
+    question="午饭吃什么？",
+    answers=["面条", "米饭"],
+    event_type="org.matrix.msc3381.poll.start",
+    poll_key="org.matrix.msc3381.poll.start",
+)
+```
+
 ### 删除消息
 
 Matrix 适配器暴露了 `MatrixSender.delete_message` 接口用于删除（撤回）消息：
