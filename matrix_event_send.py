@@ -19,7 +19,6 @@ from astrbot.api.message_components import (
     Nodes,
     Plain,
     Poke,
-    Poll,
     Record,
     Reply,
     Shake,
@@ -29,6 +28,7 @@ from astrbot.api.message_components import (
     WechatEmoji,
 )
 
+from .components import Poll
 from .constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES
 from .sender.handlers import (
     send_at,

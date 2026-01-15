@@ -184,6 +184,18 @@ await adapter.sender.send_poll(
 )
 ```
 
+也可以使用适配器自带的 `Poll` 组件构造消息链：
+
+```python
+from astrbot.api.event import MessageChain
+from astrbot_plugin_matrix_adapter.components import Poll
+
+await adapter.sender.send_message(
+    "!roomid:example.org",
+    MessageChain([Poll("最喜欢的季节？", ["春", "夏", "秋", "冬"])]),
+)
+```
+
 如果你的服务端只支持旧的（不稳定）事件类型，可以指定 `event_type` 和 `poll_key`：
 
 ```python
