@@ -44,20 +44,21 @@ class MatrixEventProcessorStreams:
         for event in events:
             event_type = event.get("type")
             content = event.get("content", {})
-            if event_type == "m.typing":
-                user_ids = content.get("user_ids", [])
-                if isinstance(user_ids, list):
-                    self.typing[room_id] = set(user_ids)
-                    logger.debug(
-                        f"房间 {room_id} typing: {len(self.typing[room_id])} users"
-                    )
-            elif event_type == "m.receipt":
-                room_receipts = self.receipts.setdefault(room_id, {})
-                for event_id, receipt_types in content.items():
-                    room_receipts[event_id] = receipt_types
-                logger.debug(f"房间 {room_id} receipt 更新 {len(content)} 条事件")
-            else:
-                logger.debug(f"未处理的 ephemeral 事件：{event_type}")
+            match event_type:
+                case "m.typing":
+                    user_ids = content.get("user_ids", [])
+                    if isinstance(user_ids, list):
+                        self.typing[room_id] = set(user_ids)
+                        logger.debug(
+                            f"房间 {room_id} typing: {len(self.typing[room_id])} users"
+                        )
+                case "m.receipt":
+                    room_receipts = self.receipts.setdefault(room_id, {})
+                    for event_id, receipt_types in content.items():
+                        room_receipts[event_id] = receipt_types
+                    logger.debug(f"房间 {room_id} receipt 更新 {len(content)} 条事件")
+                case _:
+                    logger.debug(f"未处理的 ephemeral 事件：{event_type}")
 
     async def process_device_lists(self, device_lists: dict):
         """Process device list updates from /sync."""

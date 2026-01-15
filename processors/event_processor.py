@@ -73,39 +73,42 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
         room.state_events.setdefault(event_type, {})[state_key] = content
 
-        if event_type == "m.room.name":
-            room.display_name = content.get("name", "") or ""
-        elif event_type == "m.room.topic":
-            room.topic = content.get("topic", "") or ""
-        elif event_type == "m.room.avatar":
-            room.avatar_url = content.get("url") or None
-        elif event_type == "m.room.join_rules":
-            room.join_rules = content
-        elif event_type == "m.room.power_levels":
-            room.power_levels = content
-        elif event_type == "m.room.history_visibility":
-            room.history_visibility = content.get("history_visibility")
-        elif event_type == "m.room.guest_access":
-            room.guest_access = content.get("guest_access")
-        elif event_type == "m.room.canonical_alias":
-            room.canonical_alias = content.get("alias")
-            alt_aliases = content.get("alt_aliases") or []
-            if isinstance(alt_aliases, list):
-                room.room_aliases = alt_aliases
-        elif event_type == "m.room.aliases":
-            aliases = content.get("aliases") or []
-            if isinstance(aliases, list):
-                room.room_aliases = aliases
-        elif event_type == "m.room.encryption":
-            room.encryption = content
-        elif event_type == "m.room.create":
-            room.create = content
-        elif event_type == "m.room.tombstone":
-            room.tombstone = content
-        elif event_type == "m.room.pinned_events":
-            pinned = content.get("pinned") or []
-            if isinstance(pinned, list):
-                room.pinned_events = pinned
+        match event_type:
+            case "m.room.name":
+                room.display_name = content.get("name", "") or ""
+            case "m.room.topic":
+                room.topic = content.get("topic", "") or ""
+            case "m.room.avatar":
+                room.avatar_url = content.get("url") or None
+            case "m.room.join_rules":
+                room.join_rules = content
+            case "m.room.power_levels":
+                room.power_levels = content
+            case "m.room.history_visibility":
+                room.history_visibility = content.get("history_visibility")
+            case "m.room.guest_access":
+                room.guest_access = content.get("guest_access")
+            case "m.room.canonical_alias":
+                room.canonical_alias = content.get("alias")
+                alt_aliases = content.get("alt_aliases") or []
+                if isinstance(alt_aliases, list):
+                    room.room_aliases = alt_aliases
+            case "m.room.aliases":
+                aliases = content.get("aliases") or []
+                if isinstance(aliases, list):
+                    room.room_aliases = aliases
+            case "m.room.encryption":
+                room.encryption = content
+            case "m.room.create":
+                room.create = content
+            case "m.room.tombstone":
+                room.tombstone = content
+            case "m.room.pinned_events":
+                pinned = content.get("pinned") or []
+                if isinstance(pinned, list):
+                    room.pinned_events = pinned
+            case _:
+                return
 
     async def process_room_events(self, room_id: str, room_data: dict):
         """
