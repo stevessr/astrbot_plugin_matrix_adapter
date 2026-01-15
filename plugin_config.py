@@ -23,7 +23,7 @@ def _normalize_message_type(value, legacy_value) -> str:
     """归一化消息类型配置"""
     if isinstance(value, str):
         normalized = value.strip().lower()
-        if normalized in {"auto", "private", "group"}:
+        if normalized in {"auto", "private", "group", "stalk"}:
             return normalized
     if isinstance(value, bool):
         return "private" if value else "auto"
@@ -138,7 +138,7 @@ class PluginConfig:
 
     @property
     def force_message_type(self) -> str:
-        """强制消息类型（auto / private / group）"""
+        """强制消息类型（auto / private / group / stalk）"""
         return self._force_message_type
 
     @property

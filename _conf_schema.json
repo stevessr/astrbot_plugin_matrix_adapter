@@ -32,8 +32,8 @@
   "matrix_force_message_type": {
     "description": "强制消息类型",
     "type": "string",
-    "hint": "强制消息类型：auto（自动判断群聊/私聊）、private（全部私聊）、group（全部群聊）",
-    "options": ["auto", "private", "group"],
+    "hint": "强制消息类型：auto（自动判断群聊/私聊）、private（全部私聊）、group（全部群聊）、stalk（写入对话并按群存档 JSONL）",
+    "options": ["auto", "private", "group", "stalk"],
     "default": "auto"
   },
   "matrix_streaming_no_edit": {
