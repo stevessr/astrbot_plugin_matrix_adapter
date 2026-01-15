@@ -166,7 +166,8 @@ class MatrixAdapterMessageMixin:
                 }
                 _append_stalk_archive(abm.session_id, record)
 
-            await self.handle_msg(abm)
+            if get_plugin_config().force_message_type != "stalk":
+                await self.handle_msg(abm)
         except Exception as e:
             logger.error(f"消息回调时出错：{e}")
 
