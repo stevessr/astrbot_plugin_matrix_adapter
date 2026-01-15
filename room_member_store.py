@@ -71,6 +71,9 @@ class MatrixRoomMemberStore:
         create: dict[str, Any] | None = None,
         tombstone: dict[str, Any] | None = None,
         pinned_events: list[str] | None = None,
+        space_children: dict[str, dict[str, Any]] | None = None,
+        space_parents: dict[str, dict[str, Any]] | None = None,
+        third_party_invites: dict[str, dict[str, Any]] | None = None,
         state_events: dict[str, dict[str, Any]] | None = None,
     ):
         """
@@ -172,6 +175,24 @@ class MatrixRoomMemberStore:
                 existing["pinned_events"] = pinned_events
                 updated = True
 
+            if space_children is not None and space_children != existing.get(
+                "space_children"
+            ):
+                existing["space_children"] = space_children
+                updated = True
+
+            if space_parents is not None and space_parents != existing.get(
+                "space_parents"
+            ):
+                existing["space_parents"] = space_parents
+                updated = True
+
+            if third_party_invites is not None and third_party_invites != existing.get(
+                "third_party_invites"
+            ):
+                existing["third_party_invites"] = third_party_invites
+                updated = True
+
             if state_events is not None and state_events != existing.get("state_events"):
                 existing["state_events"] = state_events
                 updated = True
@@ -209,6 +230,12 @@ class MatrixRoomMemberStore:
                 existing["tombstone"] = tombstone
             if pinned_events is not None:
                 existing["pinned_events"] = pinned_events
+            if space_children is not None:
+                existing["space_children"] = space_children
+            if space_parents is not None:
+                existing["space_parents"] = space_parents
+            if third_party_invites is not None:
+                existing["third_party_invites"] = third_party_invites
             if state_events is not None:
                 existing["state_events"] = state_events
             existing["updated_at"] = int(Path(__file__).stat().st_mtime)

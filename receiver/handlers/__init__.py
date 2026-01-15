@@ -3,6 +3,7 @@ from .file import handle_file as handle_file
 from .image import handle_image as handle_image
 from .location import handle_location as handle_location
 from .reaction import handle_reaction as handle_reaction
+from .redaction import handle_redaction as handle_redaction
 from .sticker import handle_sticker as handle_sticker
 from .text import handle_text as handle_text
 from .unknown import handle_unknown as handle_unknown

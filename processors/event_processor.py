@@ -66,7 +66,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
     def _apply_room_state_event(self, room, event_data: dict) -> None:
         event_type = event_data.get("type", "")
-        if not event_type.startswith("m.room."):
+        if not (event_type.startswith("m.room.") or event_type.startswith("m.space.")):
             return
         state_key = event_data.get("state_key", "")
         content = event_data.get("content", {}) or {}
@@ -107,6 +107,12 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 pinned = content.get("pinned") or []
                 if isinstance(pinned, list):
                     room.pinned_events = pinned
+            case "m.space.child":
+                room.space_children[state_key] = content
+            case "m.space.parent":
+                room.space_parents[state_key] = content
+            case "m.room.third_party_invite":
+                room.third_party_invites[state_key] = content
             case _:
                 return
 
@@ -222,7 +228,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                     avatar_url = content.get("avatar_url")
                     if avatar_url:
                         room.member_avatars[user_id] = avatar_url
-            elif event.get("type", "").startswith("m.room."):
+            elif event.get("type", "").startswith(("m.room.", "m.space.")):
                 self._apply_room_state_event(room, event)
 
         # Persist room state/members after initial state processing
@@ -245,6 +251,9 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             create=room.create,
             tombstone=room.tombstone,
             pinned_events=room.pinned_events,
+            space_children=room.space_children,
+            space_parents=room.space_parents,
+            third_party_invites=room.third_party_invites,
             state_events=room.state_events,
         )
 
@@ -274,7 +283,11 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             return
 
         # Handle other room state updates
-        if event_type and event_type.startswith("m.room.") and "state_key" in event_data:
+        if (
+            event_type
+            and event_type.startswith(("m.room.", "m.space."))
+            and "state_key" in event_data
+        ):
             self._apply_room_state_event(room, event_data)
             self.room_member_store.upsert(
                 room_id=room.room_id,
@@ -295,6 +308,9 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 create=room.create,
                 tombstone=room.tombstone,
                 pinned_events=room.pinned_events,
+                space_children=room.space_children,
+                space_parents=room.space_parents,
+                third_party_invites=room.third_party_invites,
                 state_events=room.state_events,
             )
             return
@@ -314,6 +330,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         if event_type in (
             "m.room.message",
             "m.room.encrypted",
+            "m.room.redaction",
             "m.sticker",
             "m.reaction",
         ):

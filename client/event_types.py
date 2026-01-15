@@ -131,6 +131,9 @@ class MatrixRoom:
     create: dict[str, Any] | None = None
     tombstone: dict[str, Any] | None = None
     pinned_events: list[str] = field(default_factory=list)
+    space_children: dict[str, dict[str, Any]] = field(default_factory=dict)
+    space_parents: dict[str, dict[str, Any]] = field(default_factory=dict)
+    third_party_invites: dict[str, dict[str, Any]] = field(default_factory=dict)
     state_events: dict[str, dict[str, Any]] = field(default_factory=dict)
     member_count: int = 0
     is_direct: bool | None = None
@@ -207,5 +210,15 @@ def parse_event(event_data: dict[str, Any], room_id: str) -> MatrixEvent:
             return RoomMessageEvent.from_dict(event_data, room_id)
         case "m.room.member" if content.get("membership") == "invite":
             return InviteEvent.from_dict(event_data, room_id)
+        case "m.room.redaction":
+            redaction_content = dict(content)
+            if "redacts" not in redaction_content and event_data.get("redacts"):
+                redaction_content["redacts"] = event_data.get("redacts")
+            event_data = dict(event_data)
+            event_data["content"] = redaction_content
+            event = RoomMessageEvent.from_dict(event_data, room_id)
+            event.msgtype = "m.redaction"
+            event.body = redaction_content.get("reason", "")
+            return event
         case _:
             return MatrixEvent.from_dict(event_data, room_id)

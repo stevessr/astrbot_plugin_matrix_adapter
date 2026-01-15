@@ -60,6 +60,12 @@ class MatrixEventProcessorMembers:
             room.tombstone = room_data.get("tombstone")
         if "pinned_events" in room_data:
             room.pinned_events = room_data.get("pinned_events", [])
+        if "space_children" in room_data:
+            room.space_children = room_data.get("space_children", {})
+        if "space_parents" in room_data:
+            room.space_parents = room_data.get("space_parents", {})
+        if "third_party_invites" in room_data:
+            room.third_party_invites = room_data.get("third_party_invites", {})
         if "state_events" in room_data:
             room.state_events = room_data.get("state_events", {})
 
@@ -124,6 +130,9 @@ class MatrixEventProcessorMembers:
                     create=room.create,
                     tombstone=room.tombstone,
                     pinned_events=room.pinned_events,
+                    space_children=room.space_children,
+                    space_parents=room.space_parents,
+                    third_party_invites=room.third_party_invites,
                     state_events=room.state_events,
                 )
         elif membership in ("leave", "ban"):
@@ -156,6 +165,9 @@ class MatrixEventProcessorMembers:
                     create=room.create,
                     tombstone=room.tombstone,
                     pinned_events=room.pinned_events,
+                    space_children=room.space_children,
+                    space_parents=room.space_parents,
+                    third_party_invites=room.third_party_invites,
                     state_events=room.state_events,
                 )
         else:
@@ -185,5 +197,8 @@ class MatrixEventProcessorMembers:
                     create=room.create,
                     tombstone=room.tombstone,
                     pinned_events=room.pinned_events,
+                    space_children=room.space_children,
+                    space_parents=room.space_parents,
+                    third_party_invites=room.third_party_invites,
                     state_events=room.state_events,
                 )
