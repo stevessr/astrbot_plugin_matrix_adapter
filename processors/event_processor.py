@@ -322,6 +322,10 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             await self._handle_in_room_verification(room, event_data)
             return
 
+        # Skip redaction events (no visible output)
+        if event_type == "m.room.redaction":
+            return
+
         # Check for in-room verification request (m.room.message with msgtype m.key.verification.request)
         if event_type == "m.room.message" and msgtype == "m.key.verification.request":
             await self._handle_in_room_verification(room, event_data)
@@ -330,7 +334,6 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         if event_type in (
             "m.room.message",
             "m.room.encrypted",
-            "m.room.redaction",
             "m.sticker",
             "m.reaction",
         ):
