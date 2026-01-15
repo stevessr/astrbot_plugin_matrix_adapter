@@ -149,7 +149,7 @@ class MatrixUtils:
             return mxc_url
         server_name = mxc_url[6:].split("/")[0]
         media_id = mxc_url[6:].split("/")[1]
-        return f"{homeserver}/_matrix/media/v3/download/{server_name}/{media_id}"
+        return f"{homeserver}/_matrix/client/v1/media/download/{server_name}/{media_id}"
 
     @staticmethod
     def create_reply_fallback(
@@ -157,7 +157,7 @@ class MatrixUtils:
     ) -> str:
         """
         生成 Matrix 回复引用 (fallback)
-        格式参考：https://spec.matrix.org/v1.10/client-server-api/#fallbacks-for-rich-replies
+        格式参考：https://spec.matrix.org/latest/client-server-api/#fallbacks-for-rich-replies
         <mx-reply>
           <blockquote>
             <a href="https://matrix.to/#/!somewhere:example.org/$event:example.org">In reply to</a>

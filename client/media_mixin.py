@@ -58,34 +58,26 @@ class MediaMixin:
         获取 Matrix 媒体服务器配置
 
         返回服务器的媒体配置，包括最大上传文件大小。
-        参考：https://spec.matrix.org/latest/client-server-api/#get_matrixmediav3config
+        参考：https://spec.matrix.org/latest/client-server-api/#get_matrixclientv1mediaconfig
 
         Returns:
             包含 m.upload.size 等配置的字典
         """
         await self._ensure_session()
 
-        # 尝试多个 API 端点
-        endpoints = [
-            "/_matrix/client/v1/media/config",  # 新的认证媒体 API
-            "/_matrix/media/v3/config",
-            "/_matrix/media/r0/config",
-        ]
+        endpoint = "/_matrix/client/v1/media/config"
+        try:
+            url = f"{self.homeserver}{endpoint}"
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "User-Agent": "AstrBot Matrix Client/1.0",
+            }
 
-        for endpoint in endpoints:
-            try:
-                url = f"{self.homeserver}{endpoint}"
-                headers = {
-                    "Authorization": f"Bearer {self.access_token}",
-                    "User-Agent": "AstrBot Matrix Client/1.0",
-                }
-
-                async with self.session.get(url, headers=headers) as response:
-                    if response.status == 200:
-                        return await response.json()
-            except Exception as e:
-                logger.debug(f"获取媒体配置失败 ({endpoint}): {e}")
-                continue
+            async with self.session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    return await response.json()
+        except Exception as e:
+            logger.debug(f"获取媒体配置失败 ({endpoint}): {e}")
 
         # 如果所有端点都失败，返回空字典
         logger.warning("无法获取 Matrix 媒体服务器配置，将使用默认值")
@@ -96,7 +88,7 @@ class MediaMixin:
         Download a file from the Matrix media repository
         按照 Matrix spec 正确实现媒体下载
 
-        参考：https://spec.matrix.org/latest/client-server-api/#get_matrixmediav3downloadservernamemediaid
+        参考：https://spec.matrix.org/latest/client-server-api/#get_matrixclientv1mediadownloadservernamemediaid
 
         Args:
             mxc_url: MXC URL (mxc://server/media_id)
@@ -122,35 +114,16 @@ class MediaMixin:
 
         # Try multiple download strategies
         # 1. 通过用户 homeserver 代理下载（需要认证）
-        # 2. 直接从源服务器下载（可能不需要认证）
-        # 3. 缩略图作为最后手段
+        # 2. 缩略图作为最后手段
 
         # Strategy 1: 通过用户 homeserver 代理下载
         proxy_endpoints = [
-            # 新的认证媒体 API (推荐)
             f"/_matrix/client/v1/media/download/{server_name}/{media_id}",
-            # 传统 API
-            f"/_matrix/media/v3/download/{server_name}/{media_id}",
-            f"/_matrix/media/r0/download/{server_name}/{media_id}",
-            # 带重定向参数
-            f"/_matrix/media/v3/download/{server_name}/{media_id}?allow_redirect=true",
-            f"/_matrix/media/r0/download/{server_name}/{media_id}?allow_redirect=true",
         ]
 
-        # Strategy 2: 直接从源服务器下载
-        direct_endpoints = [
-            f"https://{server_name}/_matrix/client/v1/media/download/{server_name}/{media_id}",
-            f"https://{server_name}/_matrix/media/v3/download/{server_name}/{media_id}",
-            f"https://{server_name}/_matrix/media/r0/download/{server_name}/{media_id}",
-            f"https://{server_name}/_matrix/media/v3/download/{server_name}/{media_id}?allow_redirect=true",
-            f"https://{server_name}/_matrix/media/r0/download/{server_name}/{media_id}?allow_redirect=true",
-        ]
-
-        # Strategy 3: 尝试公开访问端点（不需要认证）
-        public_endpoints = [
-            f"https://{server_name}/_matrix/media/v1/download/{server_name}/{media_id}",
-            f"https://{server_name}/_matrix/media/v1/download/{server_name}/{media_id}?allow_redirect=true",
-        ]
+        # Strategy 2: 直接从源服务器下载（已在规范中弃用，移除）
+        direct_endpoints: list[str] = []
+        public_endpoints: list[str] = []
 
         all_endpoints = (
             [(url, True, "proxy") for url in proxy_endpoints]
@@ -222,11 +195,7 @@ class MediaMixin:
         if last_status in [403, 404]:
             logger.debug("Trying thumbnail endpoints as fallback...")
             thumbnail_endpoints = [
-                # 新的认证媒体 API
                 f"/_matrix/client/v1/media/thumbnail/{server_name}/{media_id}?width=800&height=600",
-                # 传统 API
-                f"/_matrix/media/v3/thumbnail/{server_name}/{media_id}?width=800&height=600",
-                f"/_matrix/media/r0/thumbnail/{server_name}/{media_id}?width=800&height=600",
             ]
 
             for endpoint in thumbnail_endpoints:
@@ -289,8 +258,6 @@ class MediaMixin:
 
         endpoints = [
             f"/_matrix/client/v1/media/thumbnail/{server_name}/{media_id}?{query}",
-            f"/_matrix/media/v3/thumbnail/{server_name}/{media_id}?{query}",
-            f"/_matrix/media/r0/thumbnail/{server_name}/{media_id}?{query}",
         ]
 
         last_error = None
@@ -338,11 +305,7 @@ class MediaMixin:
         if timestamp_ms is not None:
             params["ts"] = timestamp_ms
 
-        endpoints = [
-            "/_matrix/client/v1/media/preview_url",
-            "/_matrix/media/v3/preview_url",
-            "/_matrix/media/r0/preview_url",
-        ]
+        endpoints = ["/_matrix/client/v1/media/preview_url"]
 
         last_error: Exception | None = None
         for endpoint in endpoints:
