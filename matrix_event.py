@@ -60,6 +60,27 @@ class MatrixPlatformEvent(AstrMessageEvent):
         # Matrix 的 room_id 即为会话 ID
         room_id = self.session_id
 
+        if message_chain.type in {"tool_call", "tool_direct_result"}:
+            try:
+                from astrbot.api.message_components import Reply as _Reply
+
+                has_reply = any(
+                    isinstance(seg, _Reply) for seg in message_chain.chain or []
+                )
+                reply_id = getattr(self.message_obj, "message_id", None)
+                sender_id = getattr(
+                    getattr(self.message_obj, "sender", None),
+                    "user_id",
+                    None,
+                )
+                if not has_reply and reply_id:
+                    message_chain.chain.insert(
+                        0,
+                        _Reply(id=reply_id, sender_id=sender_id),
+                    )
+            except Exception:
+                pass
+
         # 检查是否需要使用嘟文串模式
         reply_to = None
         thread_root = None
