@@ -10,9 +10,7 @@ def _build_poll_fallback(question: str, answers: list[str]) -> tuple[str, str]:
     ]
     text_body = "\n".join(text_lines)
 
-    html_items = "\n".join(
-        f"<li>{html.escape(ans)}</li>" for ans in answers if ans
-    )
+    html_items = "\n".join(f"<li>{html.escape(ans)}</li>" for ans in answers if ans)
     html_body = (
         f"<p>{html.escape(safe_question)}</p><ol>{html_items}</ol>"
         if html_items

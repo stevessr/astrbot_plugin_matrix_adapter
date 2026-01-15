@@ -141,7 +141,9 @@ class MatrixUtils:
 
     def __init__(self):
         """禁止实例化此工具类"""
-        raise TypeError("MatrixUtils is a static utility class and should not be instantiated")
+        raise TypeError(
+            "MatrixUtils is a static utility class and should not be instantiated"
+        )
 
     @staticmethod
     def mxc_to_http(mxc_url: str, homeserver: str) -> str:

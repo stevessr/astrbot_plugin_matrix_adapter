@@ -26,9 +26,7 @@ async def send_at(
         display = segment.name or user_id
         if not display.startswith("@"):
             display = f"@{display}"
-        formatted_body = (
-            f'<a href="https://matrix.to/#/{user_id}" data-mxid="{user_id}">{display}</a>'
-        )
+        formatted_body = f'<a href="https://matrix.to/#/{user_id}" data-mxid="{user_id}">{display}</a>'
         content = {
             "msgtype": "m.text",
             "body": display,

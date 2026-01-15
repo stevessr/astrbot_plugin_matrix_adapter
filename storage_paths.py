@@ -20,7 +20,9 @@ class MatrixStoragePaths:
 
     def __init__(self):
         """禁止实例化此工具类"""
-        raise TypeError("MatrixStoragePaths is a static utility class and should not be instantiated")
+        raise TypeError(
+            "MatrixStoragePaths is a static utility class and should not be instantiated"
+        )
 
     @staticmethod
     def sanitize_homeserver(homeserver: str) -> str:

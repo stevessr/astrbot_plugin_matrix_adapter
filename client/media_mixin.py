@@ -164,9 +164,7 @@ class MediaMixin:
                 ) as response:
                     last_status = response.status
                     if response.status == 200:
-                        logger.debug(
-                            f"✅ Successfully downloaded media from {url}"
-                        )
+                        logger.debug(f"✅ Successfully downloaded media from {url}")
                         return await response.read()
                     elif response.status == 404:
                         logger.debug(f"Got 404 on {url}, trying next endpoint...")

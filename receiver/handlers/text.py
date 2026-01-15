@@ -46,7 +46,9 @@ async def handle_text(receiver, chain, event, _: str):
         fragment = TAG_RE.sub("", fragment)
         return html.unescape(fragment)
 
-    def _extract_reply_info(html_text: str) -> tuple[str | None, str | None, str | None]:
+    def _extract_reply_info(
+        html_text: str,
+    ) -> tuple[str | None, str | None, str | None]:
         if not html_text:
             return None, None, None
         match = REPLY_BLOCK_RE.search(html_text)
@@ -78,7 +80,9 @@ async def handle_text(receiver, chain, event, _: str):
     inline_added = False
     if formatted_body:
         if not any(isinstance(component, Reply) for component in chain.chain):
-            reply_event_id, reply_sender, reply_text = _extract_reply_info(formatted_body)
+            reply_event_id, reply_sender, reply_text = _extract_reply_info(
+                formatted_body
+            )
             if reply_event_id:
                 chain.chain.append(
                     Reply(

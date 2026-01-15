@@ -297,7 +297,7 @@ class MatrixPlatformAdapter(
         self.max_upload_size: int = DEFAULT_MAX_UPLOAD_SIZE_BYTES
 
         # Sticker 存储（全局共享）与可用列表（按账户隔离）
-        self.sticker_storage = StickerStorage()
+        self.sticker_storage = StickerStorage(availability_store=self.sticker_available)
         available_path = Path(self.storage_dir) / "sticker_available.json"
         self.sticker_available = StickerAvailabilityStore(available_path)
         self.sticker_syncer = StickerPackSyncer(

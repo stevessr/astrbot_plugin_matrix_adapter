@@ -20,8 +20,8 @@ from .plugin_config import get_plugin_config
 
 
 def _stalk_archive_path(room_id: str) -> Path:
-    encoded = base64.urlsafe_b64encode(room_id.encode("utf-8")).decode("ascii").rstrip(
-        "="
+    encoded = (
+        base64.urlsafe_b64encode(room_id.encode("utf-8")).decode("ascii").rstrip("=")
     )
     base_dir = get_plugin_config().store_path / "stalk_archive"
     return base_dir / f"{encoded}.jsonl"
@@ -124,14 +124,10 @@ class MatrixAdapterMessageMixin:
             sender_name = ""
             if abm:
                 sender_id = (
-                    abm.sender.user_id
-                    if hasattr(abm, "sender") and abm.sender
-                    else ""
+                    abm.sender.user_id if hasattr(abm, "sender") and abm.sender else ""
                 )
                 sender_name = (
-                    abm.sender.nickname
-                    if hasattr(abm, "sender") and abm.sender
-                    else ""
+                    abm.sender.nickname if hasattr(abm, "sender") and abm.sender else ""
                 )
 
             if abm:

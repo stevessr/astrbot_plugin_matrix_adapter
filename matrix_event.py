@@ -213,7 +213,9 @@ class MatrixPlatformEvent(AstrMessageEvent):
         try:
             target_event_id = event_id or getattr(self.message_obj, "message_id", None)
             if not target_event_id and hasattr(self.message_obj, "raw_message"):
-                target_event_id = getattr(self.message_obj.raw_message, "event_id", None)
+                target_event_id = getattr(
+                    self.message_obj.raw_message, "event_id", None
+                )
             if not target_event_id:
                 logger.warning("无法删除消息：缺少 event_id")
                 return

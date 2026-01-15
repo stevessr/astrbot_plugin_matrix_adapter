@@ -16,6 +16,7 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 
+from .availability import StickerAvailabilityStore
 from .component import Sticker, StickerInfo
 
 
@@ -65,7 +66,11 @@ class StickerStorage:
     - 根据 ID、名称、标签检索 sticker
     """
 
-    def __init__(self, storage_path: str | None = None):
+    def __init__(
+        self,
+        storage_path: str | None = None,
+        availability_store: StickerAvailabilityStore | None = None,
+    ):
         """
         初始化存储管理器
 
@@ -84,6 +89,9 @@ class StickerStorage:
 
         # 索引文件
         self.index_file = self.storage_dir / "sticker_index.json"
+
+        # 可用性过滤（按账号）
+        self.availability_store = availability_store
 
         # 加载索引
         self._index: dict[str, StickerMeta] = {}
@@ -142,11 +150,7 @@ class StickerStorage:
             "image/webp": ".webp",
         }
         ext = ext_map.get(mimetype, ".png")
-        room_seg = (
-            f"room_{self._sanitize_segment(room_id)}"
-            if room_id
-            else "user"
-        )
+        room_seg = f"room_{self._sanitize_segment(room_id)}" if room_id else "user"
         pack_seg = self._sanitize_segment(pack_name or "default")
         cache_dir = self.cache_dir / room_seg / pack_seg
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -312,6 +316,7 @@ class StickerStorage:
         pack_name: str | None = None,
         tags: list[str] | None = None,
         limit: int = 20,
+        available_ids: set[str] | None = None,
     ) -> list[Sticker]:
         """
         搜索 sticker
@@ -327,7 +332,12 @@ class StickerStorage:
         """
         results = []
 
+        if available_ids is None and self.availability_store:
+            available_ids = self.availability_store.get_ids()
+
         for sticker_id, meta in self._index.items():
+            if available_ids is not None and sticker_id not in available_ids:
+                continue
             # 应用过滤条件
             if pack_name and meta.pack_name != pack_name:
                 continue
@@ -355,7 +365,10 @@ class StickerStorage:
         return results
 
     def list_stickers(
-        self, pack_name: str | None = None, limit: int = 50
+        self,
+        pack_name: str | None = None,
+        limit: int = 50,
+        available_ids: set[str] | None = None,
     ) -> list[StickerMeta]:
         """
         列出所有 sticker
@@ -368,7 +381,12 @@ class StickerStorage:
             StickerMeta 列表
         """
         results = []
-        for meta in self._index.values():
+        if available_ids is None and self.availability_store:
+            available_ids = self.availability_store.get_ids()
+
+        for sticker_id, meta in self._index.items():
+            if available_ids is not None and sticker_id not in available_ids:
+                continue
             if pack_name and meta.pack_name != pack_name:
                 continue
             results.append(meta)
@@ -384,7 +402,12 @@ class StickerStorage:
             包名称列表
         """
         packs = set()
-        for meta in self._index.values():
+        available_ids = (
+            self.availability_store.get_ids() if self.availability_store else None
+        )
+        for sticker_id, meta in self._index.items():
+            if available_ids is not None and sticker_id not in available_ids:
+                continue
             if meta.pack_name:
                 packs.add(meta.pack_name)
         return sorted(packs)
