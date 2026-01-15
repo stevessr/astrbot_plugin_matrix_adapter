@@ -34,6 +34,34 @@ class MatrixEventProcessorMembers:
         room.member_count = room_data.get("member_count", 0)
         if "is_direct" in room_data:
             room.is_direct = room_data.get("is_direct")
+        if "room_name" in room_data:
+            room.display_name = room_data.get("room_name", "")
+        if "topic" in room_data:
+            room.topic = room_data.get("topic", "")
+        if "avatar_url" in room_data:
+            room.avatar_url = room_data.get("avatar_url")
+        if "join_rules" in room_data:
+            room.join_rules = room_data.get("join_rules")
+        if "power_levels" in room_data:
+            room.power_levels = room_data.get("power_levels")
+        if "history_visibility" in room_data:
+            room.history_visibility = room_data.get("history_visibility")
+        if "guest_access" in room_data:
+            room.guest_access = room_data.get("guest_access")
+        if "canonical_alias" in room_data:
+            room.canonical_alias = room_data.get("canonical_alias")
+        if "room_aliases" in room_data:
+            room.room_aliases = room_data.get("room_aliases", [])
+        if "encryption" in room_data:
+            room.encryption = room_data.get("encryption")
+        if "create" in room_data:
+            room.create = room_data.get("create")
+        if "tombstone" in room_data:
+            room.tombstone = room_data.get("tombstone")
+        if "pinned_events" in room_data:
+            room.pinned_events = room_data.get("pinned_events", [])
+        if "state_events" in room_data:
+            room.state_events = room_data.get("state_events", {})
 
         logger.debug(
             f"从存储加载房间 {room.room_id} 成员数据：{room.member_count} 个成员"
@@ -83,6 +111,20 @@ class MatrixEventProcessorMembers:
                     member_avatars=room.member_avatars,
                     member_count=room.member_count,
                     is_direct=room.is_direct,
+                    room_name=room.display_name,
+                    topic=room.topic,
+                    avatar_url=room.avatar_url,
+                    join_rules=room.join_rules,
+                    power_levels=room.power_levels,
+                    history_visibility=room.history_visibility,
+                    guest_access=room.guest_access,
+                    canonical_alias=room.canonical_alias,
+                    room_aliases=room.room_aliases,
+                    encryption=room.encryption,
+                    create=room.create,
+                    tombstone=room.tombstone,
+                    pinned_events=room.pinned_events,
+                    state_events=room.state_events,
                 )
         elif membership in ("leave", "ban"):
             was_member = user_id in room.members
@@ -101,6 +143,20 @@ class MatrixEventProcessorMembers:
                     member_avatars=room.member_avatars,
                     member_count=room.member_count,
                     is_direct=room.is_direct,
+                    room_name=room.display_name,
+                    topic=room.topic,
+                    avatar_url=room.avatar_url,
+                    join_rules=room.join_rules,
+                    power_levels=room.power_levels,
+                    history_visibility=room.history_visibility,
+                    guest_access=room.guest_access,
+                    canonical_alias=room.canonical_alias,
+                    room_aliases=room.room_aliases,
+                    encryption=room.encryption,
+                    create=room.create,
+                    tombstone=room.tombstone,
+                    pinned_events=room.pinned_events,
+                    state_events=room.state_events,
                 )
         else:
             # Membership changes without join/leave still update profile fields if present.
@@ -116,4 +172,18 @@ class MatrixEventProcessorMembers:
                     member_avatars=room.member_avatars,
                     member_count=room.member_count,
                     is_direct=room.is_direct,
+                    room_name=room.display_name,
+                    topic=room.topic,
+                    avatar_url=room.avatar_url,
+                    join_rules=room.join_rules,
+                    power_levels=room.power_levels,
+                    history_visibility=room.history_visibility,
+                    guest_access=room.guest_access,
+                    canonical_alias=room.canonical_alias,
+                    room_aliases=room.room_aliases,
+                    encryption=room.encryption,
+                    create=room.create,
+                    tombstone=room.tombstone,
+                    pinned_events=room.pinned_events,
+                    state_events=room.state_events,
                 )

@@ -120,6 +120,18 @@ class MatrixRoom:
     room_id: str
     display_name: str = ""
     topic: str = ""
+    avatar_url: str | None = None
+    join_rules: dict[str, Any] | None = None
+    power_levels: dict[str, Any] | None = None
+    history_visibility: str | None = None
+    guest_access: str | None = None
+    canonical_alias: str | None = None
+    room_aliases: list[str] = field(default_factory=list)
+    encryption: dict[str, Any] | None = None
+    create: dict[str, Any] | None = None
+    tombstone: dict[str, Any] | None = None
+    pinned_events: list[str] = field(default_factory=list)
+    state_events: dict[str, dict[str, Any]] = field(default_factory=dict)
     member_count: int = 0
     is_direct: bool | None = None
     members: dict[str, str] = field(default_factory=dict)  # user_id -> display_name

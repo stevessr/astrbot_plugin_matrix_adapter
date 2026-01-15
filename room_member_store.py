@@ -58,6 +58,20 @@ class MatrixRoomMemberStore:
         member_avatars: dict[str, str],
         member_count: int,
         is_direct: bool | None = None,
+        room_name: str | None = None,
+        topic: str | None = None,
+        avatar_url: str | None = None,
+        join_rules: dict[str, Any] | None = None,
+        power_levels: dict[str, Any] | None = None,
+        history_visibility: str | None = None,
+        guest_access: str | None = None,
+        canonical_alias: str | None = None,
+        room_aliases: list[str] | None = None,
+        encryption: dict[str, Any] | None = None,
+        create: dict[str, Any] | None = None,
+        tombstone: dict[str, Any] | None = None,
+        pinned_events: list[str] | None = None,
+        state_events: dict[str, dict[str, Any]] | None = None,
     ):
         """
         Save or update room member data.
@@ -97,6 +111,71 @@ class MatrixRoomMemberStore:
                 existing["is_direct"] = is_direct
                 updated = True
 
+            if room_name is not None and room_name != existing.get("room_name"):
+                existing["room_name"] = room_name
+                updated = True
+
+            if topic is not None and topic != existing.get("topic"):
+                existing["topic"] = topic
+                updated = True
+
+            if avatar_url is not None and avatar_url != existing.get("avatar_url"):
+                existing["avatar_url"] = avatar_url
+                updated = True
+
+            if join_rules is not None and join_rules != existing.get("join_rules"):
+                existing["join_rules"] = join_rules
+                updated = True
+
+            if power_levels is not None and power_levels != existing.get("power_levels"):
+                existing["power_levels"] = power_levels
+                updated = True
+
+            if (
+                history_visibility is not None
+                and history_visibility != existing.get("history_visibility")
+            ):
+                existing["history_visibility"] = history_visibility
+                updated = True
+
+            if guest_access is not None and guest_access != existing.get("guest_access"):
+                existing["guest_access"] = guest_access
+                updated = True
+
+            if canonical_alias is not None and canonical_alias != existing.get(
+                "canonical_alias"
+            ):
+                existing["canonical_alias"] = canonical_alias
+                updated = True
+
+            if room_aliases is not None and room_aliases != existing.get(
+                "room_aliases"
+            ):
+                existing["room_aliases"] = room_aliases
+                updated = True
+
+            if encryption is not None and encryption != existing.get("encryption"):
+                existing["encryption"] = encryption
+                updated = True
+
+            if create is not None and create != existing.get("create"):
+                existing["create"] = create
+                updated = True
+
+            if tombstone is not None and tombstone != existing.get("tombstone"):
+                existing["tombstone"] = tombstone
+                updated = True
+
+            if pinned_events is not None and pinned_events != existing.get(
+                "pinned_events"
+            ):
+                existing["pinned_events"] = pinned_events
+                updated = True
+
+            if state_events is not None and state_events != existing.get("state_events"):
+                existing["state_events"] = state_events
+                updated = True
+
         # Always update the data if it's a new entry or changed
         if updated:
             existing["members"] = members
@@ -104,6 +183,34 @@ class MatrixRoomMemberStore:
             existing["member_count"] = member_count
             if is_direct is not None:
                 existing["is_direct"] = is_direct
+            if room_name is not None:
+                existing["room_name"] = room_name
+            if topic is not None:
+                existing["topic"] = topic
+            if avatar_url is not None:
+                existing["avatar_url"] = avatar_url
+            if join_rules is not None:
+                existing["join_rules"] = join_rules
+            if power_levels is not None:
+                existing["power_levels"] = power_levels
+            if history_visibility is not None:
+                existing["history_visibility"] = history_visibility
+            if guest_access is not None:
+                existing["guest_access"] = guest_access
+            if canonical_alias is not None:
+                existing["canonical_alias"] = canonical_alias
+            if room_aliases is not None:
+                existing["room_aliases"] = room_aliases
+            if encryption is not None:
+                existing["encryption"] = encryption
+            if create is not None:
+                existing["create"] = create
+            if tombstone is not None:
+                existing["tombstone"] = tombstone
+            if pinned_events is not None:
+                existing["pinned_events"] = pinned_events
+            if state_events is not None:
+                existing["state_events"] = state_events
             existing["updated_at"] = int(Path(__file__).stat().st_mtime)
 
             path = self._room_path(room_id)

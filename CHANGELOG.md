@@ -11,3 +11,4 @@
 - Sticker index/cache are global; per-account availability stored separately. Sticker cache is now organized by room/pack name.
 - Sticker list/search now auto-filters to the account's available sticker IDs.
 - Added v1.17-compliant media message handling: encrypted file decryption for media/stickers, media captions parsing, and filename fields for image/audio/video sends.
+- Added full room state handling for m.room.* state events (name/topic/avatar/join_rules/power_levels/history_visibility and more), persisted per-room.

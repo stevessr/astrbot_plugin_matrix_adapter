@@ -64,6 +64,49 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         """
         self.on_message = callback
 
+    def _apply_room_state_event(self, room, event_data: dict) -> None:
+        event_type = event_data.get("type", "")
+        if not event_type.startswith("m.room."):
+            return
+        state_key = event_data.get("state_key", "")
+        content = event_data.get("content", {}) or {}
+
+        room.state_events.setdefault(event_type, {})[state_key] = content
+
+        if event_type == "m.room.name":
+            room.display_name = content.get("name", "") or ""
+        elif event_type == "m.room.topic":
+            room.topic = content.get("topic", "") or ""
+        elif event_type == "m.room.avatar":
+            room.avatar_url = content.get("url") or None
+        elif event_type == "m.room.join_rules":
+            room.join_rules = content
+        elif event_type == "m.room.power_levels":
+            room.power_levels = content
+        elif event_type == "m.room.history_visibility":
+            room.history_visibility = content.get("history_visibility")
+        elif event_type == "m.room.guest_access":
+            room.guest_access = content.get("guest_access")
+        elif event_type == "m.room.canonical_alias":
+            room.canonical_alias = content.get("alias")
+            alt_aliases = content.get("alt_aliases") or []
+            if isinstance(alt_aliases, list):
+                room.room_aliases = alt_aliases
+        elif event_type == "m.room.aliases":
+            aliases = content.get("aliases") or []
+            if isinstance(aliases, list):
+                room.room_aliases = aliases
+        elif event_type == "m.room.encryption":
+            room.encryption = content
+        elif event_type == "m.room.create":
+            room.create = content
+        elif event_type == "m.room.tombstone":
+            room.tombstone = content
+        elif event_type == "m.room.pinned_events":
+            pinned = content.get("pinned") or []
+            if isinstance(pinned, list):
+                room.pinned_events = pinned
+
     async def process_room_events(self, room_id: str, room_data: dict):
         """
         Process events from a room
@@ -176,6 +219,31 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                     avatar_url = content.get("avatar_url")
                     if avatar_url:
                         room.member_avatars[user_id] = avatar_url
+            elif event.get("type", "").startswith("m.room."):
+                self._apply_room_state_event(room, event)
+
+        # Persist room state/members after initial state processing
+        self.room_member_store.upsert(
+            room_id=room.room_id,
+            members=room.members,
+            member_avatars=room.member_avatars,
+            member_count=room.member_count,
+            is_direct=room.is_direct,
+            room_name=room.display_name,
+            topic=room.topic,
+            avatar_url=room.avatar_url,
+            join_rules=room.join_rules,
+            power_levels=room.power_levels,
+            history_visibility=room.history_visibility,
+            guest_access=room.guest_access,
+            canonical_alias=room.canonical_alias,
+            room_aliases=room.room_aliases,
+            encryption=room.encryption,
+            create=room.create,
+            tombstone=room.tombstone,
+            pinned_events=room.pinned_events,
+            state_events=room.state_events,
+        )
 
         # Process timeline events
         for event_data in events:
@@ -200,6 +268,32 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             await self._handle_member_event(room, event_data)
             event = parse_event(event_data, room.room_id)
             await self._process_member_event(room, event)
+            return
+
+        # Handle other room state updates
+        if event_type and event_type.startswith("m.room.") and "state_key" in event_data:
+            self._apply_room_state_event(room, event_data)
+            self.room_member_store.upsert(
+                room_id=room.room_id,
+                members=room.members,
+                member_avatars=room.member_avatars,
+                member_count=room.member_count,
+                is_direct=room.is_direct,
+                room_name=room.display_name,
+                topic=room.topic,
+                avatar_url=room.avatar_url,
+                join_rules=room.join_rules,
+                power_levels=room.power_levels,
+                history_visibility=room.history_visibility,
+                guest_access=room.guest_access,
+                canonical_alias=room.canonical_alias,
+                room_aliases=room.room_aliases,
+                encryption=room.encryption,
+                create=room.create,
+                tombstone=room.tombstone,
+                pinned_events=room.pinned_events,
+                state_events=room.state_events,
+            )
             return
 
         # Handle in-room verification events
