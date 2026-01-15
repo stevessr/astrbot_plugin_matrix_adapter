@@ -7,6 +7,7 @@ Matrix Sticker 存储管理
 
 import json
 import os
+import re
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -47,6 +48,7 @@ class StickerMeta:
     width: int | None
     height: int | None
     pack_name: str | None
+    room_id: str | None
     created_at: float
     last_used: float
     use_count: int = 0
@@ -98,6 +100,8 @@ class StickerStorage:
                         # 兼容旧版本，添加缺失的字段
                         if "tags" not in meta_dict:
                             meta_dict["tags"] = None
+                        if "room_id" not in meta_dict:
+                            meta_dict["room_id"] = None
                         self._index[sticker_id] = StickerMeta(**meta_dict)
             except Exception as e:
                 logger.warning(f"加载 sticker 索引失败：{e}")
@@ -118,7 +122,17 @@ class StickerStorage:
         except Exception as e:
             logger.error(f"保存 sticker 索引失败：{e}")
 
-    def _generate_cache_path(self, sticker_id: str, mimetype: str) -> Path:
+    def _sanitize_segment(self, name: str) -> str:
+        safe = re.sub(r"[^\w\-\.]+", "_", name.strip()) if name else "unknown"
+        return safe[:80] if len(safe) > 80 else safe
+
+    def _generate_cache_path(
+        self,
+        sticker_id: str,
+        mimetype: str,
+        room_id: str | None = None,
+        pack_name: str | None = None,
+    ) -> Path:
         """生成缓存文件路径"""
         # 根据 mimetype 确定扩展名
         ext_map = {
@@ -128,7 +142,15 @@ class StickerStorage:
             "image/webp": ".webp",
         }
         ext = ext_map.get(mimetype, ".png")
-        return self.cache_dir / f"{sticker_id}{ext}"
+        room_seg = (
+            f"room_{self._sanitize_segment(room_id)}"
+            if room_id
+            else "user"
+        )
+        pack_seg = self._sanitize_segment(pack_name or "default")
+        cache_dir = self.cache_dir / room_seg / pack_seg
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir / f"{sticker_id}{ext}"
 
     async def save_sticker(
         self,
@@ -136,6 +158,7 @@ class StickerStorage:
         file_data: bytes | None = None,
         client=None,
         pack_name: str | None = None,
+        room_id: str | None = None,
         tags: list[str] | None = None,
     ) -> StickerMeta:
         """
@@ -167,7 +190,12 @@ class StickerStorage:
             return meta
 
         # 确定缓存路径
-        cache_path = self._generate_cache_path(sticker_id, sticker.info.mimetype)
+        cache_path = self._generate_cache_path(
+            sticker_id,
+            sticker.info.mimetype,
+            room_id=room_id,
+            pack_name=pack_name or sticker.pack_name,
+        )
 
         # 获取文件数据
         if file_data is None:
@@ -216,6 +244,7 @@ class StickerStorage:
             width=width,
             height=height,
             pack_name=pack_name or sticker.pack_name,
+            room_id=room_id,
             created_at=now,
             last_used=now,
             use_count=1,

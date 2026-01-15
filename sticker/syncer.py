@@ -11,6 +11,7 @@ from typing import Any
 
 from astrbot.api import logger
 
+from .availability import StickerAvailabilityStore
 from .component import Sticker, StickerInfo
 from .storage import StickerStorage
 
@@ -43,7 +44,12 @@ class StickerPackSyncer:
     # 备用类型（某些服务器使用）
     ROOM_EMOTES_ALT = "m.room.sticker_pack"
 
-    def __init__(self, storage: StickerStorage, client=None):
+    def __init__(
+        self,
+        storage: StickerStorage,
+        client=None,
+        availability_store: StickerAvailabilityStore | None = None,
+    ):
         """
         初始化同步器
 
@@ -53,12 +59,17 @@ class StickerPackSyncer:
         """
         self.storage = storage
         self.client = client
+        self.availability_store = availability_store
         self._synced_rooms: set[str] = set()
         self._sync_lock = asyncio.Lock()
 
     def set_client(self, client):
         """设置 Matrix 客户端"""
         self.client = client
+
+    def reset_available(self):
+        if self.availability_store:
+            self.availability_store.clear()
 
     async def sync_room_stickers(self, room_id: str, force: bool = False) -> int:
         """
@@ -102,12 +113,15 @@ class StickerPackSyncer:
                         images = content.get("images", {})
 
                         if images:
-                            count = await self._sync_sticker_pack(
+                            ids = await self._sync_sticker_pack(
                                 pack_name=pack_name,
                                 images=images,
                                 room_id=room_id,
                             )
+                            count = len(ids)
                             synced_count += count
+                            if self.availability_store and ids:
+                                self.availability_store.add_ids(ids)
                             logger.info(
                                 f"同步房间 {room_id} 的 sticker 包 '{pack_name}'：{count} 个"
                             )
@@ -144,13 +158,16 @@ class StickerPackSyncer:
             images = account_data.get("images", {})
 
             if images:
-                count = await self._sync_sticker_pack(
+                ids = await self._sync_sticker_pack(
                     pack_name="user_emotes",
                     images=images,
                     room_id=None,
                     is_user_pack=True,
                 )
+                count = len(ids)
                 synced_count += count
+                if self.availability_store and ids:
+                    self.availability_store.add_ids(ids)
                 logger.info(f"同步用户 sticker 包：{count} 个")
 
             return synced_count
@@ -165,7 +182,7 @@ class StickerPackSyncer:
         images: dict[str, Any],
         room_id: str | None = None,
         is_user_pack: bool = False,
-    ) -> int:
+    ) -> set[str]:
         """
         同步单个 sticker 包
 
@@ -178,7 +195,7 @@ class StickerPackSyncer:
         Returns:
             同步的 sticker 数量
         """
-        synced_count = 0
+        synced_ids: set[str] = set()
 
         for shortcode, sticker_data in images.items():
             try:
@@ -213,19 +230,20 @@ class StickerPackSyncer:
                     tags.append("user")
 
                 # 保存到存储（会自动下载并缓存）
-                await self.storage.save_sticker(
+                meta = await self.storage.save_sticker(
                     sticker=sticker,
                     client=self.client,
                     pack_name=pack_name,
+                    room_id=room_id,
                     tags=tags,
                 )
-                synced_count += 1
+                synced_ids.add(meta.sticker_id)
 
             except Exception as e:
                 logger.warning(f"同步 sticker '{shortcode}' 失败：{e}")
                 continue
 
-        return synced_count
+        return synced_ids
 
     def _get_pack_name(self, content: dict, state_key: str, room_id: str) -> str:
         """从事件内容提取包名称"""

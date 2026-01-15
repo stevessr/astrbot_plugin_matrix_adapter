@@ -80,6 +80,8 @@ class MatrixAdapterRuntimeMixin:
 
             if self._matrix_config.sticker_auto_sync:
                 try:
+                    if hasattr(self, "sticker_syncer"):
+                        self.sticker_syncer.reset_available()
                     if self._matrix_config.sticker_sync_user_emotes:
                         user_count = await self.sticker_syncer.sync_user_stickers()
                         if user_count > 0:

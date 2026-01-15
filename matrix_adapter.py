@@ -27,7 +27,7 @@ from .receiver.receiver import MatrixReceiver
 from .sender.sender import MatrixSender
 
 # Sticker 支持
-from .sticker import StickerPackSyncer, StickerStorage
+from .sticker import StickerAvailabilityStore, StickerPackSyncer, StickerStorage
 from .sync.sync_manager import MatrixSyncManager
 from .utils.utils import MatrixUtils
 
@@ -296,11 +296,14 @@ class MatrixPlatformAdapter(
         # 最大上传文件大小（将在 run 时从服务器获取）
         self.max_upload_size: int = DEFAULT_MAX_UPLOAD_SIZE_BYTES
 
-        # Sticker 存储和同步器
+        # Sticker 存储（全局共享）与可用列表（按账户隔离）
         self.sticker_storage = StickerStorage()
+        available_path = Path(self.storage_dir) / "sticker_available.json"
+        self.sticker_available = StickerAvailabilityStore(available_path)
         self.sticker_syncer = StickerPackSyncer(
             storage=self.sticker_storage,
             client=self.client,
+            availability_store=self.sticker_available,
         )
 
         # 将 sticker 同步器传递给事件处理器
