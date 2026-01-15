@@ -326,6 +326,10 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         if event_type == "m.room.redaction":
             return
 
+        # Skip VoIP call events (framework does not support m.call.* yet)
+        if event_type and event_type.startswith("m.call."):
+            return
+
         # Check for in-room verification request (m.room.message with msgtype m.key.verification.request)
         if event_type == "m.room.message" and msgtype == "m.key.verification.request":
             await self._handle_in_room_verification(room, event_data)

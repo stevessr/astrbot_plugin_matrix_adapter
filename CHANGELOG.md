@@ -13,3 +13,4 @@
 - Added v1.17-compliant media message handling: encrypted file decryption for media/stickers, media captions parsing, and filename fields for image/audio/video sends.
 - Added full room state handling for m.room.* state events (name/topic/avatar/join_rules/power_levels/history_visibility and more), persisted per-room.
 - Added support for redaction events and room state storage for third-party invites and space parent/child events.
+- Explicitly skip m.call.* VoIP events (unsupported by AstrBot framework).
