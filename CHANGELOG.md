@@ -6,3 +6,4 @@
 - Extended message type forcing to support `stalk` alongside `auto`/`private`/`group`.
 - Added Matrix poll sending via `MatrixSender.send_poll` and `Poll` message component.
 - Switched media config/download/thumbnail/preview to authenticated media endpoints (`/_matrix/client/v1/media/*`) per the latest spec, removing deprecated `/_matrix/media/*` fallbacks.
+- Replaced room `initial_sync` with `/sync` + room filter to match the latest spec.

@@ -3,6 +3,7 @@ Matrix HTTP Client - Room State Mixin
 Provides room state helper methods
 """
 
+import json
 from typing import Any
 
 
@@ -70,23 +71,32 @@ class RoomStateMixin:
         self, room_id: str, limit: int | None = None, archived: bool | None = None
     ) -> dict[str, Any]:
         """
-        Get room initial sync (deprecated but supported by some servers)
+        Get room initial sync via /sync with a room filter.
 
         Args:
             room_id: Room ID
-            limit: Optional limit
-            archived: Include archived rooms if True
+            limit: Optional timeline limit
+            archived: Ignored (not supported by /sync)
 
         Returns:
-            Initial sync response
+            Room data from /sync (join/invite/leave), or empty dict if missing.
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/initialSync"
-        params: dict[str, Any] = {}
+        filter_data: dict[str, Any] = {"room": {"rooms": [room_id]}}
         if limit is not None:
-            params["limit"] = limit
-        if archived is not None:
-            params["archived"] = "true" if archived else "false"
-        return await self._request("GET", endpoint, params=params)
+            filter_data["room"]["timeline"] = {"limit": limit}
+
+        params: dict[str, Any] = {
+            "filter": json.dumps(filter_data, ensure_ascii=True),
+            "full_state": True,
+        }
+        response = await self._request("GET", "/_matrix/client/v3/sync", params=params)
+
+        rooms = response.get("rooms", {})
+        for bucket in ("join", "invite", "leave"):
+            room_bucket = rooms.get(bucket, {})
+            if room_id in room_bucket:
+                return room_bucket[room_id]
+        return {}
 
     async def invite_3pid(
         self, room_id: str, id_server: str, medium: str, address: str
