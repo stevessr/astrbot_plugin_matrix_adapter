@@ -117,7 +117,6 @@ class MatrixAdapterMessageMixin:
                     )
                 except Exception:
                     pass
-                return
             if getattr(event, "msgtype", None):
                 abm = await self.receiver.convert_message(room, event)
             else:
