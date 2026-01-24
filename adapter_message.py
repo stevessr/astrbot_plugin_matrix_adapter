@@ -37,6 +37,41 @@ def _append_stalk_archive(room_id: str, record: dict) -> None:
         logger.warning(f"写入 stalk 存档失败：{e}")
 
 
+def _normalize_text(text: str, limit: int = 120) -> str:
+    if not text:
+        return ""
+    cleaned = " ".join(str(text).split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: max(0, limit - 3)] + "..."
+
+
+def _find_stalk_archive_message(room_id: str, event_id: str) -> str:
+    if not event_id:
+        return ""
+    archive_path = _stalk_archive_path(room_id)
+    if not archive_path.exists():
+        return ""
+    try:
+        with archive_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if record.get("event_id") == event_id:
+                    sender_name = record.get("sender_name") or record.get("sender_id")
+                    message_str = _normalize_text(record.get("message_str", ""))
+                    if sender_name and message_str:
+                        return f"{sender_name}: {message_str}"
+                    if sender_name:
+                        return str(sender_name)
+                    return message_str
+    except Exception as e:
+        logger.debug(f"读取 stalk 存档失败：{e}")
+    return ""
+
+
 def _build_message_content(abm) -> dict:
     content = {
         "message": [],
@@ -85,6 +120,61 @@ def _build_message_content(abm) -> dict:
 
 
 class MatrixAdapterMessageMixin:
+    async def _resolve_reaction_target_summary(self, room, event_id: str) -> str:
+        if not event_id or not self.client:
+            return ""
+        try:
+            event = await self.client.get_event(room.room_id, event_id)
+        except Exception as e:
+            logger.debug(f"获取 reaction 目标事件失败：{e}")
+            event = None
+
+        if event:
+            sender_id = event.get("sender", "") or ""
+            sender_name = room.members.get(sender_id, sender_id) if sender_id else ""
+            event_type = event.get("type") or event.get("event_type") or ""
+            content = event.get("content") or {}
+
+            body = ""
+            if event_type == "m.room.message":
+                msgtype = content.get("msgtype") or ""
+                body = content.get("body") or ""
+                if not body and msgtype in ("m.image", "m.video", "m.audio", "m.file"):
+                    body = msgtype
+                if msgtype == "m.sticker" and not body:
+                    body = "sticker"
+            elif event_type == "m.reaction":
+                reaction = content.get("m.relates_to", {}).get("key", "")
+                body = f"[reaction] {reaction}".strip()
+            elif event_type == "m.room.encrypted":
+                body = "[encrypted]"
+            elif event_type == "m.room.redaction":
+                body = "[redaction]"
+            else:
+                body = (
+                    content.get("body")
+                    or content.get("name")
+                    or content.get("topic")
+                    or ""
+                )
+
+            body = _normalize_text(body)
+            if sender_name and sender_id:
+                sender = f"{sender_name}/{sender_id}"
+            else:
+                sender = sender_name or sender_id
+
+            if sender and body:
+                return f"{sender}: {body}"
+            if sender:
+                return sender
+            if body:
+                return body
+            if event_type:
+                return event_type
+
+        return _find_stalk_archive_message(room.room_id, event_id)
+
     async def message_callback(self, room, event):
         """
         Process a message event (called by event processor after filtering)
@@ -104,6 +194,11 @@ class MatrixAdapterMessageMixin:
                     relates_to = event.content.get("m.relates_to", {})
                     emoji = relates_to.get("key") or event.body or ""
                     target = relates_to.get("event_id", "")
+                    target_summary = ""
+                    if target:
+                        target_summary = await self._resolve_reaction_target_summary(
+                            room, target
+                        )
                     if emoji and target:
                         text = f"[reaction] {emoji} -> {target}"
                     elif emoji:
@@ -112,6 +207,8 @@ class MatrixAdapterMessageMixin:
                         text = f"[reaction] -> {target}"
                     else:
                         text = "[reaction]"
+                    if target_summary:
+                        text = f"{text} ({target_summary})"
                     logger.info(
                         f"[matrix(matrix)] {sender_name}/{sender_id}: {text}"
                     )
