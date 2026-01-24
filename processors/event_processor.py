@@ -313,6 +313,17 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 third_party_invites=room.third_party_invites,
                 state_events=room.state_events,
             )
+
+            # Process notable state changes as system events for user visibility
+            if event_type in (
+                "m.room.name",
+                "m.room.topic",
+                "m.room.encryption",
+                "m.room.tombstone",
+            ):
+                event = parse_event(event_data, room.room_id)
+                await self._process_room_state_event(room, event)
+
             return
 
         # Handle in-room verification events
@@ -340,8 +351,12 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             "m.room.encrypted",
             "m.sticker",
             "m.reaction",
+            "m.poll.response",
+            "m.poll.end",
+            "org.matrix.msc3381.poll.response",
+            "org.matrix.msc3381.poll.end",
         ):
-            # Parse plaintext message event, encrypted event, or sticker
+            # Parse plaintext message event, encrypted event, sticker, or poll event
             event = parse_event(event_data, room.room_id)
             await self._process_message_event(room, event)
 
@@ -388,6 +403,54 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 await self.on_message(room, event)
         except Exception as e:
             logger.error(f"处理成员事件时出错：{e}")
+
+    async def _process_room_state_event(self, room, event):
+        """
+        Process room state change events (name, topic, encryption, etc.)
+        as system events for user visibility.
+
+        Args:
+            room: Room object
+            event: Parsed event object
+        """
+        try:
+            # Don't process events from self
+            if event.sender == self.user_id:
+                logger.debug(f"忽略来自自身的状态事件：{event.event_id}")
+                return
+
+            # Check timestamp to filter historical events
+            evt_ts = getattr(event, "origin_server_ts", None)
+            if evt_ts is None:
+                evt_ts = getattr(event, "server_timestamp", None)
+            if evt_ts is not None and evt_ts < (
+                self.startup_ts - TIMESTAMP_BUFFER_MS_1000
+            ):
+                logger.debug(
+                    f"忽略启动前的状态事件："
+                    f"id={getattr(event, 'event_id', '<unknown>')} "
+                    f"ts={evt_ts} startup={self.startup_ts}"
+                )
+                return
+
+            # Check for duplicates
+            if event.event_id in self._processed_messages:
+                logger.debug(f"忽略重复状态事件：{event.event_id}")
+                return
+
+            self._processed_messages.add(event.event_id)
+            if len(self._processed_messages) > self._max_processed_messages:
+                old_messages = list(self._processed_messages)[
+                    : self._max_processed_messages // 2
+                ]
+                for msg_id in old_messages:
+                    self._processed_messages.discard(msg_id)
+
+            if self.on_message:
+                await self._persist_interacted_user(room, event)
+                await self.on_message(room, event)
+        except Exception as e:
+            logger.error(f"处理状态事件时出错：{e}")
 
     async def _process_message_event(self, room, event):
         """

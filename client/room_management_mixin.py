@@ -55,6 +55,51 @@ class RoomManagementMixin:
             data["reason"] = reason
         return await self._request("POST", endpoint, data=data)
 
+    async def accept_knock(
+        self, room_id: str, user_id: str, reason: str | None = None
+    ) -> dict[str, Any]:
+        """
+        Accept a knock request by inviting the user
+
+        According to Matrix spec, accepting a knock is done by inviting the user.
+
+        Args:
+            room_id: Room ID
+            user_id: User ID who knocked
+            reason: Optional reason for the invite
+
+        Returns:
+            Empty dict on success
+        """
+        endpoint = f"/_matrix/client/v3/rooms/{room_id}/invite"
+        data: dict[str, Any] = {"user_id": user_id}
+        if reason:
+            data["reason"] = reason
+        return await self._request("POST", endpoint, data=data)
+
+    async def reject_knock(
+        self, room_id: str, user_id: str, reason: str | None = None
+    ) -> dict[str, Any]:
+        """
+        Reject a knock request by kicking the user from knock state
+
+        According to Matrix spec, rejecting a knock is done by changing the
+        user's membership from 'knock' to 'leave' via kick.
+
+        Args:
+            room_id: Room ID
+            user_id: User ID who knocked
+            reason: Optional reason for rejection
+
+        Returns:
+            Empty dict on success
+        """
+        endpoint = f"/_matrix/client/v3/rooms/{room_id}/kick"
+        data: dict[str, Any] = {"user_id": user_id}
+        if reason:
+            data["reason"] = reason
+        return await self._request("POST", endpoint, data=data)
+
     async def get_room_hierarchy(
         self, room_id: str, limit: int | None = None, from_token: str | None = None
     ) -> dict[str, Any]:

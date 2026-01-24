@@ -21,10 +21,13 @@ from ..plugin_config import get_plugin_config
 from ..utils.media_crypto import decrypt_encrypted_file
 from ..utils.utils import MatrixUtils
 from .handlers import (
+    ROOM_STATE_HANDLERS,
     handle_audio,
     handle_file,
     handle_image,
     handle_location,
+    handle_poll_end,
+    handle_poll_response,
     handle_reaction,
     handle_redaction,
     handle_sticker,
@@ -285,6 +288,7 @@ class MatrixReceiver:
 
         # 处理消息内容
         msgtype = event.content.get("msgtype")
+        event_type = getattr(event, "event_type", None)
         handlers = {
             "m.text": handle_text,
             "m.notice": handle_text,
@@ -298,8 +302,15 @@ class MatrixReceiver:
             "m.reaction": handle_reaction,
             "m.location": handle_location,
         }
-        handler = handlers.get(msgtype, handle_unknown)
-        await handler(self, chain, event, msgtype)
+
+        # Handle poll events by event type rather than msgtype
+        if event_type in ("m.poll.response", "org.matrix.msc3381.poll.response"):
+            await handle_poll_response(self, chain, event, event_type)
+        elif event_type in ("m.poll.end", "org.matrix.msc3381.poll.end"):
+            await handle_poll_end(self, chain, event, event_type)
+        else:
+            handler = handlers.get(msgtype, handle_unknown)
+            await handler(self, chain, event, msgtype)
 
         message.message = (
             chain.chain
@@ -329,6 +340,22 @@ class MatrixReceiver:
             user_id=sender_id or "",
             nickname=sender_name,
         )
-        message.message_str = ""
-        message.message = []
+
+        # Build message chain for state events
+        chain = MessageChain()
+        event_type = getattr(event, "event_type", None)
+
+        # Handle room state events with specific handlers
+        if event_type and event_type in ROOM_STATE_HANDLERS:
+            handler = ROOM_STATE_HANDLERS[event_type]
+            await handler(self, chain, event, event_type)
+            if chain.chain:
+                first_comp = chain.chain[0]
+                message.message_str = getattr(first_comp, "text", "")
+            else:
+                message.message_str = ""
+        else:
+            message.message_str = ""
+
+        message.message = chain.chain if chain.chain else []
         return message

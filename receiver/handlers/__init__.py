@@ -2,8 +2,11 @@ from .audio import handle_audio as handle_audio
 from .file import handle_file as handle_file
 from .image import handle_image as handle_image
 from .location import handle_location as handle_location
+from .poll import handle_poll_end as handle_poll_end
+from .poll import handle_poll_response as handle_poll_response
 from .reaction import handle_reaction as handle_reaction
 from .redaction import handle_redaction as handle_redaction
+from .room_state import ROOM_STATE_HANDLERS as ROOM_STATE_HANDLERS
 from .sticker import handle_sticker as handle_sticker
 from .text import handle_text as handle_text
 from .unknown import handle_unknown as handle_unknown

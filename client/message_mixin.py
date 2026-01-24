@@ -142,22 +142,28 @@ class MessageMixin:
 
         return await self._request("PUT", endpoint, data=content)
 
-    async def send_read_receipt(self, room_id: str, event_id: str) -> dict[str, Any]:
+    async def send_read_receipt(
+        self, room_id: str, event_id: str, thread_id: str | None = None
+    ) -> dict[str, Any]:
         """
         Send read receipt for an event
 
         Args:
             room_id: Room ID
             event_id: Event ID to acknowledge
+            thread_id: Optional thread ID for per-thread receipts (MSC3771)
 
         Returns:
             Response data
         """
         endpoint = f"/_matrix/client/v3/rooms/{room_id}/receipt/m.read/{event_id}"
-        return await self._request("POST", endpoint, data={})
+        data: dict[str, Any] = {}
+        if thread_id:
+            data["thread_id"] = thread_id
+        return await self._request("POST", endpoint, data=data)
 
     async def send_read_receipt_private(
-        self, room_id: str, event_id: str
+        self, room_id: str, event_id: str, thread_id: str | None = None
     ) -> dict[str, Any]:
         """
         Send private read receipt for an event
@@ -165,6 +171,7 @@ class MessageMixin:
         Args:
             room_id: Room ID
             event_id: Event ID to acknowledge
+            thread_id: Optional thread ID for per-thread receipts (MSC3771)
 
         Returns:
             Response data
@@ -172,7 +179,10 @@ class MessageMixin:
         endpoint = (
             f"/_matrix/client/v3/rooms/{room_id}/receipt/m.read.private/{event_id}"
         )
-        return await self._request("POST", endpoint, data={})
+        data: dict[str, Any] = {}
+        if thread_id:
+            data["thread_id"] = thread_id
+        return await self._request("POST", endpoint, data=data)
 
     async def send_read_markers(
         self,
