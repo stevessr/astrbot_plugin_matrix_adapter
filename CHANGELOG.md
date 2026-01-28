@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.2.9
+
+对话投票将优先使用 msc3381
+
+## 0.2.8 及之前
 - Added `matrix_force_message_type=stalk` to archive incoming messages to per-room JSONL files under `store_path/stalk_archive/`.
 - In `stalk` mode, messages are recorded but not dispatched to AstrBot handlers.
 - Extended message type forcing to support `stalk` alongside `auto`/`private`/`group`.
