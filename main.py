@@ -1,7 +1,9 @@
+import bleach  # noqa: F401
+import markdown_it  # noqa: F401
+
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
-import bleach  # noqa: F401
 
 from .constants import PREFIX_ED25519
 
