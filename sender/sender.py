@@ -98,8 +98,8 @@ class MatrixSender:
         reply_to: str | None = None,
         thread_root: str | None = None,
         use_thread: bool = False,
-        event_type: str = "m.poll.start",
-        poll_key: str = "m.poll",
+        event_type: str = "org.matrix.msc3381.poll.start",
+        poll_key: str = "org.matrix.msc3381.poll.start",
         fallback_text: str | None = None,
         fallback_html: str | None = None,
     ) -> dict | None:

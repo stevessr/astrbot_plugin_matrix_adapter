@@ -7,8 +7,8 @@ class Poll(BaseMessageComponent):
     answers: list[str]
     max_selections: int | None = 1
     kind: str | None = "m.disclosed"
-    event_type: str | None = "m.poll.start"
-    poll_key: str | None = "m.poll"
+    event_type: str | None = "org.matrix.msc3381.poll.start"
+    poll_key: str | None = "org.matrix.msc3381.poll.start"
     fallback_text: str | None = None
     fallback_html: str | None = None
 
@@ -18,8 +18,8 @@ class Poll(BaseMessageComponent):
         answers: list[str],
         max_selections: int | None = 1,
         kind: str | None = "m.disclosed",
-        event_type: str | None = "m.poll.start",
-        poll_key: str | None = "m.poll",
+        event_type: str | None = "org.matrix.msc3381.poll.start",
+        poll_key: str | None = "org.matrix.msc3381.poll.start",
         fallback_text: str | None = None,
         fallback_html: str | None = None,
         **_,
