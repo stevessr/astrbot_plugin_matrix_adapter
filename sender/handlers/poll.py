@@ -19,6 +19,12 @@ def _build_poll_fallback(question: str, answers: list[str]) -> tuple[str, str]:
     return text_body, html_body
 
 
+def _build_poll_fallback_msc1767(question: str, answers: list[str]) -> str:
+    safe_question = question.strip()
+    text_lines = [safe_question] + [f"{idx}. {ans}" for idx, ans in enumerate(answers)]
+    return "\n".join(text_lines)
+
+
 async def send_poll(
     client,
     room_id: str,
@@ -49,27 +55,58 @@ async def send_poll(
     if max_selections > len(clean_answers):
         max_selections = len(clean_answers)
 
-    answer_items = [
-        {"id": f"answer_{idx + 1}", "body": ans}
-        for idx, ans in enumerate(clean_answers)
-    ]
+    use_msc3381 = bool(
+        (event_type or "").startswith("org.matrix.msc3381.")
+        or (poll_key or "").startswith("org.matrix.msc3381.")
+    )
 
-    if not fallback_text or not fallback_html:
-        auto_text, auto_html = _build_poll_fallback(clean_question, clean_answers)
-        fallback_text = fallback_text or auto_text
-        fallback_html = fallback_html or auto_html
+    if use_msc3381:
+        if not fallback_text:
+            fallback_text = _build_poll_fallback_msc1767(clean_question, clean_answers)
+        answers = [
+            {"id": str(idx + 1), "org.matrix.msc1767.text": ans}
+            for idx, ans in enumerate(clean_answers)
+        ]
+        poll_kind = (
+            "org.matrix.msc3381.poll.disclosed"
+            if kind in ("m.disclosed", "org.matrix.msc3381.poll.disclosed")
+            else kind
+        )
+        content = {
+            "org.matrix.msc1767.text": fallback_text,
+            poll_key: {
+                "kind": poll_kind,
+                "max_selections": max_selections,
+                "question": {
+                    "body": clean_question,
+                    "msgtype": "m.text",
+                    "org.matrix.msc1767.text": clean_question,
+                },
+                "answers": answers,
+            },
+        }
+    else:
+        answer_items = [
+            {"id": f"answer_{idx + 1}", "body": ans}
+            for idx, ans in enumerate(clean_answers)
+        ]
 
-    content = {
-        poll_key: {
-            "kind": kind,
-            "max_selections": max_selections,
-            "question": {"body": clean_question},
-            "answers": answer_items,
-        },
-        "m.text": fallback_text,
-        "m.html": fallback_html,
-        "body": fallback_text,
-    }
+        if not fallback_text or not fallback_html:
+            auto_text, auto_html = _build_poll_fallback(clean_question, clean_answers)
+            fallback_text = fallback_text or auto_text
+            fallback_html = fallback_html or auto_html
+
+        content = {
+            poll_key: {
+                "kind": kind,
+                "max_selections": max_selections,
+                "question": {"body": clean_question},
+                "answers": answer_items,
+            },
+            "m.text": fallback_text,
+            "m.html": fallback_html,
+            "body": fallback_text,
+        }
 
     return await send_content(
         client,

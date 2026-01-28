@@ -62,6 +62,17 @@ def _is_sticker_component(obj) -> bool:
     return all(hasattr(obj, attr) for attr in required_attrs)
 
 
+def _is_poll_component(obj) -> bool:
+    """Check if object is a Poll-like component via duck-typing."""
+    if isinstance(obj, Poll):
+        return True
+    class_name = type(obj).__name__
+    if class_name != "Poll":
+        return False
+    required_attrs = ["question", "answers"]
+    return all(hasattr(obj, attr) for attr in required_attrs)
+
+
 def _truncate_text(text: str, max_len: int = 400) -> str:
     if len(text) <= max_len:
         return text
@@ -300,8 +311,9 @@ async def send_with_client_impl(
             except Exception as e:
                 logger.error(f"处理音乐消息过程出错：{e}")
 
-        elif isinstance(segment, Poll):
+        elif _is_poll_component(segment):
             try:
+                logger.debug(f"发送投票消息：question={segment.question}, answers={segment.answers}")
                 await send_poll(
                     client,
                     room_id,
