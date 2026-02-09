@@ -323,9 +323,7 @@ class MatrixPlatformAdapter(
         # Sticker 存储（全局共享）与可用列表（按账户隔离）
         available_path = Path(self.storage_dir) / "sticker_available.json"
         self.sticker_available = StickerAvailabilityStore(available_path)
-        self.sticker_storage = StickerStorage(
-            availability_store=self.sticker_available
-        )
+        self.sticker_storage = StickerStorage(availability_store=self.sticker_available)
         self.sticker_syncer = StickerPackSyncer(
             storage=self.sticker_storage,
             client=self.client,
