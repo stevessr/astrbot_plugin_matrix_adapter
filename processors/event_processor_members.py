@@ -93,6 +93,7 @@ class MatrixEventProcessorMembers:
         user_id = event_data.get("state_key")
         if not user_id:
             return
+        e2ee_manager = getattr(self, "e2ee_manager", None)
         content = event_data.get("content", {})
         membership = content.get("membership")
         display_name = content.get("displayname") or room.members.get(user_id, user_id)
@@ -135,6 +136,15 @@ class MatrixEventProcessorMembers:
                     third_party_invites=room.third_party_invites,
                     state_events=room.state_events,
                 )
+                if e2ee_manager:
+                    try:
+                        e2ee_manager.invalidate_room_members_cache(room.room_id)
+                        if user_id != self.user_id:
+                            await e2ee_manager.on_room_member_joined(
+                                room.room_id, user_id
+                            )
+                    except Exception as e:
+                        logger.debug(f"成员加入后的主动密钥分发失败：{e}")
         elif membership in ("leave", "ban"):
             was_member = user_id in room.members
             room.members.pop(user_id, None)
@@ -170,6 +180,11 @@ class MatrixEventProcessorMembers:
                     third_party_invites=room.third_party_invites,
                     state_events=room.state_events,
                 )
+                if e2ee_manager:
+                    try:
+                        e2ee_manager.invalidate_room_members_cache(room.room_id)
+                    except Exception as e:
+                        logger.debug(f"成员离开后刷新成员缓存失败：{e}")
         else:
             # Membership changes without join/leave still update profile fields if present.
             if content.get("displayname") or content.get("avatar_url"):

@@ -121,3 +121,61 @@ class E2EEManagerKeysMixin:
         except Exception as e:
             logger.warning(f"获取服务器密钥数量失败：{e}")
             return {}
+
+    async def ensure_sufficient_one_time_keys(
+        self, server_counts: dict | None = None
+    ) -> None:
+        """Proactively top up one-time keys when server count is low."""
+        if not self._olm or not self._initialized:
+            return
+
+        try:
+            counts = server_counts if isinstance(server_counts, dict) else None
+            if counts is None:
+                counts = await self._get_server_key_counts()
+
+            server_otk_count = int(counts.get(SIGNED_CURVE25519, 0))
+
+            from ..constants import DEFAULT_ONE_TIME_KEYS_COUNT
+
+            min_threshold = max(1, DEFAULT_ONE_TIME_KEYS_COUNT // 3)
+            if server_otk_count >= min_threshold:
+                return
+
+            import time
+
+            now = time.monotonic()
+            last_ts = getattr(self, "_last_otk_maintenance_ts", 0.0)
+            if now - last_ts < 60:
+                return
+            self._last_otk_maintenance_ts = now
+
+            keys_to_generate = max(0, DEFAULT_ONE_TIME_KEYS_COUNT - server_otk_count)
+            one_time_keys = {}
+            if keys_to_generate > 0:
+                one_time_keys = self._olm.generate_one_time_keys(keys_to_generate)
+
+            fallback_keys = {}
+            if self._olm.get_unpublished_fallback_key_count() == 0:
+                fallback_keys = self._olm.generate_fallback_key()
+
+            if not one_time_keys and not fallback_keys:
+                return
+
+            response = await self.client.upload_keys(
+                one_time_keys=one_time_keys if one_time_keys else None,
+                fallback_keys=fallback_keys if fallback_keys else None,
+            )
+
+            if "error" in response or "errcode" in response:
+                logger.warning(f"自动补充一次性密钥失败：{response}")
+                return
+
+            self._olm.mark_keys_as_published()
+            updated_counts = response.get("one_time_key_counts", {})
+            logger.info(
+                f"已主动补充一次性密钥：{server_otk_count} -> "
+                f"{updated_counts.get(SIGNED_CURVE25519, server_otk_count)}"
+            )
+        except Exception as e:
+            logger.warning(f"主动补充一次性密钥失败：{e}")

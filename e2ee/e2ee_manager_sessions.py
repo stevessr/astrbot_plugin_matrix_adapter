@@ -1,3 +1,5 @@
+import time
+
 from astrbot.api import logger
 
 from ..constants import (
@@ -8,11 +10,111 @@ from ..constants import (
     MEMBERSHIP_INVITE,
     MEMBERSHIP_JOIN,
     PREFIX_CURVE25519,
+    PREFIX_ED25519,
     SIGNED_CURVE25519,
 )
 
 
 class E2EEManagerSessionsMixin:
+    @staticmethod
+    def _device_cache_key(user_id: str, device_id: str, curve25519_key: str) -> str:
+        return f"{user_id}|{device_id}|{curve25519_key}"
+
+    def invalidate_room_members_cache(self, room_id: str) -> None:
+        """Invalidate member cache for a room to force fresh state query next time."""
+        cache = getattr(self, "_room_members_cache", None)
+        if isinstance(cache, dict):
+            cache.pop(room_id, None)
+
+    async def on_room_member_joined(self, room_id: str, user_id: str) -> None:
+        """Proactively share existing room key to a newly joined member."""
+        if user_id == self.user_id:
+            return
+        self.invalidate_room_members_cache(room_id)
+        await self._share_existing_room_key(
+            room_id=room_id,
+            target_users=[user_id],
+            reason="member_join",
+            force_members_refresh=True,
+        )
+
+    async def on_device_list_changed(self, changed_users: list[str]) -> None:
+        """Proactively re-check key sharing when users publish device list changes."""
+        if not self._olm or not self._initialized:
+            return
+
+        changed_set = {
+            user_id
+            for user_id in changed_users
+            if user_id and isinstance(user_id, str) and user_id != self.user_id
+        }
+        if not changed_set:
+            return
+
+        room_ids = self._olm.get_megolm_outbound_room_ids()
+        if not room_ids:
+            return
+
+        affected_rooms = 0
+        affected_users = 0
+        for room_id in room_ids:
+            members = await self._get_room_members(room_id)
+            if not members:
+                continue
+            target_users = [user_id for user_id in members if user_id in changed_set]
+            if not target_users:
+                continue
+            await self._share_existing_room_key(
+                room_id=room_id,
+                target_users=target_users,
+                reason="device_list_changed",
+            )
+            affected_rooms += 1
+            affected_users += len(target_users)
+
+        if affected_rooms:
+            logger.info(
+                f"设备列表变更后已主动检查密钥分发：rooms={affected_rooms} users={affected_users}"
+            )
+
+    async def _share_existing_room_key(
+        self,
+        room_id: str,
+        target_users: list[str] | None = None,
+        reason: str = "proactive",
+        force_members_refresh: bool = False,
+    ) -> None:
+        """Share an existing outbound Megolm session key to selected users."""
+        if not self._olm or not self._initialized:
+            return
+
+        session_info = self._olm.get_megolm_outbound_session_info(room_id)
+        if not session_info:
+            return
+        session_id, session_key = session_info
+
+        members = await self._get_room_members(
+            room_id, force_refresh=force_members_refresh
+        )
+        if target_users:
+            member_set = set(members)
+            for user_id in target_users:
+                if user_id and user_id != self.user_id and user_id not in member_set:
+                    members.append(user_id)
+                    member_set.add(user_id)
+
+        if not members:
+            return
+
+        await self.ensure_room_keys_sent(
+            room_id=room_id,
+            members=members,
+            session_id=session_id,
+            session_key=session_key,
+            target_users=target_users,
+            reason=reason,
+        )
+
     async def encrypt_message(
         self, room_id: str, event_type: str, content: dict
     ) -> dict | None:
@@ -43,7 +145,11 @@ class E2EEManagerSessionsMixin:
                 members = await self._get_room_members(room_id)
                 if members:
                     await self.ensure_room_keys_sent(
-                        room_id, members, session_id, session_key
+                        room_id,
+                        members,
+                        session_id,
+                        session_key,
+                        reason="send_message",
                     )
 
             # 加密消息
@@ -64,16 +170,35 @@ class E2EEManagerSessionsMixin:
 
         # 获取房间成员
         try:
-            members = await self._get_room_members(room_id)
+            members = await self._get_room_members(room_id, force_refresh=True)
             if members:
                 await self.ensure_room_keys_sent(
-                    room_id, members, session_id, session_key
+                    room_id,
+                    members,
+                    session_id,
+                    session_key,
+                    reason="new_session",
                 )
         except Exception as e:
             logger.error(f"分发密钥失败：{e}")
 
-    async def _get_room_members(self, room_id: str) -> list[str]:
+    async def _get_room_members(
+        self, room_id: str, force_refresh: bool = False
+    ) -> list[str]:
         """获取房间成员列表"""
+        cache = getattr(self, "_room_members_cache", None)
+        cache_ttl = float(getattr(self, "_room_members_cache_ttl_sec", 30.0))
+        if (
+            not force_refresh
+            and isinstance(cache, dict)
+            and room_id in cache
+            and isinstance(cache[room_id], tuple)
+            and len(cache[room_id]) == 2
+        ):
+            members, ts = cache[room_id]
+            if (time.monotonic() - float(ts)) <= cache_ttl:
+                return list(members)
+
         try:
             state = await self.client.get_room_state(room_id)
             members = []
@@ -84,7 +209,10 @@ class E2EEManagerSessionsMixin:
                         state_key = event.get("state_key")
                         if state_key and state_key != self.user_id:
                             members.append(state_key)
-            return members
+            unique_members = list(dict.fromkeys(members))
+            if isinstance(cache, dict):
+                cache[room_id] = (unique_members, time.monotonic())
+            return unique_members
         except Exception as e:
             logger.warning(f"获取房间成员失败：{e}")
             return []
@@ -95,7 +223,9 @@ class E2EEManagerSessionsMixin:
         members: list[str],
         session_id: str | None = None,
         session_key: str | None = None,
-    ):
+        target_users: list[str] | None = None,
+        reason: str = "sync",
+    ) -> None:
         """
         确保房间密钥已发送给所有成员的设备
 
@@ -104,9 +234,33 @@ class E2EEManagerSessionsMixin:
             members: 成员用户 ID 列表
             session_id: 可选，指定会话 ID
             session_key: 可选，指定会话密钥
+            target_users: 可选，只分发给指定用户（其余成员跳过）
+            reason: 日志用途，标记分发触发原因
         """
         if not self._olm or not members:
             return
+
+        normalized_members = list(
+            dict.fromkeys(
+                user_id for user_id in members if user_id and user_id != self.user_id
+            )
+        )
+        if not normalized_members:
+            return
+
+        if target_users is not None:
+            target_set = {
+                user_id
+                for user_id in target_users
+                if user_id and isinstance(user_id, str) and user_id != self.user_id
+            }
+            if not target_set:
+                return
+            normalized_members = [
+                user_id for user_id in normalized_members if user_id in target_set
+            ]
+            if not normalized_members:
+                return
 
         # 如果没有提供会话信息，获取当前出站会话
         if not session_id or not session_key:
@@ -116,9 +270,11 @@ class E2EEManagerSessionsMixin:
                 return
             session_id, session_key = session_info
 
+        shared_devices = self._room_key_share_cache.setdefault(session_id, set())
+
         try:
-            # 查询所有成员的设备密钥
-            device_keys_query = {user_id: [] for user_id in members}
+            # 查询目标成员的设备密钥
+            device_keys_query = {user_id: [] for user_id in normalized_members}
             response = await self.client.query_keys(device_keys_query)
 
             device_keys = response.get("device_keys", {})
@@ -130,25 +286,34 @@ class E2EEManagerSessionsMixin:
                 for device_id, device_info in user_devices.items():
                     keys = device_info.get("keys", {})
                     curve_key = keys.get(f"{PREFIX_CURVE25519}{device_id}")
-                    ed_key = keys.get(f"ed25519:{device_id}")
-                    if curve_key:
-                        devices_to_send.append(
-                            (user_id, device_id, curve_key, ed_key or "unknown")
-                        )
+                    ed_key = keys.get(f"{PREFIX_ED25519}{device_id}")
+                    if not curve_key:
+                        continue
+
+                    if self._store:
+                        self._store.save_device_keys(user_id, device_id, device_info)
+
+                    cache_key = self._device_cache_key(user_id, device_id, curve_key)
+                    if cache_key in shared_devices:
+                        continue
+
+                    devices_to_send.append(
+                        (user_id, device_id, curve_key, ed_key or "unknown")
+                    )
 
             if not devices_to_send:
-                logger.debug("没有设备需要发送密钥")
+                logger.debug(
+                    f"没有需要发送密钥的设备：room={room_id} reason={reason} members={len(normalized_members)}"
+                )
                 return
 
             # 声明一次性密钥（只为没有现有会话的设备）
             one_time_claim = {}
-            devices_needing_otk = []
-            for user_id, device_id, curve_key, ed_key in devices_to_send:
+            for user_id, device_id, curve_key, _ in devices_to_send:
                 if not self._olm.get_olm_session(curve_key):
                     if user_id not in one_time_claim:
                         one_time_claim[user_id] = {}
                     one_time_claim[user_id][device_id] = SIGNED_CURVE25519
-                    devices_needing_otk.append((user_id, device_id))
 
             one_time_keys = {}
             if one_time_claim:
@@ -221,6 +386,9 @@ class E2EEManagerSessionsMixin:
                         txn_id,
                     )
 
+                    shared_devices.add(
+                        self._device_cache_key(user_id, device_id, curve_key)
+                    )
                     sent_count += 1
                     logger.debug(f"已向 {user_id}/{device_id} 发送房间密钥")
 
@@ -228,7 +396,8 @@ class E2EEManagerSessionsMixin:
                     logger.warning(f"向 {user_id}/{device_id} 发送密钥失败：{e}")
 
             logger.info(
-                f"已向 {sent_count}/{len(devices_to_send)} 个设备分发房间 {room_id} 的密钥"
+                f"已向 {sent_count}/{len(devices_to_send)} 个设备分发房间 {room_id} 的密钥 "
+                f"(reason={reason})"
             )
 
         except Exception as e:

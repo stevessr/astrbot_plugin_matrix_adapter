@@ -3,6 +3,7 @@
 ## 0.3.0
 
 - 使用中发现提供模拟流式的方法有很大问题，故移除
+- Astrbot 主程序似乎移除了 i18n 的 fallback，导致渲染时直接渲染为主键 (未硬编码进入 dashboard/src/i18n/locales/**/features/config-metadata.json)
 
 ## 0.2.9
 

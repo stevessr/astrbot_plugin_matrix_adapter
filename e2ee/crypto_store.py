@@ -219,6 +219,10 @@ class CryptoStore:
         self._megolm_outbound[room_id] = session_pickle
         self._save_json(self._megolm_outbound_file, self._megolm_outbound)
 
+    def get_megolm_outbound_rooms(self) -> list[str]:
+        """获取所有已持久化的 Megolm 出站会话房间 ID"""
+        return list(self._megolm_outbound.keys())
+
     # ========== 设备密钥 ==========
 
     def get_device_keys(self, user_id: str) -> dict[str, dict]:

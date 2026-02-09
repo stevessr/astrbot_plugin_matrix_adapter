@@ -66,6 +66,11 @@ class MatrixEventProcessorStreams:
         left = device_lists.get("left", []) or []
         if isinstance(changed, list):
             self.device_lists["changed"].update(changed)
+            if changed and self.e2ee_manager:
+                try:
+                    await self.e2ee_manager.on_device_list_changed(changed)
+                except Exception as e:
+                    logger.warning(f"处理设备列表变更时主动密钥分发失败：{e}")
         if isinstance(left, list):
             self.device_lists["left"].update(left)
         logger.debug(f"设备列表更新：changed={len(changed)} left={len(left)}")
@@ -74,6 +79,11 @@ class MatrixEventProcessorStreams:
         """Process one-time keys count updates from /sync."""
         if isinstance(counts, dict):
             self.one_time_keys_count = counts
+            if self.e2ee_manager:
+                try:
+                    await self.e2ee_manager.ensure_sufficient_one_time_keys(counts)
+                except Exception as e:
+                    logger.warning(f"自动补充一次性密钥失败：{e}")
             logger.debug(f"更新 device_one_time_keys_count: {list(counts.keys())}")
 
     async def process_leave_events(self, room_id: str, room_data: dict):

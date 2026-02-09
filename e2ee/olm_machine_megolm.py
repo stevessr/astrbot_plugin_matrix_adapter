@@ -290,4 +290,10 @@ class OlmMachineMegolmMixin:
             "device_id": self.device_id,
         }
 
+    def get_megolm_outbound_room_ids(self) -> list[str]:
+        """Get all room IDs that currently have outbound Megolm sessions."""
+        room_ids = set(self._megolm_outbound.keys())
+        room_ids.update(self.store.get_megolm_outbound_rooms())
+        return list(room_ids)
+
     # ========== 辅助方法 ==========

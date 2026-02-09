@@ -95,6 +95,13 @@ class E2EEManager(
         self._key_backup = None  # KeyBackup
         self._cross_signing = None  # CrossSigning
         self._initialized = False
+        # session_id -> {"@user:server|DEVICEID", ...}
+        self._room_key_share_cache: dict[str, set[str]] = {}
+        # room_id -> (members, monotonic timestamp)
+        self._room_members_cache: dict[str, tuple[list[str], float]] = {}
+        self._room_members_cache_ttl_sec = 30.0
+        # throttle one-time key maintenance to avoid frequent uploads
+        self._last_otk_maintenance_ts = 0.0
 
     @property
     def is_available(self) -> bool:
