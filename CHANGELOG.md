@@ -1,8 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- 使用中发现提供模拟流式的方法有很大问题，故移除
+
 ## 0.2.9
 
-对话投票将优先使用 msc3381
+- 对话投票将优先使用 msc3381
 
 ## 0.2.8 及之前
 - Added `matrix_force_message_type=stalk` to archive incoming messages to per-room JSONL files under `store_path/stalk_archive/`.

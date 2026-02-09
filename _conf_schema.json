@@ -35,11 +35,5 @@
     "hint": "强制消息类型：auto（自动判断群聊/私聊）、private（全部私聊）、group（全部群聊）、stalk（写入对话并按群存档 JSONL）",
     "options": ["auto", "private", "group", "stalk"],
     "default": "auto"
-  },
-  "matrix_streaming_no_edit": {
-    "description": "流式发送禁用编辑",
-    "type": "bool",
-    "hint": "是否在流式发送时禁用编辑（等待完成后一次性发送）",
-    "default": true
   }
 }

@@ -62,8 +62,6 @@ class PluginConfig:
         self._sticker_sync_user_emotes: bool = False
         # 消息类型配置
         self._force_message_type: str = "auto"
-        # 流式发送配置
-        self._streaming_no_edit: bool = False
 
     def initialize(self, config: dict):
         """从配置字典初始化插件配置
@@ -93,8 +91,6 @@ class PluginConfig:
             config.get("matrix_force_message_type"),
             config.get("matrix_force_private_message"),
         )
-        # 流式发送配置
-        self._streaming_no_edit = config.get("matrix_streaming_no_edit", False)
 
     @property
     def store_path(self) -> Path:
@@ -145,11 +141,6 @@ class PluginConfig:
     def force_private_message(self) -> bool:
         """兼容旧配置：是否将所有消息强制视为私聊"""
         return self._force_message_type == "private"
-
-    @property
-    def streaming_no_edit(self) -> bool:
-        """流式发送时是否禁用编辑（等待完成后一次性发送）"""
-        return self._streaming_no_edit
 
 
 # 全局单例实例

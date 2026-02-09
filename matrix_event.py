@@ -4,7 +4,6 @@ from astrbot.api.platform import AstrBotMessage, PlatformMetadata
 
 # 导入 Sticker 组件
 from .matrix_event_send import send_with_client_impl
-from .matrix_event_streaming import send_streaming_impl
 
 
 class MatrixPlatformEvent(AstrMessageEvent):
@@ -187,12 +186,49 @@ class MatrixPlatformEvent(AstrMessageEvent):
         return await super().send(message_chain)
 
     async def send_streaming(self, generator, use_fallback: bool = False):
-        """Matrix 流式发送 - 使用消息编辑实现实时流式更新
+        """Matrix 不支持流式消息。
 
-        通过先发送初始消息，然后不断编辑该消息来实现流式输出效果。
-        类似于 Telegram/Discord 机器人的实时打字效果。
+        NOTE: Matrix 协议不支持真正的流式消息推送。之前通过消息编辑实现的
+        "流式效果" 会导致 agent 工具调用后无法继续生成回复等问题。
+        现在改为收集所有内容后一次性发送。
         """
-        await send_streaming_impl(self, generator, use_fallback)
+        # 收集所有消息内容
+        accumulated_chains = []
+        try:
+            async for chain in generator:
+                if chain is not None:
+                    accumulated_chains.append(chain)
+        except Exception as e:
+            logger.error(f"流式消息收集过程中出错：{e}")
+
+        # 合并所有文本内容并一次性发送
+        if accumulated_chains:
+            from astrbot.api.message_components import Plain as _Plain
+
+            combined_text = ""
+            non_text_components = []
+
+            for chain in accumulated_chains:
+                if hasattr(chain, "chain"):
+                    for component in chain.chain:
+                        if isinstance(component, _Plain):
+                            combined_text += component.text
+                        else:
+                            non_text_components.append(component)
+
+            # 发送合并后的文本
+            if combined_text:
+                final_chain = MessageChain([_Plain(text=combined_text)])
+                await self.send(final_chain)
+
+            # 发送非文本组件
+            for component in non_text_components:
+                try:
+                    temp_chain = MessageChain([component])
+                    await self.send(temp_chain)
+                except Exception as e:
+                    logger.error(f"发送非文本组件失败：{e}")
+
         return await super().send_streaming(generator, use_fallback)
 
     async def react(self, emoji: str):

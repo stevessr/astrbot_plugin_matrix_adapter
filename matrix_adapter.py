@@ -139,7 +139,8 @@ def _inject_astrbot_field_metadata() -> None:
         "matrix_e2ee_recovery_key": "",
     },
     adapter_display_name="Matrix",
-    support_streaming_message=True,
+    # NOTE: Matrix 协议不支持流式消息，消息编辑方式不可靠且会导致 agent 工具调用后无响应
+    support_streaming_message=False,
     logo_path="matrix.svg",
 )
 class MatrixPlatformAdapter(
@@ -324,6 +325,8 @@ class MatrixPlatformAdapter(
             id=id_,
             adapter_display_name="Matrix",
             logo_path="matrix.svg",
+            # NOTE: Matrix 协议不支持流式消息
+            support_streaming_message=False,
         )
 
     async def _handle_invite(self, room_id: str, invite_data: dict):
