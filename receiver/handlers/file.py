@@ -23,9 +23,16 @@ async def handle_file(receiver, chain, event, _: str):
         except Exception as e:
             logger.error(f"Failed to download Matrix encrypted file: {e}")
 
-    if not rendered and mxc_url and receiver.client and receiver._should_auto_download_media("m.file"):
+    if (
+        not rendered
+        and mxc_url
+        and receiver.client
+        and receiver._should_auto_download_media("m.file")
+    ):
         try:
-            cache_path = await receiver._download_media_file(mxc_url, filename, mimetype)
+            cache_path = await receiver._download_media_file(
+                mxc_url, filename, mimetype
+            )
             chain.chain.append(File(name=filename, file=str(cache_path)))
             rendered = True
         except Exception as e:

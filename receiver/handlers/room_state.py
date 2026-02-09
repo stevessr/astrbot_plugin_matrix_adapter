@@ -88,7 +88,9 @@ async def handle_room_encryption(receiver, chain, event, _: str):
     algorithm = content.get("algorithm", "unknown")
     sender = getattr(event, "sender", "Someone")
 
-    text = f"[Room Info] {sender} enabled end-to-end encryption (algorithm: {algorithm})"
+    text = (
+        f"[Room Info] {sender} enabled end-to-end encryption (algorithm: {algorithm})"
+    )
     chain.chain.append(Plain(text))
 
 

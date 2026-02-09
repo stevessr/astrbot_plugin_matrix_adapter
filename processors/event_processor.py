@@ -606,7 +606,9 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
         # 验证必需字段
         if not event_type or not sender or not event_id:
-            logger.debug(f"房间内验证事件缺少必需字段：type={event_type}, sender={sender}, event_id={event_id}")
+            logger.debug(
+                f"房间内验证事件缺少必需字段：type={event_type}, sender={sender}, event_id={event_id}"
+            )
             return
 
         # Ignore events from self, UNLESS it's from a different device (verification request)

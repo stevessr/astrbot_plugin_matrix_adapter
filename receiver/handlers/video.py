@@ -13,7 +13,11 @@ async def handle_video(receiver, chain, event, _: str):
     mimetype = info_data.get("mimetype")
 
     rendered = False
-    if file_info and receiver.client and receiver._should_auto_download_media("m.video"):
+    if (
+        file_info
+        and receiver.client
+        and receiver._should_auto_download_media("m.video")
+    ):
         try:
             cache_path = await receiver._download_encrypted_media_file(
                 file_info, filename, mimetype
@@ -23,9 +27,16 @@ async def handle_video(receiver, chain, event, _: str):
         except Exception as e:
             logger.error(f"Failed to download Matrix encrypted video: {e}")
 
-    if not rendered and mxc_url and receiver.client and receiver._should_auto_download_media("m.video"):
+    if (
+        not rendered
+        and mxc_url
+        and receiver.client
+        and receiver._should_auto_download_media("m.video")
+    ):
         try:
-            cache_path = await receiver._download_media_file(mxc_url, filename, mimetype)
+            cache_path = await receiver._download_media_file(
+                mxc_url, filename, mimetype
+            )
             chain.chain.append(Video.fromFileSystem(str(cache_path)))
             rendered = True
         except Exception as e:

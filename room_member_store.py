@@ -130,18 +130,21 @@ class MatrixRoomMemberStore:
                 existing["join_rules"] = join_rules
                 updated = True
 
-            if power_levels is not None and power_levels != existing.get("power_levels"):
+            if power_levels is not None and power_levels != existing.get(
+                "power_levels"
+            ):
                 existing["power_levels"] = power_levels
                 updated = True
 
-            if (
-                history_visibility is not None
-                and history_visibility != existing.get("history_visibility")
+            if history_visibility is not None and history_visibility != existing.get(
+                "history_visibility"
             ):
                 existing["history_visibility"] = history_visibility
                 updated = True
 
-            if guest_access is not None and guest_access != existing.get("guest_access"):
+            if guest_access is not None and guest_access != existing.get(
+                "guest_access"
+            ):
                 existing["guest_access"] = guest_access
                 updated = True
 
@@ -193,7 +196,9 @@ class MatrixRoomMemberStore:
                 existing["third_party_invites"] = third_party_invites
                 updated = True
 
-            if state_events is not None and state_events != existing.get("state_events"):
+            if state_events is not None and state_events != existing.get(
+                "state_events"
+            ):
                 existing["state_events"] = state_events
                 updated = True
 

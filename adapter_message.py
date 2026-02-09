@@ -209,9 +209,7 @@ class MatrixAdapterMessageMixin:
                         text = "[reaction]"
                     if target_summary:
                         text = f"{text} ({target_summary})"
-                    logger.info(
-                        f"[matrix(matrix)] {sender_name}/{sender_id}: {text}"
-                    )
+                    logger.info(f"[matrix(matrix)] {sender_name}/{sender_id}: {text}")
                 except Exception:
                     pass
             if getattr(event, "msgtype", None):

@@ -14,7 +14,11 @@ async def handle_image(receiver, chain, event, _: str):
 
     rendered = False
 
-    if file_info and receiver.client and receiver._should_auto_download_media("m.image"):
+    if (
+        file_info
+        and receiver.client
+        and receiver._should_auto_download_media("m.image")
+    ):
         try:
             cache_path = await receiver._download_encrypted_media_file(
                 file_info, filename, mimetype
@@ -24,9 +28,16 @@ async def handle_image(receiver, chain, event, _: str):
         except Exception as e:
             logger.error(f"Failed to download Matrix encrypted image: {e}")
 
-    if not rendered and mxc_url and receiver.client and receiver._should_auto_download_media("m.image"):
+    if (
+        not rendered
+        and mxc_url
+        and receiver.client
+        and receiver._should_auto_download_media("m.image")
+    ):
         try:
-            cache_path = await receiver._download_media_file(mxc_url, filename, mimetype)
+            cache_path = await receiver._download_media_file(
+                mxc_url, filename, mimetype
+            )
             chain.chain.append(Image.fromFileSystem(str(cache_path)))
             rendered = True
         except Exception as e:
