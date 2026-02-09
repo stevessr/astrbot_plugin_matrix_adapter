@@ -7,7 +7,10 @@ from .matrix_event_send import send_with_client_impl
 
 
 class MatrixPlatformEvent(AstrMessageEvent):
-    """Matrix 平台事件处理器（不依赖 matrix-nio）"""
+    """Matrix 平台事件处理器（不依赖 matrix-nio）
+
+    NOTE: Matrix 协议不支持真正的流式消息推送，因此禁用流式响应。
+    """
 
     def __init__(
         self,
@@ -25,6 +28,10 @@ class MatrixPlatformEvent(AstrMessageEvent):
         self.enable_threading = enable_threading  # 试验性：是否默认开启嘟文串模式
         self.e2ee_manager = e2ee_manager
         self.use_notice = use_notice  # 使用 m.notice 而不是 m.text
+
+        # NOTE: 强制禁用流式响应，因为 Matrix 不支持真正的流式消息
+        # 这会使 agent 在工具调用后能正常继续生成回复
+        self.set_extra("enable_streaming", False)
 
     @staticmethod
     async def send_with_client(
@@ -192,32 +199,48 @@ class MatrixPlatformEvent(AstrMessageEvent):
         "流式效果" 会导致 agent 工具调用后无法继续生成回复等问题。
         现在改为收集所有内容后一次性发送。
         """
+        from astrbot.api.message_components import Plain as _Plain
+        from astrbot.api.message_components import Reply as _Reply
+
         # 收集所有消息内容
         accumulated_chains = []
+        chain_count = 0
         try:
             async for chain in generator:
+                chain_count += 1
                 if chain is not None:
+                    # 跳过 break 类型的消息（工具调用分隔符）
+                    if hasattr(chain, "type") and chain.type == "break":
+                        logger.debug(f"跳过 break 类型消息（共收集 {len(accumulated_chains)} 条）")
+                        continue
                     accumulated_chains.append(chain)
         except Exception as e:
             logger.error(f"流式消息收集过程中出错：{e}")
 
+        logger.info(
+            f"Matrix send_streaming 完成收集，共处理 {chain_count} 个消息链，"
+            f"累积 {len(accumulated_chains)} 条有效消息"
+        )
+
         # 合并所有文本内容并一次性发送
         if accumulated_chains:
-            from astrbot.api.message_components import Plain as _Plain
-
             combined_text = ""
             non_text_components = []
 
             for chain in accumulated_chains:
-                if hasattr(chain, "chain"):
+                if hasattr(chain, "chain") and chain.chain:
                     for component in chain.chain:
                         if isinstance(component, _Plain):
                             combined_text += component.text
+                        elif isinstance(component, _Reply):
+                            # 跳过 Reply 组件，因为 send 方法会处理
+                            continue
                         else:
                             non_text_components.append(component)
 
             # 发送合并后的文本
             if combined_text:
+                logger.info(f"Matrix 发送合并文本，长度：{len(combined_text)}")
                 final_chain = MessageChain([_Plain(text=combined_text)])
                 await self.send(final_chain)
 
@@ -228,8 +251,6 @@ class MatrixPlatformEvent(AstrMessageEvent):
                     await self.send(temp_chain)
                 except Exception as e:
                     logger.error(f"发送非文本组件失败：{e}")
-
-        return await super().send_streaming(generator, use_fallback)
 
     async def react(self, emoji: str):
         """对消息添加表情回应。"""
