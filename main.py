@@ -12,7 +12,7 @@ from .constants import PREFIX_ED25519
     "astrbot_plugin_matrix_adapter",
     "stevessr",
     "Matrix 协议适配器，支持端到端加密、消息线程等功能",
-    "0.2.7",
+    "0.2.9",
 )
 class MatrixPlugin(Star):
     def __init__(self, context: Context, config=None):
@@ -36,15 +36,22 @@ class MatrixPlugin(Star):
             )
 
         try:
-            from .matrix_adapter import _inject_astrbot_field_metadata
-
-            _inject_astrbot_field_metadata()
             from .matrix_adapter import MatrixPlatformAdapter  # noqa
             from .matrix_event import MatrixPlatformEvent  # noqa
         except ImportError as e:
             logger.error(f"导入 Matrix Adapter 失败，请检查依赖是否安装：{e}")
             # 抛出异常，避免处于"已加载但不可用"的不一致状态
             raise
+
+    async def initialize(self):
+        """插件初始化方法，在所有 metadata 加载完成后调用"""
+        try:
+            from .matrix_adapter import _inject_astrbot_field_metadata
+
+            _inject_astrbot_field_metadata()
+            logger.debug("Matrix 字段元数据已注入")
+        except Exception as e:
+            logger.warning(f"注入 Matrix 字段元数据失败：{e}")
 
     # ========== Commands ==========
     # 装饰器必须定义在 main.py 中，否则 handler 的 __module__ 不匹配
