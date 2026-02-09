@@ -4,12 +4,16 @@ Handles processing of Matrix events (messages, etc.)
 """
 
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from astrbot.api import logger
 
 from ..constants import MAX_PROCESSED_MESSAGES_1000, TIMESTAMP_BUFFER_MS_1000
 from .event_processor_members import MatrixEventProcessorMembers
 from .event_processor_streams import MatrixEventProcessorStreams
+
+if TYPE_CHECKING:
+    from ..e2ee import E2EEManager
 
 
 class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMembers):
@@ -43,7 +47,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         self.on_message: Callable | None = None
 
         # E2EE manager (set by adapter if E2EE is enabled)
-        self.e2ee_manager = None
+        self.e2ee_manager: "E2EEManager | None" = None
 
         # Sync stream caches
         self.global_account_data: dict[str, dict] = {}
@@ -599,6 +603,11 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         sender = event_data.get("sender")
         content = event_data.get("content", {})
         event_id = event_data.get("event_id")
+
+        # 验证必需字段
+        if not event_type or not sender or not event_id:
+            logger.debug(f"房间内验证事件缺少必需字段：type={event_type}, sender={sender}, event_id={event_id}")
+            return
 
         # Ignore events from self, UNLESS it's from a different device (verification request)
         if sender == self.user_id:

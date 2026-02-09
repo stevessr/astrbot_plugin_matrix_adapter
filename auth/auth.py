@@ -12,7 +12,7 @@ from .auth_store import MatrixAuthStore
 
 
 class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
-    def __init__(self, client, config, token_store_path: str | Path):
+    def __init__(self, client, config, token_store_path: str | Path | None = None):
         self.client = client
         self.config = config
         self.user_id = config.user_id

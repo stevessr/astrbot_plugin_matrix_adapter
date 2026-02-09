@@ -173,10 +173,12 @@ class MatrixPlatformAdapter(
     def __init__(
         self,
         platform_config: dict,
-        platform_settings: dict,
+        platform_settings: dict,  # noqa: ARG002 - required by Platform interface
         event_queue: asyncio.Queue,
     ) -> None:
         super().__init__(platform_config, event_queue)
+        # 保存原始配置用于后续保存
+        self._original_config = platform_config
         # Store MatrixConfig separately to maintain functionality
         self._matrix_config = MatrixConfig(platform_config)
         # 记录启动时间（毫秒）。用于过滤启动前的历史消息，避免启动时回复历史消息
@@ -350,7 +352,7 @@ class MatrixPlatformAdapter(
             support_streaming_message=False,
         )
 
-    async def _handle_invite(self, room_id: str, invite_data: dict):
+    async def _handle_invite(self, room_id: str, _invite_data: dict):
         """处理房间邀请"""
         # This wrapper can be removed since we use event_handler directly,
         # but sticking to existing logic, it seems I removed it and used event_handler.invite_callback directly above
