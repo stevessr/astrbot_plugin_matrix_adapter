@@ -60,21 +60,38 @@ _cleanup_platform_registration("matrix")
 
 
 def _inject_astrbot_field_metadata() -> None:
-    """注入 Matrix 适配器的字段元数据到 AstrBot 配置系统"""
+    """注入 Matrix 适配器的字段元数据到 AstrBot 配置系统
+
+    将 config_metadata.json 中定义的字段描述注入到 CONFIG_METADATA_2 中，
+    以便 WebUI 能够显示 Matrix 适配器各配置项的说明。
+    """
     try:
         from astrbot.core.config.default import CONFIG_METADATA_2
 
+        # CONFIG_METADATA_2["platform_group"]["metadata"]["platform"] 包含：
+        # - description
+        # - type
+        # - config_template（平台配置模板）
+        # - items（如果存在，用于字段描述）
         pg = CONFIG_METADATA_2.get("platform_group")
         if not isinstance(pg, dict):
+            logger.debug("platform_group 不存在或不是 dict")
             return
         metadata = pg.get("metadata")
         if not isinstance(metadata, dict):
+            logger.debug("platform_group.metadata 不存在或不是 dict")
             return
         platform = metadata.get("platform")
         if not isinstance(platform, dict):
+            logger.debug("platform_group.metadata.platform 不存在或不是 dict")
             return
-        items = platform.get("items")
+
+        # 如果 items 不存在，创建它
+        if "items" not in platform:
+            platform["items"] = {}
+        items = platform["items"]
         if not isinstance(items, dict):
+            logger.debug("platform_group.metadata.platform.items 不是 dict")
             return
 
         metadata_path = Path(__file__).with_name("config_metadata.json")
@@ -87,7 +104,7 @@ def _inject_astrbot_field_metadata() -> None:
             logger.debug("Matrix 字段元数据格式错误，期望为 dict")
             return
 
-        # 仅在缺失时新增；若已存在则尽量补齐缺失的字段
+        # 注入字段元数据
         for k, v in matrix_items.items():
             if k not in items:
                 items[k] = v
@@ -101,8 +118,12 @@ def _inject_astrbot_field_metadata() -> None:
                     it["hint"] = v["hint"]
                 if "obvious_hint" not in it and "obvious_hint" in v:
                     it["obvious_hint"] = v["obvious_hint"]
+                if "options" not in it and "options" in v:
+                    it["options"] = v["options"]
+                if "condition" not in it and "condition" in v:
+                    it["condition"] = v["condition"]
 
-        logger.debug("已为 Matrix 适配器注入字段元数据")
+        logger.debug(f"已为 Matrix 适配器注入 {len(matrix_items)} 个字段元数据")
     except Exception as e:
         try:
             logger.debug(f"注入 Matrix 字段元数据失败：{e}")
