@@ -208,6 +208,14 @@ class CryptoStore:
         self._megolm_inbound[session_id] = session_pickle
         self._save_json(self._megolm_inbound_file, self._megolm_inbound)
 
+    def has_megolm_inbound(self, session_id: str) -> bool:
+        """检查是否存在指定 Megolm 入站会话"""
+        return session_id in self._megolm_inbound
+
+    def get_megolm_inbound_count(self) -> int:
+        """获取本地 Megolm 入站会话数量"""
+        return len(self._megolm_inbound)
+
     # ========== Megolm 出站会话 ==========
 
     def get_megolm_outbound(self, room_id: str) -> str | None:

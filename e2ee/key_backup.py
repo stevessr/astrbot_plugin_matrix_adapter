@@ -40,7 +40,7 @@ class KeyBackup(KeyBackupSSSSMixin, KeyBackupBackupMixin):
             client: MatrixHTTPClient
             crypto_store: CryptoStore
             olm_machine: OlmMachine
-            recovery_key: 用户配置的恢复密钥 (base58)
+            recovery_key: 用户配置密钥（默认按 Secret Storage Key 处理）
             store_path: 存储路径（用于持久化提取的备份密钥）
         """
         self.client = client
@@ -53,15 +53,19 @@ class KeyBackup(KeyBackupSSSSMixin, KeyBackupBackupMixin):
         self._recovery_key_bytes: bytes | None = None
         self._encryption_key: bytes | None = None
         self._original_recovery_key_str: str = recovery_key  # 保存原始输入
+        self._provided_secret_storage_key_bytes: bytes | None = None
+        self._last_restore_attempt_ts: float = 0.0
+        self._restore_cooldown_sec: float = 60.0
 
         # 处理用户提供的恢复密钥
         if recovery_key:
             try:
-                self._recovery_key_bytes = _decode_recovery_key(recovery_key)
-                self._encryption_key = _compute_hkdf(
-                    self._recovery_key_bytes, b"", HKDF_MEGOLM_BACKUP_INFO
+                # Treat configured key as Secret Storage key by default.
+                # It can still be used as a direct backup key as fallback.
+                self._provided_secret_storage_key_bytes = _decode_recovery_key(
+                    recovery_key
                 )
-                logger.info("使用用户配置的恢复密钥")
+                logger.info("已加载用户配置密钥（默认按 Secret Storage Key 处理）")
             except Exception as e:
                 logger.error(f"解析恢复密钥失败：{e}")
 
@@ -109,3 +113,30 @@ class KeyBackup(KeyBackupSSSSMixin, KeyBackupBackupMixin):
         except Exception as e:
             logger.debug(f"加载提取的备份密钥失败：{e}")
             return None
+
+    def use_recovery_key_bytes(self, key_bytes: bytes, persist: bool = False) -> bool:
+        """Set current backup key bytes and derive encryption key."""
+        if not key_bytes or len(key_bytes) != CRYPTO_KEY_SIZE_32:
+            return False
+        self._recovery_key_bytes = key_bytes
+        self._encryption_key = _compute_hkdf(
+            self._recovery_key_bytes, b"", HKDF_MEGOLM_BACKUP_INFO
+        )
+        if persist:
+            self._save_extracted_key(key_bytes)
+        return True
+
+    def has_local_room_keys(self) -> bool:
+        """Whether current account already has inbound Megolm keys locally."""
+        try:
+            return self.store.get_megolm_inbound_count() > 0
+        except Exception:
+            return bool(getattr(self.store, "_megolm_inbound", {}))
+
+    def can_attempt_restore(self) -> bool:
+        """Whether backup restore can be attempted with current state."""
+        return bool(self._backup_version and self._recovery_key_bytes)
+
+    def should_restore_for_missing_keys(self) -> bool:
+        """Only restore when this account is missing local keys."""
+        return self.can_attempt_restore() and not self.has_local_room_keys()

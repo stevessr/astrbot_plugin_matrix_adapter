@@ -162,10 +162,10 @@ class E2EEManager(
                 if not self._key_backup._backup_version:
                     await self._key_backup.create_backup()
 
-            # 始终尝试从备份恢复密钥（如果有配置恢复密钥）
-            if self._key_backup._backup_version and self.recovery_key:
-                logger.info("尝试从服务器备份恢复密钥...")
-                await self._key_backup.restore_room_keys()
+            # 仅当当前账户本地缺少房间密钥时才尝试恢复
+            if self._key_backup.should_restore_for_session():
+                logger.info("检测到本地房间密钥缺失，尝试从服务器备份恢复...")
+                await self._key_backup.restore_room_keys_if_needed(reason="startup")
 
             # 自动签名自己的设备（使设备变为"已验证"状态）
             if self._cross_signing._master_key:

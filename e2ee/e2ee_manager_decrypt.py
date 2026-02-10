@@ -43,9 +43,14 @@ class E2EEManagerDecryptMixin:
             # 解密失败，尝试请求密钥
             logger.info(f"尝试请求房间密钥：session={session_id[:8]}...")
 
-            # 1. 尝试从服务器备份恢复
-            if self._key_backup and self._key_backup._backup_version:
-                await self._key_backup.restore_room_keys()
+            # 1. 仅在本账户缺失密钥时尝试从服务器备份恢复
+            if self._key_backup and self._key_backup.should_restore_for_session(
+                session_id=session_id
+            ):
+                await self._key_backup.restore_room_keys_if_needed(
+                    session_id=session_id,
+                    reason="decrypt_failed",
+                )
                 # 再次尝试解密
                 decrypted = self._olm.decrypt_megolm(session_id, ciphertext)
                 if decrypted:

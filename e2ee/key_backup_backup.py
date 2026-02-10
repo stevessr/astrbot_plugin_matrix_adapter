@@ -3,12 +3,12 @@ import hashlib
 import hmac
 import json
 import secrets
+import time
 
 from astrbot.api import logger
 
 from ..constants import (
     CRYPTO_KEY_SIZE_32,
-    HKDF_MEGOLM_BACKUP_INFO,
     MEGOLM_BACKUP_ALGO,
     RECOVERY_KEY_MAC_TRUNCATED_LEN,
 )
@@ -31,48 +31,41 @@ class KeyBackupBackupMixin:
             version = await self._get_current_backup_version()
             if version:
                 self._backup_version = version
+                # 1) Prefer previously extracted real backup key.
+                extracted_key = self._load_extracted_key()
+                if extracted_key and self._verify_recovery_key(
+                    extracted_key, log_mismatch=False
+                ):
+                    if self.use_recovery_key_bytes(extracted_key):
+                        logger.info("✅ 使用本地保存的提取密钥成功验证！")
+                        return
 
-                # 验证现有密钥
-                if self._recovery_key_bytes:
-                    # 先尝试直接验证
-                    if not self._verify_recovery_key(self._recovery_key_bytes):
-                        logger.warning(
-                            "恢复密钥与备份公钥不匹配，尝试按 Secret Storage Key 处理..."
-                        )
+                # 2) Treat configured key as Secret Storage Key by default.
+                provided_key = self._provided_secret_storage_key_bytes
+                if provided_key:
+                    real_key = await self._try_restore_from_secret_storage(provided_key)
+                    if real_key and self._verify_recovery_key(
+                        real_key, log_mismatch=False
+                    ):
+                        if self.use_recovery_key_bytes(real_key, persist=True):
+                            logger.info(
+                                "✅ 已通过 Secret Storage Key 获取并验证备份密钥"
+                            )
+                            return
 
-                        # 尝试加载之前保存的提取密钥
-                        extracted_key = self._load_extracted_key()
-                        if extracted_key and self._verify_recovery_key(extracted_key):
-                            logger.info("✅ 使用本地保存的提取密钥成功验证！")
-                            self._recovery_key_bytes = extracted_key
-                            self._encryption_key = _compute_hkdf(
-                                self._recovery_key_bytes,
-                                b"",
-                                HKDF_MEGOLM_BACKUP_INFO,
-                            )
-                        else:
-                            # 本地没有或验证失败，从 SSSS 提取
-                            real_key = await self._try_restore_from_secret_storage(
-                                self._recovery_key_bytes
-                            )
-                            if real_key:
-                                logger.info("从 SSSS 成功提取密钥，再次验证...")
-                                if self._verify_recovery_key(real_key):
-                                    logger.info("✅ 成功获取并验证了真正的备份密钥！")
-                                    self._recovery_key_bytes = real_key
-                                    self._encryption_key = _compute_hkdf(
-                                        self._recovery_key_bytes,
-                                        b"",
-                                        HKDF_MEGOLM_BACKUP_INFO,
-                                    )
-                                    # 保存提取的密钥到本地
-                                    self._save_extracted_key(real_key)
-                                else:
-                                    logger.error("SSSS 提取的密钥验证失败")
-                            else:
-                                logger.error("无法通过 SSSS 恢复密钥")
-                    else:
-                        logger.info("✅ 恢复密钥与备份版本公钥匹配")
+                    # 3) Fallback: configured key is direct backup key.
+                    if self._verify_recovery_key(provided_key, log_mismatch=False):
+                        if self.use_recovery_key_bytes(provided_key):
+                            logger.info("✅ 提供密钥可直接作为备份恢复密钥")
+                            return
+
+                    logger.warning(
+                        "配置密钥未能匹配当前备份，等待后续 secret.send/手动更新"
+                    )
+                elif self._recovery_key_bytes and self._verify_recovery_key(
+                    self._recovery_key_bytes, log_mismatch=False
+                ):
+                    self.use_recovery_key_bytes(self._recovery_key_bytes)
             else:
                 logger.info("未发现密钥备份")
         except Exception as e:
@@ -91,7 +84,9 @@ class KeyBackupBackupMixin:
         except Exception:
             return None
 
-    def _verify_recovery_key(self, key_bytes: bytes) -> bool:
+    def _verify_recovery_key(
+        self, key_bytes: bytes, log_mismatch: bool = True
+    ) -> bool:
         """验证恢复密钥是否与当前备份匹配"""
         if not self._backup_auth_data:
             return True  # 无法验证，假设正确
@@ -128,11 +123,14 @@ class KeyBackupBackupMixin:
                 public_key_std != expected_public_key
                 and public_key != expected_public_key
             ):
-                logger.error("❌ 恢复密钥不匹配！")
-                logger.error(f"备份版本要求公钥：{expected_public_key}")
-                logger.error(f"您的密钥生成公钥：{public_key_std} (或者 {public_key})")
-
-                # Check if it matches after padding?
+                if log_mismatch:
+                    logger.warning("恢复密钥不匹配当前备份版本公钥")
+                    logger.warning(f"备份版本要求公钥：{expected_public_key}")
+                    logger.warning(
+                        f"当前密钥生成公钥：{public_key_std} (或 {public_key})"
+                    )
+                else:
+                    logger.debug("恢复密钥与备份公钥不匹配（静默模式）")
                 return False
 
             logger.info(f"✅ 恢复密钥与备份版本公钥匹配 ({expected_public_key})")
@@ -144,6 +142,41 @@ class KeyBackupBackupMixin:
 
             logger.warning(traceback.format_exc())
             return True
+
+    def should_restore_for_session(
+        self, session_id: str | None = None, force: bool = False
+    ) -> bool:
+        """Whether backup restoration should run for current account state."""
+        if force:
+            return self.can_attempt_restore()
+
+        if not self.can_attempt_restore():
+            return False
+
+        # This account already has keys: skip restore by default.
+        if self.has_local_room_keys():
+            return False
+
+        # If a specific session already exists locally, skip.
+        if session_id and self.store.has_megolm_inbound(session_id):
+            return False
+
+        now = time.monotonic()
+        if now - self._last_restore_attempt_ts < self._restore_cooldown_sec:
+            return False
+        return True
+
+    async def restore_room_keys_if_needed(
+        self,
+        session_id: str | None = None,
+        reason: str = "runtime",
+        force: bool = False,
+    ) -> bool:
+        """Restore keys from backup only when account key state requires it."""
+        if not self.should_restore_for_session(session_id=session_id, force=force):
+            logger.debug(f"跳过备份恢复：reason={reason} session={session_id or '-'}")
+            return False
+        return await self.restore_room_keys()
 
     async def create_backup(self) -> tuple[str, str] | None:
         """
@@ -262,7 +295,7 @@ class KeyBackupBackupMixin:
         except Exception as e:
             logger.error(f"上传密钥失败：{e}")
 
-    async def restore_room_keys(self, recovery_key: str | None = None):
+    async def restore_room_keys(self, recovery_key: str | None = None) -> bool:
         """
         从备份恢复密钥
 
@@ -271,7 +304,7 @@ class KeyBackupBackupMixin:
         """
         if not self._backup_version:
             logger.warning("未发现备份，无法恢复")
-            return
+            return False
 
         # 确定使用的恢复密钥
         key_bytes = None
@@ -280,16 +313,21 @@ class KeyBackupBackupMixin:
                 key_bytes = _decode_recovery_key(recovery_key)
             except Exception as e:
                 logger.error(f"解析恢复密钥失败：{e}")
-                return
+                return False
         elif self._recovery_key_bytes:
             key_bytes = self._recovery_key_bytes
         else:
             logger.error("无恢复密钥，无法解密备份")
-            return
+            return False
+
+        self._last_restore_attempt_ts = time.monotonic()
 
         # 验证密钥是否匹配备份版本
         if not self._verify_recovery_key(key_bytes):
-            return
+            return False
+
+        # Keep using the verified key for subsequent runs.
+        self.use_recovery_key_bytes(key_bytes, persist=True)
 
         # 创建 PkDecryption 对象 (如果 vodozemac 可用)
         _pk_decryption = None
@@ -395,9 +433,11 @@ class KeyBackupBackupMixin:
                 logger.info(f"已恢复 {restored} 个会话密钥")
             if skipped > 0:
                 logger.debug(f"跳过 {skipped} 个不兼容的会话")
+            return restored > 0
 
         except Exception as e:
             logger.warning(f"恢复密钥失败：{e}")
+            return False
 
     async def upload_single_key(
         self,

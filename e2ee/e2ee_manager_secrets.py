@@ -106,12 +106,16 @@ class E2EEManagerSecretsMixin:
         try:
             if secret_name == SECRET_MEGOLM_BACKUP_V1:
                 # 获取备份密钥
-                if self._key_backup and self._key_backup._backup_key:
-                    key_bytes = self._key_backup._backup_key
+                if self._key_backup:
+                    key_bytes = self._key_backup._recovery_key_bytes
+                    if not key_bytes:
+                        key_bytes = self._key_backup._load_extracted_key()
+                    if not key_bytes:
+                        logger.debug("[E2EE-Secrets] 备份密钥不可用")
+                        return None
                     return base64.b64encode(key_bytes).decode("utf-8")
-                else:
-                    logger.debug("[E2EE-Secrets] 备份密钥不可用")
-                    return None
+                logger.debug("[E2EE-Secrets] 备份密钥不可用")
+                return None
 
             elif secret_name == SECRET_CROSS_SIGNING_MASTER:
                 # 获取主交叉签名密钥
@@ -365,12 +369,15 @@ class E2EEManagerSecretsMixin:
             if secret_name == SECRET_MEGOLM_BACKUP_V1:
                 # 保存备份密钥
                 if self._key_backup:
-                    self._key_backup._backup_key = secret_bytes
-                    self._key_backup._save_backup_key()
-                    logger.info("[E2EE-Secrets] 已保存接收到的备份密钥")
-
-                    # 尝试从备份恢复密钥
-                    await self._key_backup.restore_room_keys()
+                    if self._key_backup.use_recovery_key_bytes(secret_bytes, persist=True):
+                        logger.info("[E2EE-Secrets] 已保存接收到的备份密钥")
+                        # 仅在本账户缺失房间密钥时恢复
+                        if self._key_backup.should_restore_for_session():
+                            await self._key_backup.restore_room_keys_if_needed(
+                                reason="secret_send"
+                            )
+                    else:
+                        logger.warning("[E2EE-Secrets] 接收到的备份密钥格式无效")
 
             elif secret_name == SECRET_CROSS_SIGNING_MASTER:
                 if self._cross_signing:
