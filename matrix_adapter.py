@@ -62,45 +62,11 @@ _cleanup_platform_registration("matrix")
 def _inject_astrbot_field_metadata() -> None:
     """注入 Matrix 适配器的字段元数据到 AstrBot 配置系统
 
-    将 config_metadata.json 中定义的字段描述注入到 CONFIG_METADATA_3 中，
+    将 config_metadata.json 中定义的字段描述注入到 CONFIG_METADATA_2 和 CONFIG_METADATA_3 中，
     以便 WebUI 能够显示 Matrix 适配器各配置项的说明。
     """
     try:
-        from astrbot.core.config.default import CONFIG_METADATA_3
-
-        # CONFIG_METADATA_3["platform_group"]["metadata"]["platform"] 包含：
-        # - description
-        # - items（字段描述，使用 JSON selector 作为键）
-        pg = CONFIG_METADATA_3.get("platform_group")
-        if not isinstance(pg, dict):
-            logger.debug("platform_group 不存在或不是 dict")
-            return
-        metadata = pg.get("metadata")
-        if not isinstance(metadata, dict):
-            logger.debug("platform_group.metadata 不存在或不是 dict")
-            return
-
-        # 如果 platform 节不存在，创建它
-        if "platform" not in metadata:
-            metadata["platform"] = {
-                "description": "消息平台适配器",
-                "type": "object",
-                "items": {},
-            }
-            logger.debug("在 CONFIG_METADATA_3 中创建了 platform 节")
-
-        platform = metadata.get("platform")
-        if not isinstance(platform, dict):
-            logger.debug("platform_group.metadata.platform 不是 dict")
-            return
-
-        # 如果 items 不存在，创建它
-        if "items" not in platform:
-            platform["items"] = {}
-        items = platform["items"]
-        if not isinstance(items, dict):
-            logger.debug("platform_group.metadata.platform.items 不是 dict")
-            return
+        from astrbot.core.config.default import CONFIG_METADATA_2, CONFIG_METADATA_3
 
         metadata_path = Path(__file__).with_name("config_metadata.json")
         try:
@@ -112,39 +78,117 @@ def _inject_astrbot_field_metadata() -> None:
             logger.debug("Matrix 字段元数据格式错误，期望为 dict")
             return
 
-        # 注入字段元数据（使用 matrix_ 前缀的 JSON selector 作为键）
-        injected_count = 0
-        for k, v in matrix_items.items():
-            if k not in items:
-                items[k] = v
-                injected_count += 1
-            else:
-                it = items[k]
-                updated = False
-                if "description" not in it and "description" in v:
-                    it["description"] = v["description"]
-                    updated = True
-                if "type" not in it and "type" in v:
-                    it["type"] = v["type"]
-                    updated = True
-                if "hint" not in it and "hint" in v:
-                    it["hint"] = v["hint"]
-                    updated = True
-                if "obvious_hint" not in it and "obvious_hint" in v:
-                    it["obvious_hint"] = v["obvious_hint"]
-                    updated = True
-                if "options" not in it and "options" in v:
-                    it["options"] = v["options"]
-                    updated = True
-                if "condition" not in it and "condition" in v:
-                    it["condition"] = v["condition"]
-                    updated = True
-                if updated:
-                    injected_count += 1
+        # 注入到 CONFIG_METADATA_2
+        try:
+            pg2 = CONFIG_METADATA_2.get("platform_group")
+            if isinstance(pg2, dict):
+                metadata2 = pg2.get("metadata")
+                if isinstance(metadata2, dict):
+                    platform2 = metadata2.get("platform")
+                    if isinstance(platform2, dict):
+                        items2 = platform2.get("items")
+                        if isinstance(items2, dict):
+                            injected_count_2 = 0
+                            for k, v in matrix_items.items():
+                                if k not in items2:
+                                    items2[k] = v
+                                    injected_count_2 += 1
+                                else:
+                                    it = items2[k]
+                                    updated = False
+                                    if "description" not in it and "description" in v:
+                                        it["description"] = v["description"]
+                                        updated = True
+                                    if "type" not in it and "type" in v:
+                                        it["type"] = v["type"]
+                                        updated = True
+                                    if "hint" not in it and "hint" in v:
+                                        it["hint"] = v["hint"]
+                                        updated = True
+                                    if "obvious_hint" not in it and "obvious_hint" in v:
+                                        it["obvious_hint"] = v["obvious_hint"]
+                                        updated = True
+                                    if "options" not in it and "options" in v:
+                                        it["options"] = v["options"]
+                                        updated = True
+                                    if "condition" not in it and "condition" in v:
+                                        it["condition"] = v["condition"]
+                                        updated = True
+                                    if updated:
+                                        injected_count_2 += 1
+                            logger.debug(
+                                f"已为 Matrix 适配器注入 {injected_count_2} 个字段元数据到 CONFIG_METADATA_2"
+                            )
+        except Exception as e:
+            logger.debug(f"注入到 CONFIG_METADATA_2 失败：{e}")
 
-        logger.debug(
-            f"已为 Matrix 适配器注入 {injected_count} 个字段元数据到 CONFIG_METADATA_3"
-        )
+        # 注入到 CONFIG_METADATA_3
+        try:
+            pg3 = CONFIG_METADATA_3.get("platform_group")
+            if not isinstance(pg3, dict):
+                logger.debug("CONFIG_METADATA_3 中 platform_group 不存在或不是 dict")
+                return
+            metadata3 = pg3.get("metadata")
+            if not isinstance(metadata3, dict):
+                logger.debug("CONFIG_METADATA_3 中 platform_group.metadata 不存在或不是 dict")
+                return
+
+            # 如果 platform 节不存在，创建它
+            if "platform" not in metadata3:
+                metadata3["platform"] = {
+                    "description": "消息平台适配器",
+                    "type": "object",
+                    "items": {},
+                }
+                logger.debug("在 CONFIG_METADATA_3 中创建了 platform 节")
+
+            platform3 = metadata3.get("platform")
+            if not isinstance(platform3, dict):
+                logger.debug("CONFIG_METADATA_3 中 platform_group.metadata.platform 不是 dict")
+                return
+
+            # 如果 items 不存在，创建它
+            if "items" not in platform3:
+                platform3["items"] = {}
+            items3 = platform3["items"]
+            if not isinstance(items3, dict):
+                logger.debug("CONFIG_METADATA_3 中 platform_group.metadata.platform.items 不是 dict")
+                return
+
+            injected_count_3 = 0
+            for k, v in matrix_items.items():
+                if k not in items3:
+                    items3[k] = v
+                    injected_count_3 += 1
+                else:
+                    it = items3[k]
+                    updated = False
+                    if "description" not in it and "description" in v:
+                        it["description"] = v["description"]
+                        updated = True
+                    if "type" not in it and "type" in v:
+                        it["type"] = v["type"]
+                        updated = True
+                    if "hint" not in it and "hint" in v:
+                        it["hint"] = v["hint"]
+                        updated = True
+                    if "obvious_hint" not in it and "obvious_hint" in v:
+                        it["obvious_hint"] = v["obvious_hint"]
+                        updated = True
+                    if "options" not in it and "options" in v:
+                        it["options"] = v["options"]
+                        updated = True
+                    if "condition" not in it and "condition" in v:
+                        it["condition"] = v["condition"]
+                        updated = True
+                    if updated:
+                        injected_count_3 += 1
+
+            logger.debug(
+                f"已为 Matrix 适配器注入 {injected_count_3} 个字段元数据到 CONFIG_METADATA_3"
+            )
+        except Exception as e:
+            logger.debug(f"注入到 CONFIG_METADATA_3 失败：{e}")
     except Exception as e:
         try:
             logger.debug(f"注入 Matrix 字段元数据失败：{e}")
