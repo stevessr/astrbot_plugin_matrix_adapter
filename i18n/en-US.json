@@ -1,0 +1,62 @@
+{
+  "matrix_homeserver": {
+    "description": "Homeserver URL",
+    "hint": "Matrix homeserver address, e.g. https://matrix.org"
+  },
+  "matrix_user_id": {
+    "description": "User ID",
+    "hint": "Matrix user ID, format: @username:homeserver.com"
+  },
+  "matrix_password": {
+    "description": "Password",
+    "hint": "Matrix account password (required for password authentication)"
+  },
+  "matrix_access_token": {
+    "description": "Access Token",
+    "hint": "Matrix Access Token (required for token authentication)"
+  },
+  "matrix_auth_method": {
+    "description": "Authentication Method",
+    "hint": "Authentication method: password, token, or oauth2"
+  },
+  "matrix_device_name": {
+    "description": "Device Name",
+    "hint": "Device display name, default: AstrBot"
+  },
+  "matrix_auto_join_rooms": {
+    "description": "Auto Join Rooms",
+    "hint": "Whether to automatically accept room invitations, default: True"
+  },
+  "matrix_sync_timeout": {
+    "description": "Sync Timeout",
+    "hint": "Sync timeout in milliseconds, default: 30000"
+  },
+  "matrix_enable_threading": {
+    "description": "Enable Threading",
+    "hint": "Whether to use message threading for replies, default: False"
+  },
+  "matrix_use_notice": {
+    "description": "Use Notice Type",
+    "hint": "When enabled, the bot will send messages as m.notice instead of m.text. m.notice is typically used for bot messages and won't trigger notification sounds"
+  },
+  "matrix_enable_e2ee": {
+    "description": "Enable E2EE",
+    "hint": "Whether to enable end-to-end encryption (experimental), default: False"
+  },
+  "matrix_e2ee_auto_verify": {
+    "description": "Auto Verify Mode",
+    "hint": "Auto verification mode: auto_accept / auto_reject / manual, default: auto_accept"
+  },
+  "matrix_e2ee_trust_on_first_use": {
+    "description": "Trust on First Use",
+    "hint": "Whether to automatically trust devices on first use, default: False"
+  },
+  "matrix_e2ee_key_backup": {
+    "description": "Enable Key Backup",
+    "hint": "Whether to enable key backup, default: False"
+  },
+  "matrix_e2ee_recovery_key": {
+    "description": "Recovery Key",
+    "hint": "E2EE recovery key (Base58 or Base64 format), leave empty to auto-generate"
+  }
+}
