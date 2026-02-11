@@ -160,8 +160,6 @@ class MatrixPlatformAdapter(
         self._matrix_config = MatrixConfig(platform_config)
         # 记录启动时间（毫秒）。用于过滤启动前的历史消息，避免启动时回复历史消息
         self._startup_ts = int(time.time() * 1000)
-        # 消息历史管理器（稍后通过 Context 获取）
-        self.message_history_manager = None
 
         # 使用自定义 HTTP 客户端（不依赖 matrix-nio）
         self.client = MatrixHTTPClient(homeserver=self._matrix_config.homeserver)

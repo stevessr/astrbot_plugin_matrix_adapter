@@ -7,14 +7,7 @@ import json
 import time
 from pathlib import Path
 
-from astrbot.api import logger  # 转换消息链为可序列化格式
-from astrbot.api.message_components import (
-    At,
-    AtAll,
-    Image,
-    Plain,
-    Reply,
-)
+from astrbot.api import logger
 
 from .plugin_config import get_plugin_config
 
@@ -70,53 +63,6 @@ def _find_stalk_archive_message(room_id: str, event_id: str) -> str:
     except Exception as e:
         logger.debug(f"读取 stalk 存档失败：{e}")
     return ""
-
-
-def _build_message_content(abm) -> dict:
-    content = {
-        "message": [],
-        "raw_message": abm.message_str,
-    }
-
-    for component in abm.message:
-        if isinstance(component, Plain):
-            content["message"].append({"type": "plain", "text": component.text})
-        elif isinstance(component, Image):
-            content["message"].append(
-                {
-                    "type": "image",
-                    "path": getattr(component, "path", ""),
-                }
-            )
-        elif isinstance(component, At):
-            content["message"].append(
-                {
-                    "type": "at",
-                    "qq": component.qq,
-                    "name": component.name,
-                }
-            )
-        elif isinstance(component, AtAll):
-            content["message"].append({"type": "at_all"})
-        elif isinstance(component, Reply):
-            content["message"].append(
-                {
-                    "type": "reply",
-                    "id": component.id,
-                    "message_str": component.message_str,
-                    "sender_id": component.sender_id,
-                    "sender_nickname": component.sender_nickname,
-                }
-            )
-        else:
-            content["message"].append(
-                {
-                    "type": getattr(component, "type", "unknown"),
-                    "data": getattr(component, "data", {}),
-                }
-            )
-
-    return content
 
 
 class MatrixAdapterMessageMixin:
@@ -219,53 +165,6 @@ class MatrixAdapterMessageMixin:
             if abm is None:
                 logger.warning(f"转换消息失败：{event}")
                 return
-
-            # 保存消息历史到 PlatformMessageHistory
-            # 延迟获取 message_history_manager 以避免初始化顺序问题
-            if not self.message_history_manager:
-                try:
-                    # 通过全局 Context 获取 message_history_manager
-                    from astrbot.core.star.context import context as global_context
-
-                    if global_context and hasattr(
-                        global_context, "message_history_manager"
-                    ):
-                        self.message_history_manager = (
-                            global_context.message_history_manager
-                        )
-                        logger.debug("已从 Context 获取 message_history_manager")
-                except Exception as e:
-                    logger.debug(f"获取 message_history_manager 失败：{e}")
-
-            content = None
-            sender_id = ""
-            sender_name = ""
-            if abm:
-                sender_id = (
-                    abm.sender.user_id if hasattr(abm, "sender") and abm.sender else ""
-                )
-                sender_name = (
-                    abm.sender.nickname if hasattr(abm, "sender") and abm.sender else ""
-                )
-
-            if abm:
-                content = _build_message_content(abm)
-
-            if self.message_history_manager and abm:
-                try:
-                    # 保存到数据库
-                    await self.message_history_manager.insert(
-                        platform_id=self.meta().id or "matrix",
-                        user_id=abm.session_id,
-                        content=content,
-                        sender_id=sender_id,
-                        sender_name=sender_name,
-                    )
-                    logger.debug(
-                        f"已保存消息历史：session_id={abm.session_id}, sender={sender_name}"
-                    )
-                except Exception as e:
-                    logger.warning(f"保存消息历史失败：{e}")
 
             if abm and get_plugin_config().force_message_type == "stalk":
                 record = {
