@@ -93,12 +93,12 @@ def _load_i18n_resources() -> dict[str, dict]:
     i18n_data = {}
     try:
         # 加载中文
-        zh_cn_path = Path(__file__).with_name("i18n/zh-CN.json")
+        zh_cn_path = Path(__file__).parent / "i18n" / "zh-CN.json"
         if zh_cn_path.exists():
             i18n_data["zh-CN"] = json.loads(zh_cn_path.read_text(encoding="utf-8"))
 
         # 加载英文
-        en_us_path = Path(__file__).with_name("i18n/en-US.json")
+        en_us_path = Path(__file__).parent / "i18n" / "en-US.json"
         if en_us_path.exists():
             i18n_data["en-US"] = json.loads(en_us_path.read_text(encoding="utf-8"))
     except Exception as e:
