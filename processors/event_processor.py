@@ -47,7 +47,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         self.on_message: Callable | None = None
 
         # E2EE manager (set by adapter if E2EE is enabled)
-        self.e2ee_manager: "E2EEManager | None" = None
+        self.e2ee_manager: E2EEManager | None = None
 
         # Sync stream caches
         self.global_account_data: dict[str, dict] = {}

@@ -21,7 +21,7 @@ class StickerAvailabilityStore:
                 with open(self.file_path, encoding="utf-8") as f:
                     data = json.load(f)
                 if isinstance(data, list):
-                    self._ids = set(str(x) for x in data)
+                    self._ids = {str(x) for x in data}
             except Exception as e:
                 logger.warning(f"加载 sticker 可用列表失败：{e}")
                 self._ids = set()
@@ -41,7 +41,7 @@ class StickerAvailabilityStore:
         self._save()
 
     def set_ids(self, ids: list[str] | set[str]):
-        self._ids = set(str(x) for x in ids)
+        self._ids = {str(x) for x in ids}
         self._save()
 
     def add_ids(self, ids: list[str] | set[str]):

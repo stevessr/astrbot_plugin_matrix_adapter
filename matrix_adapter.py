@@ -66,7 +66,6 @@ def _inject_astrbot_field_metadata() -> dict | None:
     以便 WebUI 能够显示 Matrix 适配器各配置项的说明。
     """
     try:
-        from astrbot.core.config.default import CONFIG_METADATA_2, CONFIG_METADATA_3
 
         metadata_path = Path(__file__).with_name("config_metadata.json")
         try:
