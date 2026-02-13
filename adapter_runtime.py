@@ -131,6 +131,11 @@ class MatrixAdapterRuntimeMixin:
             except Exception as e:
                 logger.debug(f"设置离线状态失败：{e}")
 
+            # 停止定期密钥分发检查任务
+            if hasattr(self, "e2ee_manager") and self.e2ee_manager:
+                if hasattr(self.e2ee_manager, "stop_key_share_check_task"):
+                    self.e2ee_manager.stop_key_share_check_task()
+
             if hasattr(self, "sync_manager"):
                 self.sync_manager.stop()
 

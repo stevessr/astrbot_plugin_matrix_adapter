@@ -369,7 +369,9 @@ class E2EEManagerSecretsMixin:
             if secret_name == SECRET_MEGOLM_BACKUP_V1:
                 # 保存备份密钥
                 if self._key_backup:
-                    if self._key_backup.use_recovery_key_bytes(secret_bytes, persist=True):
+                    if self._key_backup.use_recovery_key_bytes(
+                        secret_bytes, persist=True
+                    ):
                         logger.info("[E2EE-Secrets] 已保存接收到的备份密钥")
                         # 仅在本账户缺失房间密钥时恢复
                         if self._key_backup.should_restore_for_session():

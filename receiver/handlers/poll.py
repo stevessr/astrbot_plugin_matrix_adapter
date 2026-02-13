@@ -57,9 +57,7 @@ async def handle_poll_end(receiver, chain, event, _: str):
     poll_start_id = relates_to.get("event_id", "")
 
     # Get poll end text
-    content.get("m.poll.end", {}) or content.get(
-        "org.matrix.msc3381.poll.end", {}
-    )
+    content.get("m.poll.end", {}) or content.get("org.matrix.msc3381.poll.end", {})
 
     # The m.text field contains a summary of the poll results
     text_content = content.get("m.text", "") or content.get("body", "")

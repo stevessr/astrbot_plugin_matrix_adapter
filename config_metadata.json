@@ -83,5 +83,29 @@
     "type": "string",
     "hint": "E2EE 恢复密钥（Base58 或 Base64 格式），留空则自动生成",
     "condition": {"matrix_enable_e2ee": true}
+  },
+  "matrix_e2ee_proactive_key_exchange": {
+    "description": "主动密钥交换",
+    "type": "bool",
+    "hint": "启用后会更积极地补充一次性密钥和分发房间密钥（提升 E2EE 可用性，但略微增加网络请求）",
+    "condition": {"matrix_enable_e2ee": true}
+  },
+  "matrix_e2ee_key_maintenance_interval": {
+    "description": "密钥维护间隔",
+    "type": "int",
+    "hint": "一次性密钥自动补充的最小间隔（秒），默认 60 秒。设置为更小的值可提高密钥补充积极性",
+    "condition": {"matrix_enable_e2ee": true}
+  },
+  "matrix_e2ee_otk_threshold_ratio": {
+    "description": "一次性密钥阈值比例",
+    "type": "int",
+    "hint": "触发一次性密钥补充的服务器密钥数量比例（百分比），默认 33。值越小越早补充密钥",
+    "condition": {"matrix_enable_e2ee": true}
+  },
+  "matrix_e2ee_key_share_check_interval": {
+    "description": "密钥分发检查间隔",
+    "type": "int",
+    "hint": "定期主动检查并分发房间密钥的间隔（秒），默认 0（禁用）。启用后会主动向所有成员设备分发密钥",
+    "condition": {"matrix_enable_e2ee": true}
   }
 }

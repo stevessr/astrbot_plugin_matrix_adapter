@@ -174,8 +174,8 @@ class MatrixAdapterMessageMixin:
                     "sender_id": sender_id,
                     "sender_name": sender_name,
                     "message_str": abm.message_str,
-                    "message": content["message"],
-                    "raw_message": content["raw_message"],
+                    "message": abm.message,
+                    "raw_message": abm.raw_message,
                 }
                 _append_stalk_archive(abm.session_id, record)
 

@@ -84,9 +84,7 @@ class KeyBackupBackupMixin:
         except Exception:
             return None
 
-    def _verify_recovery_key(
-        self, key_bytes: bytes, log_mismatch: bool = True
-    ) -> bool:
+    def _verify_recovery_key(self, key_bytes: bytes, log_mismatch: bool = True) -> bool:
         """验证恢复密钥是否与当前备份匹配"""
         if not self._backup_auth_data:
             return True  # 无法验证，假设正确

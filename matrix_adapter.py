@@ -66,7 +66,6 @@ def _inject_astrbot_field_metadata() -> dict | None:
     以便 WebUI 能够显示 Matrix 适配器各配置项的说明。
     """
     try:
-
         metadata_path = Path(__file__).with_name("config_metadata.json")
         try:
             matrix_items = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -106,6 +105,7 @@ def _load_i18n_resources() -> dict[str, dict]:
 
     return i18n_data
 
+
 @register_platform_adapter(
     "matrix",
     "Matrix 协议适配器",
@@ -133,6 +133,11 @@ def _load_i18n_resources() -> dict[str, dict]:
         "matrix_e2ee_trust_on_first_use": False,
         "matrix_e2ee_key_backup": False,
         "matrix_e2ee_recovery_key": "",
+        # 密钥交换积极性配置
+        "matrix_e2ee_proactive_key_exchange": False,
+        "matrix_e2ee_key_maintenance_interval": 60,
+        "matrix_e2ee_otk_threshold_ratio": 33,
+        "matrix_e2ee_key_share_check_interval": 0,
     },
     adapter_display_name="Matrix",
     # NOTE: Matrix 协议不支持流式消息，消息编辑方式不可靠且会导致 agent 工具调用后无响应
@@ -251,6 +256,10 @@ class MatrixPlatformAdapter(
                     recovery_key=recovery_key,
                     trust_on_first_use=self._matrix_config.e2ee_trust_on_first_use,
                     password=self._matrix_config.password,
+                    proactive_key_exchange=self._matrix_config.e2ee_proactive_key_exchange,
+                    key_maintenance_interval=self._matrix_config.e2ee_key_maintenance_interval,
+                    otk_threshold_ratio=self._matrix_config.e2ee_otk_threshold_ratio,
+                    key_share_check_interval=self._matrix_config.e2ee_key_share_check_interval,
                 )
                 # 传递给 event_processor 用于解密
                 self.event_processor.e2ee_manager = self.e2ee_manager

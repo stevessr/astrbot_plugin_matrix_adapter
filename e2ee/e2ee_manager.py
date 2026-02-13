@@ -4,6 +4,7 @@ E2EE Manager - 端到端加密管理器
 整合 OlmMachine 和 HTTP 客户端，提供高层 E2EE 操作接口。
 """
 
+import asyncio
 from pathlib import Path
 from typing import Literal
 
@@ -55,6 +56,10 @@ class E2EEManager(
         recovery_key: str = "",
         trust_on_first_use: bool = False,
         password: str | None = None,
+        proactive_key_exchange: bool = False,
+        key_maintenance_interval: int = 60,
+        otk_threshold_ratio: int = 33,
+        key_share_check_interval: int = 0,
     ):
         """
         初始化 E2EE 管理器
@@ -70,6 +75,10 @@ class E2EEManager(
             recovery_key: 用户配置的恢复密钥 (base64)
             trust_on_first_use: 是否自动信任首次使用的设备
             password: 用户密码 (可选，用于 UIA)
+            proactive_key_exchange: 是否启用主动密钥交换
+            key_maintenance_interval: 一次性密钥自动补充的最小间隔（秒）
+            otk_threshold_ratio: 触发一次性密钥补充的服务器密钥数量比例（百分比）
+            key_share_check_interval: 定期主动检查并分发房间密钥的间隔（秒），0 表示禁用
         """
         self.client = client
         self.user_id = user_id
@@ -89,6 +98,12 @@ class E2EEManager(
         self.recovery_key = recovery_key
         self.trust_on_first_use = trust_on_first_use
 
+        # 密钥交换积极性配置
+        self.proactive_key_exchange = proactive_key_exchange
+        self.key_maintenance_interval = key_maintenance_interval
+        self.otk_threshold_ratio = max(1, min(100, otk_threshold_ratio))
+        self.key_share_check_interval = key_share_check_interval
+
         self._store: CryptoStore | None = None
         self._olm: OlmMachine | None = None
         self._verification = None  # SASVerification
@@ -102,11 +117,113 @@ class E2EEManager(
         self._room_members_cache_ttl_sec = 30.0
         # throttle one-time key maintenance to avoid frequent uploads
         self._last_otk_maintenance_ts = 0.0
+        # 定期密钥分发检查的任务和锁
+        self._key_share_check_task: asyncio.Task | None = None
+        self._key_share_check_lock = asyncio.Lock()
 
     @property
     def is_available(self) -> bool:
         """检查 E2EE 是否可用"""
         return VODOZEMAC_AVAILABLE
+
+    async def _start_key_share_check_task(self):
+        """
+        启动定期密钥分发检查任务
+        """
+        if self._key_share_check_task and not self._key_share_check_task.done():
+            return
+
+        async def _check_loop():
+            while self._initialized:
+                try:
+                    await asyncio.sleep(self.key_share_check_interval)
+                    if not self._initialized:
+                        break
+                    await self._proactive_check_key_sharing()
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.warning(f"定期密钥分发检查失败：{e}")
+
+        self._key_share_check_task = asyncio.create_task(_check_loop())
+
+    def stop_key_share_check_task(self):
+        """停止定期密钥分发检查任务"""
+        if self._key_share_check_task and not self._key_share_check_task.done():
+            self._key_share_check_task.cancel()
+            self._key_share_check_task = None
+            logger.debug("已停止定期密钥分发检查任务")
+
+    async def _proactive_check_key_sharing(self):
+        """主动检查并分发房间密钥"""
+        if not self._olm or not self._initialized:
+            return
+
+        async with self._key_share_check_lock:
+            try:
+                room_ids = self._olm.get_megolm_outbound_room_ids()
+                if not room_ids:
+                    return
+
+                affected_rooms = 0
+                affected_devices = 0
+
+                for room_id in room_ids:
+                    members = await self._get_room_members(room_id)
+                    if not members:
+                        continue
+
+                    session_info = self._olm.get_megolm_outbound_session_info(room_id)
+                    if not session_info:
+                        continue
+
+                    session_id, session_key = session_info
+
+                    # 检查缓存中已分享的设备数量
+                    shared_devices = self._room_key_share_cache.get(session_id, set())
+
+                    # 查询目标成员的设备密钥
+                    device_keys_query = {user_id: [] for user_id in members}
+                    response = await self.client.query_keys(device_keys_query)
+                    device_keys = response.get("device_keys", {})
+
+                    # 统计需要分发密钥的设备
+                    devices_to_send = []
+                    for user_id, user_devices in device_keys.items():
+                        for device_id, device_info in user_devices.items():
+                            keys = device_info.get("keys", {})
+                            curve_key = keys.get(f"ed25519:{device_id}") or keys.get(
+                                f"curve25519:{device_id}"
+                            )
+                            if not curve_key:
+                                continue
+
+                            cache_key = self._device_cache_key(
+                                user_id, device_id, curve_key
+                            )
+                            if cache_key not in shared_devices:
+                                devices_to_send.append(
+                                    (user_id, device_id, curve_key, device_info)
+                                )
+
+                    if devices_to_send:
+                        await self.ensure_room_keys_sent(
+                            room_id=room_id,
+                            members=members,
+                            session_id=session_id,
+                            session_key=session_key,
+                            reason="proactive_check",
+                        )
+                        affected_rooms += 1
+                        affected_devices += len(devices_to_send)
+
+                if affected_rooms > 0:
+                    logger.info(
+                        f"主动密钥分发检查完成：rooms={affected_rooms} devices={affected_devices}"
+                    )
+
+            except Exception as e:
+                logger.warning(f"主动密钥分发检查失败：{e}")
 
     async def initialize(self):
         """初始化 E2EE 组件"""
@@ -185,6 +302,13 @@ class E2EEManager(
 
             # 初始化完成后，尝试为自己的未验证设备发起验证
             await self._verify_untrusted_own_devices()
+
+            # 启动定期密钥分发检查任务
+            if self.key_share_check_interval > 0:
+                await self._start_key_share_check_task()
+                logger.info(
+                    f"已启动定期密钥分发检查任务，间隔：{self.key_share_check_interval} 秒"
+                )
 
             return True
 

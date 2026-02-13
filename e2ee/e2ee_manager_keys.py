@@ -138,7 +138,9 @@ class E2EEManagerKeysMixin:
 
             from ..constants import DEFAULT_ONE_TIME_KEYS_COUNT
 
-            min_threshold = max(1, DEFAULT_ONE_TIME_KEYS_COUNT // 3)
+            # 使用配置的阈值比例
+            threshold_ratio = getattr(self, "otk_threshold_ratio", 33) / 100.0
+            min_threshold = max(1, int(DEFAULT_ONE_TIME_KEYS_COUNT * threshold_ratio))
             if server_otk_count >= min_threshold:
                 return
 
@@ -146,7 +148,9 @@ class E2EEManagerKeysMixin:
 
             now = time.monotonic()
             last_ts = getattr(self, "_last_otk_maintenance_ts", 0.0)
-            if now - last_ts < 60:
+            # 使用配置的维护间隔
+            maintenance_interval = getattr(self, "key_maintenance_interval", 60)
+            if now - last_ts < maintenance_interval:
                 return
             self._last_otk_maintenance_ts = now
 

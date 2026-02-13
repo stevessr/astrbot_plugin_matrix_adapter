@@ -83,6 +83,24 @@ class MatrixConfig:
         # 如果为空，将自动生成新密钥并在日志中输出
         self.e2ee_recovery_key = self.config.get("matrix_e2ee_recovery_key", "")
 
+        # 密钥交换积极性配置
+        # 是否启用主动密钥交换（更积极地补充一次性密钥和分发房间密钥）
+        self.e2ee_proactive_key_exchange = self.config.get(
+            "matrix_e2ee_proactive_key_exchange", False
+        )
+        # 一次性密钥自动补充的最小间隔（秒），默认 60 秒
+        self.e2ee_key_maintenance_interval = self.config.get(
+            "matrix_e2ee_key_maintenance_interval", 60
+        )
+        # 触发一次性密钥补充的服务器密钥数量比例（百分比），默认 33
+        self.e2ee_otk_threshold_ratio = self.config.get(
+            "matrix_e2ee_otk_threshold_ratio", 33
+        )
+        # 定期主动检查并分发房间密钥的间隔（秒），默认 0（禁用）
+        self.e2ee_key_share_check_interval = self.config.get(
+            "matrix_e2ee_key_share_check_interval", 0
+        )
+
         # 媒体文件缓存目录从插件级别配置读取
         self.media_cache_dir = plugin_cfg.media_cache_dir
 
