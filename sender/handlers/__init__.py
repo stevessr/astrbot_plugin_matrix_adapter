@@ -8,6 +8,7 @@ from .location import send_location as send_location
 from .music import send_music as send_music
 from .plain import send_plain as send_plain
 from .poll import send_poll as send_poll
+from .poll import send_poll_response as send_poll_response
 from .rps import send_rps as send_rps
 from .shake import send_shake as send_shake
 from .share import send_share as send_share

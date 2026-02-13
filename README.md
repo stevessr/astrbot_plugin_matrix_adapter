@@ -218,6 +218,29 @@ await adapter.sender.send_poll(
 )
 ```
 
+### 响应投票
+
+Matrix 适配器暴露了 `MatrixSender.send_poll_response` 接口用于对投票进行响应：
+
+```python
+# 对某个投票进行投票（选择第一个选项）
+await adapter.sender.send_poll_response(
+    "!roomid:example.org",
+    poll_start_event_id="$poll_event_id:example.org",
+    answer_ids=["1"],  # 答案 ID 通常是 "1", "2", "3" 等字符串
+)
+```
+
+如果要选择多个选项（投票本身允许多选）：
+
+```python
+await adapter.sender.send_poll_response(
+    "!roomid:example.org",
+    poll_start_event_id="$poll_event_id:example.org",
+    answer_ids=["1", "3"],  # 选择第一个和第三个选项
+)
+```
+
 ### 删除消息
 
 Matrix 适配器暴露了 `MatrixSender.delete_message` 接口用于删除（撤回）消息：

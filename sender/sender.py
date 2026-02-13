@@ -131,6 +131,37 @@ class MatrixSender:
             fallback_html=fallback_html,
         )
 
+    async def send_poll_response(
+        self,
+        room_id: str,
+        poll_start_event_id: str,
+        answer_ids: list[str],
+        event_type: str = "org.matrix.msc3381.poll.response",
+        poll_key: str = "org.matrix.msc3381.poll.start",
+    ) -> dict | None:
+        """Send a response to an existing poll.
+
+        Args:
+            room_id: Room ID
+            poll_start_event_id: The event ID of the poll start event
+            answer_ids: List of answer IDs to vote for (e.g., ["1"] for first option)
+            event_type: Event type to use (m.poll.response or org.matrix.msc3381.poll.response)
+            poll_key: Poll key to use (m.poll or org.matrix.msc3381.poll.start)
+
+        Returns:
+            The response from the server, or None on failure
+        """
+        from ..sender.handlers import send_poll_response
+
+        return await send_poll_response(
+            self.client,
+            room_id,
+            poll_start_event_id,
+            answer_ids,
+            event_type=event_type,
+            poll_key=poll_key,
+        )
+
     async def delete_message(
         self,
         room_id: str,
