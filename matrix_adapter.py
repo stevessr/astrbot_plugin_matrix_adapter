@@ -221,7 +221,6 @@ class MatrixPlatformAdapter(
             user_id=self._matrix_config.user_id,
             store_path=self._matrix_config.store_path,
             on_token_invalid=self.auth.refresh_session,
-            storage_backend_config=self._matrix_config.storage_backend_config,
         )
 
         # Initialize event processor
@@ -229,7 +228,6 @@ class MatrixPlatformAdapter(
             client=self.client,
             user_id=self._matrix_config.user_id,
             startup_ts=self._startup_ts,
-            storage_backend_config=self._matrix_config.storage_backend_config,
         )
 
         # Initialize E2EE manager (if enabled)
@@ -262,7 +260,6 @@ class MatrixPlatformAdapter(
                     key_maintenance_interval=self._matrix_config.e2ee_key_maintenance_interval,
                     otk_threshold_ratio=self._matrix_config.e2ee_otk_threshold_ratio,
                     key_share_check_interval=self._matrix_config.e2ee_key_share_check_interval,
-                    storage_backend_config=self._matrix_config.storage_backend_config,
                 )
                 # 传递给 event_processor 用于解密
                 self.event_processor.e2ee_manager = self.e2ee_manager

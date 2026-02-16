@@ -13,7 +13,7 @@ from typing import Any
 
 from astrbot.api import logger
 
-from ..storage_backend import StorageBackendConfig
+from ..plugin_config import get_plugin_config
 from .storage import build_e2ee_data_store
 
 
@@ -41,7 +41,6 @@ class CryptoStore:
         user_id: str,
         device_id: str,
         *,
-        storage_backend_config: StorageBackendConfig,
         namespace_key: str | None = None,
     ):
         """
@@ -59,7 +58,7 @@ class CryptoStore:
         # 创建存储目录
         self.store_path.mkdir(parents=True, exist_ok=True)
         self._namespace_key = namespace_key or self.store_path.as_posix()
-        self.storage_backend_config = storage_backend_config
+        self.storage_backend_config = get_plugin_config().storage_backend_config
         self._data_store = build_e2ee_data_store(
             folder_path=self.store_path,
             namespace_key=self._namespace_key,

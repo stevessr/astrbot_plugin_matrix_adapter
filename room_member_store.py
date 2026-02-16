@@ -11,7 +11,8 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 
-from .storage_backend import MatrixFolderDataStore, StorageBackendConfig
+from .plugin_config import get_plugin_config
+from .storage_backend import MatrixFolderDataStore
 from .storage_paths import MatrixStoragePaths
 
 
@@ -21,8 +22,6 @@ class MatrixRoomMemberStore:
     def __init__(
         self,
         data_dir: Path | None = None,
-        *,
-        storage_backend_config: StorageBackendConfig,
     ) -> None:
         if data_dir is None:
             try:
@@ -33,7 +32,7 @@ class MatrixRoomMemberStore:
         self._rooms_dir.mkdir(parents=True, exist_ok=True)
         self._cache: dict[str, dict[str, Any]] = {}
 
-        self._storage_backend_config = storage_backend_config
+        self._storage_backend_config = get_plugin_config().storage_backend_config
         self._storage_backend = self._storage_backend_config.backend
         self._pgsql_dsn = self._storage_backend_config.pgsql_dsn
         self._pgsql_schema = self._storage_backend_config.pgsql_schema

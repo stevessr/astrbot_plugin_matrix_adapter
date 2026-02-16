@@ -137,7 +137,6 @@ class MatrixConfig:
                 user_id=self.user_id,
                 homeserver=self.homeserver,
                 store_path=self.store_path,
-                storage_backend_config=self.storage_backend_config,
             )
 
     def set_device_id(self, device_id: str):

@@ -10,7 +10,7 @@ SAS Verification - Matrix 设备验证流程
 from pathlib import Path
 from typing import Any, Literal
 
-from ..storage_backend import StorageBackendConfig
+from ..plugin_config import get_plugin_config
 from .device_store import DeviceStore
 from .verification_handlers_display import SASVerificationDisplayMixin
 from .verification_handlers_event import SASVerificationEventMixin
@@ -40,7 +40,6 @@ class SASVerification(
         olm_machine,
         store_path: Path,
         *,
-        storage_backend_config: StorageBackendConfig,
         namespace_key: str | None = None,
         auto_verify_mode: Literal[
             "auto_accept", "auto_reject", "manual"
@@ -57,10 +56,9 @@ class SASVerification(
 
         # 活跃的验证会话：transaction_id -> session_data
         self._sessions: dict[str, dict[str, Any]] = {}
-        self.storage_backend_config = storage_backend_config
+        self.storage_backend_config = get_plugin_config().storage_backend_config
         self.device_store = DeviceStore(
             store_path,
-            storage_backend_config=self.storage_backend_config,
             namespace_key=namespace_key,
         )
 

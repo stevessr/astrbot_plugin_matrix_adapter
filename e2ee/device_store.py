@@ -2,7 +2,7 @@ from pathlib import Path
 
 from astrbot.api import logger
 
-from ..storage_backend import StorageBackendConfig
+from ..plugin_config import get_plugin_config
 from .storage import build_e2ee_data_store
 
 
@@ -13,11 +13,10 @@ class DeviceStore:
         self,
         data_path: Path,
         *,
-        storage_backend_config: StorageBackendConfig,
         namespace_key: str | None = None,
     ):
         self.file_path = data_path / "trusted_devices.json"
-        self.storage_backend_config = storage_backend_config
+        self.storage_backend_config = get_plugin_config().storage_backend_config
         self._data_store = build_e2ee_data_store(
             folder_path=data_path,
             namespace_key=namespace_key or data_path.as_posix(),

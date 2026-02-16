@@ -5,7 +5,7 @@ from pathlib import Path
 from astrbot.api import logger
 
 from ..client.http_client import MatrixAPIError
-from ..storage_backend import StorageBackendConfig
+from ..plugin_config import get_plugin_config
 from .key_backup_crypto import CRYPTO_AVAILABLE
 from .storage import build_e2ee_data_store
 
@@ -27,7 +27,6 @@ class CrossSigning:
         olm_machine,
         password: str | None = None,
         *,
-        storage_backend_config: StorageBackendConfig,
         namespace_key: str | None = None,
     ):
         self.client = client
@@ -49,7 +48,7 @@ class CrossSigning:
         self._self_signing_priv = None
         self._user_signing_priv = None
 
-        self.storage_backend_config = storage_backend_config
+        self.storage_backend_config = get_plugin_config().storage_backend_config
 
         # 本地持久化存储（与 E2EE store 同目录）
         try:

@@ -12,9 +12,9 @@ from astrbot.api import logger
 
 from ..client.http_client import MatrixAPIError
 from ..constants import DEFAULT_TIMEOUT_MS_30000, DISPLAY_TRUNCATE_LENGTH_20
+from ..plugin_config import get_plugin_config
 from ..storage_backend import (
     MatrixFolderDataStore,
-    StorageBackendConfig,
     build_folder_namespace,
 )
 
@@ -34,8 +34,6 @@ class MatrixSyncManager:
         user_id: str | None = None,
         store_path: str | Path | None = None,
         on_token_invalid: Callable | None = None,
-        *,
-        storage_backend_config: StorageBackendConfig,
     ):
         """
         Initialize sync manager
@@ -49,7 +47,6 @@ class MatrixSyncManager:
             user_id: Matrix user ID
             store_path: Base storage path
             on_token_invalid: Callback to handle invalid token (e.g., refresh token)
-            storage_backend_config: Runtime storage backend configuration
         """
         self.client = client
         self.sync_timeout = sync_timeout
@@ -58,7 +55,7 @@ class MatrixSyncManager:
         self.user_id = user_id
         self.store_path = store_path
         self.on_token_invalid = on_token_invalid
-        self.storage_backend_config = storage_backend_config
+        self.storage_backend_config = get_plugin_config().storage_backend_config
         self.data_storage_backend = self.storage_backend_config.backend
         self.pgsql_dsn = self.storage_backend_config.pgsql_dsn
         self.pgsql_schema = self.storage_backend_config.pgsql_schema

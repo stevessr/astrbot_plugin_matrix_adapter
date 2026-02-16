@@ -5,6 +5,7 @@ Matrix auth token storage helpers.
 import json
 from pathlib import Path
 
+from ..plugin_config import get_plugin_config
 from ..storage_backend import (
     MatrixFolderDataStore,
     StorageBackendConfig,
@@ -44,10 +45,7 @@ class MatrixAuthStore:
         return self._get_storage_backend_config().backend
 
     def _get_storage_backend_config(self) -> StorageBackendConfig:
-        config_value = getattr(self.config, "storage_backend_config", None)
-        if isinstance(config_value, StorageBackendConfig):
-            return config_value
-        raise RuntimeError("MatrixConfig.storage_backend_config is required")
+        return get_plugin_config().storage_backend_config
 
     def _get_user_storage_dir(self) -> Path | None:
         if not self.user_id or not self.config.homeserver:

@@ -10,7 +10,8 @@ from typing import Literal
 
 from astrbot.api import logger
 
-from ..storage_backend import StorageBackendConfig, build_folder_namespace
+from ..plugin_config import get_plugin_config
+from ..storage_backend import build_folder_namespace
 from ..storage_paths import MatrixStoragePaths
 from .crypto_store import CryptoStore
 from .e2ee_manager_decrypt import E2EEManagerDecryptMixin
@@ -61,8 +62,6 @@ class E2EEManager(
         key_maintenance_interval: int = 60,
         otk_threshold_ratio: int = 33,
         key_share_check_interval: int = 0,
-        *,
-        storage_backend_config: StorageBackendConfig,
     ):
         """
         初始化 E2EE 管理器
@@ -82,7 +81,6 @@ class E2EEManager(
             key_maintenance_interval: 一次性密钥自动补充的最小间隔（秒）
             otk_threshold_ratio: 触发一次性密钥补充的服务器密钥数量比例（百分比）
             key_share_check_interval: 定期主动检查并分发房间密钥的间隔（秒），0 表示禁用
-            storage_backend_config: 运行时固定存储后端配置
         """
         self.client = client
         self.user_id = user_id
@@ -111,7 +109,7 @@ class E2EEManager(
         self.key_maintenance_interval = key_maintenance_interval
         self.otk_threshold_ratio = max(1, min(100, otk_threshold_ratio))
         self.key_share_check_interval = key_share_check_interval
-        self.storage_backend_config = storage_backend_config
+        self.storage_backend_config = get_plugin_config().storage_backend_config
         self.data_storage_backend = self.storage_backend_config.backend
         self.pgsql_dsn = self.storage_backend_config.pgsql_dsn
         self.pgsql_schema = self.storage_backend_config.pgsql_schema
@@ -250,7 +248,6 @@ class E2EEManager(
                 self.store_path,
                 self.user_id,
                 self.device_id,
-                storage_backend_config=self.storage_backend_config,
                 namespace_key=self._store_namespace,
             )
             self._olm = OlmMachine(self._store, self.user_id, self.device_id)
@@ -267,7 +264,6 @@ class E2EEManager(
                 device_id=self.device_id,
                 olm_machine=self._olm,
                 store_path=self.store_path,
-                storage_backend_config=self.storage_backend_config,
                 namespace_key=self._store_namespace,
                 auto_verify_mode=self.auto_verify_mode,
                 trust_on_first_use=self.trust_on_first_use,
@@ -294,7 +290,6 @@ class E2EEManager(
                 self.device_id,
                 self._olm,
                 self.password,
-                storage_backend_config=self.storage_backend_config,
                 namespace_key=self._store_namespace,
             )
 

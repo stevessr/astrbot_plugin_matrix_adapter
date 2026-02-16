@@ -10,9 +10,9 @@ from pathlib import Path
 
 from astrbot.api import logger
 
+from .plugin_config import get_plugin_config
 from .storage_backend import (
     MatrixFolderDataStore,
-    StorageBackendConfig,
     build_folder_namespace,
 )
 
@@ -32,8 +32,6 @@ class MatrixDeviceManager:
         user_id: str,
         homeserver: str,
         store_path: str | Path,
-        *,
-        storage_backend_config: StorageBackendConfig,
     ):
         """
         初始化设备管理器
@@ -49,7 +47,7 @@ class MatrixDeviceManager:
         self.homeserver = homeserver.rstrip("/")
 
         self.store_path = Path(store_path)
-        self._storage_backend_config = storage_backend_config
+        self._storage_backend_config = get_plugin_config().storage_backend_config
         self._storage_backend = self._storage_backend_config.backend
         self._pgsql_dsn = self._storage_backend_config.pgsql_dsn
         self._pgsql_schema = self._storage_backend_config.pgsql_schema
