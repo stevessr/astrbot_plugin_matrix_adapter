@@ -250,6 +250,32 @@ await adapter.sender.send_poll_response(
 )
 ```
 
+### 发送自定义消息（自定义事件）
+
+可以直接发送任意 Matrix 事件类型与内容：
+
+```python
+await adapter.sender.send_custom_message(
+    "!roomid:example.org",
+    event_type="m.room.message",
+    content={
+        "msgtype": "m.notice",
+        "body": "这是一个自定义内容消息",
+        "org.example.extra": {"foo": "bar"},
+    },
+)
+```
+
+也支持发送自定义事件类型（非 `m.room.message`）：
+
+```python
+await adapter.sender.send_custom_event(
+    "!roomid:example.org",
+    event_type="org.example.custom.event",
+    content={"hello": "world"},
+)
+```
+
 ### 删除消息
 
 Matrix 适配器暴露了 `MatrixSender.delete_message` 接口用于删除（撤回）消息：
