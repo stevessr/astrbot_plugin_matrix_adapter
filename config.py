@@ -2,11 +2,14 @@
 Matrix 配置与初始化组件
 """
 
+from pathlib import Path
+
 from astrbot.api import logger
 
 from .constants import DEFAULT_TIMEOUT_MS_30000
 from .device_manager import MatrixDeviceManager
 from .plugin_config import get_plugin_config
+from .storage_backend import StorageBackendConfig
 
 
 class MatrixConfig:
@@ -43,15 +46,6 @@ class MatrixConfig:
         # Only refresh_token is stored locally (auto-saved after login)
         self.refresh_token = self.config.get("matrix_refresh_token")
 
-        # Ensure these attributes exist for other components
-        # 目录路径从插件级别配置读取（而非适配器配置）
-        plugin_cfg = get_plugin_config()
-        self.store_path = plugin_cfg.store_path
-        self.storage_backend_config = plugin_cfg.storage_backend_config
-        self.data_storage_backend = self.storage_backend_config.backend
-        self.pgsql_dsn = self.storage_backend_config.pgsql_dsn
-        self.pgsql_schema = self.storage_backend_config.pgsql_schema
-        self.pgsql_table_prefix = self.storage_backend_config.pgsql_table_prefix
         self.auto_join_rooms = self.config.get("matrix_auto_join_rooms", True)
         self.sync_timeout = self.config.get(
             "matrix_sync_timeout", DEFAULT_TIMEOUT_MS_30000
@@ -70,8 +64,6 @@ class MatrixConfig:
         # E2EE 端到端加密配置（试验性）
         # 启用后 Bot 可以在加密房间中接收和发送消息
         self.enable_e2ee = self.config.get("matrix_enable_e2ee", False)
-        # E2EE 存储路径从插件级别配置读取
-        self.e2ee_store_path = plugin_cfg.e2ee_store_path
         # 自动验证模式：auto_accept (自动接受) / auto_reject (自动拒绝) / manual (手动)
         # 无论哪种模式都会打印详细的验证日志
         self.e2ee_auto_verify = self.config.get(
@@ -106,19 +98,6 @@ class MatrixConfig:
             "matrix_e2ee_key_share_check_interval", 0
         )
 
-        # 媒体文件缓存目录从插件级别配置读取
-        self.media_cache_dir = plugin_cfg.media_cache_dir
-
-        # Sticker 包同步配置（从插件级别配置读取）
-        self.sticker_auto_sync = plugin_cfg.sticker_auto_sync
-        self.sticker_sync_user_emotes = plugin_cfg.sticker_sync_user_emotes
-
-        # OAuth2 回调服务器监听端口（从插件级别配置读取）
-        self.oauth2_callback_port = plugin_cfg.oauth2_callback_port
-
-        # OAuth2 回调服务器监听主机地址（从插件级别配置读取）
-        self.oauth2_callback_host = plugin_cfg.oauth2_callback_host
-
         self._validate()
 
     @property
@@ -150,6 +129,54 @@ class MatrixConfig:
         self._ensure_device_manager()
         self._device_id = self._device_manager.reset_device_id()
         return self._device_id
+
+    @property
+    def store_path(self) -> Path:
+        return get_plugin_config().store_path
+
+    @property
+    def e2ee_store_path(self) -> Path:
+        return get_plugin_config().e2ee_store_path
+
+    @property
+    def media_cache_dir(self) -> Path:
+        return get_plugin_config().media_cache_dir
+
+    @property
+    def sticker_auto_sync(self) -> bool:
+        return get_plugin_config().sticker_auto_sync
+
+    @property
+    def sticker_sync_user_emotes(self) -> bool:
+        return get_plugin_config().sticker_sync_user_emotes
+
+    @property
+    def oauth2_callback_port(self) -> int:
+        return get_plugin_config().oauth2_callback_port
+
+    @property
+    def oauth2_callback_host(self) -> str:
+        return get_plugin_config().oauth2_callback_host
+
+    @property
+    def storage_backend_config(self) -> StorageBackendConfig:
+        return get_plugin_config().storage_backend_config
+
+    @property
+    def data_storage_backend(self) -> str:
+        return get_plugin_config().data_storage_backend
+
+    @property
+    def pgsql_dsn(self) -> str:
+        return get_plugin_config().pgsql_dsn
+
+    @property
+    def pgsql_schema(self) -> str:
+        return get_plugin_config().pgsql_schema
+
+    @property
+    def pgsql_table_prefix(self) -> str:
+        return get_plugin_config().pgsql_table_prefix
 
     def _validate(self):
         if not self.user_id and self.auth_method != "oauth2":

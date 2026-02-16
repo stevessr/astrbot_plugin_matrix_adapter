@@ -42,22 +42,19 @@ class MatrixReceiver:
         self,
         user_id: str,
         mxc_converter: callable = None,
-        bot_name: str = None,
+        bot_name: str = "MatrixBot",
         client=None,
-        matrix_config=None,
     ):
         self.user_id = user_id
         self.mxc_converter = mxc_converter
         self.bot_name = bot_name
         self.client = client  # MatrixHTTPClient instance needed for downloading files
-        self.matrix_config = matrix_config  # MatrixConfig instance for media settings
 
     def _get_media_cache_dir(self) -> Path:
         """获取媒体文件缓存目录"""
-        if self.matrix_config and hasattr(self.matrix_config, "media_cache_dir"):
-            cache_dir = Path(self.matrix_config.media_cache_dir)
-        else:
-            # 默认缓存目录
+        try:
+            cache_dir = Path(get_plugin_config().media_cache_dir)
+        except Exception:
             cache_dir = (
                 Path(astrbot_path.get_astrbot_data_path()) / "temp" / "matrix_media"
             )

@@ -206,7 +206,6 @@ class MatrixPlatformAdapter(
             lambda mxc: MatrixUtils.mxc_to_http(mxc, self._matrix_config.homeserver),
             bot_name=bot_name,
             client=self.client,  # 传递 client 用于下载图片
-            matrix_config=self._matrix_config,  # 传递配置用于媒体设置
         )
         self.event_handler = MatrixEventHandler(
             self.client, self._matrix_config.auto_join_rooms

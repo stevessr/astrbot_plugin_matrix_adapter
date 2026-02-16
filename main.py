@@ -37,7 +37,7 @@ class MatrixPlugin(Star):
             warmup_emoji_shortcodes(fetch_remote=False)
             logger.debug(
                 "Matrix 插件配置已加载：force_message_type="
-                f"{plugin_config.get('matrix_force_message_type', 'auto')}"
+                f"{plugin_cfg.force_message_type}"
             )
         except Exception as e:
             logger.error(
