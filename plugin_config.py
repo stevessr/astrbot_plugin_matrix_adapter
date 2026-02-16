@@ -92,6 +92,12 @@ class PluginConfig:
         self._pgsql_dsn: str = ""
         self._pgsql_schema: str = "public"
         self._pgsql_table_prefix: str = "matrix_store"
+        self._storage_backend_config: StorageBackendConfig = StorageBackendConfig.create(
+            backend=self._data_storage_backend,
+            pgsql_dsn=self._pgsql_dsn,
+            pgsql_schema=self._pgsql_schema,
+            pgsql_table_prefix=self._pgsql_table_prefix,
+        )
         # Emoji 短码转换配置
         self._emoji_shortcodes_enabled: bool = False
 
@@ -155,6 +161,13 @@ class PluginConfig:
                 extra={"plugin_tag": "matrix", "short_levelname": "WARN"},
             )
             self._data_storage_backend = "json"
+
+        self._storage_backend_config = StorageBackendConfig.create(
+            backend=self._data_storage_backend,
+            pgsql_dsn=self._pgsql_dsn,
+            pgsql_schema=self._pgsql_schema,
+            pgsql_table_prefix=self._pgsql_table_prefix,
+        )
 
         # Emoji 短码配置（bool）
         self._emoji_shortcodes_enabled = _normalize_bool(
@@ -234,12 +247,7 @@ class PluginConfig:
     @property
     def storage_backend_config(self) -> StorageBackendConfig:
         """运行时固定存储后端配置对象。"""
-        return StorageBackendConfig.create(
-            backend=self._data_storage_backend,
-            pgsql_dsn=self._pgsql_dsn,
-            pgsql_schema=self._pgsql_schema,
-            pgsql_table_prefix=self._pgsql_table_prefix,
-        )
+        return self._storage_backend_config
 
     @property
     def emoji_shortcodes_enabled(self) -> bool:

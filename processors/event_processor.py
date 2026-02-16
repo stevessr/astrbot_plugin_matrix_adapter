@@ -27,7 +27,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         client,
         user_id: str,
         startup_ts: int,
-        storage_backend_config: StorageBackendConfig | None = None,
+        storage_backend_config: StorageBackendConfig,
     ):
         """
         Initialize event processor

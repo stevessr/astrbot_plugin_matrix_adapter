@@ -12,9 +12,7 @@ from ..user_store import MatrixUserStore
 class MatrixEventProcessorMembers:
     """Mixin for membership updates and profile persistence."""
 
-    def _init_member_storage(
-        self, storage_backend_config: StorageBackendConfig | None = None
-    ):
+    def _init_member_storage(self, storage_backend_config: StorageBackendConfig):
         self.user_store = MatrixUserStore(
             storage_backend_config=storage_backend_config
         )

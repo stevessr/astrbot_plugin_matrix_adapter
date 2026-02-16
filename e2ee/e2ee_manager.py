@@ -61,11 +61,8 @@ class E2EEManager(
         key_maintenance_interval: int = 60,
         otk_threshold_ratio: int = 33,
         key_share_check_interval: int = 0,
-        storage_backend_config: StorageBackendConfig | None = None,
-        data_storage_backend: str = "json",
-        pgsql_dsn: str = "",
-        pgsql_schema: str = "public",
-        pgsql_table_prefix: str = "matrix_store",
+        *,
+        storage_backend_config: StorageBackendConfig,
     ):
         """
         初始化 E2EE 管理器
@@ -86,10 +83,6 @@ class E2EEManager(
             otk_threshold_ratio: 触发一次性密钥补充的服务器密钥数量比例（百分比）
             key_share_check_interval: 定期主动检查并分发房间密钥的间隔（秒），0 表示禁用
             storage_backend_config: 运行时固定存储后端配置
-            data_storage_backend: E2EE 本地状态存储后端（json/sqlite/pgsql）
-            pgsql_dsn: PostgreSQL DSN（当后端为 pgsql 时使用）
-            pgsql_schema: PostgreSQL schema
-            pgsql_table_prefix: PostgreSQL 表名前缀
         """
         self.client = client
         self.user_id = user_id
@@ -118,12 +111,7 @@ class E2EEManager(
         self.key_maintenance_interval = key_maintenance_interval
         self.otk_threshold_ratio = max(1, min(100, otk_threshold_ratio))
         self.key_share_check_interval = key_share_check_interval
-        self.storage_backend_config = storage_backend_config or StorageBackendConfig.create(
-            backend=data_storage_backend,
-            pgsql_dsn=pgsql_dsn,
-            pgsql_schema=pgsql_schema,
-            pgsql_table_prefix=pgsql_table_prefix,
-        )
+        self.storage_backend_config = storage_backend_config
         self.data_storage_backend = self.storage_backend_config.backend
         self.pgsql_dsn = self.storage_backend_config.pgsql_dsn
         self.pgsql_schema = self.storage_backend_config.pgsql_schema

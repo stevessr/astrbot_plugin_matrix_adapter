@@ -47,14 +47,7 @@ class MatrixAuthStore:
         config_value = getattr(self.config, "storage_backend_config", None)
         if isinstance(config_value, StorageBackendConfig):
             return config_value
-        return StorageBackendConfig.create(
-            backend=getattr(self.config, "data_storage_backend", "json"),
-            pgsql_dsn=getattr(self.config, "pgsql_dsn", ""),
-            pgsql_schema=getattr(self.config, "pgsql_schema", "public"),
-            pgsql_table_prefix=getattr(
-                self.config, "pgsql_table_prefix", "matrix_store"
-            ),
-        )
+        raise RuntimeError("MatrixConfig.storage_backend_config is required")
 
     def _get_user_storage_dir(self) -> Path | None:
         if not self.user_id or not self.config.homeserver:

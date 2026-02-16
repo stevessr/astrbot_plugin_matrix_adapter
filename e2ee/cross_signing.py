@@ -27,12 +27,8 @@ class CrossSigning:
         olm_machine,
         password: str | None = None,
         *,
-        storage_backend_config: StorageBackendConfig | None = None,
-        storage_backend: str = "json",
+        storage_backend_config: StorageBackendConfig,
         namespace_key: str | None = None,
-        pgsql_dsn: str = "",
-        pgsql_schema: str = "public",
-        pgsql_table_prefix: str = "matrix_store",
     ):
         self.client = client
         self.user_id = (
@@ -53,12 +49,7 @@ class CrossSigning:
         self._self_signing_priv = None
         self._user_signing_priv = None
 
-        self.storage_backend_config = storage_backend_config or StorageBackendConfig.create(
-            backend=storage_backend,
-            pgsql_dsn=pgsql_dsn,
-            pgsql_schema=pgsql_schema,
-            pgsql_table_prefix=pgsql_table_prefix,
-        )
+        self.storage_backend_config = storage_backend_config
 
         # 本地持久化存储（与 E2EE store 同目录）
         try:

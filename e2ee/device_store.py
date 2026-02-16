@@ -13,20 +13,11 @@ class DeviceStore:
         self,
         data_path: Path,
         *,
-        storage_backend_config: StorageBackendConfig | None = None,
-        storage_backend: str = "json",
+        storage_backend_config: StorageBackendConfig,
         namespace_key: str | None = None,
-        pgsql_dsn: str = "",
-        pgsql_schema: str = "public",
-        pgsql_table_prefix: str = "matrix_store",
     ):
         self.file_path = data_path / "trusted_devices.json"
-        self.storage_backend_config = storage_backend_config or StorageBackendConfig.create(
-            backend=storage_backend,
-            pgsql_dsn=pgsql_dsn,
-            pgsql_schema=pgsql_schema,
-            pgsql_table_prefix=pgsql_table_prefix,
-        )
+        self.storage_backend_config = storage_backend_config
         self._data_store = build_e2ee_data_store(
             folder_path=data_path,
             namespace_key=namespace_key or data_path.as_posix(),

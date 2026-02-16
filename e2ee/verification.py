@@ -40,12 +40,8 @@ class SASVerification(
         olm_machine,
         store_path: Path,
         *,
-        storage_backend_config: StorageBackendConfig | None = None,
-        storage_backend: str = "json",
+        storage_backend_config: StorageBackendConfig,
         namespace_key: str | None = None,
-        pgsql_dsn: str = "",
-        pgsql_schema: str = "public",
-        pgsql_table_prefix: str = "matrix_store",
         auto_verify_mode: Literal[
             "auto_accept", "auto_reject", "manual"
         ] = "auto_accept",
@@ -61,12 +57,7 @@ class SASVerification(
 
         # 活跃的验证会话：transaction_id -> session_data
         self._sessions: dict[str, dict[str, Any]] = {}
-        self.storage_backend_config = storage_backend_config or StorageBackendConfig.create(
-            backend=storage_backend,
-            pgsql_dsn=pgsql_dsn,
-            pgsql_schema=pgsql_schema,
-            pgsql_table_prefix=pgsql_table_prefix,
-        )
+        self.storage_backend_config = storage_backend_config
         self.device_store = DeviceStore(
             store_path,
             storage_backend_config=self.storage_backend_config,

@@ -34,11 +34,8 @@ class MatrixSyncManager:
         user_id: str | None = None,
         store_path: str | Path | None = None,
         on_token_invalid: Callable | None = None,
-        storage_backend_config: StorageBackendConfig | None = None,
-        data_storage_backend: str | None = None,
-        pgsql_dsn: str | None = None,
-        pgsql_schema: str = "public",
-        pgsql_table_prefix: str = "matrix_store",
+        *,
+        storage_backend_config: StorageBackendConfig,
     ):
         """
         Initialize sync manager
@@ -52,6 +49,7 @@ class MatrixSyncManager:
             user_id: Matrix user ID
             store_path: Base storage path
             on_token_invalid: Callback to handle invalid token (e.g., refresh token)
+            storage_backend_config: Runtime storage backend configuration
         """
         self.client = client
         self.sync_timeout = sync_timeout
@@ -60,12 +58,7 @@ class MatrixSyncManager:
         self.user_id = user_id
         self.store_path = store_path
         self.on_token_invalid = on_token_invalid
-        self.storage_backend_config = storage_backend_config or StorageBackendConfig.create(
-            backend=data_storage_backend,
-            pgsql_dsn=pgsql_dsn,
-            pgsql_schema=pgsql_schema,
-            pgsql_table_prefix=pgsql_table_prefix,
-        )
+        self.storage_backend_config = storage_backend_config
         self.data_storage_backend = self.storage_backend_config.backend
         self.pgsql_dsn = self.storage_backend_config.pgsql_dsn
         self.pgsql_schema = self.storage_backend_config.pgsql_schema
