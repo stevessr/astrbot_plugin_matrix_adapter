@@ -52,7 +52,7 @@
   "matrix_pgsql": {
     "description": "PostgreSQL 配置",
     "type": "object",
-    "condition": {"matrix_data_storage_backend": "pgsql"},
+    "condition": { "matrix_data_storage_backend": "pgsql" },
     "items": {
       "dsn": {
         "description": "PostgreSQL DSN",
