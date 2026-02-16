@@ -47,6 +47,10 @@ class MatrixConfig:
         # 目录路径从插件级别配置读取（而非适配器配置）
         plugin_cfg = get_plugin_config()
         self.store_path = plugin_cfg.store_path
+        self.data_storage_backend = plugin_cfg.data_storage_backend
+        self.pgsql_dsn = plugin_cfg.pgsql_dsn
+        self.pgsql_schema = plugin_cfg.pgsql_schema
+        self.pgsql_table_prefix = plugin_cfg.pgsql_table_prefix
         self.auto_join_rooms = self.config.get("matrix_auto_join_rooms", True)
         self.sync_timeout = self.config.get(
             "matrix_sync_timeout", DEFAULT_TIMEOUT_MS_30000
@@ -132,6 +136,10 @@ class MatrixConfig:
                 user_id=self.user_id,
                 homeserver=self.homeserver,
                 store_path=self.store_path,
+                storage_backend=self.data_storage_backend,
+                pgsql_dsn=self.pgsql_dsn,
+                pgsql_schema=self.pgsql_schema,
+                pgsql_table_prefix=self.pgsql_table_prefix,
             )
 
     def set_device_id(self, device_id: str):

@@ -5,6 +5,12 @@ Matrix auth token storage helpers.
 import json
 from pathlib import Path
 
+from ..storage_backend import (
+    MatrixFolderDataStore,
+    build_folder_namespace,
+    normalize_storage_backend,
+)
+
 
 class MatrixAuthStore:
     """Mixin providing token storage helpers."""
@@ -30,15 +36,93 @@ class MatrixAuthStore:
         )
         return str(Path("data") / f"matrix_auth_{sanitized_user}.json")
 
+    @staticmethod
+    def _auth_json_filename(_: str) -> str:
+        return "auth.json"
+
+    def _get_storage_backend(self) -> str:
+        return normalize_storage_backend(
+            getattr(self.config, "data_storage_backend", "json")
+        )
+
+    def _get_user_storage_dir(self) -> Path | None:
+        if not self.user_id or not self.config.homeserver:
+            return None
+        from ..storage_paths import MatrixStoragePaths
+
+        return MatrixStoragePaths.get_user_storage_dir(
+            self.config.store_path, self.config.homeserver, self.user_id
+        )
+
+    def _discover_single_user_storage_dir(self) -> Path | None:
+        from ..storage_paths import MatrixStoragePaths
+
+        base = Path(self.config.store_path)
+        hs_dir = MatrixStoragePaths.sanitize_homeserver(self.config.homeserver)
+        hs_path = base / hs_dir
+        if hs_path.exists() and hs_path.is_dir():
+            subdirs = [d for d in hs_path.iterdir() if d.is_dir()]
+            if len(subdirs) == 1:
+                return subdirs[0]
+        return None
+
+    def _build_auth_store(
+        self, user_storage_dir: Path, backend: str
+    ) -> MatrixFolderDataStore:
+        namespace = build_folder_namespace(user_storage_dir, Path(self.config.store_path))
+        try:
+            return MatrixFolderDataStore(
+                folder_path=user_storage_dir,
+                namespace_key=namespace,
+                backend=backend,
+                json_filename_resolver=self._auth_json_filename,
+                pgsql_dsn=getattr(self.config, "pgsql_dsn", ""),
+                pgsql_schema=getattr(self.config, "pgsql_schema", "public"),
+                pgsql_table_prefix=getattr(
+                    self.config, "pgsql_table_prefix", "matrix_store"
+                ),
+            )
+        except Exception as e:
+            self._log("info", f"Auth store backend {backend} init failed, fallback json: {e}")
+            return MatrixFolderDataStore(
+                folder_path=user_storage_dir,
+                namespace_key=namespace,
+                backend="json",
+                json_filename_resolver=self._auth_json_filename,
+            )
+
+    def _load_token_from_json_file(self) -> tuple[dict | None, str]:
+        path = self._get_token_store_path()
+
+        if not self.user_id:
+            discovered_dir = self._discover_single_user_storage_dir()
+            if discovered_dir is not None:
+                discovered_path = discovered_dir / "auth.json"
+                if discovered_path.exists():
+                    path = str(discovered_path)
+                    self._log("info", f"Auto-discovered auth file: {path}")
+
+        path_obj = Path(path)
+        if not path_obj.exists():
+            return None, path
+
+        with open(path_obj, encoding="utf-8") as f:
+            data = json.load(f)
+        return data, path
+
+    def _save_token_to_json_file(self, data: dict) -> str:
+        path = self._get_token_store_path()
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        return path
+
     def _save_token(self):
         """Save access token to disk."""
         if not self.access_token:
             return
 
         try:
-            path = self._get_token_store_path()
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
-
             data = {
                 "access_token": self.access_token,
                 "device_id": self.device_id,
@@ -53,37 +137,63 @@ class MatrixAuthStore:
             if self.client_secret:
                 data["client_secret"] = self.client_secret
 
-            with open(path, "w") as f:
-                json.dump(data, f, indent=2)
-            self._log("info", f"Saved auth token to {path}")
+            backend = self._get_storage_backend()
+            user_storage_dir = self._get_user_storage_dir()
+            if backend != "json" and user_storage_dir is not None:
+                store = self._build_auth_store(user_storage_dir, backend)
+                store.upsert("auth", data)
+                self._log(
+                    "info",
+                    (
+                        "Saved auth token "
+                        f"(backend={backend}, namespace={build_folder_namespace(user_storage_dir, Path(self.config.store_path))})"
+                    ),
+                )
+            else:
+                path = self._save_token_to_json_file(data)
+                self._log("info", f"Saved auth token to {path}")
         except Exception as e:
             self._log("error", f"Failed to save auth token: {e}")
 
     def _load_token(self) -> bool:
         """Load access token from disk."""
         try:
-            path = self._get_token_store_path()
+            backend = self._get_storage_backend()
+            data = None
+            source_desc = ""
 
-            if not self.user_id:
-                from ..storage_paths import MatrixStoragePaths
+            user_storage_dir = self._get_user_storage_dir()
+            discovered_dir: Path | None = None
+            if user_storage_dir is None and backend != "json":
+                discovered_dir = self._discover_single_user_storage_dir()
 
-                base = Path(self.config.store_path)
-                hs_dir = MatrixStoragePaths.sanitize_homeserver(self.config.homeserver)
-                hs_path = base / hs_dir
+            if backend != "json":
+                target_dir = user_storage_dir or discovered_dir
+                if target_dir is not None:
+                    store = self._build_auth_store(target_dir, backend)
+                    loaded = store.get("auth")
+                    if isinstance(loaded, dict):
+                        data = loaded
+                        source_desc = (
+                            f"backend={backend}, namespace={build_folder_namespace(target_dir, Path(self.config.store_path))}"
+                        )
 
-                if hs_path.exists() and hs_path.is_dir():
-                    subdirs = [d for d in hs_path.iterdir() if d.is_dir()]
-                    if len(subdirs) == 1:
-                        discovered_path = subdirs[0] / "auth.json"
-                        if discovered_path.exists():
-                            path = str(discovered_path)
-                            self._log("info", f"Auto-discovered auth file: {path}")
-
-            if not Path(path).exists():
-                return False
-
-            with open(path) as f:
-                data = json.load(f)
+            if data is None:
+                data, path = self._load_token_from_json_file()
+                if data is None:
+                    return False
+                source_desc = path
+                if backend != "json":
+                    target_dir = user_storage_dir or discovered_dir
+                    if target_dir is not None:
+                        try:
+                            store = self._build_auth_store(target_dir, backend)
+                            store.upsert("auth", data)
+                        except Exception as migrate_error:
+                            self._log(
+                                "info",
+                                f"Failed to migrate auth token to {backend}: {migrate_error}",
+                            )
 
             if data.get("home_server") != self.config.homeserver:
                 self._log(
@@ -108,7 +218,7 @@ class MatrixAuthStore:
             self.client_secret = data.get("client_secret")
 
             if self.access_token:
-                self._log("info", f"Loaded auth token from {path}")
+                self._log("info", f"Loaded auth token from {source_desc}")
                 return True
             return False
         except Exception as e:

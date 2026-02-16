@@ -4,20 +4,29 @@ Matrix room member store for persisting room member information.
 Stores member list and metadata under plugin data dir / rooms.
 """
 
-import json
+import time
 from pathlib import Path
 from typing import Any
 
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 
+from .plugin_config import get_plugin_config
+from .storage_backend import MatrixFolderDataStore
 from .storage_paths import MatrixStoragePaths
 
 
 class MatrixRoomMemberStore:
     """Persist room member lists and metadata."""
 
-    def __init__(self, data_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        data_dir: Path | None = None,
+        storage_backend: str | None = None,
+        pgsql_dsn: str | None = None,
+        pgsql_schema: str | None = None,
+        pgsql_table_prefix: str | None = None,
+    ) -> None:
         if data_dir is None:
             try:
                 data_dir = StarTools.get_data_dir("astrbot_plugin_matrix_adapter")
@@ -27,11 +36,44 @@ class MatrixRoomMemberStore:
         self._rooms_dir.mkdir(parents=True, exist_ok=True)
         self._cache: dict[str, dict[str, Any]] = {}
 
-    def _room_path(self, room_id: str) -> Path:
+        plugin_cfg = get_plugin_config()
+        self._storage_backend = storage_backend or plugin_cfg.data_storage_backend
+        self._pgsql_dsn = (
+            pgsql_dsn if pgsql_dsn is not None else plugin_cfg.pgsql_dsn
+        ) or ""
+        self._pgsql_schema = pgsql_schema or plugin_cfg.pgsql_schema
+        self._pgsql_table_prefix = pgsql_table_prefix or plugin_cfg.pgsql_table_prefix
+
+        self._store = self._build_store()
+
+    @staticmethod
+    def _json_filename(room_id: str) -> str:
         safe_room = MatrixStoragePaths.sanitize_username(room_id)
         if not safe_room:
             safe_room = "unknown"
-        return self._rooms_dir / f"{safe_room}.json"
+        return f"{safe_room}.json"
+
+    def _build_store(self) -> MatrixFolderDataStore:
+        try:
+            return MatrixFolderDataStore(
+                folder_path=self._rooms_dir,
+                namespace_key="rooms",
+                backend=self._storage_backend,
+                json_filename_resolver=self._json_filename,
+                pgsql_dsn=self._pgsql_dsn,
+                pgsql_schema=self._pgsql_schema,
+                pgsql_table_prefix=self._pgsql_table_prefix,
+            )
+        except Exception as e:
+            logger.warning(
+                f"初始化房间存储后端 {self._storage_backend} 失败，回退 json: {e}"
+            )
+            return MatrixFolderDataStore(
+                folder_path=self._rooms_dir,
+                namespace_key="rooms",
+                backend="json",
+                json_filename_resolver=self._json_filename,
+            )
 
     def get(self, room_id: str) -> dict[str, Any] | None:
         """Get room member data from storage."""
@@ -39,11 +81,8 @@ class MatrixRoomMemberStore:
             return None
         if room_id in self._cache:
             return self._cache[room_id]
-        path = self._room_path(room_id)
-        if not path.exists():
-            return None
         try:
-            data = json.loads(path.read_text())
+            data = self._store.get(room_id)
             if isinstance(data, dict):
                 self._cache[room_id] = data
                 return data
@@ -243,12 +282,10 @@ class MatrixRoomMemberStore:
                 existing["third_party_invites"] = third_party_invites
             if state_events is not None:
                 existing["state_events"] = state_events
-            existing["updated_at"] = int(Path(__file__).stat().st_mtime)
+            existing["updated_at"] = int(time.time())
 
-            path = self._room_path(room_id)
             try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(json.dumps(existing, ensure_ascii=False, indent=2))
+                self._store.upsert(room_id, existing)
                 self._cache[room_id] = existing
                 logger.info(f"已保存房间成员数据：{room_id} ({member_count} 个成员)")
             except Exception as e:
@@ -258,10 +295,8 @@ class MatrixRoomMemberStore:
         """Delete room member data from storage."""
         if not room_id:
             return
-        path = self._room_path(room_id)
         try:
-            if path.exists():
-                path.unlink()
+            self._store.delete(room_id)
             if room_id in self._cache:
                 del self._cache[room_id]
             logger.debug(f"Deleted room member data: {room_id}")

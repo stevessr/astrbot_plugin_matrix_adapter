@@ -4,12 +4,13 @@ Matrix Device ID 管理器
 """
 
 import base64
-import json
 import secrets
 import time
 from pathlib import Path
 
 from astrbot.api import logger
+
+from .storage_backend import MatrixFolderDataStore, build_folder_namespace
 
 
 class MatrixDeviceManager:
@@ -23,7 +24,14 @@ class MatrixDeviceManager:
     """
 
     def __init__(
-        self, user_id: str, homeserver: str, store_path: str | Path | None = None
+        self,
+        user_id: str,
+        homeserver: str,
+        store_path: str | Path | None = None,
+        storage_backend: str | None = None,
+        pgsql_dsn: str | None = None,
+        pgsql_schema: str | None = None,
+        pgsql_table_prefix: str | None = None,
     ):
         """
         初始化设备管理器
@@ -39,12 +47,19 @@ class MatrixDeviceManager:
         self.homeserver = homeserver.rstrip("/")
 
         # 如果未提供 store_path，从 plugin_config 获取
-        if store_path is None:
-            from .plugin_config import get_plugin_config
+        from .plugin_config import get_plugin_config
 
-            store_path = get_plugin_config().store_path
+        plugin_cfg = get_plugin_config()
+        if store_path is None:
+            store_path = plugin_cfg.store_path
 
         self.store_path = Path(store_path)
+        self._storage_backend = storage_backend or plugin_cfg.data_storage_backend
+        self._pgsql_dsn = (
+            pgsql_dsn if pgsql_dsn is not None else plugin_cfg.pgsql_dsn
+        ) or ""
+        self._pgsql_schema = pgsql_schema or plugin_cfg.pgsql_schema
+        self._pgsql_table_prefix = pgsql_table_prefix or plugin_cfg.pgsql_table_prefix
 
         # 使用新的存储路径逻辑
 
@@ -63,8 +78,36 @@ class MatrixDeviceManager:
         # 设备信息文件路径
 
         self.device_info_path = self.user_store_path / "device_info.json"
+        namespace = build_folder_namespace(self.user_store_path, self.store_path)
+        self._device_store = self._build_device_store(namespace)
 
         self._device_id: str | None = None
+
+    @staticmethod
+    def _device_json_filename(_: str) -> str:
+        return "device_info.json"
+
+    def _build_device_store(self, namespace: str) -> MatrixFolderDataStore:
+        try:
+            return MatrixFolderDataStore(
+                folder_path=self.user_store_path,
+                namespace_key=namespace,
+                backend=self._storage_backend,
+                json_filename_resolver=self._device_json_filename,
+                pgsql_dsn=self._pgsql_dsn,
+                pgsql_schema=self._pgsql_schema,
+                pgsql_table_prefix=self._pgsql_table_prefix,
+            )
+        except Exception as e:
+            logger.warning(
+                f"初始化设备存储后端 {self._storage_backend} 失败，回退 json: {e}"
+            )
+            return MatrixFolderDataStore(
+                folder_path=self.user_store_path,
+                namespace_key=namespace,
+                backend="json",
+                json_filename_resolver=self._device_json_filename,
+            )
 
     def _generate_device_id(self) -> str:
         """
@@ -110,11 +153,9 @@ class MatrixDeviceManager:
             设备信息字典，如果不存在则返回 None
         """
         try:
-            if not self.device_info_path.exists():
+            device_info = self._device_store.get("device_info")
+            if not isinstance(device_info, dict):
                 return None
-
-            with open(self.device_info_path) as f:
-                device_info = json.load(f)
 
             # 验证设备信息是否匹配当前用户和服务器
             if (
@@ -155,14 +196,10 @@ class MatrixDeviceManager:
                 "homeserver": self.homeserver,
                 "created_at": int(time.time() * 1000),  # 毫秒时间戳
             }
-            # 确保目录存在
-            Path(self.device_info_path).parent.mkdir(parents=True, exist_ok=True)
-
-            with open(self.device_info_path, "w") as f:
-                json.dump(device_info, f, indent=2)
+            self._device_store.upsert("device_info", device_info)
 
             logger.debug(
-                f"设备信息已保存到：{self.device_info_path}",
+                f"设备信息已保存（backend={self._storage_backend}）",
                 extra={"plugin_tag": "matrix", "short_levelname": "DBUG"},
             )
 
@@ -243,12 +280,11 @@ class MatrixDeviceManager:
     def delete_device_info(self):
         """删除存储的设备信息"""
         try:
-            if self.device_info_path.exists():
-                self.device_info_path.unlink()
-                logger.info(
-                    "已删除存储的设备信息",
-                    extra={"plugin_tag": "matrix", "short_levelname": "INFO"},
-                )
+            self._device_store.delete("device_info")
+            logger.info(
+                "已删除存储的设备信息",
+                extra={"plugin_tag": "matrix", "short_levelname": "INFO"},
+            )
             self._device_id = None
         except Exception as e:
             logger.error(

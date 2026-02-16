@@ -12,6 +12,11 @@ from astrbot.api import logger
 
 from ..client.http_client import MatrixAPIError
 from ..constants import DEFAULT_TIMEOUT_MS_30000, DISPLAY_TRUNCATE_LENGTH_20
+from ..storage_backend import (
+    MatrixFolderDataStore,
+    build_folder_namespace,
+    normalize_storage_backend,
+)
 
 
 class MatrixSyncManager:
@@ -29,6 +34,10 @@ class MatrixSyncManager:
         user_id: str | None = None,
         store_path: str | Path | None = None,
         on_token_invalid: Callable | None = None,
+        data_storage_backend: str | None = None,
+        pgsql_dsn: str | None = None,
+        pgsql_schema: str = "public",
+        pgsql_table_prefix: str = "matrix_store",
     ):
         """
         Initialize sync manager
@@ -50,14 +59,21 @@ class MatrixSyncManager:
         self.user_id = user_id
         self.store_path = store_path
         self.on_token_invalid = on_token_invalid
+        self.data_storage_backend = normalize_storage_backend(data_storage_backend)
+        self.pgsql_dsn = (pgsql_dsn or "").strip()
+        self.pgsql_schema = pgsql_schema
+        self.pgsql_table_prefix = pgsql_table_prefix
+        self._sync_data_store: MatrixFolderDataStore | None = None
 
         # 如果提供了新的路径参数，使用新逻辑生成路径
         if homeserver and user_id and store_path:
             from ..storage_paths import MatrixStoragePaths
 
-            self.sync_store_path = str(
-                MatrixStoragePaths.get_sync_file_path(store_path, homeserver, user_id)
+            user_storage_dir = MatrixStoragePaths.get_user_storage_dir(
+                store_path, homeserver, user_id
             )
+            self.sync_store_path = str(user_storage_dir / "sync.json")
+            self._sync_data_store = self._build_sync_data_store(user_storage_dir)
         else:
             # 回退到旧的路径参数
             self.sync_store_path = sync_store_path
@@ -83,14 +99,61 @@ class MatrixSyncManager:
         # Load saved sync token if available
         self._load_sync_token()
 
+    @staticmethod
+    def _sync_json_filename(_: str) -> str:
+        return "sync.json"
+
+    def _build_sync_data_store(
+        self, user_storage_dir: Path
+    ) -> MatrixFolderDataStore | None:
+        namespace = build_folder_namespace(
+            user_storage_dir, Path(self.store_path) if self.store_path else None
+        )
+        try:
+            return MatrixFolderDataStore(
+                folder_path=user_storage_dir,
+                namespace_key=namespace,
+                backend=self.data_storage_backend,
+                json_filename_resolver=self._sync_json_filename,
+                pgsql_dsn=self.pgsql_dsn,
+                pgsql_schema=self.pgsql_schema,
+                pgsql_table_prefix=self.pgsql_table_prefix,
+            )
+        except Exception as e:
+            logger.warning(f"初始化 sync 存储后端 {self.data_storage_backend} 失败，回退 json: {e}")
+            try:
+                return MatrixFolderDataStore(
+                    folder_path=user_storage_dir,
+                    namespace_key=namespace,
+                    backend="json",
+                    json_filename_resolver=self._sync_json_filename,
+                )
+            except Exception:
+                return None
+
     def _load_sync_token(self) -> None:
         """Load sync token from disk for resumption"""
+        if self._sync_data_store and self.data_storage_backend != "json":
+            try:
+                data = self._sync_data_store.get("sync_token")
+                if isinstance(data, dict):
+                    next_batch = data.get("next_batch")
+                    if next_batch:
+                        self._next_batch = next_batch
+                        self._first_sync = False
+                        logger.info(
+                            f"恢复同步令牌（backend={self.data_storage_backend}）：{self._next_batch[:DISPLAY_TRUNCATE_LENGTH_20]}..."
+                        )
+                        return
+            except Exception as e:
+                logger.warning(f"加载同步令牌失败（{self.data_storage_backend}）：{e}")
+
         if not self.sync_store_path:
             return
 
         try:
             if Path(self.sync_store_path).exists():
-                with open(self.sync_store_path) as f:
+                with open(self.sync_store_path, encoding="utf-8") as f:
                     data = json.load(f)
                     self._next_batch = data.get("next_batch")
                     if self._next_batch:
@@ -98,12 +161,31 @@ class MatrixSyncManager:
                         logger.info(
                             f"恢复同步令牌：{self._next_batch[:DISPLAY_TRUNCATE_LENGTH_20]}..."
                         )
+                        if self._sync_data_store and self.data_storage_backend != "json":
+                            try:
+                                self._sync_data_store.upsert("sync_token", data)
+                            except Exception as migrate_error:
+                                logger.debug(
+                                    f"迁移 sync token 到 {self.data_storage_backend} 失败：{migrate_error}"
+                                )
         except Exception as e:
             logger.warning(f"加载同步令牌失败：{e}")
 
     def _save_sync_token(self) -> None:
         """Save sync token to disk for future resumption"""
-        if not self.sync_store_path or not self._next_batch:
+        if not self._next_batch:
+            return
+
+        if self._sync_data_store and self.data_storage_backend != "json":
+            try:
+                self._sync_data_store.upsert(
+                    "sync_token", {"next_batch": self._next_batch}
+                )
+                return
+            except Exception as e:
+                logger.warning(f"保存同步令牌失败（{self.data_storage_backend}）：{e}")
+
+        if not self.sync_store_path:
             return
 
         try:
@@ -111,7 +193,7 @@ class MatrixSyncManager:
 
             sync_path = Path(self.sync_store_path)
             MatrixStoragePaths.ensure_directory(sync_path)
-            with open(sync_path, "w") as f:
+            with open(sync_path, "w", encoding="utf-8") as f:
                 json.dump({"next_batch": self._next_batch}, f)
         except Exception as e:
             logger.warning(f"保存同步令牌失败：{e}")

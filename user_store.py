@@ -4,20 +4,28 @@ Matrix user profile store for interacted accounts.
 Stores display name and avatar URL under plugin data dir / users.
 """
 
-import json
 from pathlib import Path
 from typing import Any
 
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 
+from .plugin_config import get_plugin_config
+from .storage_backend import MatrixFolderDataStore
 from .storage_paths import MatrixStoragePaths
 
 
 class MatrixUserStore:
     """Persist interacted user profiles (display name + avatar URL)."""
 
-    def __init__(self, data_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        data_dir: Path | None = None,
+        storage_backend: str | None = None,
+        pgsql_dsn: str | None = None,
+        pgsql_schema: str | None = None,
+        pgsql_table_prefix: str | None = None,
+    ) -> None:
         if data_dir is None:
             try:
                 data_dir = StarTools.get_data_dir("astrbot_plugin_matrix_adapter")
@@ -27,22 +35,52 @@ class MatrixUserStore:
         self._users_dir.mkdir(parents=True, exist_ok=True)
         self._cache: dict[str, dict[str, Any]] = {}
 
-    def _user_path(self, user_id: str) -> Path:
+        plugin_cfg = get_plugin_config()
+        self._storage_backend = storage_backend or plugin_cfg.data_storage_backend
+        self._pgsql_dsn = (
+            pgsql_dsn if pgsql_dsn is not None else plugin_cfg.pgsql_dsn
+        ) or ""
+        self._pgsql_schema = pgsql_schema or plugin_cfg.pgsql_schema
+        self._pgsql_table_prefix = pgsql_table_prefix or plugin_cfg.pgsql_table_prefix
+
+        self._store = self._build_store()
+
+    @staticmethod
+    def _json_filename(user_id: str) -> str:
         safe_user = MatrixStoragePaths.sanitize_username(user_id)
         if not safe_user:
             safe_user = "unknown"
-        return self._users_dir / f"{safe_user}.json"
+        return f"{safe_user}.json"
+
+    def _build_store(self) -> MatrixFolderDataStore:
+        try:
+            return MatrixFolderDataStore(
+                folder_path=self._users_dir,
+                namespace_key="users",
+                backend=self._storage_backend,
+                json_filename_resolver=self._json_filename,
+                pgsql_dsn=self._pgsql_dsn,
+                pgsql_schema=self._pgsql_schema,
+                pgsql_table_prefix=self._pgsql_table_prefix,
+            )
+        except Exception as e:
+            logger.warning(
+                f"初始化用户存储后端 {self._storage_backend} 失败，回退 json: {e}"
+            )
+            return MatrixFolderDataStore(
+                folder_path=self._users_dir,
+                namespace_key="users",
+                backend="json",
+                json_filename_resolver=self._json_filename,
+            )
 
     def get(self, user_id: str) -> dict[str, Any] | None:
         if not user_id:
             return None
         if user_id in self._cache:
             return self._cache[user_id]
-        path = self._user_path(user_id)
-        if not path.exists():
-            return None
         try:
-            data = json.loads(path.read_text())
+            data = self._store.get(user_id)
             if isinstance(data, dict):
                 self._cache[user_id] = data
                 return data
@@ -66,10 +104,8 @@ class MatrixUserStore:
         if not updated:
             return
 
-        path = self._user_path(user_id)
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(existing, ensure_ascii=False, indent=2))
+            self._store.upsert(user_id, existing)
             self._cache[user_id] = existing
         except Exception as e:
             logger.debug(f"Failed to save user profile {user_id}: {e}")

@@ -35,5 +35,37 @@
     "hint": "强制消息类型：auto（自动判断群聊/私聊）、private（全部私聊）、group（全部群聊）、stalk（写入对话并按群存档 JSONL）",
     "options": ["auto", "private", "group", "stalk"],
     "default": "auto"
+  },
+  "matrix_data_storage_backend": {
+    "description": "数据存储后端",
+    "type": "string",
+    "hint": "基础数据（users/rooms/auth/sync/device_info）存储后端：json / sqlite / pgsql",
+    "options": ["json", "sqlite", "pgsql"],
+    "default": "json"
+  },
+  "matrix_pgsql": {
+    "description": "PostgreSQL 配置",
+    "type": "object",
+    "condition": {"matrix_data_storage_backend": "pgsql"},
+    "items": {
+      "dsn": {
+        "description": "PostgreSQL DSN",
+        "type": "string",
+        "hint": "例如 postgresql://user:pass@127.0.0.1:5432/dbname",
+        "default": ""
+      },
+      "schema": {
+        "description": "PostgreSQL Schema",
+        "type": "string",
+        "hint": "pgsql 后端使用的 schema，默认 public",
+        "default": "public"
+      },
+      "table_prefix": {
+        "description": "PostgreSQL 表名前缀",
+        "type": "string",
+        "hint": "pgsql 后端生成表名时使用的前缀，默认 matrix_store",
+        "default": "matrix_store"
+      }
+    }
   }
 }

@@ -15,6 +15,9 @@ bleach>=6.0.0
 # 图片处理（用于图片压缩）
 Pillow>=10.0.0
 
+# PostgreSQL 存储后端（matrix_data_storage_backend=pgsql 时需要）
+psycopg[binary]>=3.1.18
+
 # AstrBot 核心依赖（由主项目提供，此处仅作参考）
 # astrbot-core
 # astrbot-api

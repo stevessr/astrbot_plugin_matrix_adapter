@@ -7,7 +7,10 @@
 from pathlib import Path
 from typing import Optional
 
+from astrbot.api import logger
 from astrbot.api.star import StarTools
+
+from .storage_backend import normalize_storage_backend
 
 
 def _get_default_data_dir() -> Path:
@@ -30,6 +33,22 @@ def _normalize_message_type(value, legacy_value) -> str:
     if isinstance(legacy_value, bool):
         return "private" if legacy_value else "auto"
     return "auto"
+
+
+def _normalize_pgsql_schema(value) -> str:
+    if isinstance(value, str):
+        normalized = value.strip()
+        if normalized:
+            return normalized
+    return "public"
+
+
+def _normalize_pgsql_table_prefix(value) -> str:
+    if isinstance(value, str):
+        normalized = value.strip()
+        if normalized:
+            return normalized
+    return "matrix_store"
 
 
 class PluginConfig:
@@ -62,6 +81,11 @@ class PluginConfig:
         self._sticker_sync_user_emotes: bool = False
         # 消息类型配置
         self._force_message_type: str = "auto"
+        # 基础数据存储后端（users/rooms/auth/sync/device_info）
+        self._data_storage_backend: str = "json"
+        self._pgsql_dsn: str = ""
+        self._pgsql_schema: str = "public"
+        self._pgsql_table_prefix: str = "matrix_store"
 
     def initialize(self, config: dict):
         """从配置字典初始化插件配置
@@ -91,6 +115,38 @@ class PluginConfig:
             config.get("matrix_force_message_type"),
             config.get("matrix_force_private_message"),
         )
+
+        # 数据存储后端配置
+        self._data_storage_backend = normalize_storage_backend(
+            config.get("matrix_data_storage_backend", "json")
+        )
+        pgsql_obj = config.get("matrix_pgsql")
+        pgsql_dsn = None
+        pgsql_schema = None
+        pgsql_table_prefix = None
+        if isinstance(pgsql_obj, dict):
+            pgsql_dsn = pgsql_obj.get("dsn")
+            pgsql_schema = pgsql_obj.get("schema")
+            pgsql_table_prefix = pgsql_obj.get("table_prefix")
+
+        # 兼容旧配置：matrix_pgsql_dsn / matrix_pgsql_schema / matrix_pgsql_table_prefix
+        if pgsql_dsn is None:
+            pgsql_dsn = config.get("matrix_pgsql_dsn", "")
+        if pgsql_schema is None:
+            pgsql_schema = config.get("matrix_pgsql_schema")
+        if pgsql_table_prefix is None:
+            pgsql_table_prefix = config.get("matrix_pgsql_table_prefix")
+
+        self._pgsql_dsn = str(pgsql_dsn or "").strip()
+        self._pgsql_schema = _normalize_pgsql_schema(pgsql_schema)
+        self._pgsql_table_prefix = _normalize_pgsql_table_prefix(pgsql_table_prefix)
+
+        if self._data_storage_backend == "pgsql" and not self._pgsql_dsn:
+            logger.warning(
+                "matrix_data_storage_backend=pgsql 但未配置 matrix_pgsql.dsn（或旧字段 matrix_pgsql_dsn），已回退到 json",
+                extra={"plugin_tag": "matrix", "short_levelname": "WARN"},
+            )
+            self._data_storage_backend = "json"
 
     @property
     def store_path(self) -> Path:
@@ -141,6 +197,26 @@ class PluginConfig:
     def force_private_message(self) -> bool:
         """兼容旧配置：是否将所有消息强制视为私聊"""
         return self._force_message_type == "private"
+
+    @property
+    def data_storage_backend(self) -> str:
+        """基础数据存储后端（json/sqlite/pgsql）"""
+        return self._data_storage_backend
+
+    @property
+    def pgsql_dsn(self) -> str:
+        """PostgreSQL DSN"""
+        return self._pgsql_dsn
+
+    @property
+    def pgsql_schema(self) -> str:
+        """PostgreSQL schema"""
+        return self._pgsql_schema
+
+    @property
+    def pgsql_table_prefix(self) -> str:
+        """PostgreSQL 表名前缀"""
+        return self._pgsql_table_prefix
 
 
 # 全局单例实例

@@ -221,6 +221,10 @@ class MatrixPlatformAdapter(
             user_id=self._matrix_config.user_id,
             store_path=self._matrix_config.store_path,
             on_token_invalid=self.auth.refresh_session,
+            data_storage_backend=self._matrix_config.data_storage_backend,
+            pgsql_dsn=self._matrix_config.pgsql_dsn,
+            pgsql_schema=self._matrix_config.pgsql_schema,
+            pgsql_table_prefix=self._matrix_config.pgsql_table_prefix,
         )
 
         # Initialize event processor
