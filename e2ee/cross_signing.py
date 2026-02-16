@@ -6,6 +6,7 @@ from astrbot.api import logger
 
 from ..client.http_client import MatrixAPIError
 from .key_backup_crypto import CRYPTO_AVAILABLE
+from .storage import build_e2ee_data_store
 
 
 class CrossSigning:
@@ -15,6 +16,8 @@ class CrossSigning:
     使用 vodozemac/ed25519 进行真正的签名操作
     """
 
+    _RECORD_CROSS_SIGNING = "cross_signing"
+
     def __init__(
         self,
         client,
@@ -22,6 +25,12 @@ class CrossSigning:
         device_id: str,
         olm_machine,
         password: str | None = None,
+        *,
+        storage_backend: str = "json",
+        namespace_key: str | None = None,
+        pgsql_dsn: str = "",
+        pgsql_schema: str = "public",
+        pgsql_table_prefix: str = "matrix_store",
     ):
         self.client = client
         self.user_id = (
@@ -42,11 +51,25 @@ class CrossSigning:
         self._self_signing_priv = None
         self._user_signing_priv = None
 
-        # 本地存储位置（与 E2EE store 同目录）
+        # 本地持久化存储（与 E2EE store 同目录）
         try:
-            self._storage_path = Path(self.olm.store.store_path) / "cross_signing.json"
+            store_path = Path(self.olm.store.store_path)
+            self._storage_store = build_e2ee_data_store(
+                folder_path=store_path,
+                namespace_key=namespace_key or store_path.as_posix(),
+                backend=storage_backend,
+                json_filename_resolver=self._json_filename_resolver,
+                pgsql_dsn=pgsql_dsn,
+                pgsql_schema=pgsql_schema,
+                pgsql_table_prefix=pgsql_table_prefix,
+                store_name="cross_signing",
+            )
         except Exception:
-            self._storage_path = None
+            self._storage_store = None
+
+    @staticmethod
+    def _json_filename_resolver(_: str) -> str:
+        return "cross_signing.json"
 
     async def initialize(self):
         """初始化交叉签名"""
@@ -177,10 +200,12 @@ class CrossSigning:
         return json.dumps(obj, sort_keys=True, separators=(",", ":"))
 
     def _load_local_keys(self):
-        if not self._storage_path or not self._storage_path.exists():
+        if not self._storage_store:
             return
         try:
-            data = json.loads(self._storage_path.read_text())
+            data = self._storage_store.get(self._RECORD_CROSS_SIGNING)
+            if not isinstance(data, dict):
+                return
             for k, attr in [
                 ("master", "_master_priv"),
                 ("self_signing", "_self_signing_priv"),
@@ -207,10 +232,9 @@ class CrossSigning:
             logger.debug("[E2EE-CrossSign] 读取本地交叉签名密钥失败，忽略并重新生成")
 
     def _save_local_keys(self):
-        if not self._storage_path:
+        if not self._storage_store:
             return
         try:
-            self._storage_path.parent.mkdir(parents=True, exist_ok=True)
             data = {
                 "master": {
                     "priv": self._b64(self._master_priv),
@@ -225,8 +249,9 @@ class CrossSigning:
                     "pub": self._user_signing_key,
                 },
             }
-            self._storage_path.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2)
+            self._storage_store.upsert(
+                self._RECORD_CROSS_SIGNING,
+                data,
             )
         except Exception as e:
             logger.debug(f"[E2EE-CrossSign] 保存本地交叉签名密钥失败：{e}")

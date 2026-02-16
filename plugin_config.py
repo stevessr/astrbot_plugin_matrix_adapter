@@ -87,7 +87,7 @@ class PluginConfig:
         self._sticker_sync_user_emotes: bool = False
         # 消息类型配置
         self._force_message_type: str = "auto"
-        # 基础数据存储后端（users/rooms/auth/sync/device_info）
+        # 数据存储后端（users/rooms/auth/sync/device_info + E2EE 本地状态）
         self._data_storage_backend: str = "json"
         self._pgsql_dsn: str = ""
         self._pgsql_schema: str = "public"
@@ -213,7 +213,7 @@ class PluginConfig:
 
     @property
     def data_storage_backend(self) -> str:
-        """基础数据存储后端（json/sqlite/pgsql）"""
+        """数据存储后端（json/sqlite/pgsql）"""
         return self._data_storage_backend
 
     @property

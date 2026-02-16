@@ -38,6 +38,12 @@ class SASVerification(
         device_id: str,
         olm_machine,
         store_path: Path,
+        *,
+        storage_backend: str = "json",
+        namespace_key: str | None = None,
+        pgsql_dsn: str = "",
+        pgsql_schema: str = "public",
+        pgsql_table_prefix: str = "matrix_store",
         auto_verify_mode: Literal[
             "auto_accept", "auto_reject", "manual"
         ] = "auto_accept",
@@ -53,7 +59,14 @@ class SASVerification(
 
         # 活跃的验证会话：transaction_id -> session_data
         self._sessions: dict[str, dict[str, Any]] = {}
-        self.device_store = DeviceStore(store_path)
+        self.device_store = DeviceStore(
+            store_path,
+            storage_backend=storage_backend,
+            namespace_key=namespace_key,
+            pgsql_dsn=pgsql_dsn,
+            pgsql_schema=pgsql_schema,
+            pgsql_table_prefix=pgsql_table_prefix,
+        )
 
     def initiate_verification(self, transaction_id: str, to_user: str, to_device: str):
         """记录主动发起的验证会话"""

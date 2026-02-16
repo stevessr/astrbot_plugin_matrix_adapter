@@ -10,6 +10,7 @@ from typing import Literal
 
 from astrbot.api import logger
 
+from ..storage_backend import build_folder_namespace
 from ..storage_paths import MatrixStoragePaths
 from .crypto_store import CryptoStore
 from .e2ee_manager_decrypt import E2EEManagerDecryptMixin
@@ -60,6 +61,10 @@ class E2EEManager(
         key_maintenance_interval: int = 60,
         otk_threshold_ratio: int = 33,
         key_share_check_interval: int = 0,
+        data_storage_backend: str = "json",
+        pgsql_dsn: str = "",
+        pgsql_schema: str = "public",
+        pgsql_table_prefix: str = "matrix_store",
     ):
         """
         初始化 E2EE 管理器
@@ -79,6 +84,10 @@ class E2EEManager(
             key_maintenance_interval: 一次性密钥自动补充的最小间隔（秒）
             otk_threshold_ratio: 触发一次性密钥补充的服务器密钥数量比例（百分比）
             key_share_check_interval: 定期主动检查并分发房间密钥的间隔（秒），0 表示禁用
+            data_storage_backend: E2EE 本地状态存储后端（json/sqlite/pgsql）
+            pgsql_dsn: PostgreSQL DSN（当后端为 pgsql 时使用）
+            pgsql_schema: PostgreSQL schema
+            pgsql_table_prefix: PostgreSQL 表名前缀
         """
         self.client = client
         self.user_id = user_id
@@ -87,8 +96,12 @@ class E2EEManager(
         self.password = password
 
         # 使用 MatrixStoragePaths 生成用户存储目录
+        self._store_base_path = Path(store_path)
         self.store_path = MatrixStoragePaths.get_user_storage_dir(
-            str(store_path), homeserver, user_id
+            str(self._store_base_path), homeserver, user_id
+        )
+        self._store_namespace = build_folder_namespace(
+            self.store_path, self._store_base_path
         )
 
         # Ensure the directory exists
@@ -103,6 +116,10 @@ class E2EEManager(
         self.key_maintenance_interval = key_maintenance_interval
         self.otk_threshold_ratio = max(1, min(100, otk_threshold_ratio))
         self.key_share_check_interval = key_share_check_interval
+        self.data_storage_backend = data_storage_backend
+        self.pgsql_dsn = (pgsql_dsn or "").strip()
+        self.pgsql_schema = pgsql_schema
+        self.pgsql_table_prefix = pgsql_table_prefix
 
         self._store: CryptoStore | None = None
         self._olm: OlmMachine | None = None
@@ -233,7 +250,16 @@ class E2EEManager(
 
         try:
             # 创建存储和加密机器
-            self._store = CryptoStore(self.store_path, self.user_id, self.device_id)
+            self._store = CryptoStore(
+                self.store_path,
+                self.user_id,
+                self.device_id,
+                storage_backend=self.data_storage_backend,
+                namespace_key=self._store_namespace,
+                pgsql_dsn=self.pgsql_dsn,
+                pgsql_schema=self.pgsql_schema,
+                pgsql_table_prefix=self.pgsql_table_prefix,
+            )
             self._olm = OlmMachine(self._store, self.user_id, self.device_id)
 
             # 上传设备密钥
@@ -248,6 +274,11 @@ class E2EEManager(
                 device_id=self.device_id,
                 olm_machine=self._olm,
                 store_path=self.store_path,
+                storage_backend=self.data_storage_backend,
+                namespace_key=self._store_namespace,
+                pgsql_dsn=self.pgsql_dsn,
+                pgsql_schema=self.pgsql_schema,
+                pgsql_table_prefix=self.pgsql_table_prefix,
                 auto_verify_mode=self.auto_verify_mode,
                 trust_on_first_use=self.trust_on_first_use,
             )
@@ -268,7 +299,16 @@ class E2EEManager(
                 store_path=str(self.store_path),
             )
             self._cross_signing = CrossSigning(
-                self.client, self.user_id, self.device_id, self._olm, self.password
+                self.client,
+                self.user_id,
+                self.device_id,
+                self._olm,
+                self.password,
+                storage_backend=self.data_storage_backend,
+                namespace_key=self._store_namespace,
+                pgsql_dsn=self.pgsql_dsn,
+                pgsql_schema=self.pgsql_schema,
+                pgsql_table_prefix=self.pgsql_table_prefix,
             )
 
             await self._key_backup.initialize()

@@ -45,7 +45,7 @@
   "matrix_data_storage_backend": {
     "description": "数据存储后端",
     "type": "string",
-    "hint": "基础数据（users/rooms/auth/sync/device_info）存储后端：json / sqlite / pgsql",
+    "hint": "数据存储后端（users/rooms/auth/sync/device_info + E2EE 本地状态）：json / sqlite / pgsql",
     "options": ["json", "sqlite", "pgsql"],
     "default": "json"
   },

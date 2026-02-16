@@ -30,10 +30,10 @@ class OlmMachineAccountMixin:
             except Exception as e:
                 logger.warning(f"恢复 Olm 账户失败（可能是密钥不匹配或数据损坏）：{e}")
                 logger.info("将创建新的 Olm 账户")
-                # 删除损坏的 pickle 文件
+                # 删除损坏的账户记录
                 try:
-                    self.store._account_file.unlink(missing_ok=True)
-                    logger.info("已删除损坏的账户文件")
+                    self.store.clear_account_pickle()
+                    logger.info("已删除损坏的账户记录")
                 except Exception as cleanup_e:
                     logger.warning(f"删除损坏文件失败：{cleanup_e}")
                 self._create_new_account()

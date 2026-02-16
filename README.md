@@ -65,7 +65,7 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 |--------|------|--------|------|
 | `matrix_media_cache_gc_days` | int | `0` | 媒体缓存清理天数，<=0 表示禁用 |
 | `matrix_emoji_shortcodes` | bool | `false` | 是否启用 `:smile:` / `:thumbsup:` 等 Emoji 短码转换 |
-| `matrix_data_storage_backend` | string | `json` | 基础数据（users/rooms/auth/sync/device_info）存储后端：`json` / `sqlite` / `pgsql` |
+| `matrix_data_storage_backend` | string | `json` | 数据存储后端（users/rooms/auth/sync/device_info + E2EE 本地状态）：`json` / `sqlite` / `pgsql` |
 | `matrix_pgsql` | object | 见下方 | 当后端为 `pgsql` 时使用的 PostgreSQL 配置对象 |
 
 说明：
@@ -78,7 +78,7 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 - `table_prefix`：默认 `matrix_store`
 
 说明：
-- `json`：保持原有按文件存储（每条记录一个 `.json`）。
+- `json`：保持原有按文件存储（每条记录一个 `.json`，E2EE 兼容旧 `olm_*.json`/`cross_signing.json`/`trusted_devices.json`）。
 - `sqlite`：按文件夹拆分为多个 `.db`（例如 `users/users.db`、`rooms/rooms.db`、`store/<homeserver>/<user>/<user>.db`）。
 - `pgsql`：按文件夹拆分为多张表（表名由文件夹路径稳定映射生成）。
 

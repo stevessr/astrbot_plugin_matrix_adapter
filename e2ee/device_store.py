@@ -1,29 +1,53 @@
-import json
 from pathlib import Path
 
 from astrbot.api import logger
 
+from .storage import build_e2ee_data_store
+
 
 class DeviceStore:
-    def __init__(self, data_path: Path):
+    _RECORD_TRUSTED_DEVICES = "trusted_devices"
+
+    def __init__(
+        self,
+        data_path: Path,
+        *,
+        storage_backend: str = "json",
+        namespace_key: str | None = None,
+        pgsql_dsn: str = "",
+        pgsql_schema: str = "public",
+        pgsql_table_prefix: str = "matrix_store",
+    ):
         self.file_path = data_path / "trusted_devices.json"
+        self._data_store = build_e2ee_data_store(
+            folder_path=data_path,
+            namespace_key=namespace_key or data_path.as_posix(),
+            backend=storage_backend,
+            json_filename_resolver=self._json_filename_resolver,
+            pgsql_dsn=pgsql_dsn,
+            pgsql_schema=pgsql_schema,
+            pgsql_table_prefix=pgsql_table_prefix,
+            store_name="trusted_devices",
+        )
         self._devices = self._load()
 
+    @staticmethod
+    def _json_filename_resolver(_: str) -> str:
+        return "trusted_devices.json"
+
     def _load(self) -> dict[str, str]:
-        if not self.file_path.exists():
-            return {}
         try:
-            with open(self.file_path) as f:
-                return json.load(f)
-        except (OSError, json.JSONDecodeError) as e:
+            data = self._data_store.get(self._RECORD_TRUSTED_DEVICES)
+            if isinstance(data, dict):
+                return data
+        except Exception as e:
             logger.error(f"Failed to load trusted devices: {e}")
-            return {}
+        return {}
 
     def _save(self):
         try:
-            with open(self.file_path, "w") as f:
-                json.dump(self._devices, f, indent=4)
-        except OSError as e:
+            self._data_store.upsert(self._RECORD_TRUSTED_DEVICES, self._devices)
+        except Exception as e:
             logger.error(f"Failed to save trusted devices: {e}")
 
     def add_device(self, user_id: str, device_id: str, fingerprint: str):

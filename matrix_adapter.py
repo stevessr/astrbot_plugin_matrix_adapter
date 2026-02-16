@@ -264,6 +264,10 @@ class MatrixPlatformAdapter(
                     key_maintenance_interval=self._matrix_config.e2ee_key_maintenance_interval,
                     otk_threshold_ratio=self._matrix_config.e2ee_otk_threshold_ratio,
                     key_share_check_interval=self._matrix_config.e2ee_key_share_check_interval,
+                    data_storage_backend=self._matrix_config.data_storage_backend,
+                    pgsql_dsn=self._matrix_config.pgsql_dsn,
+                    pgsql_schema=self._matrix_config.pgsql_schema,
+                    pgsql_table_prefix=self._matrix_config.pgsql_table_prefix,
                 )
                 # 传递给 event_processor 用于解密
                 self.event_processor.e2ee_manager = self.e2ee_manager
