@@ -51,6 +51,12 @@ def _normalize_pgsql_table_prefix(value) -> str:
     return "matrix_store"
 
 
+def _normalize_bool(value, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    return default
+
+
 class PluginConfig:
     """单例类，存储插件级别的配置"""
 
@@ -86,6 +92,8 @@ class PluginConfig:
         self._pgsql_dsn: str = ""
         self._pgsql_schema: str = "public"
         self._pgsql_table_prefix: str = "matrix_store"
+        # Emoji 短码转换配置
+        self._emoji_shortcodes_enabled: bool = False
 
     def initialize(self, config: dict):
         """从配置字典初始化插件配置
@@ -147,6 +155,11 @@ class PluginConfig:
                 extra={"plugin_tag": "matrix", "short_levelname": "WARN"},
             )
             self._data_storage_backend = "json"
+
+        # Emoji 短码配置（bool）
+        self._emoji_shortcodes_enabled = _normalize_bool(
+            config.get("matrix_emoji_shortcodes"), False
+        )
 
     @property
     def store_path(self) -> Path:
@@ -217,6 +230,16 @@ class PluginConfig:
     def pgsql_table_prefix(self) -> str:
         """PostgreSQL 表名前缀"""
         return self._pgsql_table_prefix
+
+    @property
+    def emoji_shortcodes_enabled(self) -> bool:
+        """是否启用 Emoji 短码转换"""
+        return self._emoji_shortcodes_enabled
+
+    @property
+    def data_dir(self) -> Path:
+        """插件数据目录"""
+        return self._data_dir or _get_default_data_dir()
 
 
 # 全局单例实例

@@ -2,6 +2,7 @@ from astrbot.api import logger
 from astrbot.api.message_components import Plain
 
 from ...constants import TEXT_TRUNCATE_LENGTH_50
+from ...utils.emoji_shortcodes import convert_emoji_shortcodes
 from ...utils.markdown_utils import markdown_to_html
 from ...utils.utils import MatrixUtils
 from .common import send_content
@@ -20,7 +21,8 @@ async def send_plain(
     use_notice: bool,
 ) -> None:
     msg_type = "m.notice" if use_notice else "m.text"
-    content = {"msgtype": msg_type, "body": segment.text}
+    text = convert_emoji_shortcodes(segment.text or "")
+    content = {"msgtype": msg_type, "body": text}
 
     if original_message_info and reply_to:
         orig_sender = original_message_info.get("sender", "")
@@ -35,10 +37,10 @@ async def send_plain(
         formatted_body = segment.formatted_body
     else:
         try:
-            formatted_body = markdown_to_html(segment.text)
+            formatted_body = markdown_to_html(text)
         except Exception as e:
             logger.warning(f"Failed to render markdown: {e}")
-            formatted_body = segment.text.replace("\n", "<br>")
+            formatted_body = text.replace("\n", "<br>")
 
     if hasattr(segment, "format") and segment.format:
         content["format"] = segment.format

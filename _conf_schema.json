@@ -36,6 +36,12 @@
     "options": ["auto", "private", "group", "stalk"],
     "default": "auto"
   },
+  "matrix_emoji_shortcodes": {
+    "description": "启用 Emoji 短码转换",
+    "type": "bool",
+    "hint": "启用后自动将 :smile:、:thumbsup: 等短码转换为 Emoji",
+    "default": false
+  },
   "matrix_data_storage_backend": {
     "description": "数据存储后端",
     "type": "string",

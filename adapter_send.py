@@ -7,6 +7,7 @@ from astrbot.api.event import MessageChain
 from astrbot.api.message_components import Plain, Reply
 
 from .constants import DEFAULT_TYPING_TIMEOUT_MS, MATRIX_HTML_FORMAT
+from .utils.emoji_shortcodes import convert_emoji_shortcodes
 from .utils.markdown_utils import markdown_to_html
 
 
@@ -73,7 +74,9 @@ class MatrixAdapterSendMixin:
                 else:
                     other_comps.append(seg)
 
-            merged_text = "".join(seg.text for seg in plain_comps)
+            merged_text = "".join(
+                convert_emoji_shortcodes(seg.text or "") for seg in plain_comps
+            )
 
             if merged_text or other_comps:
                 new_chain = []
@@ -136,7 +139,7 @@ class MatrixAdapterSendMixin:
     ):
         """发送单个消息段落"""
         if isinstance(segment, Plain):
-            text = segment.text
+            text = convert_emoji_shortcodes(segment.text or "")
             if any(x in text for x in ["**", "*", "`", "#", "- ", "> ", "[", "]("]) or (
                 reply_to and len(header_comps) > 0
             ):
