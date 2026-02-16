@@ -10,7 +10,7 @@ from typing import Literal
 
 from astrbot.api import logger
 
-from ..storage_backend import build_folder_namespace
+from ..storage_backend import StorageBackendConfig, build_folder_namespace
 from ..storage_paths import MatrixStoragePaths
 from .crypto_store import CryptoStore
 from .e2ee_manager_decrypt import E2EEManagerDecryptMixin
@@ -61,6 +61,7 @@ class E2EEManager(
         key_maintenance_interval: int = 60,
         otk_threshold_ratio: int = 33,
         key_share_check_interval: int = 0,
+        storage_backend_config: StorageBackendConfig | None = None,
         data_storage_backend: str = "json",
         pgsql_dsn: str = "",
         pgsql_schema: str = "public",
@@ -84,6 +85,7 @@ class E2EEManager(
             key_maintenance_interval: 一次性密钥自动补充的最小间隔（秒）
             otk_threshold_ratio: 触发一次性密钥补充的服务器密钥数量比例（百分比）
             key_share_check_interval: 定期主动检查并分发房间密钥的间隔（秒），0 表示禁用
+            storage_backend_config: 运行时固定存储后端配置
             data_storage_backend: E2EE 本地状态存储后端（json/sqlite/pgsql）
             pgsql_dsn: PostgreSQL DSN（当后端为 pgsql 时使用）
             pgsql_schema: PostgreSQL schema
@@ -116,10 +118,16 @@ class E2EEManager(
         self.key_maintenance_interval = key_maintenance_interval
         self.otk_threshold_ratio = max(1, min(100, otk_threshold_ratio))
         self.key_share_check_interval = key_share_check_interval
-        self.data_storage_backend = data_storage_backend
-        self.pgsql_dsn = (pgsql_dsn or "").strip()
-        self.pgsql_schema = pgsql_schema
-        self.pgsql_table_prefix = pgsql_table_prefix
+        self.storage_backend_config = storage_backend_config or StorageBackendConfig.create(
+            backend=data_storage_backend,
+            pgsql_dsn=pgsql_dsn,
+            pgsql_schema=pgsql_schema,
+            pgsql_table_prefix=pgsql_table_prefix,
+        )
+        self.data_storage_backend = self.storage_backend_config.backend
+        self.pgsql_dsn = self.storage_backend_config.pgsql_dsn
+        self.pgsql_schema = self.storage_backend_config.pgsql_schema
+        self.pgsql_table_prefix = self.storage_backend_config.pgsql_table_prefix
 
         self._store: CryptoStore | None = None
         self._olm: OlmMachine | None = None
@@ -254,11 +262,8 @@ class E2EEManager(
                 self.store_path,
                 self.user_id,
                 self.device_id,
-                storage_backend=self.data_storage_backend,
+                storage_backend_config=self.storage_backend_config,
                 namespace_key=self._store_namespace,
-                pgsql_dsn=self.pgsql_dsn,
-                pgsql_schema=self.pgsql_schema,
-                pgsql_table_prefix=self.pgsql_table_prefix,
             )
             self._olm = OlmMachine(self._store, self.user_id, self.device_id)
 
@@ -274,11 +279,8 @@ class E2EEManager(
                 device_id=self.device_id,
                 olm_machine=self._olm,
                 store_path=self.store_path,
-                storage_backend=self.data_storage_backend,
+                storage_backend_config=self.storage_backend_config,
                 namespace_key=self._store_namespace,
-                pgsql_dsn=self.pgsql_dsn,
-                pgsql_schema=self.pgsql_schema,
-                pgsql_table_prefix=self.pgsql_table_prefix,
                 auto_verify_mode=self.auto_verify_mode,
                 trust_on_first_use=self.trust_on_first_use,
             )
@@ -304,11 +306,8 @@ class E2EEManager(
                 self.device_id,
                 self._olm,
                 self.password,
-                storage_backend=self.data_storage_backend,
+                storage_backend_config=self.storage_backend_config,
                 namespace_key=self._store_namespace,
-                pgsql_dsn=self.pgsql_dsn,
-                pgsql_schema=self.pgsql_schema,
-                pgsql_table_prefix=self.pgsql_table_prefix,
             )
 
             await self._key_backup.initialize()

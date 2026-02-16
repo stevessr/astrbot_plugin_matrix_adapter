@@ -5,15 +5,22 @@ Matrix Event Processor - member/profile handlers.
 from astrbot.api import logger
 
 from ..room_member_store import MatrixRoomMemberStore
+from ..storage_backend import StorageBackendConfig
 from ..user_store import MatrixUserStore
 
 
 class MatrixEventProcessorMembers:
     """Mixin for membership updates and profile persistence."""
 
-    def _init_member_storage(self):
-        self.user_store = MatrixUserStore()
-        self.room_member_store = MatrixRoomMemberStore()
+    def _init_member_storage(
+        self, storage_backend_config: StorageBackendConfig | None = None
+    ):
+        self.user_store = MatrixUserStore(
+            storage_backend_config=storage_backend_config
+        )
+        self.room_member_store = MatrixRoomMemberStore(
+            storage_backend_config=storage_backend_config
+        )
 
     async def load_room_members_from_storage(self, room):
         """

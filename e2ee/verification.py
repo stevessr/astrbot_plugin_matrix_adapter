@@ -10,6 +10,7 @@ SAS Verification - Matrix 设备验证流程
 from pathlib import Path
 from typing import Any, Literal
 
+from ..storage_backend import StorageBackendConfig
 from .device_store import DeviceStore
 from .verification_handlers_display import SASVerificationDisplayMixin
 from .verification_handlers_event import SASVerificationEventMixin
@@ -39,6 +40,7 @@ class SASVerification(
         olm_machine,
         store_path: Path,
         *,
+        storage_backend_config: StorageBackendConfig | None = None,
         storage_backend: str = "json",
         namespace_key: str | None = None,
         pgsql_dsn: str = "",
@@ -59,13 +61,16 @@ class SASVerification(
 
         # 活跃的验证会话：transaction_id -> session_data
         self._sessions: dict[str, dict[str, Any]] = {}
-        self.device_store = DeviceStore(
-            store_path,
-            storage_backend=storage_backend,
-            namespace_key=namespace_key,
+        self.storage_backend_config = storage_backend_config or StorageBackendConfig.create(
+            backend=storage_backend,
             pgsql_dsn=pgsql_dsn,
             pgsql_schema=pgsql_schema,
             pgsql_table_prefix=pgsql_table_prefix,
+        )
+        self.device_store = DeviceStore(
+            store_path,
+            storage_backend_config=self.storage_backend_config,
+            namespace_key=namespace_key,
         )
 
     def initiate_verification(self, transaction_id: str, to_user: str, to_device: str):

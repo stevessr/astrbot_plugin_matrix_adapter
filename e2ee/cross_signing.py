@@ -5,6 +5,7 @@ from pathlib import Path
 from astrbot.api import logger
 
 from ..client.http_client import MatrixAPIError
+from ..storage_backend import StorageBackendConfig
 from .key_backup_crypto import CRYPTO_AVAILABLE
 from .storage import build_e2ee_data_store
 
@@ -26,6 +27,7 @@ class CrossSigning:
         olm_machine,
         password: str | None = None,
         *,
+        storage_backend_config: StorageBackendConfig | None = None,
         storage_backend: str = "json",
         namespace_key: str | None = None,
         pgsql_dsn: str = "",
@@ -51,17 +53,21 @@ class CrossSigning:
         self._self_signing_priv = None
         self._user_signing_priv = None
 
+        self.storage_backend_config = storage_backend_config or StorageBackendConfig.create(
+            backend=storage_backend,
+            pgsql_dsn=pgsql_dsn,
+            pgsql_schema=pgsql_schema,
+            pgsql_table_prefix=pgsql_table_prefix,
+        )
+
         # 本地持久化存储（与 E2EE store 同目录）
         try:
             store_path = Path(self.olm.store.store_path)
             self._storage_store = build_e2ee_data_store(
                 folder_path=store_path,
                 namespace_key=namespace_key or store_path.as_posix(),
-                backend=storage_backend,
+                storage_backend_config=self.storage_backend_config,
                 json_filename_resolver=self._json_filename_resolver,
-                pgsql_dsn=pgsql_dsn,
-                pgsql_schema=pgsql_schema,
-                pgsql_table_prefix=pgsql_table_prefix,
                 store_name="cross_signing",
             )
         except Exception:

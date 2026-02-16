@@ -14,8 +14,8 @@ from ..client.http_client import MatrixAPIError
 from ..constants import DEFAULT_TIMEOUT_MS_30000, DISPLAY_TRUNCATE_LENGTH_20
 from ..storage_backend import (
     MatrixFolderDataStore,
+    StorageBackendConfig,
     build_folder_namespace,
-    normalize_storage_backend,
 )
 
 
@@ -34,6 +34,7 @@ class MatrixSyncManager:
         user_id: str | None = None,
         store_path: str | Path | None = None,
         on_token_invalid: Callable | None = None,
+        storage_backend_config: StorageBackendConfig | None = None,
         data_storage_backend: str | None = None,
         pgsql_dsn: str | None = None,
         pgsql_schema: str = "public",
@@ -59,10 +60,16 @@ class MatrixSyncManager:
         self.user_id = user_id
         self.store_path = store_path
         self.on_token_invalid = on_token_invalid
-        self.data_storage_backend = normalize_storage_backend(data_storage_backend)
-        self.pgsql_dsn = (pgsql_dsn or "").strip()
-        self.pgsql_schema = pgsql_schema
-        self.pgsql_table_prefix = pgsql_table_prefix
+        self.storage_backend_config = storage_backend_config or StorageBackendConfig.create(
+            backend=data_storage_backend,
+            pgsql_dsn=pgsql_dsn,
+            pgsql_schema=pgsql_schema,
+            pgsql_table_prefix=pgsql_table_prefix,
+        )
+        self.data_storage_backend = self.storage_backend_config.backend
+        self.pgsql_dsn = self.storage_backend_config.pgsql_dsn
+        self.pgsql_schema = self.storage_backend_config.pgsql_schema
+        self.pgsql_table_prefix = self.storage_backend_config.pgsql_table_prefix
         self._sync_data_store: MatrixFolderDataStore | None = None
 
         # 如果提供了新的路径参数，使用新逻辑生成路径

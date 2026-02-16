@@ -10,7 +10,11 @@ from pathlib import Path
 
 from astrbot.api import logger
 
-from .storage_backend import MatrixFolderDataStore, build_folder_namespace
+from .storage_backend import (
+    MatrixFolderDataStore,
+    StorageBackendConfig,
+    build_folder_namespace,
+)
 
 
 class MatrixDeviceManager:
@@ -28,6 +32,7 @@ class MatrixDeviceManager:
         user_id: str,
         homeserver: str,
         store_path: str | Path | None = None,
+        storage_backend_config: StorageBackendConfig | None = None,
         storage_backend: str | None = None,
         pgsql_dsn: str | None = None,
         pgsql_schema: str | None = None,
@@ -54,12 +59,31 @@ class MatrixDeviceManager:
             store_path = plugin_cfg.store_path
 
         self.store_path = Path(store_path)
-        self._storage_backend = storage_backend or plugin_cfg.data_storage_backend
-        self._pgsql_dsn = (
-            pgsql_dsn if pgsql_dsn is not None else plugin_cfg.pgsql_dsn
-        ) or ""
-        self._pgsql_schema = pgsql_schema or plugin_cfg.pgsql_schema
-        self._pgsql_table_prefix = pgsql_table_prefix or plugin_cfg.pgsql_table_prefix
+        if storage_backend_config is not None:
+            self._storage_backend_config = storage_backend_config
+        elif any(
+            value is not None
+            for value in (
+                storage_backend,
+                pgsql_dsn,
+                pgsql_schema,
+                pgsql_table_prefix,
+            )
+        ):
+            self._storage_backend_config = StorageBackendConfig.create(
+                backend=storage_backend or plugin_cfg.data_storage_backend,
+                pgsql_dsn=(
+                    pgsql_dsn if pgsql_dsn is not None else plugin_cfg.pgsql_dsn
+                ),
+                pgsql_schema=pgsql_schema or plugin_cfg.pgsql_schema,
+                pgsql_table_prefix=pgsql_table_prefix or plugin_cfg.pgsql_table_prefix,
+            )
+        else:
+            self._storage_backend_config = plugin_cfg.storage_backend_config
+        self._storage_backend = self._storage_backend_config.backend
+        self._pgsql_dsn = self._storage_backend_config.pgsql_dsn
+        self._pgsql_schema = self._storage_backend_config.pgsql_schema
+        self._pgsql_table_prefix = self._storage_backend_config.pgsql_table_prefix
 
         # 使用新的存储路径逻辑
 

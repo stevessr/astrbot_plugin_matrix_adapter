@@ -13,6 +13,7 @@ from typing import Any
 
 from astrbot.api import logger
 
+from ..storage_backend import StorageBackendConfig
 from .storage import build_e2ee_data_store
 
 
@@ -40,6 +41,7 @@ class CryptoStore:
         user_id: str,
         device_id: str,
         *,
+        storage_backend_config: StorageBackendConfig | None = None,
         storage_backend: str = "json",
         namespace_key: str | None = None,
         pgsql_dsn: str = "",
@@ -61,14 +63,17 @@ class CryptoStore:
         # 创建存储目录
         self.store_path.mkdir(parents=True, exist_ok=True)
         self._namespace_key = namespace_key or self.store_path.as_posix()
-        self._data_store = build_e2ee_data_store(
-            folder_path=self.store_path,
-            namespace_key=self._namespace_key,
+        self.storage_backend_config = storage_backend_config or StorageBackendConfig.create(
             backend=storage_backend,
-            json_filename_resolver=self._json_filename_resolver,
             pgsql_dsn=pgsql_dsn,
             pgsql_schema=pgsql_schema,
             pgsql_table_prefix=pgsql_table_prefix,
+        )
+        self._data_store = build_e2ee_data_store(
+            folder_path=self.store_path,
+            namespace_key=self._namespace_key,
+            storage_backend_config=self.storage_backend_config,
+            json_filename_resolver=self._json_filename_resolver,
             store_name="crypto",
         )
 

@@ -7,8 +7,8 @@ from pathlib import Path
 
 from ..storage_backend import (
     MatrixFolderDataStore,
+    StorageBackendConfig,
     build_folder_namespace,
-    normalize_storage_backend,
 )
 
 
@@ -41,8 +41,19 @@ class MatrixAuthStore:
         return "auth.json"
 
     def _get_storage_backend(self) -> str:
-        return normalize_storage_backend(
-            getattr(self.config, "data_storage_backend", "json")
+        return self._get_storage_backend_config().backend
+
+    def _get_storage_backend_config(self) -> StorageBackendConfig:
+        config_value = getattr(self.config, "storage_backend_config", None)
+        if isinstance(config_value, StorageBackendConfig):
+            return config_value
+        return StorageBackendConfig.create(
+            backend=getattr(self.config, "data_storage_backend", "json"),
+            pgsql_dsn=getattr(self.config, "pgsql_dsn", ""),
+            pgsql_schema=getattr(self.config, "pgsql_schema", "public"),
+            pgsql_table_prefix=getattr(
+                self.config, "pgsql_table_prefix", "matrix_store"
+            ),
         )
 
     def _get_user_storage_dir(self) -> Path | None:
@@ -67,20 +78,19 @@ class MatrixAuthStore:
         return None
 
     def _build_auth_store(
-        self, user_storage_dir: Path, backend: str
+        self, user_storage_dir: Path, storage_backend_config: StorageBackendConfig
     ) -> MatrixFolderDataStore:
         namespace = build_folder_namespace(user_storage_dir, Path(self.config.store_path))
+        backend = storage_backend_config.backend
         try:
             return MatrixFolderDataStore(
                 folder_path=user_storage_dir,
                 namespace_key=namespace,
                 backend=backend,
                 json_filename_resolver=self._auth_json_filename,
-                pgsql_dsn=getattr(self.config, "pgsql_dsn", ""),
-                pgsql_schema=getattr(self.config, "pgsql_schema", "public"),
-                pgsql_table_prefix=getattr(
-                    self.config, "pgsql_table_prefix", "matrix_store"
-                ),
+                pgsql_dsn=storage_backend_config.pgsql_dsn,
+                pgsql_schema=storage_backend_config.pgsql_schema,
+                pgsql_table_prefix=storage_backend_config.pgsql_table_prefix,
             )
         except Exception as e:
             self._log("info", f"Auth store backend {backend} init failed, fallback json: {e}")
@@ -137,10 +147,11 @@ class MatrixAuthStore:
             if self.client_secret:
                 data["client_secret"] = self.client_secret
 
-            backend = self._get_storage_backend()
+            backend_config = self._get_storage_backend_config()
+            backend = backend_config.backend
             user_storage_dir = self._get_user_storage_dir()
             if backend != "json" and user_storage_dir is not None:
-                store = self._build_auth_store(user_storage_dir, backend)
+                store = self._build_auth_store(user_storage_dir, backend_config)
                 store.upsert("auth", data)
                 self._log(
                     "info",
@@ -158,7 +169,8 @@ class MatrixAuthStore:
     def _load_token(self) -> bool:
         """Load access token from disk."""
         try:
-            backend = self._get_storage_backend()
+            backend_config = self._get_storage_backend_config()
+            backend = backend_config.backend
             data = None
             source_desc = ""
 
@@ -170,7 +182,7 @@ class MatrixAuthStore:
             if backend != "json":
                 target_dir = user_storage_dir or discovered_dir
                 if target_dir is not None:
-                    store = self._build_auth_store(target_dir, backend)
+                    store = self._build_auth_store(target_dir, backend_config)
                     loaded = store.get("auth")
                     if isinstance(loaded, dict):
                         data = loaded
@@ -187,7 +199,7 @@ class MatrixAuthStore:
                     target_dir = user_storage_dir or discovered_dir
                     if target_dir is not None:
                         try:
-                            store = self._build_auth_store(target_dir, backend)
+                            store = self._build_auth_store(target_dir, backend_config)
                             store.upsert("auth", data)
                         except Exception as migrate_error:
                             self._log(

@@ -10,7 +10,7 @@ from typing import Optional
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 
-from .storage_backend import normalize_storage_backend
+from .storage_backend import StorageBackendConfig, normalize_storage_backend
 
 
 def _get_default_data_dir() -> Path:
@@ -230,6 +230,16 @@ class PluginConfig:
     def pgsql_table_prefix(self) -> str:
         """PostgreSQL 表名前缀"""
         return self._pgsql_table_prefix
+
+    @property
+    def storage_backend_config(self) -> StorageBackendConfig:
+        """运行时固定存储后端配置对象。"""
+        return StorageBackendConfig.create(
+            backend=self._data_storage_backend,
+            pgsql_dsn=self._pgsql_dsn,
+            pgsql_schema=self._pgsql_schema,
+            pgsql_table_prefix=self._pgsql_table_prefix,
+        )
 
     @property
     def emoji_shortcodes_enabled(self) -> bool:

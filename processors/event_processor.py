@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from astrbot.api import logger
 
 from ..constants import MAX_PROCESSED_MESSAGES_1000, TIMESTAMP_BUFFER_MS_1000
+from ..storage_backend import StorageBackendConfig
 from .event_processor_members import MatrixEventProcessorMembers
 from .event_processor_streams import MatrixEventProcessorStreams
 
@@ -26,6 +27,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         client,
         user_id: str,
         startup_ts: int,
+        storage_backend_config: StorageBackendConfig | None = None,
     ):
         """
         Initialize event processor
@@ -34,10 +36,12 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             client: Matrix HTTP client
             user_id: Bot's user ID
             startup_ts: Startup timestamp (milliseconds) for filtering historical messages
+            storage_backend_config: 运行时固定存储后端配置
         """
         self.client = client
         self.user_id = user_id
         self.startup_ts = startup_ts
+        self.storage_backend_config = storage_backend_config
 
         # Message deduplication
         self._processed_messages: set[str] = set()
@@ -57,7 +61,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         self.receipts: dict[str, dict] = {}
         self.device_lists: dict[str, set[str]] = {"changed": set(), "left": set()}
         self.one_time_keys_count: dict[str, int] = {}
-        self._init_member_storage()
+        self._init_member_storage(storage_backend_config=self.storage_backend_config)
 
     def set_message_callback(self, callback: Callable):
         """
