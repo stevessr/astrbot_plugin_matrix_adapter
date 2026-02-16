@@ -52,7 +52,7 @@ class StorageBackendConfig:
         pgsql_dsn: str | None = None,
         pgsql_schema: str | None = None,
         pgsql_table_prefix: str | None = None,
-    ) -> "StorageBackendConfig":
+    ) -> StorageBackendConfig:
         return cls(
             backend=normalize_storage_backend(backend),
             pgsql_dsn=(pgsql_dsn or "").strip(),
