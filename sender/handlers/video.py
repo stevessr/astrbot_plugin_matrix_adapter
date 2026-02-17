@@ -23,17 +23,18 @@ async def send_video(
 ) -> None:
     video_path = await segment.convert_to_file_path()
     filename = Path(video_path).name
-    video_data = await asyncio.to_thread(Path(video_path).read_bytes)
 
     content_type = mimetypes.guess_type(filename)[0] or "video/mp4"
-    video_size = len(video_data)
+    video_size = Path(video_path).stat().st_size
     if video_size > upload_size_limit:
         logger.warning(
             f"视频大小超过限制（{video_size} > {upload_size_limit}），上传可能失败"
         )
 
-    upload_resp = await client.upload_file(
-        data=video_data, content_type=content_type, filename=filename
+    upload_resp = await client.upload_file_path(
+        file_path=video_path,
+        content_type=content_type,
+        filename=filename,
     )
 
     content_uri = upload_resp["content_uri"]

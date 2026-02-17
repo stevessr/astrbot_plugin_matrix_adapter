@@ -5,13 +5,14 @@ Matrix 消息接收组件
 import asyncio
 import hashlib
 import mimetypes
+import string
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
-from astrbot.api.message_components import Image
+from astrbot.api.message_components import File, Image, Record, Video
 from astrbot.api.platform import AstrBotMessage
 from astrbot.core.platform.astrbot_message import MessageMember
 from astrbot.core.platform.message_type import MessageType
@@ -66,6 +67,7 @@ class MatrixReceiver:
         self.bot_name = bot_name
         self.client = client  # MatrixHTTPClient instance needed for downloading files
         self._media_download_tasks: dict[str, asyncio.Task[Path]] = {}
+        self._media_cache_index: dict[str, Path] = {}
 
     def _get_media_cache_dir(self) -> Path:
         """获取媒体文件缓存目录"""
@@ -81,8 +83,12 @@ class MatrixReceiver:
 
     def _should_auto_download_media(self, msgtype: str) -> bool:
         """检查是否应该自动下载该类型的媒体文件"""
-        # 默认自动下载图片、贴纸、视频、语音、文件
-        return msgtype in ["m.image", "m.sticker", "m.video", "m.audio", "m.file"]
+        if msgtype not in {"m.image", "m.sticker", "m.video", "m.audio", "m.file"}:
+            return False
+        try:
+            return get_plugin_config().is_media_auto_download_enabled(msgtype)
+        except Exception:
+            return True
 
     @staticmethod
     def _normalize_media_size(size_value) -> int | None:
@@ -131,6 +137,16 @@ class MatrixReceiver:
         return hashlib.md5(mxc_url.encode()).hexdigest()
 
     @staticmethod
+    def _extract_cache_key_from_path(path: Path) -> str | None:
+        name = path.name
+        if len(name) < 32:
+            return None
+        candidate = name[:32].lower()
+        if all(ch in string.hexdigits for ch in candidate):
+            return candidate
+        return None
+
+    @staticmethod
     def _guess_media_ext(filename: str | None, mimetype: str | None) -> str:
         if filename:
             suffix = Path(filename).suffix
@@ -164,9 +180,19 @@ class MatrixReceiver:
     def _find_existing_media_cache_file(
         self, cache_key: str, cache_dir: Path
     ) -> Path | None:
+        cached = self._media_cache_index.get(cache_key)
+        if cached:
+            try:
+                if cached.is_file() and cached.stat().st_size > 0:
+                    return cached
+            except Exception:
+                pass
+            self._media_cache_index.pop(cache_key, None)
+
         try:
             for path in cache_dir.glob(f"{cache_key}*"):
                 if path.is_file() and path.stat().st_size > 0:
+                    self._media_cache_index[cache_key] = path
                     return path
         except Exception:
             return None
@@ -209,6 +235,9 @@ class MatrixReceiver:
             temp_path.replace(cache_path)
 
         await asyncio.to_thread(_write)
+        cache_key = self._extract_cache_key_from_path(cache_path)
+        if cache_key:
+            self._media_cache_index[cache_key] = cache_path
 
     async def _download_media_file(
         self, mxc_url: str, filename: str = None, mimetype: str = None
@@ -240,11 +269,18 @@ class MatrixReceiver:
                 return resolved_cache_path
 
             logger.info(f"Downloading media file: {mxc_url}")
-            media_data = await self.client.download_file(
+            download_result = await self.client.download_file(
                 mxc_url,
                 allow_thumbnail_fallback=self._is_image_media(filename, mimetype),
+                output_path=resolved_cache_path,
             )
-            await self._write_cache_file(resolved_cache_path, media_data)
+            if isinstance(download_result, (bytes, bytearray)):
+                await self._write_cache_file(
+                    resolved_cache_path, bytes(download_result)
+                )
+            cache_key = self._extract_cache_key_from_path(resolved_cache_path)
+            if cache_key:
+                self._media_cache_index[cache_key] = resolved_cache_path
             logger.debug(f"Saved media file to cache: {resolved_cache_path}")
             return resolved_cache_path
 
@@ -304,6 +340,82 @@ class MatrixReceiver:
 
         return await self._run_download_task(encrypted_task_key, _download_and_decrypt)
 
+    async def _append_quoted_media_component(
+        self, chain: MessageChain, msgtype: str, content: dict
+    ) -> bool:
+        if not self._should_auto_download_media(msgtype):
+            return False
+
+        file_info = content.get("file")
+        mxc_url = content.get("url")
+        if not mxc_url and isinstance(file_info, dict):
+            mxc_url = file_info.get("url")
+        if not mxc_url:
+            return False
+
+        info = content.get("info", {})
+        mimetype = info.get("mimetype") if isinstance(info, dict) else None
+        size_bytes = self._extract_media_size(content)
+        if self._is_media_over_auto_download_limit(size_bytes):
+            if self.mxc_converter and not file_info:
+                http_url = self.mxc_converter(mxc_url)
+                if msgtype == "m.image":
+                    chain.chain.append(Image.fromURL(http_url))
+                    return True
+                if msgtype == "m.video":
+                    chain.chain.append(Video.fromURL(http_url))
+                    return True
+                if msgtype == "m.audio":
+                    chain.chain.append(Record.fromURL(http_url))
+                    return True
+                if msgtype == "m.file":
+                    filename = content.get("filename") or content.get(
+                        "body", "file.bin"
+                    )
+                    chain.chain.append(File(name=filename, url=http_url))
+                    return True
+            logger.debug(
+                f"Quoted media over auto-download limit, skip local download: {msgtype}"
+            )
+            return False
+
+        filename = content.get("filename")
+        if not filename:
+            default_name_map = {
+                "m.image": "image.jpg",
+                "m.video": "video.mp4",
+                "m.audio": "audio.mp3",
+                "m.file": "file.bin",
+            }
+            filename = content.get("body", default_name_map.get(msgtype, "media.bin"))
+
+        try:
+            if isinstance(file_info, dict):
+                cache_path = await self._download_encrypted_media_file(
+                    file_info, filename, mimetype
+                )
+            else:
+                cache_path = await self._download_media_file(
+                    mxc_url, filename, mimetype
+                )
+        except Exception as e:
+            logger.warning(f"Failed to download quoted media ({msgtype}): {e}")
+            return False
+
+        if msgtype == "m.image":
+            chain.chain.append(Image.fromFileSystem(str(cache_path)))
+            return True
+        if msgtype == "m.video":
+            chain.chain.append(Video.fromFileSystem(str(cache_path)))
+            return True
+        if msgtype == "m.audio":
+            chain.chain.append(Record.fromFileSystem(str(cache_path)))
+            return True
+        if msgtype == "m.file":
+            chain.chain.append(File(name=filename, file=str(cache_path)))
+            return True
+        return False
+
     def gc_media_cache(self, older_than_days: int | None = None) -> int:
         """清理媒体缓存，返回删除文件数"""
         cache_dir = self._get_media_cache_dir()
@@ -323,6 +435,9 @@ class MatrixReceiver:
                 if path.stat().st_mtime < cutoff:
                     path.unlink()
                     removed += 1
+                    cache_key = self._extract_cache_key_from_path(path)
+                    if cache_key:
+                        self._media_cache_index.pop(cache_key, None)
             except Exception as e:
                 logger.debug(f"清理媒体缓存失败：{path} ({e})")
 
@@ -411,69 +526,19 @@ class MatrixReceiver:
                         original_content = original_event.get("content", {})
                         original_msgtype = original_content.get("msgtype")
 
-                        # 如果引用的消息是图片，下载并添加到消息链
-                        if (
-                            original_msgtype == "m.image"
-                            and self._should_auto_download_media("m.image")
-                        ):
-                            original_file_info = original_content.get("file")
-                            original_info = original_content.get("info", {})
-                            original_mxc_url = original_content.get("url")
-                            if not original_mxc_url and isinstance(
-                                original_file_info, dict
-                            ):
-                                original_mxc_url = original_file_info.get("url")
-                            original_mimetype = (
-                                original_info.get("mimetype")
-                                if isinstance(original_info, dict)
-                                else None
+                        if original_msgtype in {
+                            "m.image",
+                            "m.video",
+                            "m.audio",
+                            "m.file",
+                        }:
+                            rendered = await self._append_quoted_media_component(
+                                chain, original_msgtype, original_content
                             )
-                            original_size = self._extract_media_size(original_content)
-                            if original_mxc_url:
-                                if self._is_media_over_auto_download_limit(
-                                    original_size
-                                ):
-                                    if self.mxc_converter and not original_file_info:
-                                        chain.chain.append(
-                                            Image.fromURL(
-                                                self.mxc_converter(original_mxc_url)
-                                            )
-                                        )
-                                    logger.debug(
-                                        "Quoted image exceeds auto-download size limit, "
-                                        "skipping local download"
-                                    )
-                                else:
-                                    try:
-                                        if isinstance(original_file_info, dict):
-                                            cache_path = await self._download_encrypted_media_file(
-                                                original_file_info,
-                                                original_content.get("filename")
-                                                or original_content.get(
-                                                    "body", "image.jpg"
-                                                ),
-                                                original_mimetype,
-                                            )
-                                        else:
-                                            cache_path = (
-                                                await self._download_media_file(
-                                                    original_mxc_url,
-                                                    original_content.get(
-                                                        "body", "image.jpg"
-                                                    ),
-                                                    original_mimetype,
-                                                )
-                                            )
-                                        chain.chain.append(
-                                            Image.fromFileSystem(str(cache_path))
-                                        )
-                                        logger.debug(
-                                            f"Added quoted image to chain: {cache_path}"
-                                        )
-                                    except Exception as img_err:
-                                        logger.warning(
-                                            f"Failed to download quoted image: {img_err}"
-                                        )
+                            if rendered:
+                                logger.debug(
+                                    f"Added quoted media to chain: msgtype={original_msgtype}"
+                                )
                 except Exception as e:
                     logger.debug(f"Could not fetch original event for reply: {e}")
 

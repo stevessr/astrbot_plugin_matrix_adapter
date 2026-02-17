@@ -15,13 +15,43 @@
     "description": "媒体缓存清理天数",
     "type": "int",
     "hint": "清理超过指定天数未使用的媒体缓存，<=0 表示禁用",
-    "default": 0
+    "default": 30
   },
   "matrix_media_auto_download_max_bytes": {
     "description": "媒体自动下载大小上限（字节）",
     "type": "int",
     "hint": "当收到媒体消息时，超过该大小将跳过自动下载并尽量保留 URL（<=0 表示不限制）",
     "default": 0
+  },
+  "matrix_media_auto_download_image": {
+    "description": "自动下载图片",
+    "type": "bool",
+    "hint": "是否自动下载 Matrix 图片消息（m.image）",
+    "default": true
+  },
+  "matrix_media_auto_download_video": {
+    "description": "自动下载视频",
+    "type": "bool",
+    "hint": "是否自动下载 Matrix 视频消息（m.video）",
+    "default": true
+  },
+  "matrix_media_auto_download_audio": {
+    "description": "自动下载语音",
+    "type": "bool",
+    "hint": "是否自动下载 Matrix 音频消息（m.audio）",
+    "default": true
+  },
+  "matrix_media_auto_download_file": {
+    "description": "自动下载文件",
+    "type": "bool",
+    "hint": "是否自动下载 Matrix 文件消息（m.file）",
+    "default": true
+  },
+  "matrix_media_auto_download_sticker": {
+    "description": "自动下载贴纸",
+    "type": "bool",
+    "hint": "是否自动下载 Matrix 贴纸消息（m.sticker）",
+    "default": true
   },
   "matrix_sticker_auto_sync": {
     "description": "自动同步 Sticker 包",

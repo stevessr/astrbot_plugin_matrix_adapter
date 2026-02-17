@@ -1,4 +1,3 @@
-import asyncio
 from mimetypes import guess_type
 from pathlib import Path
 
@@ -25,18 +24,18 @@ async def send_file(
         logger.warning("文件消息没有可用的文件路径或下载失败")
         return
 
-    file_data = await asyncio.to_thread(Path(file_path).read_bytes)
-
     filename = segment.name or Path(file_path).name
     # 根据 Matrix 规范，应该使用正确的 MIME 类型
     content_type = guess_type(filename)[0] or "application/octet-stream"
-    file_size = len(file_data)
+    file_size = Path(file_path).stat().st_size
     size_limit = upload_size_limit or DEFAULT_MAX_UPLOAD_SIZE_BYTES
     if file_size > size_limit:
         logger.warning(f"文件大小超过限制（{file_size} > {size_limit}），上传可能失败")
 
-    upload_resp = await client.upload_file(
-        data=file_data, content_type=content_type, filename=filename
+    upload_resp = await client.upload_file_path(
+        file_path=file_path,
+        content_type=content_type,
+        filename=filename,
     )
 
     content_uri = upload_resp["content_uri"]

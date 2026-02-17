@@ -1,5 +1,4 @@
 import mimetypes
-import os
 import uuid
 from pathlib import Path
 
@@ -8,6 +7,7 @@ from astrbot.api.message_components import Music
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 from astrbot.core.utils.io import download_file
 
+from ...constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES
 from .common import send_content
 
 
@@ -20,6 +20,7 @@ async def send_music(
     use_thread: bool,
     is_encrypted_room: bool,
     e2ee_manager,
+    upload_size_limit: int | None = None,
 ) -> None:
     title = segment.title or ""
     url = segment.url or ""
@@ -27,27 +28,30 @@ async def send_music(
     image = segment.image or ""
 
     if audio:
+        size_limit = upload_size_limit or DEFAULT_MAX_UPLOAD_SIZE_BYTES
         if audio.startswith("file:///"):
-            file_path = audio[8:]
+            file_path = Path(audio[8:])
         elif audio.startswith("http://") or audio.startswith("https://"):
             ext = Path(audio).suffix or ".mp3"
-            temp_dir = os.path.join(get_astrbot_data_path(), "temp")
-            os.makedirs(temp_dir, exist_ok=True)
-            file_path = os.path.join(temp_dir, f"music_{uuid.uuid4().hex}{ext}")
-            await download_file(audio, file_path)
+            temp_dir = Path(get_astrbot_data_path()) / "temp"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            file_path = temp_dir / f"music_{uuid.uuid4().hex}{ext}"
+            await download_file(audio, str(file_path))
         else:
-            file_path = audio
+            file_path = Path(audio)
 
-        if not os.path.exists(file_path):
+        if not file_path.exists():
             logger.warning(f"音乐文件不存在：{file_path}")
         else:
-            filename = Path(file_path).name
-            with open(file_path, "rb") as f:
-                audio_data = f.read()
-
+            filename = file_path.name
             content_type = mimetypes.guess_type(filename)[0] or "audio/mpeg"
-            upload_resp = await client.upload_file(
-                data=audio_data, content_type=content_type, filename=filename
+            audio_size = file_path.stat().st_size
+            if audio_size > size_limit:
+                logger.warning(f"音乐文件超过大小限制（{audio_size} > {size_limit}）")
+            upload_resp = await client.upload_file_path(
+                file_path=file_path,
+                content_type=content_type,
+                filename=filename,
             )
             content_uri = upload_resp["content_uri"]
             body = title or filename
@@ -55,7 +59,7 @@ async def send_music(
                 "msgtype": "m.audio",
                 "body": body,
                 "url": content_uri,
-                "info": {"mimetype": content_type, "size": len(audio_data)},
+                "info": {"mimetype": content_type, "size": audio_size},
             }
             await send_content(
                 client,

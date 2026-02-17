@@ -6,6 +6,7 @@ Provides file upload and download methods
 import asyncio
 import hashlib
 import time
+from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -34,6 +35,23 @@ class MediaMixin:
     def _build_media_upload_cache_key(data: bytes, content_type: str) -> str:
         digest = hashlib.sha256(data).hexdigest()
         return f"{content_type}:{digest}"
+
+    @staticmethod
+    def _build_media_upload_cache_key_from_digest(
+        digest: str, content_type: str
+    ) -> str:
+        return f"{content_type}:{digest}"
+
+    @staticmethod
+    def _sha256_file(file_path: Path, chunk_size: int = 1024 * 1024) -> str:
+        hasher = hashlib.sha256()
+        with file_path.open("rb") as f:
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                hasher.update(chunk)
+        return hasher.hexdigest()
 
     def _prune_media_upload_cache(self, now: float) -> None:
         expired_keys = [
@@ -102,6 +120,32 @@ class MediaMixin:
     def _should_retry_http_status(status: int) -> bool:
         return status == 429 or status >= 500
 
+    def _get_cached_upload_result(self, cache_key: str) -> dict[str, Any] | None:
+        now = time.monotonic()
+        cached = self._media_upload_cache.get(cache_key)
+        if cached and (now - cached[1]) <= self._MEDIA_UPLOAD_CACHE_TTL_SECONDS:
+            logger.debug(
+                "Reusing recent Matrix media upload result from in-memory cache"
+            )
+            return {"content_uri": cached[0]}
+        return None
+
+    def _save_upload_cache_result(self, cache_key: str, content_uri: str) -> None:
+        now_inner = time.monotonic()
+        self._media_upload_cache[cache_key] = (content_uri, now_inner)
+        self._prune_media_upload_cache(now_inner)
+
+    async def _save_response_to_path(
+        self, response: aiohttp.ClientResponse, output_path: Path
+    ) -> None:
+        temp_path = output_path.with_name(f".{output_path.name}.{time.time_ns()}.tmp")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with temp_path.open("wb") as f:
+            async for chunk in response.content.iter_chunked(64 * 1024):
+                if chunk:
+                    f.write(chunk)
+        temp_path.replace(output_path)
+
     async def upload_file(
         self, data: bytes, content_type: str, filename: str
     ) -> dict[str, Any]:
@@ -120,13 +164,9 @@ class MediaMixin:
         self._ensure_media_upload_cache()
 
         cache_key = self._build_media_upload_cache_key(data, content_type)
-        now = time.monotonic()
-        cached = self._media_upload_cache.get(cache_key)
-        if cached and (now - cached[1]) <= self._MEDIA_UPLOAD_CACHE_TTL_SECONDS:
-            logger.debug(
-                "Reusing recent Matrix media upload result from in-memory cache"
-            )
-            return {"content_uri": cached[0]}
+        cached_response = self._get_cached_upload_result(cache_key)
+        if cached_response:
+            return cached_response
 
         existing_task = self._media_upload_inflight.get(cache_key)
         if existing_task:
@@ -190,9 +230,7 @@ class MediaMixin:
                                 "Matrix media upload error: missing content_uri"
                             )
 
-                        now_inner = time.monotonic()
-                        self._media_upload_cache[cache_key] = (content_uri, now_inner)
-                        self._prune_media_upload_cache(now_inner)
+                        self._save_upload_cache_result(cache_key, content_uri)
                         return response_data
 
                 except aiohttp.ClientError as e:
@@ -208,6 +246,118 @@ class MediaMixin:
                     raise
 
         upload_task = asyncio.create_task(_perform_upload())
+        self._media_upload_inflight[cache_key] = upload_task
+        try:
+            return await upload_task
+        finally:
+            current_task = self._media_upload_inflight.get(cache_key)
+            if current_task is upload_task:
+                self._media_upload_inflight.pop(cache_key, None)
+
+    async def upload_file_path(
+        self, file_path: str | Path, content_type: str, filename: str | None = None
+    ) -> dict[str, Any]:
+        """
+        Upload a local file to the Matrix media repository without loading it fully
+        into memory.
+        """
+        await self._ensure_session()
+        self._ensure_media_upload_cache()
+
+        path = Path(file_path)
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"Matrix media upload source file not found: {path}"
+            )
+
+        digest = await asyncio.to_thread(self._sha256_file, path)
+        cache_key = self._build_media_upload_cache_key_from_digest(digest, content_type)
+        cached_response = self._get_cached_upload_result(cache_key)
+        if cached_response:
+            return cached_response
+
+        existing_task = self._media_upload_inflight.get(cache_key)
+        if existing_task:
+            logger.debug("Joining in-flight Matrix media upload task")
+            return await existing_task
+
+        upload_filename = filename or path.name
+
+        async def _perform_upload_from_path() -> dict[str, Any]:
+            url = f"{self.homeserver}/_matrix/media/v3/upload"
+            headers = {
+                "Content-Type": content_type,
+                "Authorization": f"Bearer {self.access_token}",
+                "User-Agent": "AstrBot Matrix Client/1.0",
+            }
+            params = {"filename": upload_filename}
+            attempt = 0
+
+            while True:
+                try:
+                    with path.open("rb") as file_handle:
+                        async with self.session.post(
+                            url, data=file_handle, headers=headers, params=params
+                        ) as response:
+                            response_data: dict[str, Any] = {}
+                            try:
+                                parsed = await response.json(content_type=None)
+                                if isinstance(parsed, dict):
+                                    response_data = parsed
+                            except Exception:
+                                try:
+                                    response_data = {"error": await response.text()}
+                                except Exception:
+                                    response_data = {}
+
+                            if response.status >= HTTP_ERROR_STATUS_400:
+                                retry_after_seconds = self._extract_retry_after_seconds(
+                                    response.headers, response_data
+                                )
+                                if (
+                                    self._should_retry_http_status(response.status)
+                                    and attempt < self._MEDIA_HTTP_MAX_RETRIES
+                                ):
+                                    delay = self._compute_retry_delay(
+                                        attempt, retry_after_seconds
+                                    )
+                                    attempt += 1
+                                    logger.warning(
+                                        "Matrix media upload failed with status "
+                                        f"{response.status}, retrying in {delay:.2f}s "
+                                        f"({attempt}/{self._MEDIA_HTTP_MAX_RETRIES})"
+                                    )
+                                    await asyncio.sleep(delay)
+                                    continue
+
+                                error_code = response_data.get("errcode", "UNKNOWN")
+                                error_msg = response_data.get("error", "Unknown error")
+                                raise Exception(
+                                    f"Matrix media upload error: {error_code} - {error_msg}"
+                                )
+
+                            content_uri = response_data.get("content_uri")
+                            if not isinstance(content_uri, str) or not content_uri:
+                                raise Exception(
+                                    "Matrix media upload error: missing content_uri"
+                                )
+
+                            self._save_upload_cache_result(cache_key, content_uri)
+                            return response_data
+
+                except aiohttp.ClientError as e:
+                    if attempt < self._MEDIA_HTTP_MAX_RETRIES:
+                        delay = self._compute_retry_delay(attempt)
+                        attempt += 1
+                        logger.warning(
+                            "Matrix media upload network error, retrying in "
+                            f"{delay:.2f}s ({attempt}/{self._MEDIA_HTTP_MAX_RETRIES}): {e}"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    raise
+
+        upload_task = asyncio.create_task(_perform_upload_from_path())
         self._media_upload_inflight[cache_key] = upload_task
         try:
             return await upload_task
@@ -247,8 +397,12 @@ class MediaMixin:
         return {}
 
     async def download_file(
-        self, mxc_url: str, *, allow_thumbnail_fallback: bool = False
-    ) -> bytes:
+        self,
+        mxc_url: str,
+        *,
+        allow_thumbnail_fallback: bool = False,
+        output_path: str | Path | None = None,
+    ) -> bytes | None:
         """
         Download a file from the Matrix media repository
         按照 Matrix spec 正确实现媒体下载
@@ -258,11 +412,13 @@ class MediaMixin:
         Args:
             mxc_url: MXC URL (mxc://server/media_id)
             allow_thumbnail_fallback: Whether to fallback to thumbnail on failure
+            output_path: Optional local path to stream the response to
 
         Returns:
-            File data as bytes
+            File data as bytes, or None when output_path is provided
         """
         await self._ensure_session()
+        resolved_output_path = Path(output_path) if output_path is not None else None
 
         # Parse MXC URL
         if not mxc_url.startswith("mxc://"):
@@ -328,6 +484,11 @@ class MediaMixin:
                         last_status = response.status
                         if response.status == 200:
                             logger.debug(f"Successfully downloaded media from {url}")
+                            if resolved_output_path is not None:
+                                await self._save_response_to_path(
+                                    response, resolved_output_path
+                                )
+                                return None
                             return await response.read()
 
                         retry_after_seconds = None
@@ -415,6 +576,11 @@ class MediaMixin:
                                 logger.info(
                                     "Downloaded thumbnail instead of full media"
                                 )
+                                if resolved_output_path is not None:
+                                    await self._save_response_to_path(
+                                        response, resolved_output_path
+                                    )
+                                    return None
                                 return await response.read()
 
                             if (

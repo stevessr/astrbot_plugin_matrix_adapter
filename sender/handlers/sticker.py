@@ -1,4 +1,3 @@
-import asyncio
 import mimetypes
 from pathlib import Path
 
@@ -18,7 +17,6 @@ async def send_sticker(
     e2ee_manager,
     upload_size_limit: int,
 ) -> None:
-    sticker_data = None
     filename = "sticker.png"
     content_type = segment.info.mimetype or "image/png"
     mxc_url = getattr(segment, "mxc_url", None)
@@ -26,25 +24,24 @@ async def send_sticker(
     if mxc_url and mxc_url.startswith("mxc://"):
         content_uri = mxc_url
     else:
+        sticker_path_obj: Path | None = None
         try:
             sticker_path = await segment.convert_to_file_path()
-            filename = Path(sticker_path).name
-            sticker_data = await asyncio.to_thread(Path(sticker_path).read_bytes)
+            sticker_path_obj = Path(sticker_path)
+            filename = sticker_path_obj.name
         except ValueError as e:
             if "MXC URL" in str(e) and segment.url.startswith("mxc://"):
                 content_uri = segment.url
             else:
                 raise
 
-        if sticker_data:
+        if sticker_path_obj is not None:
             width, height = segment.info.width, segment.info.height
             if width is None or height is None:
                 try:
-                    import io
-
                     from PIL import Image as PILImage
 
-                    with PILImage.open(io.BytesIO(sticker_data)) as img:
+                    with PILImage.open(sticker_path_obj) as img:
                         width, height = img.size
                 except Exception as e:
                     logger.debug(f"无法获取 sticker 尺寸：{e}")
@@ -53,13 +50,14 @@ async def send_sticker(
             if guessed_type:
                 content_type = guessed_type
 
-            if len(sticker_data) > upload_size_limit:
+            sticker_size = sticker_path_obj.stat().st_size
+            if sticker_size > upload_size_limit:
                 logger.warning(
-                    f"Sticker 超过大小限制 ({len(sticker_data)} > {upload_size_limit})"
+                    f"Sticker 超过大小限制 ({sticker_size} > {upload_size_limit})"
                 )
 
-            upload_resp = await client.upload_file(
-                data=sticker_data,
+            upload_resp = await client.upload_file_path(
+                file_path=sticker_path_obj,
                 content_type=content_type,
                 filename=filename,
             )

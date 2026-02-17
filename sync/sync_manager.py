@@ -117,7 +117,9 @@ class MatrixSyncManager:
                 pgsql_table_prefix=self.pgsql_table_prefix,
             )
         except Exception as e:
-            logger.warning(f"初始化 sync 存储后端 {self.data_storage_backend} 失败，回退 json: {e}")
+            logger.warning(
+                f"初始化 sync 存储后端 {self.data_storage_backend} 失败，回退 json: {e}"
+            )
             try:
                 return MatrixFolderDataStore(
                     folder_path=user_storage_dir,
@@ -158,7 +160,10 @@ class MatrixSyncManager:
                         logger.info(
                             f"恢复同步令牌：{self._next_batch[:DISPLAY_TRUNCATE_LENGTH_20]}..."
                         )
-                        if self._sync_data_store and self.data_storage_backend != "json":
+                        if (
+                            self._sync_data_store
+                            and self.data_storage_backend != "json"
+                        ):
                             try:
                                 self._sync_data_store.upsert("sync_token", data)
                             except Exception as migrate_error:

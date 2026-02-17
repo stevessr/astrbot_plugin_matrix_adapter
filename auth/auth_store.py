@@ -71,7 +71,9 @@ class MatrixAuthStore:
     def _build_auth_store(
         self, user_storage_dir: Path, storage_backend_config: StorageBackendConfig
     ) -> MatrixFolderDataStore:
-        namespace = build_folder_namespace(user_storage_dir, Path(self.config.store_path))
+        namespace = build_folder_namespace(
+            user_storage_dir, Path(self.config.store_path)
+        )
         backend = storage_backend_config.backend
         try:
             return MatrixFolderDataStore(
@@ -84,7 +86,9 @@ class MatrixAuthStore:
                 pgsql_table_prefix=storage_backend_config.pgsql_table_prefix,
             )
         except Exception as e:
-            self._log("info", f"Auth store backend {backend} init failed, fallback json: {e}")
+            self._log(
+                "info", f"Auth store backend {backend} init failed, fallback json: {e}"
+            )
             return MatrixFolderDataStore(
                 folder_path=user_storage_dir,
                 namespace_key=namespace,
@@ -177,9 +181,7 @@ class MatrixAuthStore:
                     loaded = store.get("auth")
                     if isinstance(loaded, dict):
                         data = loaded
-                        source_desc = (
-                            f"backend={backend}, namespace={build_folder_namespace(target_dir, Path(self.config.store_path))}"
-                        )
+                        source_desc = f"backend={backend}, namespace={build_folder_namespace(target_dir, Path(self.config.store_path))}"
 
             if data is None:
                 data, path = self._load_token_from_json_file()

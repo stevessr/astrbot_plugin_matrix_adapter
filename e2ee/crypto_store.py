@@ -144,9 +144,7 @@ class CryptoStore:
 
     def _save_device_id(self):
         """保存当前 device_id 到文件"""
-        self._save_record(
-            self._RECORD_STORED_DEVICE_ID, {"device_id": self.device_id}
-        )
+        self._save_record(self._RECORD_STORED_DEVICE_ID, {"device_id": self.device_id})
 
     def _clear_olm_data(self):
         """清除 Olm 账户和会话数据（当 device_id 变化时）"""

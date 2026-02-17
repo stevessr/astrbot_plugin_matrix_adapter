@@ -91,6 +91,11 @@ class PluginConfig:
         self._media_cache_dir: Path = self._data_dir / "media"
         self._media_cache_gc_days: int = 30
         self._media_auto_download_max_bytes: int = 0
+        self._media_auto_download_image: bool = True
+        self._media_auto_download_video: bool = True
+        self._media_auto_download_audio: bool = True
+        self._media_auto_download_file: bool = True
+        self._media_auto_download_sticker: bool = True
         self._oauth2_callback_port: int = 8765
         self._oauth2_callback_host: str = "127.0.0.1"
         # Sticker 相关配置
@@ -136,6 +141,21 @@ class PluginConfig:
         )
         self._media_auto_download_max_bytes = _normalize_non_negative_int(
             config.get("matrix_media_auto_download_max_bytes"), 0
+        )
+        self._media_auto_download_image = _normalize_bool(
+            config.get("matrix_media_auto_download_image"), True
+        )
+        self._media_auto_download_video = _normalize_bool(
+            config.get("matrix_media_auto_download_video"), True
+        )
+        self._media_auto_download_audio = _normalize_bool(
+            config.get("matrix_media_auto_download_audio"), True
+        )
+        self._media_auto_download_file = _normalize_bool(
+            config.get("matrix_media_auto_download_file"), True
+        )
+        self._media_auto_download_sticker = _normalize_bool(
+            config.get("matrix_media_auto_download_sticker"), True
         )
         # Sticker 相关配置
         self._sticker_auto_sync = config.get("matrix_sticker_auto_sync", False)
@@ -216,6 +236,17 @@ class PluginConfig:
     def media_auto_download_max_bytes(self) -> int:
         """媒体自动下载大小上限（字节），<=0 表示不限制"""
         return self._media_auto_download_max_bytes
+
+    def is_media_auto_download_enabled(self, msgtype: str) -> bool:
+        """检查指定媒体类型是否启用自动下载"""
+        mapping = {
+            "m.image": self._media_auto_download_image,
+            "m.video": self._media_auto_download_video,
+            "m.audio": self._media_auto_download_audio,
+            "m.file": self._media_auto_download_file,
+            "m.sticker": self._media_auto_download_sticker,
+        }
+        return mapping.get(msgtype, False)
 
     @property
     def oauth2_callback_port(self) -> int:

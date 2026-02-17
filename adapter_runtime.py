@@ -2,12 +2,29 @@
 Matrix adapter runtime lifecycle helpers.
 """
 
+import asyncio
+
 from astrbot.api import logger
 
 from .storage_paths import MatrixStoragePaths
 
 
 class MatrixAdapterRuntimeMixin:
+    _MEDIA_CACHE_GC_INTERVAL_SECONDS = 6 * 60 * 60
+
+    async def _media_cache_gc_loop(self):
+        try:
+            while True:
+                await asyncio.sleep(self._MEDIA_CACHE_GC_INTERVAL_SECONDS)
+                try:
+                    removed = self.receiver.gc_media_cache()
+                    if removed > 0:
+                        logger.info(f"定期清理了 {removed} 个媒体缓存文件")
+                except Exception as e:
+                    logger.debug(f"定期媒体缓存清理失败：{e}")
+        except asyncio.CancelledError:
+            raise
+
     async def run(self):
         try:
             await self.auth.login()
@@ -110,6 +127,13 @@ class MatrixAdapterRuntimeMixin:
             except Exception as e:
                 logger.debug(f"媒体缓存清理失败：{e}")
 
+            if not hasattr(self, "_media_cache_gc_task") or (
+                self._media_cache_gc_task and self._media_cache_gc_task.done()
+            ):
+                self._media_cache_gc_task = asyncio.create_task(
+                    self._media_cache_gc_loop()
+                )
+
             logger.info(
                 f"Matrix 平台适配器正在为 {self._matrix_config.user_id} 在 {self._matrix_config.homeserver} 上运行"
             )
@@ -138,6 +162,14 @@ class MatrixAdapterRuntimeMixin:
 
             if hasattr(self, "sync_manager"):
                 self.sync_manager.stop()
+
+            if hasattr(self, "_media_cache_gc_task") and self._media_cache_gc_task:
+                self._media_cache_gc_task.cancel()
+                try:
+                    await self._media_cache_gc_task
+                except asyncio.CancelledError:
+                    pass
+                self._media_cache_gc_task = None
 
             if self.client:
                 await self.client.close()

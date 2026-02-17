@@ -15,7 +15,9 @@ from astrbot.api import logger
 class JsonBackend:
     """One JSON file per key."""
 
-    def __init__(self, folder_path: Path, filename_resolver: Callable[[str], str]) -> None:
+    def __init__(
+        self, folder_path: Path, filename_resolver: Callable[[str], str]
+    ) -> None:
         self.folder_path = Path(folder_path)
         self.folder_path.mkdir(parents=True, exist_ok=True)
         self._filename_resolver = filename_resolver

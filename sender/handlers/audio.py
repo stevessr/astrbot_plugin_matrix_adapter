@@ -23,17 +23,18 @@ async def send_audio(
 ) -> None:
     audio_path = await segment.convert_to_file_path()
     filename = Path(audio_path).name
-    audio_data = await asyncio.to_thread(Path(audio_path).read_bytes)
 
     content_type = mimetypes.guess_type(filename)[0] or "audio/ogg"
-    audio_size = len(audio_data)
+    audio_size = Path(audio_path).stat().st_size
     if audio_size > upload_size_limit:
         logger.warning(
             f"语音大小超过限制（{audio_size} > {upload_size_limit}），上传可能失败"
         )
 
-    upload_resp = await client.upload_file(
-        data=audio_data, content_type=content_type, filename=filename
+    upload_resp = await client.upload_file_path(
+        file_path=audio_path,
+        content_type=content_type,
+        filename=filename,
     )
 
     content_uri = upload_resp["content_uri"]
