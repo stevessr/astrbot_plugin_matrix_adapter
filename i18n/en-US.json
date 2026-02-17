@@ -58,5 +58,21 @@
   "matrix_e2ee_recovery_key": {
     "description": "Recovery Key",
     "hint": "E2EE recovery key (Base58 or Base64 format), leave empty to auto-generate"
+  },
+  "matrix_e2ee_proactive_key_exchange": {
+    "description": "Proactive Key Exchange",
+    "hint": "When enabled, one-time keys are replenished and room keys are distributed more aggressively (improves E2EE availability at the cost of slightly more network requests)"
+  },
+  "matrix_e2ee_key_maintenance_interval": {
+    "description": "Key Maintenance Interval",
+    "hint": "Minimum interval (seconds) for automatic one-time key replenishment, default: 60. Lower values make replenishment more aggressive"
+  },
+  "matrix_e2ee_otk_threshold_ratio": {
+    "description": "One-Time Key Threshold Ratio",
+    "hint": "Server key-count ratio (%) that triggers one-time key replenishment, default: 33. Lower values trigger replenishment earlier"
+  },
+  "matrix_e2ee_key_share_check_interval": {
+    "description": "Key Share Check Interval",
+    "hint": "Interval (seconds) for proactive room-key distribution checks, default: 0 (disabled). When enabled, room keys are proactively shared to all member devices"
   }
 }
