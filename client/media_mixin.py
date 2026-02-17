@@ -123,7 +123,9 @@ class MediaMixin:
     def _get_media_download_max_in_memory_bytes(self) -> int:
         default_limit = self._MEDIA_DOWNLOAD_MAX_IN_MEMORY_BYTES_DEFAULT
         try:
-            configured_limit = int(get_plugin_config().media_download_max_in_memory_bytes)
+            configured_limit = int(
+                get_plugin_config().media_download_max_in_memory_bytes
+            )
         except Exception:
             return default_limit
         if configured_limit <= 0:

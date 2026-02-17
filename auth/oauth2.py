@@ -89,7 +89,10 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
         hard_cap = self._OAUTH2_HTTP_TIMEOUT_MAX_SECONDS
         if cap_seconds is not None:
             try:
-                hard_cap = min(hard_cap, max(self._OAUTH2_HTTP_TIMEOUT_MIN_SECONDS, float(cap_seconds)))
+                hard_cap = min(
+                    hard_cap,
+                    max(self._OAUTH2_HTTP_TIMEOUT_MIN_SECONDS, float(cap_seconds)),
+                )
             except Exception:
                 hard_cap = self._OAUTH2_HTTP_TIMEOUT_MAX_SECONDS
 
