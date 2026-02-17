@@ -23,6 +23,7 @@ class MatrixSyncManager:
     """
     Manages the Matrix sync loop and event processing
     """
+
     _SYNC_TOKEN_SAVE_INTERVAL_SECONDS = 5.0
     _SYNC_CALLBACK_TIMEOUT_SECONDS = 20.0
 
@@ -190,9 +191,11 @@ class MatrixSyncManager:
 
         loop = asyncio.get_running_loop()
         now = loop.time()
-        if not force and (
-            now - self._last_sync_token_save_at
-        ) < self._SYNC_TOKEN_SAVE_INTERVAL_SECONDS:
+        if (
+            not force
+            and (now - self._last_sync_token_save_at)
+            < self._SYNC_TOKEN_SAVE_INTERVAL_SECONDS
+        ):
             return
 
         payload = {"next_batch": self._next_batch}
@@ -357,7 +360,7 @@ class MatrixSyncManager:
         try:
             while self._running:
                 try:
-                # Execute sync
+                    # Execute sync
                     sync_response = await self.client.sync(
                         since=self._next_batch,
                         timeout=self.sync_timeout,
@@ -503,7 +506,9 @@ class MatrixSyncManager:
                             "Token appears to be invalid or expired. Attempting to refresh..."
                         )
                         if await self.on_token_invalid():
-                            logger.info("Token refreshed successfully. Retrying sync...")
+                            logger.info(
+                                "Token refreshed successfully. Retrying sync..."
+                            )
                             continue
                         else:
                             logger.error("Failed to refresh token. Stopping sync loop.")

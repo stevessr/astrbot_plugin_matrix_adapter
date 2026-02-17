@@ -94,7 +94,9 @@ class E2EEManagerKeysMixin:
                             )
                             logger.debug(f"服务器上的密钥：{list(my_keys.keys())}")
                             signatures = my_device_info.get("signatures", {})
-                            logger.debug(f"服务器上的签名用户：{list(signatures.keys())}")
+                            logger.debug(
+                                f"服务器上的签名用户：{list(signatures.keys())}"
+                            )
                         else:
                             logger.error(
                                 f"❌ 验证失败：服务器没有设备 {self.device_id} 的密钥！"

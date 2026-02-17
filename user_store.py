@@ -18,6 +18,7 @@ from .storage_paths import MatrixStoragePaths
 
 class MatrixUserStore:
     """Persist interacted user profiles (display name + avatar URL)."""
+
     _MAX_CACHE_ENTRIES = 2048
 
     def __init__(

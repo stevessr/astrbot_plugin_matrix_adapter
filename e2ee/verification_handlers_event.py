@@ -34,9 +34,7 @@ class SASVerificationEventMixin:
             f"[E2EE-Verify] 收到验证事件：{event_type} "
             f"from={sender} txn={transaction_id}"
         )
-        logger.debug(
-            f"[E2EE-Verify] 事件内容键：{list(content.keys())}"
-        )
+        logger.debug(f"[E2EE-Verify] 事件内容键：{list(content.keys())}")
 
         handlers = {
             M_KEY_VERIFICATION_REQUEST: self._handle_request,

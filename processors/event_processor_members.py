@@ -88,7 +88,9 @@ class MatrixEventProcessorMembers:
                 avatar_url = await self.client.get_avatar_url(user_id)
             except Exception:
                 avatar_url = None
-        await asyncio.to_thread(self.user_store.upsert, user_id, display_name, avatar_url)
+        await asyncio.to_thread(
+            self.user_store.upsert, user_id, display_name, avatar_url
+        )
 
     async def _handle_member_event(self, room, event_data: dict):
         """Handle m.room.member changes and persist profile updates."""

@@ -191,9 +191,7 @@ class KeyBackupBackupMixin:
                     self._recovery_key_bytes, b"", b"m.megolm_backup.v1"
                 )
                 recovery_key_str = _encode_recovery_key(self._recovery_key_bytes)
-                logger.warning(
-                    "已生成新的恢复密钥。出于安全考虑，密钥不会写入日志。"
-                )
+                logger.warning("已生成新的恢复密钥。出于安全考虑，密钥不会写入日志。")
                 logger.warning(
                     "请从安全输出通道复制返回值并配置到 matrix_e2ee_recovery_key。"
                 )

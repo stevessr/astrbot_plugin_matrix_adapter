@@ -16,7 +16,9 @@ _MUSIC_DOWNLOAD_TOTAL_TIMEOUT_SECONDS = 120
 _MUSIC_DOWNLOAD_CONNECT_TIMEOUT_SECONDS = 15
 
 
-async def _download_music_with_limit(url: str, file_path: Path, size_limit: int) -> None:
+async def _download_music_with_limit(
+    url: str, file_path: Path, size_limit: int
+) -> None:
     timeout = aiohttp.ClientTimeout(
         total=_MUSIC_DOWNLOAD_TOTAL_TIMEOUT_SECONDS,
         connect=_MUSIC_DOWNLOAD_CONNECT_TIMEOUT_SECONDS,

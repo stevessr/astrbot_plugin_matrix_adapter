@@ -378,7 +378,9 @@ def _fetch_remote_shortcodes() -> dict[str, str]:
     worker.join()
 
     if "error" in error_holder:
-        logger.warning(f"Failed to fetch emoji shortcodes in worker thread: {error_holder['error']}")
+        logger.warning(
+            f"Failed to fetch emoji shortcodes in worker thread: {error_holder['error']}"
+        )
     return result_holder["data"]
 
 

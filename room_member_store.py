@@ -4,8 +4,8 @@ Matrix room member store for persisting room member information.
 Stores member list and metadata under plugin data dir / rooms.
 """
 
-from collections import OrderedDict
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,7 @@ from .storage_paths import MatrixStoragePaths
 
 class MatrixRoomMemberStore:
     """Persist room member lists and metadata."""
+
     _MAX_CACHE_ENTRIES = 512
 
     def __init__(

@@ -595,7 +595,9 @@ class MatrixReceiver:
         def _schedule_background_download() -> None:
             async def _background_download() -> None:
                 if isinstance(file_info, dict):
-                    await self._download_encrypted_media_file(file_info, filename, mimetype)
+                    await self._download_encrypted_media_file(
+                        file_info, filename, mimetype
+                    )
                 else:
                     await self._download_media_file(mxc_url, filename, mimetype)
 
