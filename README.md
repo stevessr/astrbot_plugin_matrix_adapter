@@ -64,12 +64,18 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `matrix_media_cache_gc_days` | int | `30` | 媒体缓存清理天数，<=0 表示禁用 |
+| `matrix_media_download_concurrency` | int | `4` | 每个媒体源 server 的并发下载上限（最小为 1） |
+| `matrix_media_download_min_interval_ms` | int | `0` | 同一媒体源 server 的最小下载请求间隔（毫秒），<=0 表示不限制 |
+| `matrix_media_cache_index_persist` | bool | `true` | 是否启用 SQLite 持久化媒体缓存索引 |
 | `matrix_media_auto_download_max_bytes` | int | `0` | 媒体自动下载大小上限（字节），超过后跳过自动下载并尽量保留 URL，<=0 表示不限制 |
 | `matrix_media_auto_download_image` | bool | `true` | 是否自动下载图片消息（m.image） |
 | `matrix_media_auto_download_video` | bool | `true` | 是否自动下载视频消息（m.video） |
 | `matrix_media_auto_download_audio` | bool | `true` | 是否自动下载音频消息（m.audio） |
 | `matrix_media_auto_download_file` | bool | `true` | 是否自动下载文件消息（m.file） |
 | `matrix_media_auto_download_sticker` | bool | `true` | 是否自动下载贴纸消息（m.sticker） |
+| `matrix_media_upload_strict_mime_check` | bool | `true` | 上传前执行 MIME 严格一致性校验 |
+| `matrix_media_upload_blocked_extensions` | list | `[".exe", ".dll", ...]` | 上传扩展名黑名单 |
+| `matrix_media_upload_allowed_mime_rules` | list | `["image/*", "video/*", ...]` | 上传允许的 MIME 规则（支持 `*`） |
 | `matrix_emoji_shortcodes` | bool | `false` | 是否启用 `:smile:` / `:thumbsup:` 等 Emoji 短码转换 |
 | `matrix_data_storage_backend` | string | `json` | 数据存储后端（users/rooms/auth/sync/device_info + E2EE 本地状态）：`json` / `sqlite` / `pgsql` |
 | `matrix_pgsql` | object | 见下方 | 当后端为 `pgsql` 时使用的 PostgreSQL 配置对象 |

@@ -13,6 +13,10 @@
 - 增加运行期定时媒体缓存 GC（启动后每 6 小时检查一次）。
 - 扩展引用消息媒体处理：支持图片/视频/音频/文件引用的下载与回退展示。
 - 统一 `matrix_media_cache_gc_days` 默认值为 `30`（配置 schema 与运行时一致）。
+- 新增媒体下载治理配置：`matrix_media_download_concurrency` 与 `matrix_media_download_min_interval_ms`，支持按媒体源并发控制与请求节流。
+- 新增媒体缓存索引持久化：`matrix_media_cache_index_persist`，使用 SQLite 保存缓存索引，重启后可快速命中。
+- 新增媒体上传安全校验：扩展名黑名单与 MIME 规则白名单，上传前校验声明 MIME / 扩展名 / 文件签名一致性。
+- `matrix_media_upload_blocked_extensions` 与 `matrix_media_upload_allowed_mime_rules` 改为 `list` 配置类型（兼容旧字符串格式）。
 
 ## 0.3.1
 

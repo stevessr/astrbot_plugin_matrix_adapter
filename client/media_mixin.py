@@ -5,7 +5,9 @@ Provides file upload and download methods
 
 import asyncio
 import hashlib
+import mimetypes
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +16,7 @@ import aiohttp
 from astrbot.api import logger
 
 from ..constants import HTTP_ERROR_STATUS_400
+from ..plugin_config import get_plugin_config
 
 
 class MediaMixin:
@@ -24,12 +27,341 @@ class MediaMixin:
     _MEDIA_HTTP_MAX_RETRIES = 3
     _MEDIA_RETRY_BASE_DELAY_SECONDS = 0.75
     _MEDIA_RETRY_MAX_DELAY_SECONDS = 10.0
+    _MEDIA_UPLOAD_SNIFF_BYTES = 512
+    _MEDIA_DOWNLOAD_CONCURRENCY_DEFAULT = 4
+    _MEDIA_UPLOAD_DEFAULT_BLOCKED_EXTENSIONS = frozenset(
+        {
+            ".exe",
+            ".dll",
+            ".bat",
+            ".cmd",
+            ".sh",
+            ".ps1",
+            ".jar",
+            ".msi",
+            ".scr",
+            ".com",
+        }
+    )
+    _MEDIA_UPLOAD_DEFAULT_ALLOWED_MIME_RULES = (
+        "image/*",
+        "video/*",
+        "audio/*",
+        "text/*",
+        "application/pdf",
+        "application/json",
+        "application/zip",
+        "application/octet-stream",
+    )
+    _MEDIA_MIME_ALIASES = {
+        "image/jpg": "image/jpeg",
+        "audio/mp3": "audio/mpeg",
+        "audio/x-wav": "audio/wav",
+        "application/x-zip-compressed": "application/zip",
+    }
 
     def _ensure_media_upload_cache(self) -> None:
         if not hasattr(self, "_media_upload_cache"):
             self._media_upload_cache: dict[str, tuple[str, float]] = {}
         if not hasattr(self, "_media_upload_inflight"):
             self._media_upload_inflight: dict[str, asyncio.Task[dict[str, Any]]] = {}
+
+    def _ensure_media_download_flow_control(self) -> None:
+        if not hasattr(self, "_media_download_semaphores"):
+            self._media_download_semaphores: dict[str, asyncio.Semaphore] = {}
+        if not hasattr(self, "_media_download_semaphore_limits"):
+            self._media_download_semaphore_limits: dict[str, int] = {}
+        if not hasattr(self, "_media_download_rate_locks"):
+            self._media_download_rate_locks: dict[str, asyncio.Lock] = {}
+        if not hasattr(self, "_media_download_next_allowed_at"):
+            self._media_download_next_allowed_at: dict[str, float] = {}
+
+    @staticmethod
+    def _normalize_media_source_key(source_key: str | None) -> str:
+        if isinstance(source_key, str):
+            normalized = source_key.strip().lower()
+            if normalized:
+                return normalized
+        return "__homeserver__"
+
+    def _get_media_download_concurrency_limit(self) -> int:
+        default_limit = self._MEDIA_DOWNLOAD_CONCURRENCY_DEFAULT
+        try:
+            configured_limit = int(get_plugin_config().media_download_concurrency)
+        except Exception:
+            return default_limit
+        if configured_limit <= 0:
+            return default_limit
+        return min(configured_limit, 64)
+
+    def _get_media_download_min_interval_seconds(self) -> float:
+        try:
+            interval_ms = int(get_plugin_config().media_download_min_interval_ms)
+        except Exception:
+            return 0.0
+        if interval_ms <= 0:
+            return 0.0
+        return interval_ms / 1000.0
+
+    def _get_media_download_semaphore(self, source_key: str) -> asyncio.Semaphore:
+        self._ensure_media_download_flow_control()
+        normalized_source = self._normalize_media_source_key(source_key)
+        limit = self._get_media_download_concurrency_limit()
+        existing = self._media_download_semaphores.get(normalized_source)
+        existing_limit = self._media_download_semaphore_limits.get(normalized_source)
+        if existing is None or existing_limit != limit:
+            existing = asyncio.Semaphore(limit)
+            self._media_download_semaphores[normalized_source] = existing
+            self._media_download_semaphore_limits[normalized_source] = limit
+        return existing
+
+    async def _apply_media_download_rate_limit(self, source_key: str) -> None:
+        interval_seconds = self._get_media_download_min_interval_seconds()
+        if interval_seconds <= 0:
+            return
+
+        self._ensure_media_download_flow_control()
+        normalized_source = self._normalize_media_source_key(source_key)
+        lock = self._media_download_rate_locks.setdefault(
+            normalized_source, asyncio.Lock()
+        )
+        loop = asyncio.get_running_loop()
+        async with lock:
+            now = loop.time()
+            next_allowed = self._media_download_next_allowed_at.get(
+                normalized_source, now
+            )
+            if next_allowed > now:
+                await asyncio.sleep(next_allowed - now)
+                now = loop.time()
+            self._media_download_next_allowed_at[normalized_source] = (
+                now + interval_seconds
+            )
+
+    @asynccontextmanager
+    async def _media_download_slot(self, source_key: str):
+        semaphore = self._get_media_download_semaphore(source_key)
+        await semaphore.acquire()
+        try:
+            await self._apply_media_download_rate_limit(source_key)
+            yield
+        finally:
+            semaphore.release()
+
+    @classmethod
+    def _normalize_mime_type(cls, content_type: str | None) -> str:
+        if not isinstance(content_type, str):
+            return "application/octet-stream"
+        normalized = content_type.lower().split(";", 1)[0].strip()
+        if not normalized:
+            return "application/octet-stream"
+        return cls._MEDIA_MIME_ALIASES.get(normalized, normalized)
+
+    @staticmethod
+    def _normalize_extension(filename: str | None) -> str:
+        if not isinstance(filename, str):
+            return ""
+        suffix = Path(filename).suffix.lower()
+        return suffix.strip()
+
+    def _is_media_upload_strict_mime_check_enabled(self) -> bool:
+        try:
+            return bool(get_plugin_config().media_upload_strict_mime_check)
+        except Exception:
+            return True
+
+    def _get_media_upload_blocked_extensions(self) -> set[str]:
+        try:
+            configured = get_plugin_config().media_upload_blocked_extensions
+        except Exception:
+            configured = ()
+        blocked = {
+            ext.strip().lower()
+            for ext in configured
+            if isinstance(ext, str) and ext.strip()
+        }
+        if not blocked:
+            blocked = set(self._MEDIA_UPLOAD_DEFAULT_BLOCKED_EXTENSIONS)
+        return blocked
+
+    def _get_media_upload_allowed_mime_rules(self) -> tuple[str, ...]:
+        try:
+            configured = get_plugin_config().media_upload_allowed_mime_rules
+        except Exception:
+            configured = ()
+        normalized_rules = tuple(
+            rule.strip().lower()
+            for rule in configured
+            if isinstance(rule, str) and rule.strip()
+        )
+        if normalized_rules:
+            return normalized_rules
+        return self._MEDIA_UPLOAD_DEFAULT_ALLOWED_MIME_RULES
+
+    @staticmethod
+    def _mime_allowed_by_rules(mime_type: str, rules: tuple[str, ...]) -> bool:
+        for rule in rules:
+            if rule.endswith("/*"):
+                prefix = rule[:-1]
+                if mime_type.startswith(prefix):
+                    return True
+                continue
+            if mime_type == rule:
+                return True
+        return False
+
+    @classmethod
+    def _is_mime_compatible(cls, left: str, right: str) -> bool:
+        normalized_left = cls._normalize_mime_type(left)
+        normalized_right = cls._normalize_mime_type(right)
+        if normalized_left == normalized_right:
+            return True
+        if (
+            normalized_left == "application/octet-stream"
+            or normalized_right == "application/octet-stream"
+        ):
+            return True
+        left_major = normalized_left.split("/", 1)[0]
+        right_major = normalized_right.split("/", 1)[0]
+        if left_major == right_major and left_major in {
+            "image",
+            "audio",
+            "video",
+            "text",
+        }:
+            return True
+        return False
+
+    @staticmethod
+    def _sniff_mime_from_bytes(data: bytes) -> str | None:
+        if not data:
+            return None
+
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "image/png"
+        if data.startswith(b"\xff\xd8\xff"):
+            return "image/jpeg"
+        if data.startswith((b"GIF87a", b"GIF89a")):
+            return "image/gif"
+        if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            return "image/webp"
+        if data.startswith(b"BM"):
+            return "image/bmp"
+        if data.startswith((b"II*\x00", b"MM\x00*")):
+            return "image/tiff"
+        if data.startswith(b"%PDF-"):
+            return "application/pdf"
+        if data.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")):
+            return "application/zip"
+        if data.startswith((b"\x1f\x8b\x08",)):
+            return "application/gzip"
+        if data.startswith(b"OggS"):
+            return "audio/ogg"
+        if data.startswith(b"fLaC"):
+            return "audio/flac"
+        if data.startswith(b"ID3"):
+            return "audio/mpeg"
+        if len(data) > 2 and data[0] == 0xFF and (data[1] & 0xE0) == 0xE0:
+            return "audio/mpeg"
+        if data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+            return "audio/wav"
+        if data[:4] == b"RIFF" and data[8:11] == b"AVI":
+            return "video/x-msvideo"
+        if len(data) >= 12 and data[4:8] == b"ftyp":
+            return "video/mp4"
+        if data.startswith(b"\x1a\x45\xdf\xa3"):
+            return "video/webm"
+
+        stripped = data.lstrip()
+        if stripped.startswith((b"{", b"[")):
+            return "application/json"
+        if stripped:
+            text_sample = stripped[:200]
+            printable = sum(
+                1 for b in text_sample if b in (9, 10, 13) or 32 <= b <= 126
+            )
+            if printable / max(1, len(text_sample)) >= 0.95:
+                return "text/plain"
+        return None
+
+    @staticmethod
+    def _read_file_head(path: Path, size: int) -> bytes:
+        with path.open("rb") as f:
+            return f.read(size)
+
+    def _validate_media_upload_security(
+        self,
+        *,
+        filename: str,
+        declared_content_type: str,
+        file_head: bytes,
+    ) -> str:
+        normalized_declared = self._normalize_mime_type(declared_content_type)
+        extension = self._normalize_extension(filename)
+        blocked_extensions = self._get_media_upload_blocked_extensions()
+        if extension and (extension in blocked_extensions or "*" in blocked_extensions):
+            raise ValueError(
+                f"Blocked media upload extension: {extension} (file: {filename})"
+            )
+
+        allowed_rules = self._get_media_upload_allowed_mime_rules()
+        if not self._mime_allowed_by_rules(normalized_declared, allowed_rules):
+            raise ValueError(
+                f"Declared MIME type is not allowed: {normalized_declared} (file: {filename})"
+            )
+
+        sniffed_mime = self._sniff_mime_from_bytes(file_head)
+        extension_mime = self._normalize_mime_type(mimetypes.guess_type(filename)[0])
+        strict_check = self._is_media_upload_strict_mime_check_enabled()
+
+        if sniffed_mime and not self._mime_allowed_by_rules(
+            sniffed_mime, allowed_rules
+        ):
+            raise ValueError(
+                f"Sniffed MIME type is not allowed: {sniffed_mime} (file: {filename})"
+            )
+
+        if strict_check:
+            if sniffed_mime and not self._is_mime_compatible(
+                normalized_declared, sniffed_mime
+            ):
+                raise ValueError(
+                    "Declared MIME does not match file signature: "
+                    f"{normalized_declared} vs {sniffed_mime} (file: {filename})"
+                )
+            if (
+                extension
+                and extension_mime
+                and not self._is_mime_compatible(normalized_declared, extension_mime)
+            ):
+                raise ValueError(
+                    "Declared MIME does not match file extension: "
+                    f"{normalized_declared} vs {extension_mime} (file: {filename})"
+                )
+            if (
+                extension
+                and extension_mime
+                and sniffed_mime
+                and not self._is_mime_compatible(extension_mime, sniffed_mime)
+            ):
+                raise ValueError(
+                    "File extension does not match file signature: "
+                    f"{extension_mime} vs {sniffed_mime} (file: {filename})"
+                )
+
+        if (
+            normalized_declared == "application/octet-stream"
+            and sniffed_mime
+            and self._mime_allowed_by_rules(sniffed_mime, allowed_rules)
+        ):
+            return sniffed_mime
+        if (
+            normalized_declared == "application/octet-stream"
+            and extension_mime
+            and self._mime_allowed_by_rules(extension_mime, allowed_rules)
+        ):
+            return extension_mime
+        return normalized_declared
 
     @staticmethod
     def _build_media_upload_cache_key(data: bytes, content_type: str) -> str:
@@ -163,7 +495,13 @@ class MediaMixin:
         await self._ensure_session()
         self._ensure_media_upload_cache()
 
-        cache_key = self._build_media_upload_cache_key(data, content_type)
+        safe_content_type = self._validate_media_upload_security(
+            filename=filename,
+            declared_content_type=content_type,
+            file_head=data[: self._MEDIA_UPLOAD_SNIFF_BYTES],
+        )
+
+        cache_key = self._build_media_upload_cache_key(data, safe_content_type)
         cached_response = self._get_cached_upload_result(cache_key)
         if cached_response:
             return cached_response
@@ -176,7 +514,7 @@ class MediaMixin:
         async def _perform_upload() -> dict[str, Any]:
             url = f"{self.homeserver}/_matrix/media/v3/upload"
             headers = {
-                "Content-Type": content_type,
+                "Content-Type": safe_content_type,
                 "Authorization": f"Bearer {self.access_token}",
                 "User-Agent": "AstrBot Matrix Client/1.0",
             }
@@ -270,8 +608,20 @@ class MediaMixin:
                 f"Matrix media upload source file not found: {path}"
             )
 
+        upload_filename = filename or path.name
+        file_head = await asyncio.to_thread(
+            self._read_file_head, path, self._MEDIA_UPLOAD_SNIFF_BYTES
+        )
+        safe_content_type = self._validate_media_upload_security(
+            filename=upload_filename,
+            declared_content_type=content_type,
+            file_head=file_head,
+        )
+
         digest = await asyncio.to_thread(self._sha256_file, path)
-        cache_key = self._build_media_upload_cache_key_from_digest(digest, content_type)
+        cache_key = self._build_media_upload_cache_key_from_digest(
+            digest, safe_content_type
+        )
         cached_response = self._get_cached_upload_result(cache_key)
         if cached_response:
             return cached_response
@@ -281,12 +631,10 @@ class MediaMixin:
             logger.debug("Joining in-flight Matrix media upload task")
             return await existing_task
 
-        upload_filename = filename or path.name
-
         async def _perform_upload_from_path() -> dict[str, Any]:
             url = f"{self.homeserver}/_matrix/media/v3/upload"
             headers = {
-                "Content-Type": content_type,
+                "Content-Type": safe_content_type,
                 "Authorization": f"Bearer {self.access_token}",
                 "User-Agent": "AstrBot Matrix Client/1.0",
             }
@@ -420,7 +768,6 @@ class MediaMixin:
         await self._ensure_session()
         resolved_output_path = Path(output_path) if output_path is not None else None
 
-        # Parse MXC URL
         if not mxc_url.startswith("mxc://"):
             raise ValueError(f"Invalid MXC URL: {mxc_url}")
 
@@ -429,21 +776,11 @@ class MediaMixin:
             raise ValueError(f"Invalid MXC URL format: {mxc_url}")
 
         server_name, media_id = parts
+        source_key = self._normalize_media_source_key(server_name)
 
-        # 按照 Matrix spec，所有媒体下载都通过用户的 homeserver
-        # 不管媒体来自哪个服务器，都使用认证请求
-        # 参考：https://spec.matrix.org/latest/client-server-api/#id429
-
-        # Try multiple download strategies
-        # 1. 通过用户 homeserver 代理下载（需要认证）
-        # 2. 缩略图作为最后手段
-
-        # Strategy 1: 通过用户 homeserver 代理下载
         proxy_endpoints = [
             f"/_matrix/client/v1/media/download/{server_name}/{media_id}",
         ]
-
-        # Strategy 2: 直接从源服务器下载（已在规范中弃用，移除）
         direct_endpoints: list[str] = []
         public_endpoints: list[str] = []
 
@@ -463,7 +800,6 @@ class MediaMixin:
             else:
                 url = endpoint
 
-            # 根据策略决定是否使用认证
             headers = {"User-Agent": "AstrBot Matrix Client/1.0"}
             if use_auth and self.access_token:
                 headers["Authorization"] = f"Bearer {self.access_token}"
@@ -478,62 +814,65 @@ class MediaMixin:
             attempt = 0
             while True:
                 try:
-                    async with self.session.get(
-                        url, headers=headers, allow_redirects=True
-                    ) as response:
-                        last_status = response.status
-                        if response.status == 200:
-                            logger.debug(f"Successfully downloaded media from {url}")
-                            if resolved_output_path is not None:
-                                await self._save_response_to_path(
-                                    response, resolved_output_path
+                    async with self._media_download_slot(source_key):
+                        async with self.session.get(
+                            url, headers=headers, allow_redirects=True
+                        ) as response:
+                            last_status = response.status
+                            if response.status == 200:
+                                logger.debug(
+                                    f"Successfully downloaded media from {url}"
                                 )
-                                return None
-                            return await response.read()
+                                if resolved_output_path is not None:
+                                    await self._save_response_to_path(
+                                        response, resolved_output_path
+                                    )
+                                    return None
+                                return await response.read()
 
-                        retry_after_seconds = None
-                        if response.status == 429:
-                            retry_payload: dict[str, Any] = {}
-                            try:
-                                parsed = await response.json(content_type=None)
-                                if isinstance(parsed, dict):
-                                    retry_payload = parsed
-                            except Exception:
-                                retry_payload = {}
-                            retry_after_seconds = self._extract_retry_after_seconds(
-                                response.headers, retry_payload
-                            )
-                        elif response.status >= 500:
-                            retry_after_seconds = self._extract_retry_after_seconds(
-                                response.headers, None
-                            )
+                            retry_after_seconds = None
+                            if response.status == 429:
+                                retry_payload: dict[str, Any] = {}
+                                try:
+                                    parsed = await response.json(content_type=None)
+                                    if isinstance(parsed, dict):
+                                        retry_payload = parsed
+                                except Exception:
+                                    retry_payload = {}
+                                retry_after_seconds = self._extract_retry_after_seconds(
+                                    response.headers, retry_payload
+                                )
+                            elif response.status >= 500:
+                                retry_after_seconds = self._extract_retry_after_seconds(
+                                    response.headers, None
+                                )
 
-                        if (
-                            self._should_retry_http_status(response.status)
-                            and attempt < self._MEDIA_HTTP_MAX_RETRIES
-                        ):
-                            delay = self._compute_retry_delay(
-                                attempt, retry_after_seconds
-                            )
-                            attempt += 1
-                            logger.warning(
-                                "Matrix media download failed with status "
-                                f"{response.status}, retrying in {delay:.2f}s "
-                                f"({attempt}/{self._MEDIA_HTTP_MAX_RETRIES})"
-                            )
-                            await asyncio.sleep(delay)
-                            continue
+                            if (
+                                self._should_retry_http_status(response.status)
+                                and attempt < self._MEDIA_HTTP_MAX_RETRIES
+                            ):
+                                delay = self._compute_retry_delay(
+                                    attempt, retry_after_seconds
+                                )
+                                attempt += 1
+                                logger.warning(
+                                    "Matrix media download failed with status "
+                                    f"{response.status}, retrying in {delay:.2f}s "
+                                    f"({attempt}/{self._MEDIA_HTTP_MAX_RETRIES})"
+                                )
+                                await asyncio.sleep(delay)
+                                continue
 
-                        if response.status == 404:
-                            last_error = f"Media not found: {response.status}"
-                        elif response.status == 403:
-                            last_error = f"Access denied: {response.status}"
-                            logger.warning(
-                                f"Got 403 on {url} (auth problem or private media)"
-                            )
-                        else:
-                            last_error = f"HTTP {response.status}"
-                        break
+                            if response.status == 404:
+                                last_error = f"Media not found: {response.status}"
+                            elif response.status == 403:
+                                last_error = f"Access denied: {response.status}"
+                                logger.warning(
+                                    f"Got 403 on {url} (auth problem or private media)"
+                                )
+                            else:
+                                last_error = f"HTTP {response.status}"
+                            break
 
                 except aiohttp.ClientError as e:
                     if attempt < self._MEDIA_HTTP_MAX_RETRIES:
@@ -553,7 +892,6 @@ class MediaMixin:
                     logger.debug(f"Exception downloading from {url}: {e}")
                     break
 
-        # 所有端点都失败了，尝试缩略图作为最后手段
         if allow_thumbnail_fallback and last_status in [403, 404]:
             logger.debug("Trying thumbnail endpoints as fallback...")
             thumbnail_endpoints = [
@@ -569,34 +907,37 @@ class MediaMixin:
                 attempt = 0
                 while True:
                     try:
-                        async with self.session.get(
-                            url, headers=headers, allow_redirects=True
-                        ) as response:
-                            if response.status == 200:
-                                logger.info(
-                                    "Downloaded thumbnail instead of full media"
-                                )
-                                if resolved_output_path is not None:
-                                    await self._save_response_to_path(
-                                        response, resolved_output_path
+                        async with self._media_download_slot(source_key):
+                            async with self.session.get(
+                                url, headers=headers, allow_redirects=True
+                            ) as response:
+                                if response.status == 200:
+                                    logger.info(
+                                        "Downloaded thumbnail instead of full media"
                                     )
-                                    return None
-                                return await response.read()
+                                    if resolved_output_path is not None:
+                                        await self._save_response_to_path(
+                                            response, resolved_output_path
+                                        )
+                                        return None
+                                    return await response.read()
 
-                            if (
-                                self._should_retry_http_status(response.status)
-                                and attempt < self._MEDIA_HTTP_MAX_RETRIES
-                            ):
-                                retry_after_seconds = self._extract_retry_after_seconds(
-                                    response.headers, None
-                                )
-                                delay = self._compute_retry_delay(
-                                    attempt, retry_after_seconds
-                                )
-                                attempt += 1
-                                await asyncio.sleep(delay)
-                                continue
-                            break
+                                if (
+                                    self._should_retry_http_status(response.status)
+                                    and attempt < self._MEDIA_HTTP_MAX_RETRIES
+                                ):
+                                    retry_after_seconds = (
+                                        self._extract_retry_after_seconds(
+                                            response.headers, None
+                                        )
+                                    )
+                                    delay = self._compute_retry_delay(
+                                        attempt, retry_after_seconds
+                                    )
+                                    attempt += 1
+                                    await asyncio.sleep(delay)
+                                    continue
+                                break
                     except aiohttp.ClientError:
                         if attempt < self._MEDIA_HTTP_MAX_RETRIES:
                             delay = self._compute_retry_delay(attempt)
@@ -607,7 +948,6 @@ class MediaMixin:
                     except Exception:
                         break
 
-        # If all attempts failed, raise the last error
         error_msg = f"Matrix media download error: {last_error} (last status: {last_status}) for {mxc_url}"
         logger.error(error_msg)
         raise Exception(error_msg)
@@ -643,6 +983,7 @@ class MediaMixin:
             raise ValueError(f"Invalid MXC URL format: {mxc_url}")
 
         server_name, media_id = parts
+        source_key = self._normalize_media_source_key(server_name)
         query = f"width={width}&height={height}"
         if method:
             query += f"&method={method}"
@@ -663,13 +1004,14 @@ class MediaMixin:
                 headers["Authorization"] = f"Bearer {self.access_token}"
 
             try:
-                async with self.session.get(
-                    url, headers=headers, allow_redirects=True
-                ) as response:
-                    last_status = response.status
-                    if response.status == 200:
-                        return await response.read()
-                    last_error = f"HTTP {response.status}"
+                async with self._media_download_slot(source_key):
+                    async with self.session.get(
+                        url, headers=headers, allow_redirects=True
+                    ) as response:
+                        last_status = response.status
+                        if response.status == 200:
+                            return await response.read()
+                        last_error = f"HTTP {response.status}"
             except Exception as e:
                 last_error = str(e)
                 continue

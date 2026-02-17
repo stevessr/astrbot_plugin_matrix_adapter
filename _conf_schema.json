@@ -17,6 +17,24 @@
     "hint": "清理超过指定天数未使用的媒体缓存，<=0 表示禁用",
     "default": 30
   },
+  "matrix_media_download_concurrency": {
+    "description": "媒体下载并发上限",
+    "type": "int",
+    "hint": "每个媒体源 server 的并发下载上限，最小为 1",
+    "default": 10
+  },
+  "matrix_media_download_min_interval_ms": {
+    "description": "媒体下载最小间隔（毫秒）",
+    "type": "int",
+    "hint": "同一媒体源 server 两次下载请求之间的最小间隔，<=0 表示不限制",
+    "default": 0
+  },
+  "matrix_media_cache_index_persist": {
+    "description": "持久化媒体缓存索引",
+    "type": "bool",
+    "hint": "启用后使用 SQLite 持久化缓存索引，重启后仍可快速命中本地媒体缓存",
+    "default": true
+  },
   "matrix_media_auto_download_max_bytes": {
     "description": "媒体自动下载大小上限（字节）",
     "type": "int",
@@ -52,6 +70,24 @@
     "type": "bool",
     "hint": "是否自动下载 Matrix 贴纸消息（m.sticker）",
     "default": true
+  },
+  "matrix_media_upload_strict_mime_check": {
+    "description": "上传时严格 MIME 校验",
+    "type": "bool",
+    "hint": "上传媒体前检查声明 MIME、扩展名与文件头嗅探结果是否一致",
+    "default": true
+  },
+  "matrix_media_upload_blocked_extensions": {
+    "description": "上传扩展名黑名单",
+    "type": "list",
+    "hint": "例如 ['.exe','.dll','.bat','.cmd','.sh','.ps1','.jar','.msi','.scr','.com']",
+    "default": [".exe", ".dll", ".bat", ".cmd", ".sh", ".ps1", ".jar", ".msi", ".scr", ".com"]
+  },
+  "matrix_media_upload_allowed_mime_rules": {
+    "description": "上传允许的 MIME 规则",
+    "type": "list",
+    "hint": "支持 image/* 等通配符，例如 ['image/*','video/*','audio/*','text/*','application/pdf','application/json','application/zip','application/octet-stream']",
+    "default": ["image/*", "video/*", "audio/*", "text/*", "application/pdf", "application/json", "application/zip", "application/octet-stream"]
   },
   "matrix_sticker_auto_sync": {
     "description": "自动同步 Sticker 包",

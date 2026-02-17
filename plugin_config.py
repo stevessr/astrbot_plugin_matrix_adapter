@@ -12,6 +12,29 @@ from astrbot.api.star import StarTools
 
 from .storage_backend import StorageBackendConfig, normalize_storage_backend
 
+_DEFAULT_MEDIA_UPLOAD_BLOCKED_EXTENSIONS = (
+    ".exe",
+    ".dll",
+    ".bat",
+    ".cmd",
+    ".sh",
+    ".ps1",
+    ".jar",
+    ".msi",
+    ".scr",
+    ".com",
+)
+_DEFAULT_MEDIA_UPLOAD_ALLOWED_MIME_RULES = (
+    "image/*",
+    "video/*",
+    "audio/*",
+    "text/*",
+    "application/pdf",
+    "application/json",
+    "application/zip",
+    "application/octet-stream",
+)
+
 
 def _get_default_data_dir() -> Path:
     """获取插件默认数据目录"""
@@ -67,6 +90,33 @@ def _normalize_non_negative_int(value, default: int = 0) -> int:
     return max(0, normalized)
 
 
+def _normalize_token_list(
+    value,
+    default: tuple[str, ...],
+    *,
+    extension_mode: bool = False,
+) -> tuple[str, ...]:
+    raw_tokens: list[str] = []
+    if isinstance(value, str):
+        raw_tokens = value.split(",")
+    elif isinstance(value, (list, tuple, set)):
+        raw_tokens = [str(item) for item in value if isinstance(item, str)]
+    else:
+        return default
+
+    normalized_tokens: list[str] = []
+    for token in raw_tokens:
+        normalized = token.strip().lower()
+        if not normalized:
+            continue
+        if extension_mode and normalized != "*" and not normalized.startswith("."):
+            normalized = f".{normalized}"
+        if normalized not in normalized_tokens:
+            normalized_tokens.append(normalized)
+
+    return tuple(normalized_tokens) if normalized_tokens else default
+
+
 class PluginConfig:
     """单例类，存储插件级别的配置"""
 
@@ -90,12 +140,22 @@ class PluginConfig:
         self._e2ee_store_path: Path = self._data_dir / "e2ee"
         self._media_cache_dir: Path = self._data_dir / "media"
         self._media_cache_gc_days: int = 30
+        self._media_download_concurrency: int = 4
+        self._media_download_min_interval_ms: int = 0
+        self._media_cache_index_persist: bool = True
         self._media_auto_download_max_bytes: int = 0
         self._media_auto_download_image: bool = True
         self._media_auto_download_video: bool = True
         self._media_auto_download_audio: bool = True
         self._media_auto_download_file: bool = True
         self._media_auto_download_sticker: bool = True
+        self._media_upload_strict_mime_check: bool = True
+        self._media_upload_blocked_extensions: tuple[str, ...] = (
+            _DEFAULT_MEDIA_UPLOAD_BLOCKED_EXTENSIONS
+        )
+        self._media_upload_allowed_mime_rules: tuple[str, ...] = (
+            _DEFAULT_MEDIA_UPLOAD_ALLOWED_MIME_RULES
+        )
         self._oauth2_callback_port: int = 8765
         self._oauth2_callback_host: str = "127.0.0.1"
         # Sticker 相关配置
@@ -139,6 +199,18 @@ class PluginConfig:
         self._media_cache_gc_days = _normalize_non_negative_int(
             config.get("matrix_media_cache_gc_days"), 30
         )
+        self._media_download_concurrency = max(
+            1,
+            _normalize_non_negative_int(
+                config.get("matrix_media_download_concurrency"), 4
+            ),
+        )
+        self._media_download_min_interval_ms = _normalize_non_negative_int(
+            config.get("matrix_media_download_min_interval_ms"), 0
+        )
+        self._media_cache_index_persist = _normalize_bool(
+            config.get("matrix_media_cache_index_persist"), True
+        )
         self._media_auto_download_max_bytes = _normalize_non_negative_int(
             config.get("matrix_media_auto_download_max_bytes"), 0
         )
@@ -156,6 +228,18 @@ class PluginConfig:
         )
         self._media_auto_download_sticker = _normalize_bool(
             config.get("matrix_media_auto_download_sticker"), True
+        )
+        self._media_upload_strict_mime_check = _normalize_bool(
+            config.get("matrix_media_upload_strict_mime_check"), True
+        )
+        self._media_upload_blocked_extensions = _normalize_token_list(
+            config.get("matrix_media_upload_blocked_extensions"),
+            _DEFAULT_MEDIA_UPLOAD_BLOCKED_EXTENSIONS,
+            extension_mode=True,
+        )
+        self._media_upload_allowed_mime_rules = _normalize_token_list(
+            config.get("matrix_media_upload_allowed_mime_rules"),
+            _DEFAULT_MEDIA_UPLOAD_ALLOWED_MIME_RULES,
         )
         # Sticker 相关配置
         self._sticker_auto_sync = config.get("matrix_sticker_auto_sync", False)
@@ -233,6 +317,21 @@ class PluginConfig:
         return self._media_cache_gc_days
 
     @property
+    def media_download_concurrency(self) -> int:
+        """媒体下载并发上限（每个媒体源 server）"""
+        return self._media_download_concurrency
+
+    @property
+    def media_download_min_interval_ms(self) -> int:
+        """同一媒体源 server 的最小下载请求间隔（毫秒）"""
+        return self._media_download_min_interval_ms
+
+    @property
+    def media_cache_index_persist(self) -> bool:
+        """是否启用媒体缓存索引持久化"""
+        return self._media_cache_index_persist
+
+    @property
     def media_auto_download_max_bytes(self) -> int:
         """媒体自动下载大小上限（字节），<=0 表示不限制"""
         return self._media_auto_download_max_bytes
@@ -247,6 +346,21 @@ class PluginConfig:
             "m.sticker": self._media_auto_download_sticker,
         }
         return mapping.get(msgtype, False)
+
+    @property
+    def media_upload_strict_mime_check(self) -> bool:
+        """媒体上传时是否启用严格 MIME 校验"""
+        return self._media_upload_strict_mime_check
+
+    @property
+    def media_upload_blocked_extensions(self) -> tuple[str, ...]:
+        """媒体上传扩展名黑名单"""
+        return self._media_upload_blocked_extensions
+
+    @property
+    def media_upload_allowed_mime_rules(self) -> tuple[str, ...]:
+        """媒体上传允许的 MIME 规则"""
+        return self._media_upload_allowed_mime_rules
 
     @property
     def oauth2_callback_port(self) -> int:

@@ -22,6 +22,7 @@ from astrbot.core.utils import astrbot_path
 from ..client.event_types import MatrixRoom
 from ..constants import REL_TYPE_THREAD
 from ..plugin_config import get_plugin_config
+from ..utils.media_cache_index import MediaCacheIndexStore
 from ..utils.media_crypto import decrypt_encrypted_file
 from ..utils.utils import MatrixUtils
 from .handlers import (
@@ -68,6 +69,8 @@ class MatrixReceiver:
         self.client = client  # MatrixHTTPClient instance needed for downloading files
         self._media_download_tasks: dict[str, asyncio.Task[Path]] = {}
         self._media_cache_index: dict[str, Path] = {}
+        self._media_cache_index_store: MediaCacheIndexStore | None = None
+        self._initialize_media_cache_index_store()
 
     def _get_media_cache_dir(self) -> Path:
         """获取媒体文件缓存目录"""
@@ -89,6 +92,79 @@ class MatrixReceiver:
             return get_plugin_config().is_media_auto_download_enabled(msgtype)
         except Exception:
             return True
+
+    @staticmethod
+    def _media_cache_index_filename() -> str:
+        return "media_cache_index.sqlite3"
+
+    def _is_media_cache_index_persist_enabled(self) -> bool:
+        try:
+            return bool(get_plugin_config().media_cache_index_persist)
+        except Exception:
+            return True
+
+    def _initialize_media_cache_index_store(self) -> None:
+        if not self._is_media_cache_index_persist_enabled():
+            return
+        cache_dir = self._get_media_cache_dir()
+        db_path = cache_dir / self._media_cache_index_filename()
+        try:
+            self._media_cache_index_store = MediaCacheIndexStore(
+                db_path=db_path,
+                cache_dir=cache_dir,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to initialize media cache index store: {e}")
+            self._media_cache_index_store = None
+
+    def _remove_media_cache_index_entry(
+        self, cache_key: str | None, path: Path | None = None
+    ) -> None:
+        if cache_key:
+            self._media_cache_index.pop(cache_key, None)
+        if not self._media_cache_index_store:
+            return
+        try:
+            if cache_key:
+                self._media_cache_index_store.safe_remove(cache_key)
+            elif path is not None:
+                self._media_cache_index_store.remove_by_path(path)
+        except Exception as e:
+            logger.debug(f"Failed to remove media cache index entry: {e}")
+
+    def _upsert_media_cache_index_entry(
+        self, cache_key: str, cache_path: Path, *, size_bytes: int | None = None
+    ) -> None:
+        self._media_cache_index[cache_key] = cache_path
+        if not self._media_cache_index_store:
+            return
+        try:
+            self._media_cache_index_store.upsert(
+                cache_key,
+                cache_path,
+                size_bytes=size_bytes,
+            )
+        except Exception as e:
+            logger.debug(f"Failed to upsert media cache index entry: {e}")
+
+    def _touch_cached_media_path(self, cache_key: str | None, cache_path: Path) -> None:
+        try:
+            cache_path.touch()
+        except Exception:
+            pass
+
+        if cache_key is None:
+            cache_key = self._extract_cache_key_from_path(cache_path)
+        if cache_key is None:
+            return
+
+        try:
+            size_bytes = cache_path.stat().st_size
+        except Exception:
+            size_bytes = None
+        self._upsert_media_cache_index_entry(
+            cache_key, cache_path, size_bytes=size_bytes
+        )
 
     @staticmethod
     def _normalize_media_size(size_value) -> int | None:
@@ -183,16 +259,37 @@ class MatrixReceiver:
         cached = self._media_cache_index.get(cache_key)
         if cached:
             try:
-                if cached.is_file() and cached.stat().st_size > 0:
+                size_bytes = cached.stat().st_size
+                if cached.is_file() and size_bytes > 0:
+                    self._upsert_media_cache_index_entry(
+                        cache_key, cached, size_bytes=size_bytes
+                    )
                     return cached
             except Exception:
                 pass
-            self._media_cache_index.pop(cache_key, None)
+            self._remove_media_cache_index_entry(cache_key)
+
+        if self._media_cache_index_store:
+            try:
+                indexed_path = self._media_cache_index_store.get(cache_key)
+                if indexed_path and indexed_path.is_file():
+                    size_bytes = indexed_path.stat().st_size
+                    if size_bytes > 0:
+                        self._upsert_media_cache_index_entry(
+                            cache_key, indexed_path, size_bytes=size_bytes
+                        )
+                        return indexed_path
+                if indexed_path:
+                    self._remove_media_cache_index_entry(cache_key)
+            except Exception as e:
+                logger.debug(f"Failed to restore media cache index entry: {e}")
 
         try:
             for path in cache_dir.glob(f"{cache_key}*"):
                 if path.is_file() and path.stat().st_size > 0:
-                    self._media_cache_index[cache_key] = path
+                    self._upsert_media_cache_index_entry(
+                        cache_key, path, size_bytes=path.stat().st_size
+                    )
                     return path
         except Exception:
             return None
@@ -237,7 +334,9 @@ class MatrixReceiver:
         await asyncio.to_thread(_write)
         cache_key = self._extract_cache_key_from_path(cache_path)
         if cache_key:
-            self._media_cache_index[cache_key] = cache_path
+            self._upsert_media_cache_index_entry(
+                cache_key, cache_path, size_bytes=len(data)
+            )
 
     async def _download_media_file(
         self, mxc_url: str, filename: str = None, mimetype: str = None
@@ -251,10 +350,9 @@ class MatrixReceiver:
         # 检查缓存
         if cache_path.exists() and cache_path.stat().st_size > 0:
             logger.debug(f"Using cached media file: {cache_path}")
-            try:
-                cache_path.touch()
-            except Exception:
-                pass
+            self._touch_cached_media_path(
+                self._extract_cache_key_from_path(cache_path), cache_path
+            )
             return cache_path
 
         async def _download() -> Path:
@@ -262,10 +360,10 @@ class MatrixReceiver:
                 mxc_url, filename, mimetype
             )
             if resolved_cache_path.exists() and resolved_cache_path.stat().st_size > 0:
-                try:
-                    resolved_cache_path.touch()
-                except Exception:
-                    pass
+                self._touch_cached_media_path(
+                    self._extract_cache_key_from_path(resolved_cache_path),
+                    resolved_cache_path,
+                )
                 return resolved_cache_path
 
             logger.info(f"Downloading media file: {mxc_url}")
@@ -278,9 +376,18 @@ class MatrixReceiver:
                 await self._write_cache_file(
                     resolved_cache_path, bytes(download_result)
                 )
-            cache_key = self._extract_cache_key_from_path(resolved_cache_path)
-            if cache_key:
-                self._media_cache_index[cache_key] = resolved_cache_path
+            else:
+                cache_key = self._extract_cache_key_from_path(resolved_cache_path)
+                if cache_key and resolved_cache_path.exists():
+                    try:
+                        size_bytes = resolved_cache_path.stat().st_size
+                    except Exception:
+                        size_bytes = None
+                    self._upsert_media_cache_index_entry(
+                        cache_key,
+                        resolved_cache_path,
+                        size_bytes=size_bytes,
+                    )
             logger.debug(f"Saved media file to cache: {resolved_cache_path}")
             return resolved_cache_path
 
@@ -304,10 +411,9 @@ class MatrixReceiver:
         cache_path = self._build_media_cache_path(mxc_url, filename, mimetype)
         if cache_path.exists() and cache_path.stat().st_size > 0:
             logger.debug(f"Using cached encrypted media file: {cache_path}")
-            try:
-                cache_path.touch()
-            except Exception:
-                pass
+            self._touch_cached_media_path(
+                self._extract_cache_key_from_path(cache_path), cache_path
+            )
             return cache_path
 
         key_info = file_info.get("key") or {}
@@ -320,10 +426,10 @@ class MatrixReceiver:
                 mxc_url, filename, mimetype
             )
             if resolved_cache_path.exists() and resolved_cache_path.stat().st_size > 0:
-                try:
-                    resolved_cache_path.touch()
-                except Exception:
-                    pass
+                self._touch_cached_media_path(
+                    self._extract_cache_key_from_path(resolved_cache_path),
+                    resolved_cache_path,
+                )
                 return resolved_cache_path
 
             logger.info(f"Downloading encrypted media file: {mxc_url}")
@@ -431,13 +537,17 @@ class MatrixReceiver:
         for path in cache_dir.iterdir():
             if not path.is_file():
                 continue
+            if (
+                self._media_cache_index_store
+                and self._media_cache_index_store.is_index_file(path)
+            ):
+                continue
             try:
                 if path.stat().st_mtime < cutoff:
                     path.unlink()
                     removed += 1
                     cache_key = self._extract_cache_key_from_path(path)
-                    if cache_key:
-                        self._media_cache_index.pop(cache_key, None)
+                    self._remove_media_cache_index_entry(cache_key, path=path)
             except Exception as e:
                 logger.debug(f"清理媒体缓存失败：{path} ({e})")
 
