@@ -2,8 +2,11 @@
 Matrix 消息接收组件
 """
 
+import asyncio
 import hashlib
+import mimetypes
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from astrbot.api import logger
@@ -49,6 +52,7 @@ class MatrixReceiver:
         self.mxc_converter = mxc_converter
         self.bot_name = bot_name
         self.client = client  # MatrixHTTPClient instance needed for downloading files
+        self._media_download_tasks: dict[str, asyncio.Task[Path]] = {}
 
     def _get_media_cache_dir(self) -> Path:
         """获取媒体文件缓存目录"""
@@ -67,15 +71,19 @@ class MatrixReceiver:
         # 默认自动下载图片、贴纸、视频、语音、文件
         return msgtype in ["m.image", "m.sticker", "m.video", "m.audio", "m.file"]
 
-    def _build_media_cache_path(
-        self, mxc_url: str, filename: str | None = None, mimetype: str | None = None
-    ) -> Path:
-        cache_key = hashlib.md5(mxc_url.encode()).hexdigest()
-        cache_dir = self._get_media_cache_dir()
+    @staticmethod
+    def _media_cache_key(mxc_url: str) -> str:
+        return hashlib.md5(mxc_url.encode()).hexdigest()
 
+    @staticmethod
+    def _guess_media_ext(filename: str | None, mimetype: str | None) -> str:
         if filename:
-            ext = Path(filename).suffix
-        elif mimetype:
+            suffix = Path(filename).suffix
+            if suffix:
+                return suffix.lower()
+
+        if mimetype:
+            normalized_mimetype = mimetype.lower().split(";")[0].strip()
             ext_map = {
                 "image/png": ".png",
                 "image/jpeg": ".jpg",
@@ -89,11 +97,63 @@ class MatrixReceiver:
                 "audio/wav": ".wav",
                 "audio/x-wav": ".wav",
             }
-            ext = ext_map.get(mimetype, ".jpg")
-        else:
-            ext = ".jpg"
+            mapped = ext_map.get(normalized_mimetype)
+            if mapped:
+                return mapped
+            guessed = mimetypes.guess_extension(normalized_mimetype, strict=False)
+            if guessed:
+                return ".jpg" if guessed == ".jpe" else guessed
 
+        return ".bin"
+
+    def _find_existing_media_cache_file(
+        self, cache_key: str, cache_dir: Path
+    ) -> Path | None:
+        try:
+            for path in cache_dir.glob(f"{cache_key}*"):
+                if path.is_file() and path.stat().st_size > 0:
+                    return path
+        except Exception:
+            return None
+        return None
+
+    def _build_media_cache_path(
+        self, mxc_url: str, filename: str | None = None, mimetype: str | None = None
+    ) -> Path:
+        cache_key = self._media_cache_key(mxc_url)
+        cache_dir = self._get_media_cache_dir()
+        existing = self._find_existing_media_cache_file(cache_key, cache_dir)
+        if existing:
+            return existing
+
+        ext = self._guess_media_ext(filename, mimetype)
         return cache_dir / f"{cache_key}{ext}"
+
+    async def _run_download_task(
+        self, task_key: str, task_factory: Callable[[], Awaitable[Path]]
+    ) -> Path:
+        existing_task = self._media_download_tasks.get(task_key)
+        if existing_task:
+            return await existing_task
+
+        task = asyncio.create_task(task_factory())
+        self._media_download_tasks[task_key] = task
+        try:
+            return await task
+        finally:
+            current_task = self._media_download_tasks.get(task_key)
+            if current_task is task:
+                self._media_download_tasks.pop(task_key, None)
+
+    async def _write_cache_file(self, cache_path: Path, data: bytes) -> None:
+        def _write() -> None:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_name = f".{cache_path.name}.{time.time_ns()}.tmp"
+            temp_path = cache_path.with_name(temp_name)
+            temp_path.write_bytes(data)
+            temp_path.replace(cache_path)
+
+        await asyncio.to_thread(_write)
 
     async def _download_media_file(
         self, mxc_url: str, filename: str = None, mimetype: str = None
@@ -113,13 +173,25 @@ class MatrixReceiver:
                 pass
             return cache_path
 
-        # 下载文件
-        try:
+        async def _download() -> Path:
+            resolved_cache_path = self._build_media_cache_path(
+                mxc_url, filename, mimetype
+            )
+            if resolved_cache_path.exists() and resolved_cache_path.stat().st_size > 0:
+                try:
+                    resolved_cache_path.touch()
+                except Exception:
+                    pass
+                return resolved_cache_path
+
             logger.info(f"Downloading media file: {mxc_url}")
             media_data = await self.client.download_file(mxc_url)
-            cache_path.write_bytes(media_data)
-            logger.debug(f"Saved media file to cache: {cache_path}")
-            return cache_path
+            await self._write_cache_file(resolved_cache_path, media_data)
+            logger.debug(f"Saved media file to cache: {resolved_cache_path}")
+            return resolved_cache_path
+
+        try:
+            return await self._run_download_task(f"plain:{mxc_url}", _download)
         except Exception as e:
             logger.error(f"Failed to download media file {mxc_url}: {e}")
             raise
@@ -144,12 +216,32 @@ class MatrixReceiver:
                 pass
             return cache_path
 
-        logger.info(f"Downloading encrypted media file: {mxc_url}")
-        ciphertext = await self.client.download_file(mxc_url)
-        plaintext = decrypt_encrypted_file(file_info, ciphertext)
-        cache_path.write_bytes(plaintext)
-        logger.debug(f"Saved decrypted media file to cache: {cache_path}")
-        return cache_path
+        key_info = file_info.get("key") or {}
+        iv = file_info.get("iv") or ""
+        sha256_hash = (file_info.get("hashes") or {}).get("sha256", "")
+        encrypted_task_key = f"enc:{mxc_url}:{key_info.get('k', '')}:{iv}:{sha256_hash}"
+
+        async def _download_and_decrypt() -> Path:
+            resolved_cache_path = self._build_media_cache_path(
+                mxc_url, filename, mimetype
+            )
+            if resolved_cache_path.exists() and resolved_cache_path.stat().st_size > 0:
+                try:
+                    resolved_cache_path.touch()
+                except Exception:
+                    pass
+                return resolved_cache_path
+
+            logger.info(f"Downloading encrypted media file: {mxc_url}")
+            ciphertext = await self.client.download_file(mxc_url)
+            plaintext = await asyncio.to_thread(
+                decrypt_encrypted_file, file_info, ciphertext
+            )
+            await self._write_cache_file(resolved_cache_path, plaintext)
+            logger.debug(f"Saved decrypted media file to cache: {resolved_cache_path}")
+            return resolved_cache_path
+
+        return await self._run_download_task(encrypted_task_key, _download_and_decrypt)
 
     def gc_media_cache(self, older_than_days: int | None = None) -> int:
         """清理媒体缓存，返回删除文件数"""

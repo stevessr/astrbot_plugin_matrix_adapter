@@ -23,8 +23,7 @@ async def send_audio(
 ) -> None:
     audio_path = await segment.convert_to_file_path()
     filename = Path(audio_path).name
-    with open(audio_path, "rb") as f:
-        audio_data = f.read()
+    audio_data = await asyncio.to_thread(Path(audio_path).read_bytes)
 
     content_type = mimetypes.guess_type(filename)[0] or "audio/ogg"
     audio_size = len(audio_data)

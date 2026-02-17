@@ -23,8 +23,7 @@ async def send_video(
 ) -> None:
     video_path = await segment.convert_to_file_path()
     filename = Path(video_path).name
-    with open(video_path, "rb") as f:
-        video_data = f.read()
+    video_data = await asyncio.to_thread(Path(video_path).read_bytes)
 
     content_type = mimetypes.guess_type(filename)[0] or "video/mp4"
     video_size = len(video_data)

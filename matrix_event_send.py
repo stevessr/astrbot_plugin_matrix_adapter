@@ -261,6 +261,7 @@ async def send_with_client_impl(
                     use_thread,
                     is_encrypted_room,
                     e2ee_manager,
+                    upload_size_limit,
                 )
                 sent_count += 1
             except Exception as e:

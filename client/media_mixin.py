@@ -3,6 +3,9 @@ Matrix HTTP Client - Media Mixin
 Provides file upload and download methods
 """
 
+import asyncio
+import hashlib
+import time
 from typing import Any
 
 import aiohttp
@@ -14,6 +17,40 @@ from ..constants import HTTP_ERROR_STATUS_400
 
 class MediaMixin:
     """Media-related methods for Matrix client"""
+
+    _MEDIA_UPLOAD_CACHE_TTL_SECONDS = 15 * 60
+    _MEDIA_UPLOAD_CACHE_MAX_ENTRIES = 256
+
+    def _ensure_media_upload_cache(self) -> None:
+        if not hasattr(self, "_media_upload_cache"):
+            self._media_upload_cache: dict[str, tuple[str, float]] = {}
+        if not hasattr(self, "_media_upload_inflight"):
+            self._media_upload_inflight: dict[str, asyncio.Task[dict[str, Any]]] = {}
+
+    @staticmethod
+    def _build_media_upload_cache_key(data: bytes, content_type: str) -> str:
+        digest = hashlib.sha256(data).hexdigest()
+        return f"{content_type}:{digest}"
+
+    def _prune_media_upload_cache(self, now: float) -> None:
+        expired_keys = [
+            key
+            for key, (_, ts) in self._media_upload_cache.items()
+            if (now - ts) > self._MEDIA_UPLOAD_CACHE_TTL_SECONDS
+        ]
+        for key in expired_keys:
+            self._media_upload_cache.pop(key, None)
+
+        overflow = len(self._media_upload_cache) - self._MEDIA_UPLOAD_CACHE_MAX_ENTRIES
+        if overflow <= 0:
+            return
+
+        oldest_keys = sorted(
+            self._media_upload_cache.items(),
+            key=lambda item: item[1][1],
+        )[:overflow]
+        for key, _ in oldest_keys:
+            self._media_upload_cache.pop(key, None)
 
     async def upload_file(
         self, data: bytes, content_type: str, filename: str
@@ -30,28 +67,59 @@ class MediaMixin:
             Upload response with content_uri
         """
         await self._ensure_session()
+        self._ensure_media_upload_cache()
 
-        url = f"{self.homeserver}/_matrix/media/v3/upload"
-        headers = {
-            "Content-Type": content_type,
-            "Authorization": f"Bearer {self.access_token}",
-            "User-Agent": "AstrBot Matrix Client/1.0",
-        }
-        params = {"filename": filename}
+        cache_key = self._build_media_upload_cache_key(data, content_type)
+        now = time.monotonic()
+        cached = self._media_upload_cache.get(cache_key)
+        if cached and (now - cached[1]) <= self._MEDIA_UPLOAD_CACHE_TTL_SECONDS:
+            logger.debug(
+                "Reusing recent Matrix media upload result from in-memory cache"
+            )
+            return {"content_uri": cached[0]}
 
-        async with self.session.post(
-            url, data=data, headers=headers, params=params
-        ) as response:
-            response_data = await response.json()
+        existing_task = self._media_upload_inflight.get(cache_key)
+        if existing_task:
+            logger.debug("Joining in-flight Matrix media upload task")
+            return await existing_task
 
-            if response.status >= HTTP_ERROR_STATUS_400:
-                error_code = response_data.get("errcode", "UNKNOWN")
-                error_msg = response_data.get("error", "Unknown error")
-                raise Exception(
-                    f"Matrix media upload error: {error_code} - {error_msg}"
-                )
+        async def _perform_upload() -> dict[str, Any]:
+            url = f"{self.homeserver}/_matrix/media/v3/upload"
+            headers = {
+                "Content-Type": content_type,
+                "Authorization": f"Bearer {self.access_token}",
+                "User-Agent": "AstrBot Matrix Client/1.0",
+            }
+            params = {"filename": filename}
 
-            return response_data
+            async with self.session.post(
+                url, data=data, headers=headers, params=params
+            ) as response:
+                response_data = await response.json()
+
+                if response.status >= HTTP_ERROR_STATUS_400:
+                    error_code = response_data.get("errcode", "UNKNOWN")
+                    error_msg = response_data.get("error", "Unknown error")
+                    raise Exception(
+                        f"Matrix media upload error: {error_code} - {error_msg}"
+                    )
+
+                content_uri = response_data.get("content_uri")
+                if isinstance(content_uri, str) and content_uri:
+                    now_inner = time.monotonic()
+                    self._media_upload_cache[cache_key] = (content_uri, now_inner)
+                    self._prune_media_upload_cache(now_inner)
+
+                return response_data
+
+        upload_task = asyncio.create_task(_perform_upload())
+        self._media_upload_inflight[cache_key] = upload_task
+        try:
+            return await upload_task
+        finally:
+            current_task = self._media_upload_inflight.get(cache_key)
+            if current_task is upload_task:
+                self._media_upload_inflight.pop(cache_key, None)
 
     async def get_media_config(self) -> dict[str, Any]:
         """

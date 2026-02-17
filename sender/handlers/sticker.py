@@ -1,3 +1,4 @@
+import asyncio
 import mimetypes
 from pathlib import Path
 
@@ -28,8 +29,7 @@ async def send_sticker(
         try:
             sticker_path = await segment.convert_to_file_path()
             filename = Path(sticker_path).name
-            with open(sticker_path, "rb") as f:
-                sticker_data = f.read()
+            sticker_data = await asyncio.to_thread(Path(sticker_path).read_bytes)
         except ValueError as e:
             if "MXC URL" in str(e) and segment.url.startswith("mxc://"):
                 content_uri = segment.url

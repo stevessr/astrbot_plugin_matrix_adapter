@@ -23,8 +23,7 @@ async def send_image(
 ) -> None:
     img_path = await segment.convert_to_file_path()
     filename = Path(img_path).name
-    with open(img_path, "rb") as f:
-        image_data = f.read()
+    image_data = await asyncio.to_thread(Path(img_path).read_bytes)
 
     width, height = None, None
     try:
