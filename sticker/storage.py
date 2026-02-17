@@ -206,7 +206,9 @@ class StickerStorage:
             if sticker.url.startswith("mxc://") and client:
                 # 从 Matrix 媒体服务器下载
                 try:
-                    file_data = await client.download_file(sticker.url)
+                    file_data = await client.download_file(
+                        sticker.url, allow_thumbnail_fallback=True
+                    )
                 except Exception as e:
                     logger.error(f"下载 sticker 失败：{e}")
                     raise

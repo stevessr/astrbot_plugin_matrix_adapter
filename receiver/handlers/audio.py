@@ -11,12 +11,19 @@ async def handle_audio(receiver, chain, event, _: str):
     info_data = content.get("info", {})
     filename = content.get("filename") or content.get("body", "audio.mp3")
     mimetype = info_data.get("mimetype")
+    size_bytes = receiver._extract_media_size(content)
+    over_limit = receiver._is_media_over_auto_download_limit(size_bytes)
+    if over_limit:
+        logger.info(
+            f"Skip auto-downloading Matrix audio over size limit: {filename} ({size_bytes} bytes)"
+        )
 
     rendered = False
     if (
         file_info
         and receiver.client
         and receiver._should_auto_download_media("m.audio")
+        and not over_limit
     ):
         try:
             cache_path = await receiver._download_encrypted_media_file(
@@ -32,6 +39,7 @@ async def handle_audio(receiver, chain, event, _: str):
         and mxc_url
         and receiver.client
         and receiver._should_auto_download_media("m.audio")
+        and not over_limit
     ):
         try:
             cache_path = await receiver._download_media_file(
@@ -54,7 +62,10 @@ async def handle_audio(receiver, chain, event, _: str):
             rendered = True
 
     if not rendered:
-        chain.chain.append(Plain(f"[语音：{event.body}]"))
+        if over_limit:
+            chain.chain.append(Plain(f"[语音过大，已跳过自动下载：{filename}]"))
+        else:
+            chain.chain.append(Plain(f"[语音：{event.body}]"))
 
     if should_append_caption(content, filename):
         append_formatted_text(

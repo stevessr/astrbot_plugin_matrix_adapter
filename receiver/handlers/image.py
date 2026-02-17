@@ -11,6 +11,12 @@ async def handle_image(receiver, chain, event, _: str):
     mxc_url = content.get("url")
     filename = content.get("filename") or content.get("body", "image.jpg")
     mimetype = info_data.get("mimetype")
+    size_bytes = receiver._extract_media_size(content)
+    over_limit = receiver._is_media_over_auto_download_limit(size_bytes)
+    if over_limit:
+        logger.info(
+            f"Skip auto-downloading Matrix image over size limit: {filename} ({size_bytes} bytes)"
+        )
 
     rendered = False
 
@@ -18,6 +24,7 @@ async def handle_image(receiver, chain, event, _: str):
         file_info
         and receiver.client
         and receiver._should_auto_download_media("m.image")
+        and not over_limit
     ):
         try:
             cache_path = await receiver._download_encrypted_media_file(
@@ -33,6 +40,7 @@ async def handle_image(receiver, chain, event, _: str):
         and mxc_url
         and receiver.client
         and receiver._should_auto_download_media("m.image")
+        and not over_limit
     ):
         try:
             cache_path = await receiver._download_media_file(
@@ -49,7 +57,10 @@ async def handle_image(receiver, chain, event, _: str):
         rendered = True
 
     if not rendered:
-        chain.chain.append(Plain(f"[图片：{event.body}]"))
+        if over_limit:
+            chain.chain.append(Plain(f"[图片过大，已跳过自动下载：{filename}]"))
+        else:
+            chain.chain.append(Plain(f"[图片：{event.body}]"))
 
     if should_append_caption(content, filename):
         append_formatted_text(

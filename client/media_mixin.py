@@ -20,6 +20,9 @@ class MediaMixin:
 
     _MEDIA_UPLOAD_CACHE_TTL_SECONDS = 15 * 60
     _MEDIA_UPLOAD_CACHE_MAX_ENTRIES = 256
+    _MEDIA_HTTP_MAX_RETRIES = 3
+    _MEDIA_RETRY_BASE_DELAY_SECONDS = 0.75
+    _MEDIA_RETRY_MAX_DELAY_SECONDS = 10.0
 
     def _ensure_media_upload_cache(self) -> None:
         if not hasattr(self, "_media_upload_cache"):
@@ -51,6 +54,53 @@ class MediaMixin:
         )[:overflow]
         for key, _ in oldest_keys:
             self._media_upload_cache.pop(key, None)
+
+    @staticmethod
+    def _coerce_retry_after_seconds(value: Any) -> float | None:
+        if value is None:
+            return None
+        try:
+            retry_after = float(value)
+        except (TypeError, ValueError):
+            return None
+        if retry_after <= 0:
+            return None
+        return retry_after
+
+    def _extract_retry_after_seconds(
+        self,
+        response_headers: "aiohttp.typedefs.LooseHeaders",
+        response_data: dict[str, Any] | None = None,
+    ) -> float | None:
+        retry_after = self._coerce_retry_after_seconds(
+            (response_data or {}).get("retry_after_ms")
+        )
+        if retry_after is not None:
+            return min(retry_after / 1000.0, self._MEDIA_RETRY_MAX_DELAY_SECONDS)
+
+        header_value = None
+        try:
+            header_value = response_headers.get("Retry-After")
+        except Exception:
+            header_value = None
+        retry_after_header = self._coerce_retry_after_seconds(header_value)
+        if retry_after_header is None:
+            return None
+        return min(retry_after_header, self._MEDIA_RETRY_MAX_DELAY_SECONDS)
+
+    def _compute_retry_delay(
+        self, attempt: int, retry_after_seconds: float | None = None
+    ) -> float:
+        if retry_after_seconds is not None:
+            return max(0.1, retry_after_seconds)
+        return min(
+            self._MEDIA_RETRY_BASE_DELAY_SECONDS * (2**attempt),
+            self._MEDIA_RETRY_MAX_DELAY_SECONDS,
+        )
+
+    @staticmethod
+    def _should_retry_http_status(status: int) -> bool:
+        return status == 429 or status >= 500
 
     async def upload_file(
         self, data: bytes, content_type: str, filename: str
@@ -91,26 +141,71 @@ class MediaMixin:
                 "User-Agent": "AstrBot Matrix Client/1.0",
             }
             params = {"filename": filename}
+            attempt = 0
+            while True:
+                try:
+                    async with self.session.post(
+                        url, data=data, headers=headers, params=params
+                    ) as response:
+                        response_data: dict[str, Any] = {}
+                        try:
+                            parsed = await response.json(content_type=None)
+                            if isinstance(parsed, dict):
+                                response_data = parsed
+                        except Exception:
+                            try:
+                                response_data = {"error": await response.text()}
+                            except Exception:
+                                response_data = {}
 
-            async with self.session.post(
-                url, data=data, headers=headers, params=params
-            ) as response:
-                response_data = await response.json()
+                        if response.status >= HTTP_ERROR_STATUS_400:
+                            retry_after_seconds = self._extract_retry_after_seconds(
+                                response.headers, response_data
+                            )
+                            if (
+                                self._should_retry_http_status(response.status)
+                                and attempt < self._MEDIA_HTTP_MAX_RETRIES
+                            ):
+                                delay = self._compute_retry_delay(
+                                    attempt, retry_after_seconds
+                                )
+                                attempt += 1
+                                logger.warning(
+                                    "Matrix media upload failed with status "
+                                    f"{response.status}, retrying in {delay:.2f}s "
+                                    f"({attempt}/{self._MEDIA_HTTP_MAX_RETRIES})"
+                                )
+                                await asyncio.sleep(delay)
+                                continue
 
-                if response.status >= HTTP_ERROR_STATUS_400:
-                    error_code = response_data.get("errcode", "UNKNOWN")
-                    error_msg = response_data.get("error", "Unknown error")
-                    raise Exception(
-                        f"Matrix media upload error: {error_code} - {error_msg}"
-                    )
+                            error_code = response_data.get("errcode", "UNKNOWN")
+                            error_msg = response_data.get("error", "Unknown error")
+                            raise Exception(
+                                f"Matrix media upload error: {error_code} - {error_msg}"
+                            )
 
-                content_uri = response_data.get("content_uri")
-                if isinstance(content_uri, str) and content_uri:
-                    now_inner = time.monotonic()
-                    self._media_upload_cache[cache_key] = (content_uri, now_inner)
-                    self._prune_media_upload_cache(now_inner)
+                        content_uri = response_data.get("content_uri")
+                        if not isinstance(content_uri, str) or not content_uri:
+                            raise Exception(
+                                "Matrix media upload error: missing content_uri"
+                            )
 
-                return response_data
+                        now_inner = time.monotonic()
+                        self._media_upload_cache[cache_key] = (content_uri, now_inner)
+                        self._prune_media_upload_cache(now_inner)
+                        return response_data
+
+                except aiohttp.ClientError as e:
+                    if attempt < self._MEDIA_HTTP_MAX_RETRIES:
+                        delay = self._compute_retry_delay(attempt)
+                        attempt += 1
+                        logger.warning(
+                            "Matrix media upload network error, retrying in "
+                            f"{delay:.2f}s ({attempt}/{self._MEDIA_HTTP_MAX_RETRIES}): {e}"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    raise
 
         upload_task = asyncio.create_task(_perform_upload())
         self._media_upload_inflight[cache_key] = upload_task
@@ -151,7 +246,9 @@ class MediaMixin:
         logger.warning("无法获取 Matrix 媒体服务器配置，将使用默认值")
         return {}
 
-    async def download_file(self, mxc_url: str) -> bytes:
+    async def download_file(
+        self, mxc_url: str, *, allow_thumbnail_fallback: bool = False
+    ) -> bytes:
         """
         Download a file from the Matrix media repository
         按照 Matrix spec 正确实现媒体下载
@@ -160,6 +257,7 @@ class MediaMixin:
 
         Args:
             mxc_url: MXC URL (mxc://server/media_id)
+            allow_thumbnail_fallback: Whether to fallback to thumbnail on failure
 
         Returns:
             File data as bytes
@@ -214,51 +312,88 @@ class MediaMixin:
             if use_auth and self.access_token:
                 headers["Authorization"] = f"Bearer {self.access_token}"
 
-            # 添加调试日志
             auth_status = (
                 "with auth" if use_auth and self.access_token else "without auth"
             )
-            logger.debug(f"Downloading from {url} {auth_status}")
-
-            # 记录详细的下载策略
-            logger.info(
-                f"🎯 Attempting download from {url} {auth_status} (strategy: {strategy})"
+            logger.debug(
+                f"Attempting media download from {url} {auth_status} (strategy: {strategy})"
             )
 
-            try:
-                logger.debug(f"Downloading media from: {url}")
-                async with self.session.get(
-                    url, headers=headers, allow_redirects=True
-                ) as response:
-                    last_status = response.status
-                    if response.status == 200:
-                        logger.debug(f"✅ Successfully downloaded media from {url}")
-                        return await response.read()
-                    elif response.status == 404:
-                        logger.debug(f"Got 404 on {url}, trying next endpoint...")
-                        last_error = f"Media not found: {response.status}"
-                        continue
-                    elif response.status == 403:
-                        # 403 通常意味着认证问题或权限问题
+            attempt = 0
+            while True:
+                try:
+                    async with self.session.get(
+                        url, headers=headers, allow_redirects=True
+                    ) as response:
+                        last_status = response.status
+                        if response.status == 200:
+                            logger.debug(f"Successfully downloaded media from {url}")
+                            return await response.read()
+
+                        retry_after_seconds = None
+                        if response.status == 429:
+                            retry_payload: dict[str, Any] = {}
+                            try:
+                                parsed = await response.json(content_type=None)
+                                if isinstance(parsed, dict):
+                                    retry_payload = parsed
+                            except Exception:
+                                retry_payload = {}
+                            retry_after_seconds = self._extract_retry_after_seconds(
+                                response.headers, retry_payload
+                            )
+                        elif response.status >= 500:
+                            retry_after_seconds = self._extract_retry_after_seconds(
+                                response.headers, None
+                            )
+
+                        if (
+                            self._should_retry_http_status(response.status)
+                            and attempt < self._MEDIA_HTTP_MAX_RETRIES
+                        ):
+                            delay = self._compute_retry_delay(
+                                attempt, retry_after_seconds
+                            )
+                            attempt += 1
+                            logger.warning(
+                                "Matrix media download failed with status "
+                                f"{response.status}, retrying in {delay:.2f}s "
+                                f"({attempt}/{self._MEDIA_HTTP_MAX_RETRIES})"
+                            )
+                            await asyncio.sleep(delay)
+                            continue
+
+                        if response.status == 404:
+                            last_error = f"Media not found: {response.status}"
+                        elif response.status == 403:
+                            last_error = f"Access denied: {response.status}"
+                            logger.warning(
+                                f"Got 403 on {url} (auth problem or private media)"
+                            )
+                        else:
+                            last_error = f"HTTP {response.status}"
+                        break
+
+                except aiohttp.ClientError as e:
+                    if attempt < self._MEDIA_HTTP_MAX_RETRIES:
+                        delay = self._compute_retry_delay(attempt)
+                        attempt += 1
                         logger.warning(
-                            f"Got 403 on {url} (auth problem or private media)"
+                            "Matrix media download network error, retrying in "
+                            f"{delay:.2f}s ({attempt}/{self._MEDIA_HTTP_MAX_RETRIES}): {e}"
                         )
-                        last_error = f"Access denied: {response.status}"
+                        await asyncio.sleep(delay)
                         continue
-                    else:
-                        last_error = f"HTTP {response.status}"
-                        logger.debug(f"Got status {response.status} from {url}")
-            except aiohttp.ClientError as e:
-                last_error = str(e)
-                logger.debug(f"Network error downloading from {url}: {e}")
-                continue
-            except Exception as e:
-                last_error = str(e)
-                logger.debug(f"Exception downloading from {url}: {e}")
-                continue
+                    last_error = str(e)
+                    logger.debug(f"Network error downloading from {url}: {e}")
+                    break
+                except Exception as e:
+                    last_error = str(e)
+                    logger.debug(f"Exception downloading from {url}: {e}")
+                    break
 
         # 所有端点都失败了，尝试缩略图作为最后手段
-        if last_status in [403, 404]:
+        if allow_thumbnail_fallback and last_status in [403, 404]:
             logger.debug("Trying thumbnail endpoints as fallback...")
             thumbnail_endpoints = [
                 f"/_matrix/client/v1/media/thumbnail/{server_name}/{media_id}?width=800&height=600",
@@ -270,15 +405,41 @@ class MediaMixin:
                 if self.access_token:
                     headers["Authorization"] = f"Bearer {self.access_token}"
 
-                try:
-                    async with self.session.get(
-                        url, headers=headers, allow_redirects=True
-                    ) as response:
-                        if response.status == 200:
-                            logger.info("✅ Downloaded thumbnail instead of full media")
-                            return await response.read()
-                except Exception:
-                    continue
+                attempt = 0
+                while True:
+                    try:
+                        async with self.session.get(
+                            url, headers=headers, allow_redirects=True
+                        ) as response:
+                            if response.status == 200:
+                                logger.info(
+                                    "Downloaded thumbnail instead of full media"
+                                )
+                                return await response.read()
+
+                            if (
+                                self._should_retry_http_status(response.status)
+                                and attempt < self._MEDIA_HTTP_MAX_RETRIES
+                            ):
+                                retry_after_seconds = self._extract_retry_after_seconds(
+                                    response.headers, None
+                                )
+                                delay = self._compute_retry_delay(
+                                    attempt, retry_after_seconds
+                                )
+                                attempt += 1
+                                await asyncio.sleep(delay)
+                                continue
+                            break
+                    except aiohttp.ClientError:
+                        if attempt < self._MEDIA_HTTP_MAX_RETRIES:
+                            delay = self._compute_retry_delay(attempt)
+                            attempt += 1
+                            await asyncio.sleep(delay)
+                            continue
+                        break
+                    except Exception:
+                        break
 
         # If all attempts failed, raise the last error
         error_msg = f"Matrix media download error: {last_error} (last status: {last_status}) for {mxc_url}"

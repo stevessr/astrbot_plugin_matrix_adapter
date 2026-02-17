@@ -57,6 +57,16 @@ def _normalize_bool(value, default: bool = False) -> bool:
     return default
 
 
+def _normalize_non_negative_int(value, default: int = 0) -> int:
+    if value is None:
+        return default
+    try:
+        normalized = int(value)
+    except Exception:
+        return default
+    return max(0, normalized)
+
+
 class PluginConfig:
     """单例类，存储插件级别的配置"""
 
@@ -80,6 +90,7 @@ class PluginConfig:
         self._e2ee_store_path: Path = self._data_dir / "e2ee"
         self._media_cache_dir: Path = self._data_dir / "media"
         self._media_cache_gc_days: int = 30
+        self._media_auto_download_max_bytes: int = 0
         self._oauth2_callback_port: int = 8765
         self._oauth2_callback_host: str = "127.0.0.1"
         # Sticker 相关配置
@@ -92,11 +103,13 @@ class PluginConfig:
         self._pgsql_dsn: str = ""
         self._pgsql_schema: str = "public"
         self._pgsql_table_prefix: str = "matrix_store"
-        self._storage_backend_config: StorageBackendConfig = StorageBackendConfig.create(
-            backend=self._data_storage_backend,
-            pgsql_dsn=self._pgsql_dsn,
-            pgsql_schema=self._pgsql_schema,
-            pgsql_table_prefix=self._pgsql_table_prefix,
+        self._storage_backend_config: StorageBackendConfig = (
+            StorageBackendConfig.create(
+                backend=self._data_storage_backend,
+                pgsql_dsn=self._pgsql_dsn,
+                pgsql_schema=self._pgsql_schema,
+                pgsql_table_prefix=self._pgsql_table_prefix,
+            )
         )
         # Emoji 短码转换配置
         self._emoji_shortcodes_enabled: bool = False
@@ -118,7 +131,12 @@ class PluginConfig:
         self._oauth2_callback_host = config.get(
             "matrix_oauth2_callback_host", "127.0.0.1"
         )
-        self._media_cache_gc_days = config.get("matrix_media_cache_gc_days", 30)
+        self._media_cache_gc_days = _normalize_non_negative_int(
+            config.get("matrix_media_cache_gc_days"), 30
+        )
+        self._media_auto_download_max_bytes = _normalize_non_negative_int(
+            config.get("matrix_media_auto_download_max_bytes"), 0
+        )
         # Sticker 相关配置
         self._sticker_auto_sync = config.get("matrix_sticker_auto_sync", False)
         self._sticker_sync_user_emotes = config.get(
@@ -193,6 +211,11 @@ class PluginConfig:
     def media_cache_gc_days(self) -> int:
         """媒体缓存 GC 天数，<=0 表示禁用"""
         return self._media_cache_gc_days
+
+    @property
+    def media_auto_download_max_bytes(self) -> int:
+        """媒体自动下载大小上限（字节），<=0 表示不限制"""
+        return self._media_auto_download_max_bytes
 
     @property
     def oauth2_callback_port(self) -> int:

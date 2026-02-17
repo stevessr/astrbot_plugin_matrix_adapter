@@ -41,6 +41,19 @@ from .handlers import (
 
 
 class MatrixReceiver:
+    _IMAGE_EXTENSIONS = {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".svg",
+        ".avif",
+        ".heic",
+        ".heif",
+    }
+
     def __init__(
         self,
         user_id: str,
@@ -70,6 +83,48 @@ class MatrixReceiver:
         """检查是否应该自动下载该类型的媒体文件"""
         # 默认自动下载图片、贴纸、视频、语音、文件
         return msgtype in ["m.image", "m.sticker", "m.video", "m.audio", "m.file"]
+
+    @staticmethod
+    def _normalize_media_size(size_value) -> int | None:
+        if isinstance(size_value, bool) or size_value is None:
+            return None
+        try:
+            size = int(size_value)
+        except (TypeError, ValueError):
+            return None
+        return size if size >= 0 else None
+
+    def _extract_media_size(self, content: dict | None) -> int | None:
+        if not isinstance(content, dict):
+            return None
+        info = content.get("info")
+        if not isinstance(info, dict):
+            return None
+        return self._normalize_media_size(info.get("size"))
+
+    def _get_media_auto_download_max_bytes(self) -> int:
+        try:
+            configured = int(get_plugin_config().media_auto_download_max_bytes)
+        except Exception:
+            return 0
+        return max(0, configured)
+
+    def _is_media_over_auto_download_limit(self, size_bytes: int | None) -> bool:
+        if size_bytes is None:
+            return False
+        max_bytes = self._get_media_auto_download_max_bytes()
+        return max_bytes > 0 and size_bytes > max_bytes
+
+    def _is_image_media(
+        self, filename: str | None = None, mimetype: str | None = None
+    ) -> bool:
+        if mimetype:
+            normalized = mimetype.lower().split(";")[0].strip()
+            if normalized.startswith("image/"):
+                return True
+        if filename:
+            return Path(filename).suffix.lower() in self._IMAGE_EXTENSIONS
+        return False
 
     @staticmethod
     def _media_cache_key(mxc_url: str) -> str:
@@ -185,7 +240,10 @@ class MatrixReceiver:
                 return resolved_cache_path
 
             logger.info(f"Downloading media file: {mxc_url}")
-            media_data = await self.client.download_file(mxc_url)
+            media_data = await self.client.download_file(
+                mxc_url,
+                allow_thumbnail_fallback=self._is_image_media(filename, mimetype),
+            )
             await self._write_cache_file(resolved_cache_path, media_data)
             logger.debug(f"Saved media file to cache: {resolved_cache_path}")
             return resolved_cache_path
@@ -233,7 +291,10 @@ class MatrixReceiver:
                 return resolved_cache_path
 
             logger.info(f"Downloading encrypted media file: {mxc_url}")
-            ciphertext = await self.client.download_file(mxc_url)
+            ciphertext = await self.client.download_file(
+                mxc_url,
+                allow_thumbnail_fallback=False,
+            )
             plaintext = await asyncio.to_thread(
                 decrypt_encrypted_file, file_info, ciphertext
             )
@@ -355,23 +416,64 @@ class MatrixReceiver:
                             original_msgtype == "m.image"
                             and self._should_auto_download_media("m.image")
                         ):
+                            original_file_info = original_content.get("file")
+                            original_info = original_content.get("info", {})
                             original_mxc_url = original_content.get("url")
+                            if not original_mxc_url and isinstance(
+                                original_file_info, dict
+                            ):
+                                original_mxc_url = original_file_info.get("url")
+                            original_mimetype = (
+                                original_info.get("mimetype")
+                                if isinstance(original_info, dict)
+                                else None
+                            )
+                            original_size = self._extract_media_size(original_content)
                             if original_mxc_url:
-                                try:
-                                    cache_path = await self._download_media_file(
-                                        original_mxc_url,
-                                        original_content.get("body", "image.jpg"),
-                                    )
-                                    chain.chain.append(
-                                        Image.fromFileSystem(str(cache_path))
-                                    )
+                                if self._is_media_over_auto_download_limit(
+                                    original_size
+                                ):
+                                    if self.mxc_converter and not original_file_info:
+                                        chain.chain.append(
+                                            Image.fromURL(
+                                                self.mxc_converter(original_mxc_url)
+                                            )
+                                        )
                                     logger.debug(
-                                        f"Added quoted image to chain: {cache_path}"
+                                        "Quoted image exceeds auto-download size limit, "
+                                        "skipping local download"
                                     )
-                                except Exception as img_err:
-                                    logger.warning(
-                                        f"Failed to download quoted image: {img_err}"
-                                    )
+                                else:
+                                    try:
+                                        if isinstance(original_file_info, dict):
+                                            cache_path = await self._download_encrypted_media_file(
+                                                original_file_info,
+                                                original_content.get("filename")
+                                                or original_content.get(
+                                                    "body", "image.jpg"
+                                                ),
+                                                original_mimetype,
+                                            )
+                                        else:
+                                            cache_path = (
+                                                await self._download_media_file(
+                                                    original_mxc_url,
+                                                    original_content.get(
+                                                        "body", "image.jpg"
+                                                    ),
+                                                    original_mimetype,
+                                                )
+                                            )
+                                        chain.chain.append(
+                                            Image.fromFileSystem(str(cache_path))
+                                        )
+                                        logger.debug(
+                                            f"Added quoted image to chain: {cache_path}"
+                                        )
+                                    except Exception as img_err:
+                                        logger.warning(
+                                            f"Failed to download quoted image: {img_err}"
+                                        )
                 except Exception as e:
                     logger.debug(f"Could not fetch original event for reply: {e}")
 

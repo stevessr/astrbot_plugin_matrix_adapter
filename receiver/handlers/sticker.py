@@ -8,6 +8,12 @@ async def handle_sticker(receiver, chain, event, _: str):
     mxc_url = event.content.get("url")
     file_info = event.content.get("file")
     info_data = event.content.get("info", {})
+    size_bytes = receiver._normalize_media_size(info_data.get("size"))
+    over_limit = receiver._is_media_over_auto_download_limit(size_bytes)
+    if over_limit:
+        logger.info(
+            f"Skip auto-downloading Matrix sticker over size limit: {event.content.get('body', 'sticker.png')} ({size_bytes} bytes)"
+        )
 
     sticker_info = StickerInfo(
         mimetype=info_data.get("mimetype", "image/png"),
@@ -18,7 +24,11 @@ async def handle_sticker(receiver, chain, event, _: str):
         thumbnail_info=info_data.get("thumbnail_info"),
     )
 
-    if receiver.client and receiver._should_auto_download_media("m.sticker"):
+    if (
+        receiver.client
+        and receiver._should_auto_download_media("m.sticker")
+        and not over_limit
+    ):
         if file_info:
             try:
                 cache_path = await receiver._download_encrypted_media_file(
@@ -66,4 +76,11 @@ async def handle_sticker(receiver, chain, event, _: str):
         )
         chain.chain.append(sticker)
     else:
-        chain.chain.append(Plain(f"[贴纸：{event.body}]"))
+        if over_limit:
+            chain.chain.append(
+                Plain(
+                    f"[贴纸过大，已跳过自动下载：{event.content.get('body', 'sticker.png')}]"
+                )
+            )
+        else:
+            chain.chain.append(Plain(f"[贴纸：{event.body}]"))

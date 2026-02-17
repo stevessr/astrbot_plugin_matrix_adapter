@@ -17,6 +17,12 @@
     "hint": "清理超过指定天数未使用的媒体缓存，<=0 表示禁用",
     "default": 0
   },
+  "matrix_media_auto_download_max_bytes": {
+    "description": "媒体自动下载大小上限（字节）",
+    "type": "int",
+    "hint": "当收到媒体消息时，超过该大小将跳过自动下载并尽量保留 URL（<=0 表示不限制）",
+    "default": 0
+  },
   "matrix_sticker_auto_sync": {
     "description": "自动同步 Sticker 包",
     "type": "bool",
