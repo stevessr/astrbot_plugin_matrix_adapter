@@ -9,11 +9,14 @@ Examples:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
-import urllib.request
+import threading
 from pathlib import Path
+
+import aiohttp
 
 from astrbot.api import logger
 from astrbot.api.star import StarTools
@@ -309,6 +312,41 @@ def _parse_remote_shortcodes(payload) -> dict[str, str]:
     return result
 
 
+async def _fetch_remote_shortcodes_async(urls: list[str]) -> dict[str, str]:
+    merged: dict[str, str] = {}
+    loaded_sources = 0
+    timeout = aiohttp.ClientTimeout(total=10, connect=5, sock_connect=5, sock_read=10)
+    headers = {
+        "User-Agent": "astrbot-matrix-adapter/emoji-shortcodes",
+        "Accept": "application/json",
+    }
+
+    async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
+        for url in urls:
+            try:
+                async with session.get(url, headers=headers) as response:
+                    if response.status != 200:
+                        raise RuntimeError(f"HTTP {response.status}")
+                    payload = json.loads(await response.text(encoding="utf-8"))
+                shortcodes = _parse_remote_shortcodes(payload)
+                if shortcodes:
+                    merged.update(shortcodes)
+                    loaded_sources += 1
+                    logger.debug(
+                        f"Emoji shortcodes loaded from {url} (count={len(shortcodes)})"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to load emoji shortcodes from remote source {url}: {e}"
+                )
+
+    if loaded_sources > 1:
+        logger.debug(
+            f"Emoji shortcodes merged from {loaded_sources} sources (count={len(merged)})"
+        )
+    return merged
+
+
 def _fetch_remote_shortcodes() -> dict[str, str]:
     env_urls = os.environ.get(_SHORTCODES_URL_ENV, "").strip()
     urls = (
@@ -316,39 +354,32 @@ def _fetch_remote_shortcodes() -> dict[str, str]:
         if env_urls
         else list(_DEFAULT_SHORTCODES_URLS)
     )
+    if not urls:
+        return {}
 
-    merged: dict[str, str] = {}
-    loaded_sources = 0
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_fetch_remote_shortcodes_async(urls))
 
-    for url in urls:
+    result_holder: dict[str, dict[str, str]] = {"data": {}}
+    error_holder: dict[str, Exception] = {}
+
+    def _runner() -> None:
         try:
-            req = urllib.request.Request(
-                url,
-                headers={
-                    "User-Agent": "astrbot-matrix-adapter/emoji-shortcodes",
-                    "Accept": "application/json",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=10) as response:
-                data = response.read()
-            payload = json.loads(data.decode("utf-8"))
-            shortcodes = _parse_remote_shortcodes(payload)
-            if shortcodes:
-                merged.update(shortcodes)
-                loaded_sources += 1
-                logger.debug(
-                    f"Emoji shortcodes loaded from {url} (count={len(shortcodes)})"
-                )
+            result_holder["data"] = asyncio.run(_fetch_remote_shortcodes_async(urls))
         except Exception as e:
-            logger.warning(
-                f"Failed to load emoji shortcodes from remote source {url}: {e}"
-            )
+            error_holder["error"] = e
 
-    if loaded_sources > 1:
-        logger.debug(
-            f"Emoji shortcodes merged from {loaded_sources} sources (count={len(merged)})"
-        )
-    return merged
+    worker = threading.Thread(
+        target=_runner, name="matrix-emoji-shortcodes-fetch", daemon=True
+    )
+    worker.start()
+    worker.join()
+
+    if "error" in error_holder:
+        logger.warning(f"Failed to fetch emoji shortcodes in worker thread: {error_holder['error']}")
+    return result_holder["data"]
 
 
 def warmup_emoji_shortcodes(

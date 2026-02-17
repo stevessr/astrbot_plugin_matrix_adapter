@@ -607,12 +607,12 @@ class MediaMixin:
         self, response: aiohttp.ClientResponse, output_path: Path
     ) -> None:
         temp_path = output_path.with_name(f".{output_path.name}.{time.time_ns()}.tmp")
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(output_path.parent.mkdir, parents=True, exist_ok=True)
         with temp_path.open("wb") as f:
             async for chunk in response.content.iter_chunked(64 * 1024):
                 if chunk:
-                    f.write(chunk)
-        temp_path.replace(output_path)
+                    await asyncio.to_thread(f.write, chunk)
+        await asyncio.to_thread(temp_path.replace, output_path)
 
     async def upload_file(
         self, data: bytes, content_type: str, filename: str

@@ -43,6 +43,8 @@ from .handlers import (
 
 
 class MatrixReceiver:
+    _REPLY_EVENT_FETCH_TIMEOUT_SECONDS = 2.0
+    _QUOTED_MEDIA_DOWNLOAD_TIMEOUT_SECONDS = 2.5
     _IMAGE_EXTENSIONS = {
         ".png",
         ".jpg",
@@ -68,6 +70,7 @@ class MatrixReceiver:
         self.bot_name = bot_name
         self.client = client  # MatrixHTTPClient instance needed for downloading files
         self._media_download_tasks: dict[str, asyncio.Task[Path]] = {}
+        self._background_tasks: set[asyncio.Task] = set()
         self._media_cache_index: dict[str, Path] = {}
         self._media_cache_index_store: MediaCacheIndexStore | None = None
         self._initialize_media_cache_index_store()
@@ -388,6 +391,20 @@ class MatrixReceiver:
             if current_task is task:
                 self._media_download_tasks.pop(task_key, None)
 
+    def _track_background_task(self, task: asyncio.Task, task_name: str) -> None:
+        self._background_tasks.add(task)
+
+        def _cleanup(done_task: asyncio.Task) -> None:
+            self._background_tasks.discard(done_task)
+            try:
+                done_task.result()
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.debug(f"Background task failed ({task_name}): {e}")
+
+        task.add_done_callback(_cleanup)
+
     async def _write_cache_file(self, cache_path: Path, data: bytes) -> None:
         def _write() -> None:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -560,15 +577,56 @@ class MatrixReceiver:
             }
             filename = content.get("body", default_name_map.get(msgtype, "media.bin"))
 
+        def _append_http_component(http_url: str) -> bool:
+            if msgtype == "m.image":
+                chain.chain.append(Image.fromURL(http_url))
+                return True
+            if msgtype == "m.video":
+                chain.chain.append(Video.fromURL(http_url))
+                return True
+            if msgtype == "m.audio":
+                chain.chain.append(Record.fromURL(http_url))
+                return True
+            if msgtype == "m.file":
+                chain.chain.append(File(name=filename, url=http_url))
+                return True
+            return False
+
+        def _schedule_background_download() -> None:
+            async def _background_download() -> None:
+                if isinstance(file_info, dict):
+                    await self._download_encrypted_media_file(file_info, filename, mimetype)
+                else:
+                    await self._download_media_file(mxc_url, filename, mimetype)
+
+            self._track_background_task(
+                asyncio.create_task(_background_download()),
+                f"quoted_media:{msgtype}",
+            )
+
         try:
             if isinstance(file_info, dict):
-                cache_path = await self._download_encrypted_media_file(
-                    file_info, filename, mimetype
+                cache_path = await asyncio.wait_for(
+                    self._download_encrypted_media_file(file_info, filename, mimetype),
+                    timeout=self._QUOTED_MEDIA_DOWNLOAD_TIMEOUT_SECONDS,
                 )
             else:
-                cache_path = await self._download_media_file(
-                    mxc_url, filename, mimetype
+                cache_path = await asyncio.wait_for(
+                    self._download_media_file(mxc_url, filename, mimetype),
+                    timeout=self._QUOTED_MEDIA_DOWNLOAD_TIMEOUT_SECONDS,
                 )
+        except asyncio.TimeoutError:
+            if self.mxc_converter and not isinstance(file_info, dict):
+                http_url = self.mxc_converter(mxc_url)
+                rendered = _append_http_component(http_url)
+                if rendered:
+                    _schedule_background_download()
+                    logger.debug(
+                        f"Quoted media download timed out, fallback to URL: {msgtype}"
+                    )
+                    return True
+            logger.warning(f"Quoted media download timed out ({msgtype})")
+            return False
         except Exception as e:
             logger.warning(f"Failed to download quoted media ({msgtype}): {e}")
             return False
@@ -694,8 +752,9 @@ class MatrixReceiver:
             # 尝试获取引用消息中的图片
             if self.client:
                 try:
-                    original_event = await self.client.get_event(
-                        room.room_id, reply_event_id
+                    original_event = await asyncio.wait_for(
+                        self.client.get_event(room.room_id, reply_event_id),
+                        timeout=self._REPLY_EVENT_FETCH_TIMEOUT_SECONDS,
                     )
                     if original_event:
                         original_content = original_event.get("content", {})
@@ -714,6 +773,10 @@ class MatrixReceiver:
                                 logger.debug(
                                     f"Added quoted media to chain: msgtype={original_msgtype}"
                                 )
+                except asyncio.TimeoutError:
+                    logger.debug(
+                        f"Reply event fetch timed out: room={room.room_id} event={reply_event_id}"
+                    )
                 except Exception as e:
                     logger.debug(f"Could not fetch original event for reply: {e}")
 

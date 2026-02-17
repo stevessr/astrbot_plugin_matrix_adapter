@@ -4,7 +4,8 @@ Implements m.login.sso flow with local callback server
 """
 
 import asyncio
-from urllib.parse import urlencode
+import secrets
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from aiohttp import web
 
@@ -21,6 +22,7 @@ class SSOCallbackServer:
         self.runner: web.AppRunner | None = None
         self.site: web.TCPSite | None = None
         self.callback_future: asyncio.Future | None = None
+        self.expected_state: str | None = None
 
         self.app.router.add_get("/callback", self._handle_callback)
         self.app.router.add_get("/", self._handle_root)
@@ -34,6 +36,16 @@ class SSOCallbackServer:
     async def _handle_callback(self, request: web.Request) -> web.Response:
         try:
             query_params = request.query
+            if self.expected_state:
+                state = query_params.get("state")
+                if state != self.expected_state:
+                    _log("error", "SSO callback state mismatch")
+                    if self.callback_future and not self.callback_future.done():
+                        self.callback_future.set_exception(
+                            Exception("SSO callback state mismatch")
+                        )
+                    return web.Response(text="State mismatch", status=400)
+
             if "error" in query_params:
                 error = query_params.get("error")
                 error_description = query_params.get("error_description", "")
@@ -88,13 +100,22 @@ class SSOCallbackServer:
             await self.runner.cleanup()
         _log("info", "SSO callback server stopped")
 
-    async def wait_for_callback(self, timeout: int = 300) -> str:
+    async def wait_for_callback(self, expected_state: str, timeout: int = 300) -> str:
+        self.expected_state = expected_state
         self.callback_future = asyncio.Future()
         try:
             token = await asyncio.wait_for(self.callback_future, timeout=timeout)
             return token
         finally:
             self.callback_future = None
+            self.expected_state = None
+
+
+def _attach_state_param(url: str, state: str) -> str:
+    parsed = urlparse(url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query["state"] = state
+    return urlunparse(parsed._replace(query=urlencode(query)))
 
 
 class MatrixSSO:
@@ -136,8 +157,10 @@ class MatrixSSO:
                 host=self.callback_host, port=self.callback_port
             )
             redirect_uri = await self.callback_server.start()
+            state = secrets.token_urlsafe(24)
+            redirect_uri_with_state = _attach_state_param(redirect_uri, state)
 
-            params = {"redirectUrl": redirect_uri}
+            params = {"redirectUrl": redirect_uri_with_state}
             sso_url = (
                 f"{self.homeserver}/_matrix/client/v3/login/sso/redirect?"
                 f"{urlencode(params)}"
@@ -150,7 +173,9 @@ class MatrixSSO:
             _log("info", "Waiting for SSO callback...")
             _log("info", "=" * 60)
 
-            login_token = await self.callback_server.wait_for_callback()
+            login_token = await self.callback_server.wait_for_callback(
+                expected_state=state
+            )
 
             response = await self.client.login_token(
                 token=login_token,

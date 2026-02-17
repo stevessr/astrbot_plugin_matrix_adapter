@@ -4,6 +4,7 @@ Matrix user profile store for interacted accounts.
 Stores display name and avatar URL under plugin data dir / users.
 """
 
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from .storage_paths import MatrixStoragePaths
 
 class MatrixUserStore:
     """Persist interacted user profiles (display name + avatar URL)."""
+    _MAX_CACHE_ENTRIES = 2048
 
     def __init__(
         self,
@@ -29,7 +31,7 @@ class MatrixUserStore:
                 data_dir = Path("./data/astrbot_plugin_matrix_adapter")
         self._users_dir = data_dir / "users"
         self._users_dir.mkdir(parents=True, exist_ok=True)
-        self._cache: dict[str, dict[str, Any]] = {}
+        self._cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
         self._storage_backend_config = get_plugin_config().storage_backend_config
         self._storage_backend = self._storage_backend_config.backend
@@ -72,11 +74,15 @@ class MatrixUserStore:
         if not user_id:
             return None
         if user_id in self._cache:
+            self._cache.move_to_end(user_id, last=True)
             return self._cache[user_id]
         try:
             data = self._store.get(user_id)
             if isinstance(data, dict):
                 self._cache[user_id] = data
+                self._cache.move_to_end(user_id, last=True)
+                while len(self._cache) > self._MAX_CACHE_ENTRIES:
+                    self._cache.popitem(last=False)
                 return data
         except Exception as e:
             logger.debug(f"Failed to read user profile {user_id}: {e}")
@@ -101,5 +107,8 @@ class MatrixUserStore:
         try:
             self._store.upsert(user_id, existing)
             self._cache[user_id] = existing
+            self._cache.move_to_end(user_id, last=True)
+            while len(self._cache) > self._MAX_CACHE_ENTRIES:
+                self._cache.popitem(last=False)
         except Exception as e:
             logger.debug(f"Failed to save user profile {user_id}: {e}")

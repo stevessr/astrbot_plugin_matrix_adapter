@@ -2,6 +2,8 @@
 Matrix Event Processor - member/profile handlers.
 """
 
+import asyncio
+
 from astrbot.api import logger
 
 from ..room_member_store import MatrixRoomMemberStore
@@ -25,7 +27,7 @@ class MatrixEventProcessorMembers:
         Returns:
             True if data was loaded from storage, False otherwise
         """
-        room_data = self.room_member_store.get(room.room_id)
+        room_data = await asyncio.to_thread(self.room_member_store.get, room.room_id)
         if not room_data:
             return False
 
@@ -86,7 +88,7 @@ class MatrixEventProcessorMembers:
                 avatar_url = await self.client.get_avatar_url(user_id)
             except Exception:
                 avatar_url = None
-        self.user_store.upsert(user_id, display_name, avatar_url)
+        await asyncio.to_thread(self.user_store.upsert, user_id, display_name, avatar_url)
 
     async def _handle_member_event(self, room, event_data: dict):
         """Handle m.room.member changes and persist profile updates."""
@@ -104,7 +106,9 @@ class MatrixEventProcessorMembers:
             room.members[user_id] = display_name
             if avatar_url:
                 room.member_avatars[user_id] = avatar_url
-            self.user_store.upsert(user_id, display_name, avatar_url)
+            await asyncio.to_thread(
+                self.user_store.upsert, user_id, display_name, avatar_url
+            )
             if is_new_member:
                 room.member_count += 1
                 logger.info(
@@ -112,7 +116,8 @@ class MatrixEventProcessorMembers:
                     f"当前人数：{room.member_count}"
                 )
                 # Update room member storage
-                self.room_member_store.upsert(
+                await asyncio.to_thread(
+                    self.room_member_store.upsert,
                     room_id=room.room_id,
                     members=room.members,
                     member_avatars=room.member_avatars,
@@ -156,7 +161,8 @@ class MatrixEventProcessorMembers:
                     f"当前人数：{room.member_count}"
                 )
                 # Update room member storage
-                self.room_member_store.upsert(
+                await asyncio.to_thread(
+                    self.room_member_store.upsert,
                     room_id=room.room_id,
                     members=room.members,
                     member_avatars=room.member_avatars,
@@ -191,9 +197,12 @@ class MatrixEventProcessorMembers:
                 room.members[user_id] = display_name
                 if avatar_url:
                     room.member_avatars[user_id] = avatar_url
-                self.user_store.upsert(user_id, display_name, avatar_url)
+                await asyncio.to_thread(
+                    self.user_store.upsert, user_id, display_name, avatar_url
+                )
                 # Update room member storage
-                self.room_member_store.upsert(
+                await asyncio.to_thread(
+                    self.room_member_store.upsert,
                     room_id=room.room_id,
                     members=room.members,
                     member_avatars=room.member_avatars,

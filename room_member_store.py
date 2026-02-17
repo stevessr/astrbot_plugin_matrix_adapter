@@ -4,6 +4,7 @@ Matrix room member store for persisting room member information.
 Stores member list and metadata under plugin data dir / rooms.
 """
 
+from collections import OrderedDict
 import time
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ from .storage_paths import MatrixStoragePaths
 
 class MatrixRoomMemberStore:
     """Persist room member lists and metadata."""
+    _MAX_CACHE_ENTRIES = 512
 
     def __init__(
         self,
@@ -30,7 +32,7 @@ class MatrixRoomMemberStore:
                 data_dir = Path("./data/astrbot_plugin_matrix_adapter")
         self._rooms_dir = data_dir / "rooms"
         self._rooms_dir.mkdir(parents=True, exist_ok=True)
-        self._cache: dict[str, dict[str, Any]] = {}
+        self._cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
         self._storage_backend_config = get_plugin_config().storage_backend_config
         self._storage_backend = self._storage_backend_config.backend
@@ -74,11 +76,15 @@ class MatrixRoomMemberStore:
         if not room_id:
             return None
         if room_id in self._cache:
+            self._cache.move_to_end(room_id, last=True)
             return self._cache[room_id]
         try:
             data = self._store.get(room_id)
             if isinstance(data, dict):
                 self._cache[room_id] = data
+                self._cache.move_to_end(room_id, last=True)
+                while len(self._cache) > self._MAX_CACHE_ENTRIES:
+                    self._cache.popitem(last=False)
                 return data
         except Exception as e:
             logger.debug(f"Failed to read room member data {room_id}: {e}")
@@ -281,6 +287,9 @@ class MatrixRoomMemberStore:
             try:
                 self._store.upsert(room_id, existing)
                 self._cache[room_id] = existing
+                self._cache.move_to_end(room_id, last=True)
+                while len(self._cache) > self._MAX_CACHE_ENTRIES:
+                    self._cache.popitem(last=False)
                 logger.info(f"已保存房间成员数据：{room_id} ({member_count} 个成员)")
             except Exception as e:
                 logger.error(f"保存房间成员数据失败 {room_id}: {e}")

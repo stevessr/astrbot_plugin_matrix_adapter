@@ -237,9 +237,7 @@ class MatrixPlatformAdapter(
             if VODOZEMAC_AVAILABLE:
                 recovery_key = self._matrix_config.e2ee_recovery_key
                 if recovery_key:
-                    logger.info(
-                        f"配置的恢复密钥：{recovery_key[:4]}...{recovery_key[-4:]}"
-                    )
+                    logger.info("检测到已配置的恢复密钥")
                 else:
                     logger.warning("未配置恢复密钥 (matrix_e2ee_recovery_key)")
 

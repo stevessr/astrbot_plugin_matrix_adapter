@@ -3,6 +3,8 @@ Matrix Event Processor
 Handles processing of Matrix events (messages, etc.)
 """
 
+import asyncio
+from collections import OrderedDict
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -42,7 +44,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         self.storage_backend_config = get_plugin_config().storage_backend_config
 
         # Message deduplication
-        self._processed_messages: set[str] = set()
+        self._processed_messages: OrderedDict[str, None] = OrderedDict()
         self._max_processed_messages = MAX_PROCESSED_MESSAGES_1000
 
         # Event callbacks
@@ -69,6 +71,19 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             callback: Async function(room, event) -> None
         """
         self.on_message = callback
+
+    def _is_message_processed(self, event_id: str | None) -> bool:
+        if not event_id:
+            return False
+        return event_id in self._processed_messages
+
+    def _mark_message_processed(self, event_id: str | None) -> None:
+        if not event_id:
+            return
+        self._processed_messages[event_id] = None
+        self._processed_messages.move_to_end(event_id, last=True)
+        while len(self._processed_messages) > self._max_processed_messages:
+            self._processed_messages.popitem(last=False)
 
     def _apply_room_state_event(self, room, event_data: dict) -> None:
         event_type = event_data.get("type", "")
@@ -193,7 +208,8 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 )
 
                 # Persist room member data to storage
-                self.room_member_store.upsert(
+                await asyncio.to_thread(
+                    self.room_member_store.upsert,
                     room_id=room.room_id,
                     members=room.members,
                     member_avatars=room.member_avatars,
@@ -204,7 +220,12 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 # Persist individual user profiles to storage
                 for user_id, display_name in room.members.items():
                     avatar_url = room.member_avatars.get(user_id)
-                    self.user_store.upsert(user_id, display_name, avatar_url)
+                    await asyncio.to_thread(
+                        self.user_store.upsert,
+                        user_id,
+                        display_name,
+                        avatar_url,
+                    )
 
             except Exception as e:
                 logger.error(f"获取房间 {room_id} 成员列表失败：{e}")
@@ -238,7 +259,8 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 self._apply_room_state_event(room, event)
 
         # Persist room state/members after initial state processing
-        self.room_member_store.upsert(
+        await asyncio.to_thread(
+            self.room_member_store.upsert,
             room_id=room.room_id,
             members=room.members,
             member_avatars=room.member_avatars,
@@ -295,7 +317,8 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             and "state_key" in event_data
         ):
             self._apply_room_state_event(room, event_data)
-            self.room_member_store.upsert(
+            await asyncio.to_thread(
+                self.room_member_store.upsert,
                 room_id=room.room_id,
                 members=room.members,
                 member_avatars=room.member_avatars,
@@ -392,17 +415,11 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 )
                 return
 
-            if event.event_id in self._processed_messages:
+            if self._is_message_processed(event.event_id):
                 logger.debug(f"忽略重复成员事件：{event.event_id}")
                 return
 
-            self._processed_messages.add(event.event_id)
-            if len(self._processed_messages) > self._max_processed_messages:
-                old_messages = list(self._processed_messages)[
-                    : self._max_processed_messages // 2
-                ]
-                for msg_id in old_messages:
-                    self._processed_messages.discard(msg_id)
+            self._mark_message_processed(event.event_id)
 
             if self.on_message:
                 await self._persist_interacted_user(room, event)
@@ -440,17 +457,11 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 return
 
             # Check for duplicates
-            if event.event_id in self._processed_messages:
+            if self._is_message_processed(event.event_id):
                 logger.debug(f"忽略重复状态事件：{event.event_id}")
                 return
 
-            self._processed_messages.add(event.event_id)
-            if len(self._processed_messages) > self._max_processed_messages:
-                old_messages = list(self._processed_messages)[
-                    : self._max_processed_messages // 2
-                ]
-                for msg_id in old_messages:
-                    self._processed_messages.discard(msg_id)
+            self._mark_message_processed(event.event_id)
 
             if self.on_message:
                 await self._persist_interacted_user(room, event)
@@ -562,21 +573,11 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 return
 
             # Message deduplication: check if already processed
-            if event.event_id in self._processed_messages:
+            if self._is_message_processed(event.event_id):
                 logger.debug(f"忽略重复消息：{event.event_id}")
                 return
 
-            # Record processed message ID
-            self._processed_messages.add(event.event_id)
-
-            # Limit cache size to prevent memory leak
-            if len(self._processed_messages) > self._max_processed_messages:
-                # Remove oldest half of message IDs (simple FIFO strategy)
-                old_messages = list(self._processed_messages)[
-                    : self._max_processed_messages // 2
-                ]
-                for msg_id in old_messages:
-                    self._processed_messages.discard(msg_id)
+            self._mark_message_processed(event.event_id)
 
             # Call message callback
             if self.on_message:
@@ -654,14 +655,14 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             events: List of to-device events
         """
         if events:
-            logger.info(f"收到 {len(events)} 个 to_device 事件")
+            logger.debug(f"收到 {len(events)} 个 to_device 事件")
 
         for event in events:
             event_type = event.get("type")
             sender = event.get("sender")
             content = event.get("content", {})
 
-            logger.info(f"处理 to_device 事件：type={event_type} sender={sender}")
+            logger.debug(f"处理 to_device 事件：type={event_type} sender={sender}")
 
             # 处理验证事件
             if event_type.startswith("m.key.verification."):
@@ -704,7 +705,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                     try:
                         algorithm = content.get("algorithm", "unknown")
                         sender_key = content.get("sender_key", "")[:16]
-                        logger.info(
+                        logger.debug(
                             f"收到加密的 to_device 消息：algorithm={algorithm} "
                             f"sender_key={sender_key}..."
                         )
@@ -712,11 +713,11 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                         decrypted = await self.e2ee_manager.decrypt_event(
                             content, sender, ""
                         )
-                        logger.info(f"解密 to_device 结果：{decrypted is not None}")
+                        logger.debug(f"解密 to_device 结果：{decrypted is not None}")
                         if decrypted:
                             inner_type = decrypted.get("type")
                             inner_content = decrypted.get("content", decrypted)
-                            logger.info(f"解密后的事件类型：{inner_type}")
+                            logger.debug(f"解密后的事件类型：{inner_type}")
                             if inner_type == "m.room_key":
                                 sender_key = content.get("sender_key", "")
                                 await self.e2ee_manager.handle_room_key(
@@ -732,19 +733,19 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                             elif inner_type and inner_type.startswith(
                                 "m.key.verification."
                             ):
-                                logger.info(f"收到加密的验证事件：{inner_type}")
+                                logger.debug(f"收到加密的验证事件：{inner_type}")
                                 await self.e2ee_manager.handle_verification_event(
                                     inner_type, sender, inner_content
                                 )
                             elif inner_type == "m.secret.send":
-                                logger.info("收到加密的 m.secret.send 事件")
+                                logger.debug("收到加密的 m.secret.send 事件")
                                 await self.e2ee_manager.handle_secret_send(
                                     sender, inner_content
                                 )
                             elif inner_type == "m.dummy":
                                 logger.debug("收到 m.dummy 事件，忽略")
                             else:
-                                logger.info(
+                                logger.debug(
                                     f"收到未知的加密 to_device 事件类型：{inner_type}，内容键：{list(decrypted.keys()) if isinstance(decrypted, dict) else type(decrypted)}"
                                 )
                         else:
@@ -764,7 +765,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                         sender_key = content.get("sender_key", "")
                         # 直接处理转发的密钥（格式与 m.room_key 相同）
                         await self.e2ee_manager.handle_room_key(content, sender_key)
-                        logger.info(
+                        logger.debug(
                             f"成功处理转发的房间密钥：{content.get('session_id', '')[:8]}..."
                         )
                     except Exception as e:
@@ -792,7 +793,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                             session_id = body.get("session_id", "")
                             sender_key = body.get("sender_key", "")
 
-                            logger.info(
+                            logger.debug(
                                 f"收到密钥请求：来自设备 {requesting_device_id}，"
                                 f"room={room_id[:16]}..., session={session_id[:8]}..."
                             )

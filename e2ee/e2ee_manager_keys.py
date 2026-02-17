@@ -17,21 +17,21 @@ class E2EEManagerKeysMixin:
         try:
             current_key_counts = await self._get_server_key_counts()
             server_otk_count = current_key_counts.get(SIGNED_CURVE25519, 0)
-            logger.info(f"服务器上当前一次性密钥数量：{server_otk_count}")
+            logger.debug(f"服务器上当前一次性密钥数量：{server_otk_count}")
 
             device_keys = None
             if self._olm.is_new_account:
                 device_keys = self._olm.get_device_keys()
-                logger.info(
+                logger.debug(
                     f"新账户，准备上传设备密钥：device_id={device_keys.get('device_id')}"
                 )
                 algorithms = device_keys.get("algorithms", [])
-                logger.info(f"支持的加密算法：{algorithms}")
+                logger.debug(f"支持的加密算法：{algorithms}")
                 keys_info = list(device_keys.get("keys", {}).keys())
-                logger.info(f"密钥列表：{keys_info}")
+                logger.debug(f"密钥列表：{keys_info}")
 
                 signatures = device_keys.get("signatures", {})
-                logger.info(f"签名用户：{list(signatures.keys())}")
+                logger.debug(f"签名用户：{list(signatures.keys())}")
 
                 required_algos = [OLM_ALGO, MEGOLM_ALGO]
                 missing_algos = [
@@ -40,9 +40,9 @@ class E2EEManagerKeysMixin:
                 if missing_algos:
                     logger.error(f"缺少必要的加密算法：{missing_algos}")
                 else:
-                    logger.info("设备密钥包含所有必要的加密算法")
+                    logger.debug("设备密钥包含所有必要的加密算法")
             else:
-                logger.info("账户已从存储恢复，跳过设备密钥上传（只补充一次性密钥）")
+                logger.debug("账户已从存储恢复，跳过设备密钥上传（只补充一次性密钥）")
 
             from ..constants import DEFAULT_ONE_TIME_KEYS_COUNT
 
@@ -50,9 +50,9 @@ class E2EEManagerKeysMixin:
             one_time_keys = {}
             if keys_to_generate > 0:
                 one_time_keys = self._olm.generate_one_time_keys(keys_to_generate)
-                logger.info(f"生成了 {len(one_time_keys)} 个一次性密钥（补充）")
+                logger.debug(f"生成了 {len(one_time_keys)} 个一次性密钥（补充）")
             else:
-                logger.info(
+                logger.debug(
                     f"服务器上已有足够的一次性密钥（{server_otk_count}），跳过生成"
                 )
 
@@ -60,10 +60,10 @@ class E2EEManagerKeysMixin:
             if self._olm.get_unpublished_fallback_key_count() == 0:
                 fallback_keys = self._olm.generate_fallback_key()
                 if fallback_keys:
-                    logger.info("生成了 fallback key")
+                    logger.debug("生成了 fallback key")
 
             if device_keys or one_time_keys or fallback_keys:
-                logger.info("正在上传密钥到服务器...")
+                logger.debug("正在上传密钥到服务器...")
                 response = await self.client.upload_keys(
                     device_keys=device_keys,
                     one_time_keys=one_time_keys if one_time_keys else None,
@@ -76,7 +76,7 @@ class E2EEManagerKeysMixin:
                 self._olm.mark_keys_as_published()
 
                 counts = response.get("one_time_key_counts", {})
-                logger.info(f"密钥已成功上传，一次性密钥数量：{counts}")
+                logger.info(f"密钥已上传，一次性密钥数量：{counts}")
 
                 if device_keys:
                     try:
@@ -92,9 +92,9 @@ class E2EEManagerKeysMixin:
                             logger.info(
                                 f"✅ 验证成功：服务器已确认设备 {self.device_id} 的密钥"
                             )
-                            logger.info(f"服务器上的密钥：{list(my_keys.keys())}")
+                            logger.debug(f"服务器上的密钥：{list(my_keys.keys())}")
                             signatures = my_device_info.get("signatures", {})
-                            logger.info(f"服务器上的签名：{signatures}")
+                            logger.debug(f"服务器上的签名用户：{list(signatures.keys())}")
                         else:
                             logger.error(
                                 f"❌ 验证失败：服务器没有设备 {self.device_id} 的密钥！"
@@ -105,7 +105,7 @@ class E2EEManagerKeysMixin:
                     except Exception as verify_e:
                         logger.warning(f"验证设备密钥失败：{verify_e}")
             else:
-                logger.info("没有需要上传的密钥")
+                logger.debug("没有需要上传的密钥")
 
         except Exception as e:
             import traceback

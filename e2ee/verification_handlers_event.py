@@ -1,5 +1,4 @@
 import asyncio
-import json
 
 from astrbot.api import logger
 
@@ -31,12 +30,12 @@ class SASVerificationEventMixin:
             logger.warning("[E2EE-Verify] 缺少 transaction_id，忽略事件")
             return False
 
-        logger.info(
+        logger.debug(
             f"[E2EE-Verify] 收到验证事件：{event_type} "
             f"from={sender} txn={transaction_id}"
         )
         logger.debug(
-            f"[E2EE-Verify] 事件内容：{json.dumps(content, ensure_ascii=False)}"
+            f"[E2EE-Verify] 事件内容键：{list(content.keys())}"
         )
 
         handlers = {
@@ -67,7 +66,7 @@ class SASVerificationEventMixin:
         # Debug: log the content structure
         logger.debug(
             f"[E2EE-Verify] 房间内事件内容：type={event_type}, "
-            f"relates_to={relates_to}, msgtype={msgtype}"
+            f"relates_to_keys={list(relates_to.keys()) if isinstance(relates_to, dict) else []}, msgtype={msgtype}"
         )
 
         # For m.key.verification.request events (either as event_type OR msgtype),

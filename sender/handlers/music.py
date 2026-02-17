@@ -2,13 +2,72 @@ import mimetypes
 import uuid
 from pathlib import Path
 
+import aiohttp
+
 from astrbot.api import logger
 from astrbot.api.message_components import Music
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
-from astrbot.core.utils.io import download_file
 
 from ...constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES
 from .common import send_content
+
+_MUSIC_DOWNLOAD_CHUNK_SIZE = 64 * 1024
+_MUSIC_DOWNLOAD_TOTAL_TIMEOUT_SECONDS = 120
+_MUSIC_DOWNLOAD_CONNECT_TIMEOUT_SECONDS = 15
+
+
+async def _download_music_with_limit(url: str, file_path: Path, size_limit: int) -> None:
+    timeout = aiohttp.ClientTimeout(
+        total=_MUSIC_DOWNLOAD_TOTAL_TIMEOUT_SECONDS,
+        connect=_MUSIC_DOWNLOAD_CONNECT_TIMEOUT_SECONDS,
+        sock_connect=_MUSIC_DOWNLOAD_CONNECT_TIMEOUT_SECONDS,
+        sock_read=30,
+    )
+    temp_path = file_path.with_name(f".{file_path.name}.{uuid.uuid4().hex}.tmp")
+    downloaded_size = 0
+    try:
+        async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
+            async with session.get(
+                url,
+                headers={"User-Agent": "AstrBot Matrix Adapter/1.0"},
+                allow_redirects=True,
+            ) as response:
+                if response.status != 200:
+                    raise RuntimeError(
+                        f"Failed to download music: HTTP {response.status}"
+                    )
+
+                content_length = response.headers.get("Content-Length")
+                if content_length:
+                    try:
+                        declared_size = int(content_length)
+                    except (TypeError, ValueError):
+                        declared_size = 0
+                    if declared_size > size_limit:
+                        raise ValueError(
+                            f"Remote music file exceeds size limit ({declared_size} > {size_limit})"
+                        )
+
+                with temp_path.open("wb") as output:
+                    async for chunk in response.content.iter_chunked(
+                        _MUSIC_DOWNLOAD_CHUNK_SIZE
+                    ):
+                        if not chunk:
+                            continue
+                        downloaded_size += len(chunk)
+                        if downloaded_size > size_limit:
+                            raise ValueError(
+                                f"Remote music file exceeds size limit ({downloaded_size} > {size_limit})"
+                            )
+                        output.write(chunk)
+
+        temp_path.replace(file_path)
+    except Exception:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
 
 
 async def send_music(
@@ -36,7 +95,7 @@ async def send_music(
             temp_dir = Path(get_astrbot_data_path()) / "temp"
             temp_dir.mkdir(parents=True, exist_ok=True)
             file_path = temp_dir / f"music_{uuid.uuid4().hex}{ext}"
-            await download_file(audio, str(file_path))
+            await _download_music_with_limit(audio, file_path, size_limit)
         else:
             file_path = Path(audio)
 

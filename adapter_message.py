@@ -130,13 +130,12 @@ class MatrixAdapterMessageMixin:
             event: Parsed event object
         """
         try:
+            sender_id = getattr(event, "sender", "") or ""
+            sender_name = room.members.get(sender_id, sender_id) if sender_id else ""
+
             if getattr(event, "msgtype", None) == "m.reaction":
                 # Reactions should not enter the normal pipeline to avoid LLM replies.
                 try:
-                    sender_id = getattr(event, "sender", "") or ""
-                    sender_name = (
-                        room.members.get(sender_id, sender_id) if sender_id else ""
-                    )
                     relates_to = event.content.get("m.relates_to", {})
                     emoji = relates_to.get("key") or event.body or ""
                     target = relates_to.get("event_id", "")
