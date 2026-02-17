@@ -143,14 +143,6 @@ class MatrixConfig:
         return get_plugin_config().media_cache_dir
 
     @property
-    def sticker_auto_sync(self) -> bool:
-        return get_plugin_config().sticker_auto_sync
-
-    @property
-    def sticker_sync_user_emotes(self) -> bool:
-        return get_plugin_config().sticker_sync_user_emotes
-
-    @property
     def oauth2_callback_port(self) -> int:
         return get_plugin_config().oauth2_callback_port
 

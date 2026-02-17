@@ -136,30 +136,12 @@
     "hint": "支持 image/* 等通配符，例如 ['image/*','video/*','audio/*','text/*','application/pdf','application/json','application/zip','application/octet-stream']",
     "default": ["image/*", "video/*", "audio/*", "text/*", "application/pdf", "application/json", "application/zip", "application/octet-stream"]
   },
-  "matrix_sticker_auto_sync": {
-    "description": "自动同步 Sticker 包",
-    "type": "bool",
-    "hint": "是否自动同步房间的 Sticker 包（im.ponies.room_emotes），启用后会在加入房间时自动下载房间的自定义贴纸",
-    "default": false
-  },
-  "matrix_sticker_sync_user_emotes": {
-    "description": "同步用户 Sticker",
-    "type": "bool",
-    "hint": "是否同步用户级别的 Sticker 包（im.ponies.user_emotes）",
-    "default": false
-  },
   "matrix_force_message_type": {
     "description": "强制消息类型",
     "type": "string",
     "hint": "强制消息类型：auto（自动判断群聊/私聊）、private（全部私聊）、group（全部群聊）、stalk（写入对话并按群存档 JSONL）",
     "options": ["auto", "private", "group", "stalk"],
     "default": "auto"
-  },
-  "matrix_emoji_shortcodes": {
-    "description": "启用 Emoji 短码转换",
-    "type": "bool",
-    "hint": "启用后自动将 :smile:、:thumbsup: 等短码转换为 Emoji",
-    "default": false
   },
   "matrix_e2ee_store_max_pending_writes": {
     "description": "E2EE 存储待写队列上限",

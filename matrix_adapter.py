@@ -311,12 +311,6 @@ class MatrixPlatformAdapter(
             availability_store=self.sticker_available,
         )
 
-        # 将 sticker 同步器传递给事件处理器
-        self.event_handler.set_sticker_syncer(
-            self.sticker_syncer,
-            auto_sync=self._matrix_config.sticker_auto_sync,
-        )
-
         logger.info("Matrix Adapter 初始化完成")
 
     def meta(self) -> PlatformMetadata:

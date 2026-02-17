@@ -21,20 +21,11 @@ class MatrixPlugin(Star):
         # 初始化插件级别配置（目录路径等）
         try:
             from .plugin_config import get_plugin_config, init_plugin_config
-            from .utils.emoji_shortcodes import (
-                configure_emoji_shortcodes,
-                warmup_emoji_shortcodes,
-            )
 
             # 使用传入的 config 参数（AstrBot 从 astrbot_plugin_matrix_adapter_config.json 加载）
             plugin_config = config if isinstance(config, dict) else {}
             init_plugin_config(plugin_config)
             plugin_cfg = get_plugin_config()
-            configure_emoji_shortcodes(
-                enabled=plugin_cfg.emoji_shortcodes_enabled,
-                cache_path=plugin_cfg.data_dir / "emoji_shortcodes_cache.json",
-            )
-            warmup_emoji_shortcodes(fetch_remote=False)
             logger.debug(
                 "Matrix 插件配置已加载：force_message_type="
                 f"{plugin_cfg.force_message_type}"

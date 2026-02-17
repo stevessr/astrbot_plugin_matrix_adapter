@@ -240,9 +240,6 @@ class PluginConfig:
         )
         self._oauth2_callback_port: int = 8765
         self._oauth2_callback_host: str = "127.0.0.1"
-        # Sticker 相关配置
-        self._sticker_auto_sync: bool = False
-        self._sticker_sync_user_emotes: bool = False
         # 消息类型配置
         self._force_message_type: str = "auto"
         # 数据存储后端（users/rooms/auth/sync/device_info + E2EE 本地状态）
@@ -261,8 +258,6 @@ class PluginConfig:
                 pgsql_table_prefix=self._pgsql_table_prefix,
             )
         )
-        # Emoji 短码转换配置
-        self._emoji_shortcodes_enabled: bool = False
 
     def initialize(self, config: dict):
         """从配置字典初始化插件配置
@@ -375,11 +370,6 @@ class PluginConfig:
             _DEFAULT_MEDIA_UPLOAD_ALLOWED_MIME_RULES,
             config_key="matrix_media_upload_allowed_mime_rules",
         )
-        # Sticker 相关配置
-        self._sticker_auto_sync = config.get("matrix_sticker_auto_sync", False)
-        self._sticker_sync_user_emotes = config.get(
-            "matrix_sticker_sync_user_emotes", False
-        )
         # 消息类型配置
         self._force_message_type = _normalize_message_type(
             config.get("matrix_force_message_type"),
@@ -442,11 +432,6 @@ class PluginConfig:
             pgsql_dsn=self._pgsql_dsn,
             pgsql_schema=self._pgsql_schema,
             pgsql_table_prefix=self._pgsql_table_prefix,
-        )
-
-        # Emoji 短码配置（bool）
-        self._emoji_shortcodes_enabled = _normalize_bool(
-            config.get("matrix_emoji_shortcodes"), False
         )
 
     @property
@@ -556,16 +541,6 @@ class PluginConfig:
         return self._oauth2_callback_host
 
     @property
-    def sticker_auto_sync(self) -> bool:
-        """是否自动同步房间 Sticker 包"""
-        return self._sticker_auto_sync
-
-    @property
-    def sticker_sync_user_emotes(self) -> bool:
-        """是否同步用户级别 Sticker 包"""
-        return self._sticker_sync_user_emotes
-
-    @property
     def force_message_type(self) -> str:
         """强制消息类型（auto / private / group / stalk）"""
         return self._force_message_type
@@ -604,11 +579,6 @@ class PluginConfig:
     def storage_backend_config(self) -> StorageBackendConfig:
         """运行时固定存储后端配置对象。"""
         return self._storage_backend_config
-
-    @property
-    def emoji_shortcodes_enabled(self) -> bool:
-        """是否启用 Emoji 短码转换"""
-        return self._emoji_shortcodes_enabled
 
     @property
     def data_dir(self) -> Path:

@@ -9,7 +9,6 @@ Matrix 协议适配器插件，让 AstrBot 能够连接到 Matrix 网络，支�
 - **消息线程**：支持 Matrix Threading 功能
 - **自动加入房间**：可配置自动接受房间邀请
 - **富文本消息**：支持 Markdown 格式的消息发送
-- **Emoji 短码转换**：内置 `:smile:`、`:thumbsup:`、`:heart:` 等短码自动转换
 - **媒体消息**：支持图片、视频、语音、文件等媒体消息的收发
 - **表情回应**：支持消息表情回应（Reaction）
 - **设备管理**：自动生成和管理设备 ID
@@ -82,14 +81,12 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 | `matrix_media_upload_strict_mime_check` | bool | `true` | 上传前执行 MIME 严格一致性校验 |
 | `matrix_media_upload_blocked_extensions` | list | `[".exe", ".dll", ...]` | 上传扩展名黑名单 |
 | `matrix_media_upload_allowed_mime_rules` | list | `["image/*", "video/*", ...]` | 上传允许的 MIME 规则（支持 `*`） |
-| `matrix_emoji_shortcodes` | bool | `false` | 是否启用 `:smile:` / `:thumbsup:` 等 Emoji 短码转换 |
 | `matrix_e2ee_store_max_pending_writes` | int | `256` | E2EE 异步持久化待处理写任务队列上限（最小为 1） |
 | `matrix_data_storage_backend` | string | `json` | 数据存储后端（users/rooms/auth/sync/device_info + E2EE 本地状态）：`json` / `sqlite` / `pgsql` |
 | `matrix_pgsql` | object | 见下方 | 当后端为 `pgsql` 时使用的 PostgreSQL 配置对象 |
 
 说明：
-- 启动时默认优先读取本地缓存（性能友好），不主动联网。
-- 如需更新短码表，可手动触发一次远程拉取并写入缓存。
+- Emoji 短码转换与 Sticker 自动同步配置已迁移到 `astrbot_plugin_matrix_sticker` 插件。
 
 `matrix_pgsql` 对象字段：
 - `dsn`：例如 `postgresql://user:pass@127.0.0.1:5432/dbname`

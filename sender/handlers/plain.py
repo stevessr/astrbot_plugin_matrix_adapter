@@ -2,7 +2,6 @@ from astrbot.api import logger
 from astrbot.api.message_components import Plain
 
 from ...constants import TEXT_TRUNCATE_LENGTH_50
-from ...utils.emoji_shortcodes import convert_emoji_shortcodes
 from ...utils.markdown_utils import markdown_to_html
 from ...utils.utils import MatrixUtils
 from .common import send_content
@@ -21,7 +20,7 @@ async def send_plain(
     use_notice: bool,
 ) -> None:
     msg_type = "m.notice" if use_notice else "m.text"
-    text = convert_emoji_shortcodes(segment.text or "")
+    text = segment.text or ""
     content = {"msgtype": msg_type, "body": text}
 
     if original_message_info and reply_to:

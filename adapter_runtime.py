@@ -106,31 +106,6 @@ class MatrixAdapterRuntimeMixin:
                 except Exception as e:
                     logger.error(f"E2EE 初始化失败：{e}")
 
-            if self._matrix_config.sticker_auto_sync:
-                try:
-                    if hasattr(self, "sticker_syncer"):
-                        self.sticker_syncer.reset_available()
-                    if self._matrix_config.sticker_sync_user_emotes:
-                        user_count = await self.sticker_syncer.sync_user_stickers()
-                        if user_count > 0:
-                            logger.info(f"同步了 {user_count} 个用户 sticker")
-
-                    joined_rooms = await self.client.get_joined_rooms()
-                    total_synced = 0
-                    for room_id in joined_rooms:
-                        try:
-                            count = await self.sticker_syncer.sync_room_stickers(
-                                room_id
-                            )
-                            total_synced += count
-                        except Exception as room_e:
-                            logger.debug(f"同步房间 {room_id} sticker 失败：{room_e}")
-
-                    if total_synced > 0:
-                        logger.info(f"同步了 {total_synced} 个房间 sticker")
-                except Exception as e:
-                    logger.warning(f"Sticker 包同步失败：{e}")
-
             try:
                 removed = self.receiver.gc_media_cache()
                 if removed > 0:
