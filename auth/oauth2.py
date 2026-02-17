@@ -19,6 +19,10 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
     Implements the OAuth2 authorization code grant flow with automatic server discovery
     """
 
+    _OAUTH2_HTTP_TIMEOUT_DEFAULT_SECONDS = 30.0
+    _OAUTH2_HTTP_TIMEOUT_MIN_SECONDS = 5.0
+    _OAUTH2_HTTP_TIMEOUT_MAX_SECONDS = 120.0
+
     def __init__(
         self,
         client,
@@ -67,6 +71,29 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
         self.token_endpoint: str | None = None
         self.registration_endpoint: str | None = None
         self.account_management_uri: str | None = None
+
+    def _resolve_oauth_http_timeout_seconds(
+        self, *, cap_seconds: float | None = None
+    ) -> float:
+        timeout_seconds = self._OAUTH2_HTTP_TIMEOUT_DEFAULT_SECONDS
+        get_timeout = getattr(self.client, "get_http_timeout_seconds", None)
+        if callable(get_timeout):
+            try:
+                timeout_seconds = float(get_timeout())
+            except Exception:
+                timeout_seconds = self._OAUTH2_HTTP_TIMEOUT_DEFAULT_SECONDS
+
+        if timeout_seconds < self._OAUTH2_HTTP_TIMEOUT_MIN_SECONDS:
+            timeout_seconds = self._OAUTH2_HTTP_TIMEOUT_MIN_SECONDS
+
+        hard_cap = self._OAUTH2_HTTP_TIMEOUT_MAX_SECONDS
+        if cap_seconds is not None:
+            try:
+                hard_cap = min(hard_cap, max(self._OAUTH2_HTTP_TIMEOUT_MIN_SECONDS, float(cap_seconds)))
+            except Exception:
+                hard_cap = self._OAUTH2_HTTP_TIMEOUT_MAX_SECONDS
+
+        return min(timeout_seconds, hard_cap)
 
     async def login(self) -> dict[str, Any]:
         """
@@ -126,6 +153,8 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
             state = self._generate_state()
             pkce_verifier = self._generate_pkce_verifier()
             pkce_challenge = self._generate_pkce_challenge(pkce_verifier)
+            if self.callback_server:
+                self.callback_server.prepare_callback(expected_state=state)
 
             # Build authorization URL
             auth_params = {
@@ -148,7 +177,7 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
 
             # Wait for callback
             if self.callback_server:
-                code = await self.callback_server.wait_for_callback(state)
+                code = await self.callback_server.wait_for_callback()
             else:
                 # Manual code entry (for custom redirect URIs)
                 _log("info", "Enter the authorization code:")
@@ -174,7 +203,11 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
             if self.client_secret:
                 token_data["client_secret"] = self.client_secret
 
-            async with aiohttp.ClientSession() as session:
+            token_timeout_seconds = self._resolve_oauth_http_timeout_seconds(
+                cap_seconds=self._OAUTH2_HTTP_TIMEOUT_MAX_SECONDS
+            )
+            token_timeout = aiohttp.ClientTimeout(total=token_timeout_seconds)
+            async with aiohttp.ClientSession(timeout=token_timeout) as session:
                 async with session.post(
                     token_endpoint,
                     data=urlencode(token_data),
@@ -244,7 +277,11 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
             if self.client_secret:
                 token_data["client_secret"] = self.client_secret
 
-            async with aiohttp.ClientSession() as session:
+            token_timeout_seconds = self._resolve_oauth_http_timeout_seconds(
+                cap_seconds=self._OAUTH2_HTTP_TIMEOUT_MAX_SECONDS
+            )
+            token_timeout = aiohttp.ClientTimeout(total=token_timeout_seconds)
+            async with aiohttp.ClientSession(timeout=token_timeout) as session:
                 async with session.post(
                     token_endpoint,
                     data=urlencode(token_data),

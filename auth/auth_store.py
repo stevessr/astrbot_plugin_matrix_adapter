@@ -20,6 +20,7 @@ class MatrixAuthStore:
     """Mixin providing token storage helpers."""
 
     _token_file_save_lock = threading.Lock()
+    _token_backend_save_lock = threading.Lock()
 
     def _get_token_store_path(self) -> str:
         """Get path for storing auth token."""
@@ -156,6 +157,10 @@ class MatrixAuthStore:
             self._write_json_token_atomically(path_obj, data)
         return str(path_obj)
 
+    def _save_token_to_backend(self, store: MatrixFolderDataStore, data: dict) -> None:
+        with self._token_backend_save_lock:
+            store.upsert("auth", data)
+
     def _save_token(self):
         """Save access token to disk."""
         if not self.access_token:
@@ -181,7 +186,7 @@ class MatrixAuthStore:
             user_storage_dir = self._get_user_storage_dir()
             if backend != "json" and user_storage_dir is not None:
                 store = self._build_auth_store(user_storage_dir, backend_config)
-                store.upsert("auth", data)
+                self._save_token_to_backend(store, data)
                 self._log(
                     "info",
                     (
@@ -227,7 +232,7 @@ class MatrixAuthStore:
                     if target_dir is not None:
                         try:
                             store = self._build_auth_store(target_dir, backend_config)
-                            store.upsert("auth", data)
+                            self._save_token_to_backend(store, data)
                         except Exception as migrate_error:
                             self._log(
                                 "info",

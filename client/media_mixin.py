@@ -29,6 +29,7 @@ class MediaMixin:
     _MEDIA_RETRY_MAX_DELAY_SECONDS = 10.0
     _MEDIA_UPLOAD_SNIFF_BYTES = 512
     _MEDIA_DOWNLOAD_CONCURRENCY_DEFAULT = 4
+    _MEDIA_DOWNLOAD_MAX_IN_MEMORY_BYTES_DEFAULT = 32 * 1024 * 1024
     _MEDIA_UPLOAD_DEFAULT_BLOCKED_EXTENSIONS = frozenset(
         {
             ".exe",
@@ -118,6 +119,16 @@ class MediaMixin:
         if configured_limit <= 0:
             return default_limit
         return min(configured_limit, 64)
+
+    def _get_media_download_max_in_memory_bytes(self) -> int:
+        default_limit = self._MEDIA_DOWNLOAD_MAX_IN_MEMORY_BYTES_DEFAULT
+        try:
+            configured_limit = int(get_plugin_config().media_download_max_in_memory_bytes)
+        except Exception:
+            return default_limit
+        if configured_limit <= 0:
+            return 0
+        return min(configured_limit, 1024 * 1024 * 1024)
 
     def _get_media_download_min_interval_seconds(self) -> float:
         try:
@@ -603,16 +614,65 @@ class MediaMixin:
         self._media_upload_cache[cache_key] = (content_uri, now_inner)
         self._prune_media_upload_cache(now_inner)
 
+    @staticmethod
+    def _get_content_length(response: aiohttp.ClientResponse) -> int | None:
+        header = response.headers.get("Content-Length")
+        if header is None:
+            return None
+        try:
+            parsed = int(header)
+        except Exception:
+            return None
+        if parsed < 0:
+            return None
+        return parsed
+
+    async def _read_response_with_memory_limit(
+        self,
+        response: aiohttp.ClientResponse,
+        *,
+        max_in_memory_bytes: int,
+        resource_hint: str,
+    ) -> bytes:
+        if max_in_memory_bytes <= 0:
+            return await response.read()
+
+        content_length = self._get_content_length(response)
+        if content_length is not None and content_length > max_in_memory_bytes:
+            raise ValueError(
+                "Matrix media download exceeds in-memory limit before reading "
+                f"(content_length={content_length}, limit={max_in_memory_bytes}, "
+                f"resource={resource_hint})"
+            )
+
+        buffer = bytearray()
+        async for chunk in response.content.iter_chunked(64 * 1024):
+            if not chunk:
+                continue
+            buffer.extend(chunk)
+            if len(buffer) > max_in_memory_bytes:
+                raise ValueError(
+                    "Matrix media download exceeds in-memory limit while reading "
+                    f"(read={len(buffer)}, limit={max_in_memory_bytes}, "
+                    f"resource={resource_hint})"
+                )
+
+        return bytes(buffer)
+
     async def _save_response_to_path(
         self, response: aiohttp.ClientResponse, output_path: Path
     ) -> None:
         temp_path = output_path.with_name(f".{output_path.name}.{time.time_ns()}.tmp")
-        await asyncio.to_thread(output_path.parent.mkdir, parents=True, exist_ok=True)
-        with temp_path.open("wb") as f:
-            async for chunk in response.content.iter_chunked(64 * 1024):
-                if chunk:
-                    await asyncio.to_thread(f.write, chunk)
-        await asyncio.to_thread(temp_path.replace, output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with temp_path.open("wb") as f:
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    if chunk:
+                        f.write(chunk)
+            temp_path.replace(output_path)
+        except Exception:
+            temp_path.unlink(missing_ok=True)
+            raise
 
     async def upload_file(
         self, data: bytes, content_type: str, filename: str
@@ -927,6 +987,7 @@ class MediaMixin:
 
         server_name, media_id = parts
         source_key = self._normalize_media_source_key(server_name)
+        max_in_memory_bytes = self._get_media_download_max_in_memory_bytes()
 
         proxy_endpoints = [
             f"/_matrix/client/v1/media/download/{server_name}/{media_id}",
@@ -980,7 +1041,11 @@ class MediaMixin:
                                         response, resolved_output_path
                                     )
                                     return None
-                                return await response.read()
+                                return await self._read_response_with_memory_limit(
+                                    response,
+                                    max_in_memory_bytes=max_in_memory_bytes,
+                                    resource_hint=mxc_url,
+                                )
 
                             retry_after_seconds = None
                             if response.status == 429:
@@ -1081,7 +1146,11 @@ class MediaMixin:
                                             response, resolved_output_path
                                         )
                                         return None
-                                    return await response.read()
+                                    return await self._read_response_with_memory_limit(
+                                        response,
+                                        max_in_memory_bytes=max_in_memory_bytes,
+                                        resource_hint=mxc_url,
+                                    )
 
                                 if (
                                     self._should_retry_http_status(response.status)

@@ -21,12 +21,7 @@ class OlmMachineAccountMixin:
                 self._is_new_account = False
                 logger.info("从存储恢复 Olm 账户")
 
-                # 显示恢复的账户信息
-                try:
-                    curve_key = self._account.curve25519_key.to_base64()
-                    logger.info(f"账户 curve25519 密钥：{curve_key[:16]}...")
-                except Exception:
-                    pass
+                logger.debug("账户 curve25519 密钥已从存储加载")
             except Exception as e:
                 logger.warning(f"恢复 Olm 账户失败（可能是密钥不匹配或数据损坏）：{e}")
                 logger.info("将创建新的 Olm 账户")
@@ -46,13 +41,7 @@ class OlmMachineAccountMixin:
         self._is_new_account = True
         self._save_account()
         logger.info("创建了新的 Olm 账户")
-
-        # 显示新账户信息
-        try:
-            curve_key = self._account.curve25519_key.to_base64()
-            logger.info(f"新账户 curve25519 密钥：{curve_key[:16]}...")
-        except Exception:
-            pass
+        logger.debug("新账户 curve25519 密钥已生成")
 
     def _save_account(self):
         """保存 Olm 账户到存储"""

@@ -9,21 +9,35 @@ from astrbot.api.message_components import Music
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
 from ...constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES
+from ...plugin_config import get_plugin_config
 from .common import send_content
 
 _MUSIC_DOWNLOAD_CHUNK_SIZE = 64 * 1024
-_MUSIC_DOWNLOAD_TOTAL_TIMEOUT_SECONDS = 120
 _MUSIC_DOWNLOAD_CONNECT_TIMEOUT_SECONDS = 15
+
+
+def _resolve_music_download_total_timeout_seconds() -> float:
+    try:
+        timeout_seconds = float(get_plugin_config().http_timeout_seconds)
+    except Exception:
+        timeout_seconds = 120.0
+    timeout_seconds = max(5.0, min(timeout_seconds, 300.0))
+    return timeout_seconds
 
 
 async def _download_music_with_limit(
     url: str, file_path: Path, size_limit: int
 ) -> None:
+    total_timeout_seconds = _resolve_music_download_total_timeout_seconds()
+    connect_timeout_seconds = min(
+        _MUSIC_DOWNLOAD_CONNECT_TIMEOUT_SECONDS, total_timeout_seconds
+    )
+    sock_read_timeout_seconds = min(30.0, total_timeout_seconds)
     timeout = aiohttp.ClientTimeout(
-        total=_MUSIC_DOWNLOAD_TOTAL_TIMEOUT_SECONDS,
-        connect=_MUSIC_DOWNLOAD_CONNECT_TIMEOUT_SECONDS,
-        sock_connect=_MUSIC_DOWNLOAD_CONNECT_TIMEOUT_SECONDS,
-        sock_read=30,
+        total=total_timeout_seconds,
+        connect=connect_timeout_seconds,
+        sock_connect=connect_timeout_seconds,
+        sock_read=sock_read_timeout_seconds,
     )
     temp_path = file_path.with_name(f".{file_path.name}.{uuid.uuid4().hex}.tmp")
     downloaded_size = 0

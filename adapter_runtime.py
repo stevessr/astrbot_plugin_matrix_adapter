@@ -12,6 +12,15 @@ from .storage_paths import MatrixStoragePaths
 class MatrixAdapterRuntimeMixin:
     _MEDIA_CACHE_GC_INTERVAL_SECONDS = 6 * 60 * 60
 
+    @staticmethod
+    def _mask_device_id(device_id: str | None) -> str:
+        if not isinstance(device_id, str) or not device_id:
+            return "<empty>"
+        normalized = device_id.strip()
+        if len(normalized) <= 4:
+            return "***"
+        return f"{normalized[:2]}***{normalized[-2:]}"
+
     async def _media_cache_gc_loop(self):
         try:
             while True:
@@ -86,7 +95,9 @@ class MatrixAdapterRuntimeMixin:
                     )
                     if actual_device_id != self.e2ee_manager.device_id:
                         logger.info(
-                            f"更新 E2EE device_id：{self.e2ee_manager.device_id} -> {actual_device_id}"
+                            "更新 E2EE device_id："
+                            f"{self._mask_device_id(self.e2ee_manager.device_id)} -> "
+                            f"{self._mask_device_id(actual_device_id)}"
                         )
                         self.e2ee_manager.device_id = actual_device_id
                         # 持久化服务器返回的 device_id
@@ -162,6 +173,16 @@ class MatrixAdapterRuntimeMixin:
 
             if hasattr(self, "sync_manager"):
                 self.sync_manager.stop()
+
+            if (
+                hasattr(self, "e2ee_manager")
+                and self.e2ee_manager
+                and hasattr(self.e2ee_manager, "close")
+            ):
+                await self.e2ee_manager.close()
+
+            if hasattr(self, "receiver") and hasattr(self.receiver, "shutdown"):
+                await self.receiver.shutdown()
 
             if hasattr(self, "_media_cache_gc_task") and self._media_cache_gc_task:
                 self._media_cache_gc_task.cancel()

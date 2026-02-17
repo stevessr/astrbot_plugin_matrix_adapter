@@ -132,6 +132,15 @@ class E2EEManager(
         self._key_share_check_task: asyncio.Task | None = None
         self._key_share_check_lock = asyncio.Lock()
 
+    @staticmethod
+    def _mask_device_id(device_id: str | None) -> str:
+        if not isinstance(device_id, str) or not device_id:
+            return "<empty>"
+        normalized = device_id.strip()
+        if len(normalized) <= 4:
+            return "***"
+        return f"{normalized[:2]}***{normalized[-2:]}"
+
     @property
     def is_available(self) -> bool:
         """检查 E2EE 是否可用"""
@@ -164,6 +173,22 @@ class E2EEManager(
             self._key_share_check_task.cancel()
             self._key_share_check_task = None
             logger.debug("已停止定期密钥分发检查任务")
+
+    async def close(self) -> None:
+        """Release runtime resources and flush pending persistence jobs."""
+        self._initialized = False
+        self.stop_key_share_check_task()
+        store = self._store
+        self._store = None
+        self._olm = None
+        self._verification = None
+        self._key_backup = None
+        self._cross_signing = None
+        if store is not None and hasattr(store, "close"):
+            try:
+                await asyncio.to_thread(store.close)
+            except Exception as e:
+                logger.warning(f"E2EE store close failed: {e}")
 
     async def _proactive_check_key_sharing(self):
         """主动检查并分发房间密钥"""
@@ -309,18 +334,27 @@ class E2EEManager(
             # 自动签名自己的设备（使设备变为"已验证"状态）
             if self._cross_signing._master_key:
                 await self._cross_signing.sign_device(self.device_id)
-                logger.info(f"已自动签名设备：{self.device_id}")
+                logger.info(
+                    "已自动签名设备："
+                    f"{self._mask_device_id(self.device_id)}"
+                )
             else:
                 # 如果没有交叉签名密钥，尝试上传
                 try:
                     await self._cross_signing.upload_cross_signing_keys()
                     await self._cross_signing.sign_device(self.device_id)
-                    logger.info(f"已上传交叉签名密钥并签名设备：{self.device_id}")
+                    logger.info(
+                        "已上传交叉签名密钥并签名设备："
+                        f"{self._mask_device_id(self.device_id)}"
+                    )
                 except Exception as e:
                     logger.warning(f"上传交叉签名密钥失败（可能需要 UIA）：{e}")
 
             self._initialized = True
-            logger.info(f"E2EE 初始化成功 (device_id: {self.device_id})")
+            logger.info(
+                "E2EE 初始化成功 "
+                f"(device_id: {self._mask_device_id(self.device_id)})"
+            )
 
             # 初始化完成后，尝试为自己的未验证设备发起验证
             await self._verify_untrusted_own_devices()

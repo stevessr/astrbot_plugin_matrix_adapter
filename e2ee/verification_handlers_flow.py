@@ -19,6 +19,24 @@ from .verification_constants import (
 
 
 class SASVerificationFlowMixin:
+    @staticmethod
+    def _mask_identifier(value: str | None) -> str:
+        if not isinstance(value, str) or not value:
+            return "<empty>"
+        normalized = value.strip()
+        if len(normalized) <= 4:
+            return "***"
+        return f"{normalized[:2]}***{normalized[-2:]}"
+
+    @staticmethod
+    def _mask_txn_id(value: str | None) -> str:
+        if not isinstance(value, str) or not value:
+            return "<empty>"
+        normalized = value.strip()
+        if len(normalized) <= 8:
+            return "***"
+        return f"{normalized[:8]}..."
+
     async def _handle_request(self, sender: str, content: dict, transaction_id: str):
         """处理验证请求"""
         from_device = content.get("from_device")
@@ -29,7 +47,8 @@ class SASVerificationFlowMixin:
 
         logger.info(
             f"[E2EE-Verify] 收到验证请求："
-            f"sender={sender} device={from_device} methods={methods}"
+            f"sender={self._mask_identifier(sender)} "
+            f"device={self._mask_identifier(from_device)} methods={methods}"
         )
 
         # 创建 SAS 实例
@@ -37,8 +56,7 @@ class SASVerificationFlowMixin:
         if VODOZEMAC_SAS_AVAILABLE:
             try:
                 sas = Sas()
-                pub = sas.public_key.to_base64()
-                logger.debug(f"[E2EE-Verify] 创建 SAS 实例，公钥：{pub[:16]}...")
+                logger.debug("[E2EE-Verify] 创建 SAS 实例")
             except Exception as e:
                 logger.warning(f"[E2EE-Verify] 创建 SAS 实例失败：{e}")
 
@@ -92,7 +110,10 @@ class SASVerificationFlowMixin:
         from_device = content.get("from_device")
         methods = content.get("methods", [])
 
-        logger.info(f"[E2EE-Verify] 对方已就绪：device={from_device} methods={methods}")
+        logger.info(
+            "[E2EE-Verify] 对方已就绪："
+            f"device={self._mask_identifier(from_device)} methods={methods}"
+        )
 
         session = self._sessions.get(transaction_id, {})
         session["state"] = "ready"
@@ -187,7 +208,7 @@ class SASVerificationFlowMixin:
         if not isinstance(their_key, str) or not their_key:
             logger.warning("[E2EE-Verify] 对方公钥缺失或格式不正确")
             return
-        logger.info(f"[E2EE-Verify] 收到对方公钥：{their_key[:20]}...")
+        logger.info("[E2EE-Verify] 收到对方公钥")
 
         session = self._sessions.get(transaction_id, {})
 
@@ -406,7 +427,11 @@ class SASVerificationFlowMixin:
 
     async def _handle_done(self, sender: str, content: dict, transaction_id: str):
         """处理验证完成"""
-        logger.info(f"[E2EE-Verify] ✅ 验证完成！sender={sender} txn={transaction_id}")
+        logger.info(
+            "[E2EE-Verify] ✅ 验证完成！"
+            f"sender={self._mask_identifier(sender)} "
+            f"txn={self._mask_txn_id(transaction_id)}"
+        )
 
         session = self._sessions.get(transaction_id, {})
         session["state"] = "done"
@@ -424,13 +449,17 @@ class SASVerificationFlowMixin:
             try:
                 self.device_store.add_device(sender, from_device, fingerprint)
                 logger.info(
-                    f"[E2EE-Verify] Device verified and saved: {sender}|{from_device}"
+                    "[E2EE-Verify] Device verified and saved: "
+                    f"{self._mask_identifier(sender)}|"
+                    f"{self._mask_identifier(from_device)}"
                 )
             except Exception as e:
                 logger.error(f"[E2EE-Verify] Failed to save verified device: {e}")
         else:
             logger.warning(
-                f"[E2EE-Verify] Cannot save device: missing info (device={from_device}, fingerprint={fingerprint})"
+                "[E2EE-Verify] Cannot save device: missing info "
+                f"(device={self._mask_identifier(from_device)}, "
+                f"has_fingerprint={bool(fingerprint)})"
             )
 
     async def _handle_cancel(self, sender: str, content: dict, transaction_id: str):

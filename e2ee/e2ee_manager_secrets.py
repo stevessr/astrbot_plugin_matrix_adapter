@@ -24,6 +24,24 @@ from ..constants import (
 class E2EEManagerSecretsMixin:
     """处理设备间秘密共享的 Mixin"""
 
+    @staticmethod
+    def _mask_device_id(device_id: str | None) -> str:
+        if not isinstance(device_id, str) or not device_id:
+            return "<empty>"
+        normalized = device_id.strip()
+        if len(normalized) <= 4:
+            return "***"
+        return f"{normalized[:2]}***{normalized[-2:]}"
+
+    @staticmethod
+    def _mask_request_id(request_id: str | None) -> str:
+        if not isinstance(request_id, str) or not request_id:
+            return "<empty>"
+        normalized = request_id.strip()
+        if len(normalized) <= 8:
+            return "***"
+        return f"{normalized[:8]}..."
+
     async def handle_secret_request(
         self, sender: str, content: dict, sender_device: str
     ):
@@ -45,13 +63,17 @@ class E2EEManagerSecretsMixin:
 
         logger.info(
             f"[E2EE-Secrets] 收到秘密请求：action={action} name={name} "
-            f"device={requesting_device_id} request_id={request_id[:8]}..."
+            f"device={self._mask_device_id(requesting_device_id)} "
+            f"request_id={self._mask_request_id(request_id)}"
         )
 
         # 只处理 request 动作（忽略 request_cancellation）
         if action != "request":
             if action == "request_cancellation":
-                logger.debug(f"[E2EE-Secrets] 秘密请求已取消：request_id={request_id}")
+                logger.debug(
+                    "[E2EE-Secrets] 秘密请求已取消："
+                    f"request_id={self._mask_request_id(request_id)}"
+                )
             return
 
         # 安全检查：只响应来自同一用户的请求
@@ -202,10 +224,14 @@ class E2EEManagerSecretsMixin:
                     messages={target_user: {target_device: encrypted_content}},
                 )
                 logger.info(
-                    f"[E2EE-Secrets] 已发送秘密 {secret_name} 到设备 {target_device}"
+                    "[E2EE-Secrets] 已发送秘密 "
+                    f"{secret_name} 到设备 {self._mask_device_id(target_device)}"
                 )
             else:
-                logger.error(f"[E2EE-Secrets] 无法加密秘密消息到设备 {target_device}")
+                logger.error(
+                    "[E2EE-Secrets] 无法加密秘密消息到设备 "
+                    f"{self._mask_device_id(target_device)}"
+                )
 
         except Exception as e:
             logger.error(f"[E2EE-Secrets] 发送秘密失败：{e}")
@@ -252,7 +278,8 @@ class E2EEManagerSecretsMixin:
                 # 使用现有会话
                 session = existing_session
                 logger.debug(
-                    f"[E2EE-Secrets] 复用现有 Olm 会话向 {target_device} 发送秘密"
+                    "[E2EE-Secrets] 复用现有 Olm 会话向 "
+                    f"{self._mask_device_id(target_device)} 发送秘密"
                 )
             else:
                 # 需要创建新会话，获取一次性密钥
@@ -282,7 +309,10 @@ class E2EEManagerSecretsMixin:
                 session = self._olm.create_outbound_session(
                     curve25519_key, one_time_key
                 )
-                logger.debug(f"[E2EE-Secrets] 为 {target_device} 创建新 Olm 会话")
+                logger.debug(
+                    "[E2EE-Secrets] 为 "
+                    f"{self._mask_device_id(target_device)} 创建新 Olm 会话"
+                )
 
             # 使用 Olm 加密
             encrypted = self._olm.encrypt_olm(
@@ -336,7 +366,10 @@ class E2EEManagerSecretsMixin:
             await self._process_received_secret(secret_name, secret)
             self._remove_pending_secret_request(request_id)
         else:
-            logger.debug(f"[E2EE-Secrets] 未找到对应的待处理请求：{request_id}")
+            logger.debug(
+                "[E2EE-Secrets] 未找到对应的待处理请求："
+                f"{self._mask_request_id(request_id)}"
+            )
 
     def _get_pending_secret_request(self, request_id: str) -> dict | None:
         """获取待处理的秘密请求"""

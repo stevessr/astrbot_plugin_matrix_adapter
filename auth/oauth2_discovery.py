@@ -10,11 +10,23 @@ from .oauth2_core import _log
 class MatrixOAuth2Discovery:
     """Mixin for OAuth2 discovery and registration."""
 
+    def _get_oauth_http_timeout_seconds(self) -> float:
+        resolver = getattr(self, "_resolve_oauth_http_timeout_seconds", None)
+        if callable(resolver):
+            try:
+                return float(resolver(cap_seconds=120))
+            except Exception:
+                pass
+        return 30.0
+
     async def _discover_oauth_endpoints(self) -> dict:
         try:
             _log("info", f"Discovering OAuth2 configuration from {self.homeserver}")
 
-            async with aiohttp.ClientSession() as session:
+            timeout_cfg = aiohttp.ClientTimeout(
+                total=self._get_oauth_http_timeout_seconds()
+            )
+            async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
                 well_known_url = f"{self.homeserver}/.well-known/matrix/client"
                 _log("debug", f"Fetching {well_known_url}")
 
@@ -184,7 +196,10 @@ class MatrixOAuth2Discovery:
                 "application_type": "native",
             }
 
-            async with aiohttp.ClientSession() as session:
+            timeout_cfg = aiohttp.ClientTimeout(
+                total=self._get_oauth_http_timeout_seconds()
+            )
+            async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
                 async with session.post(
                     self.registration_endpoint,
                     json=registration_data,

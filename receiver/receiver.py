@@ -45,6 +45,7 @@ from .handlers import (
 class MatrixReceiver:
     _REPLY_EVENT_FETCH_TIMEOUT_SECONDS = 2.0
     _QUOTED_MEDIA_DOWNLOAD_TIMEOUT_SECONDS = 2.5
+    _QUOTED_MEDIA_BACKGROUND_DOWNLOAD_CONCURRENCY_DEFAULT = 2
     _IMAGE_EXTENSIONS = {
         ".png",
         ".jpg",
@@ -71,6 +72,12 @@ class MatrixReceiver:
         self.client = client  # MatrixHTTPClient instance needed for downloading files
         self._media_download_tasks: dict[str, asyncio.Task[Path]] = {}
         self._background_tasks: set[asyncio.Task] = set()
+        self._quoted_media_background_download_concurrency = (
+            self._get_quoted_media_background_download_concurrency()
+        )
+        self._quoted_media_background_download_semaphore = asyncio.Semaphore(
+            self._quoted_media_background_download_concurrency
+        )
         self._media_cache_index: dict[str, Path] = {}
         self._media_cache_index_store: MediaCacheIndexStore | None = None
         self._initialize_media_cache_index_store()
@@ -258,6 +265,17 @@ class MatrixReceiver:
         except Exception:
             return 0
         return max(0, configured)
+
+    def _get_quoted_media_background_download_concurrency(self) -> int:
+        try:
+            configured = int(
+                get_plugin_config().quoted_media_background_download_concurrency
+            )
+        except Exception:
+            configured = self._QUOTED_MEDIA_BACKGROUND_DOWNLOAD_CONCURRENCY_DEFAULT
+        if configured <= 0:
+            configured = self._QUOTED_MEDIA_BACKGROUND_DOWNLOAD_CONCURRENCY_DEFAULT
+        return min(configured, 32)
 
     def _is_media_over_auto_download_limit(self, size_bytes: int | None) -> bool:
         if size_bytes is None:
@@ -594,12 +612,13 @@ class MatrixReceiver:
 
         def _schedule_background_download() -> None:
             async def _background_download() -> None:
-                if isinstance(file_info, dict):
-                    await self._download_encrypted_media_file(
-                        file_info, filename, mimetype
-                    )
-                else:
-                    await self._download_media_file(mxc_url, filename, mimetype)
+                async with self._quoted_media_background_download_semaphore:
+                    if isinstance(file_info, dict):
+                        await self._download_encrypted_media_file(
+                            file_info, filename, mimetype
+                        )
+                    else:
+                        await self._download_media_file(mxc_url, filename, mimetype)
 
             self._track_background_task(
                 asyncio.create_task(_background_download()),
@@ -646,6 +665,35 @@ class MatrixReceiver:
             chain.chain.append(File(name=filename, file=str(cache_path)))
             return True
         return False
+
+    async def shutdown(self) -> None:
+        tasks: list[asyncio.Task] = []
+        seen: set[int] = set()
+
+        for task in list(self._background_tasks):
+            if task.done():
+                continue
+            marker = id(task)
+            if marker not in seen:
+                seen.add(marker)
+                tasks.append(task)
+
+        for task in list(self._media_download_tasks.values()):
+            if task.done():
+                continue
+            marker = id(task)
+            if marker not in seen:
+                seen.add(marker)
+                tasks.append(task)
+
+        for task in tasks:
+            task.cancel()
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        self._background_tasks.clear()
+        self._media_download_tasks.clear()
 
     def gc_media_cache(self, older_than_days: int | None = None) -> int:
         """清理媒体缓存，返回删除文件数"""

@@ -12,6 +12,13 @@
     "hint": "OAuth2 认证回调服务器监听主机地址，默认 127.0.0.1 仅限本地访问，0.0.0.0 允许所有地址访问（适用于远程服务器部署）",
     "default": "127.0.0.1"
   },
+  "matrix_http_timeout_seconds": {
+    "description": "全局 HTTP 超时（秒）",
+    "type": "int",
+    "hint": "Matrix HTTP 客户端与 OAuth2 网络请求的总超时，最小 5 秒",
+    "min": 5,
+    "default": 120
+  },
   "matrix_media_cache_gc_days": {
     "description": "媒体缓存清理天数",
     "type": "int",
@@ -25,6 +32,13 @@
     "hint": "每个媒体源 server 的并发下载上限，最小为 1",
     "min": 1,
     "default": 4
+  },
+  "matrix_quoted_media_background_download_concurrency": {
+    "description": "引用媒体后台下载并发上限",
+    "type": "int",
+    "hint": "当引用媒体超时后转为后台下载时的并发上限，最小为 1",
+    "min": 1,
+    "default": 2
   },
   "matrix_media_download_min_interval_ms": {
     "description": "媒体下载最小间隔（毫秒）",
@@ -66,6 +80,13 @@
     "hint": "当收到媒体消息时，超过该大小将跳过自动下载并尽量保留 URL（<=0 表示不限制）",
     "min": 0,
     "default": 0
+  },
+  "matrix_media_download_max_in_memory_bytes": {
+    "description": "媒体下载内存上限（字节）",
+    "type": "int",
+    "hint": "download_file 在返回 bytes 时的最大内存占用，<=0 表示不限制",
+    "min": 0,
+    "default": 33554432
   },
   "matrix_media_auto_download_image": {
     "description": "自动下载图片",
@@ -139,6 +160,13 @@
     "type": "bool",
     "hint": "启用后自动将 :smile:、:thumbsup: 等短码转换为 Emoji",
     "default": false
+  },
+  "matrix_e2ee_store_max_pending_writes": {
+    "description": "E2EE 存储待写队列上限",
+    "type": "int",
+    "hint": "限制 E2EE 异步持久化的最大待处理写任务数，最小 1",
+    "min": 1,
+    "default": 256
   },
   "matrix_data_storage_backend": {
     "description": "数据存储后端",

@@ -13,6 +13,7 @@ from ..constants import (
     ERROR_TRUNCATE_LENGTH_200,
     HTTP_ERROR_STATUS_400,
 )
+from ..plugin_config import get_plugin_config
 
 
 class MatrixAPIError(Exception):
@@ -31,6 +32,10 @@ class MatrixClientBase:
     Provides core HTTP request functionality
     """
 
+    _DEFAULT_HTTP_TIMEOUT_SECONDS = 120.0
+    _MIN_HTTP_TIMEOUT_SECONDS = 5.0
+    _MAX_HTTP_TIMEOUT_SECONDS = 600.0
+
     def __init__(self, homeserver: str):
         """
         Initialize Matrix HTTP client base
@@ -45,10 +50,32 @@ class MatrixClientBase:
         self.session: aiohttp.ClientSession | None = None
         self._next_batch: str | None = None
 
+    @classmethod
+    def _normalize_http_timeout_seconds(cls, value: Any) -> float:
+        try:
+            timeout = float(value)
+        except Exception:
+            timeout = cls._DEFAULT_HTTP_TIMEOUT_SECONDS
+        if timeout < cls._MIN_HTTP_TIMEOUT_SECONDS:
+            timeout = cls._MIN_HTTP_TIMEOUT_SECONDS
+        if timeout > cls._MAX_HTTP_TIMEOUT_SECONDS:
+            timeout = cls._MAX_HTTP_TIMEOUT_SECONDS
+        return timeout
+
+    def get_http_timeout_seconds(self) -> float:
+        try:
+            configured = get_plugin_config().http_timeout_seconds
+        except Exception:
+            configured = self._DEFAULT_HTTP_TIMEOUT_SECONDS
+        return self._normalize_http_timeout_seconds(configured)
+
+    def _build_http_timeout(self) -> aiohttp.ClientTimeout:
+        return aiohttp.ClientTimeout(total=self.get_http_timeout_seconds())
+
     async def _ensure_session(self):
         """Ensure aiohttp session exists"""
         if self.session is None or self.session.closed:
-            self.session = aiohttp.ClientSession()
+            self.session = aiohttp.ClientSession(timeout=self._build_http_timeout())
 
     async def close(self):
         """Close the HTTP session"""

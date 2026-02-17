@@ -34,6 +34,10 @@ _DEFAULT_MEDIA_UPLOAD_ALLOWED_MIME_RULES = (
     "application/zip",
     "application/octet-stream",
 )
+_DEFAULT_HTTP_TIMEOUT_SECONDS = 120
+_DEFAULT_E2EE_STORE_MAX_PENDING_WRITES = 256
+_DEFAULT_QUOTED_MEDIA_BACKGROUND_DOWNLOAD_CONCURRENCY = 2
+_DEFAULT_MEDIA_DOWNLOAD_MAX_IN_MEMORY_BYTES = 32 * 1024 * 1024
 
 
 def _get_default_data_dir() -> Path:
@@ -208,11 +212,18 @@ class PluginConfig:
         self._e2ee_store_path: Path = self._data_dir / "e2ee"
         self._media_cache_dir: Path = self._data_dir / "media"
         self._media_cache_gc_days: int = 30
+        self._http_timeout_seconds: int = _DEFAULT_HTTP_TIMEOUT_SECONDS
         self._media_download_concurrency: int = 4
+        self._quoted_media_background_download_concurrency: int = (
+            _DEFAULT_QUOTED_MEDIA_BACKGROUND_DOWNLOAD_CONCURRENCY
+        )
         self._media_download_min_interval_ms: int = 0
         self._media_download_breaker_fail_threshold: int = 6
         self._media_download_breaker_cooldown_ms: int = 5000
         self._media_download_breaker_max_cooldown_ms: int = 120000
+        self._media_download_max_in_memory_bytes: int = (
+            _DEFAULT_MEDIA_DOWNLOAD_MAX_IN_MEMORY_BYTES
+        )
         self._media_cache_index_persist: bool = True
         self._media_auto_download_max_bytes: int = 0
         self._media_auto_download_image: bool = True
@@ -239,6 +250,9 @@ class PluginConfig:
         self._pgsql_dsn: str = ""
         self._pgsql_schema: str = "public"
         self._pgsql_table_prefix: str = "matrix_store"
+        self._e2ee_store_max_pending_writes: int = (
+            _DEFAULT_E2EE_STORE_MAX_PENDING_WRITES
+        )
         self._storage_backend_config: StorageBackendConfig = (
             StorageBackendConfig.create(
                 backend=self._data_storage_backend,
@@ -267,6 +281,12 @@ class PluginConfig:
         self._oauth2_callback_host = config.get(
             "matrix_oauth2_callback_host", "127.0.0.1"
         )
+        self._http_timeout_seconds = _normalize_non_negative_int(
+            config.get("matrix_http_timeout_seconds"),
+            _DEFAULT_HTTP_TIMEOUT_SECONDS,
+            min_value=5,
+            config_key="matrix_http_timeout_seconds",
+        )
         self._media_cache_gc_days = _normalize_non_negative_int(
             config.get("matrix_media_cache_gc_days"),
             30,
@@ -278,6 +298,14 @@ class PluginConfig:
             4,
             min_value=1,
             config_key="matrix_media_download_concurrency",
+        )
+        self._quoted_media_background_download_concurrency = (
+            _normalize_non_negative_int(
+                config.get("matrix_quoted_media_background_download_concurrency"),
+                _DEFAULT_QUOTED_MEDIA_BACKGROUND_DOWNLOAD_CONCURRENCY,
+                min_value=1,
+                config_key="matrix_quoted_media_background_download_concurrency",
+            )
         )
         self._media_download_min_interval_ms = _normalize_non_negative_int(
             config.get("matrix_media_download_min_interval_ms"),
@@ -311,6 +339,12 @@ class PluginConfig:
             0,
             min_value=0,
             config_key="matrix_media_auto_download_max_bytes",
+        )
+        self._media_download_max_in_memory_bytes = _normalize_non_negative_int(
+            config.get("matrix_media_download_max_in_memory_bytes"),
+            _DEFAULT_MEDIA_DOWNLOAD_MAX_IN_MEMORY_BYTES,
+            min_value=0,
+            config_key="matrix_media_download_max_in_memory_bytes",
         )
         self._media_auto_download_image = _normalize_bool(
             config.get("matrix_media_auto_download_image"), True
@@ -390,6 +424,12 @@ class PluginConfig:
         self._pgsql_dsn = str(pgsql_dsn or "").strip()
         self._pgsql_schema = _normalize_pgsql_schema(pgsql_schema)
         self._pgsql_table_prefix = _normalize_pgsql_table_prefix(pgsql_table_prefix)
+        self._e2ee_store_max_pending_writes = _normalize_non_negative_int(
+            config.get("matrix_e2ee_store_max_pending_writes"),
+            _DEFAULT_E2EE_STORE_MAX_PENDING_WRITES,
+            min_value=1,
+            config_key="matrix_e2ee_store_max_pending_writes",
+        )
 
         if self._data_storage_backend == "pgsql" and not self._pgsql_dsn:
             raise ValueError(
@@ -430,9 +470,19 @@ class PluginConfig:
         return self._media_cache_gc_days
 
     @property
+    def http_timeout_seconds(self) -> int:
+        """Global HTTP request timeout in seconds."""
+        return self._http_timeout_seconds
+
+    @property
     def media_download_concurrency(self) -> int:
         """媒体下载并发上限（每个媒体源 server）"""
         return self._media_download_concurrency
+
+    @property
+    def quoted_media_background_download_concurrency(self) -> int:
+        """后台引用媒体下载并发上限"""
+        return self._quoted_media_background_download_concurrency
 
     @property
     def media_download_min_interval_ms(self) -> int:
@@ -474,6 +524,11 @@ class PluginConfig:
             "m.sticker": self._media_auto_download_sticker,
         }
         return mapping.get(msgtype, False)
+
+    @property
+    def media_download_max_in_memory_bytes(self) -> int:
+        """下载返回 bytes 时的内存上限（字节），<=0 表示不限制"""
+        return self._media_download_max_in_memory_bytes
 
     @property
     def media_upload_strict_mime_check(self) -> bool:
@@ -539,6 +594,11 @@ class PluginConfig:
     def pgsql_table_prefix(self) -> str:
         """PostgreSQL 表名前缀"""
         return self._pgsql_table_prefix
+
+    @property
+    def e2ee_store_max_pending_writes(self) -> int:
+        """E2EE store async persistence pending queue limit"""
+        return self._e2ee_store_max_pending_writes
 
     @property
     def storage_backend_config(self) -> StorageBackendConfig:

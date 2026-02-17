@@ -32,7 +32,8 @@ class OAuth2CallbackServer:
         self.runner: web.AppRunner | None = None
         self.site: web.TCPSite | None = None
         self.callback_future: asyncio.Future | None = None
-        self.state: str | None = None
+        self.expected_state: str | None = None
+        self._flow_armed = False
 
         self.app.router.add_get("/callback", self._handle_callback)
         self.app.router.add_get("/", self._handle_root)
@@ -45,6 +46,17 @@ class OAuth2CallbackServer:
 
     async def _handle_callback(self, request: web.Request) -> web.Response:
         try:
+            if (
+                not self._flow_armed
+                or self.callback_future is None
+                or self.expected_state is None
+            ):
+                _log("warning", "OAuth2 callback received before flow was armed")
+                return web.Response(
+                    text="OAuth2 flow is not ready, please retry.",
+                    status=503,
+                )
+
             query_params = request.query
 
             if "error" in query_params:
@@ -63,7 +75,7 @@ class OAuth2CallbackServer:
                 )
 
             state = query_params.get("state")
-            if state != self.state:
+            if state != self.expected_state:
                 _log("error", "State mismatch in OAuth2 callback")
                 if self.callback_future and not self.callback_future.done():
                     self.callback_future.set_exception(
@@ -115,13 +127,26 @@ class OAuth2CallbackServer:
                 await self.site.stop()
             if self.runner:
                 await self.runner.cleanup()
+            if self.callback_future and not self.callback_future.done():
+                self.callback_future.cancel()
+            self.callback_future = None
+            self.expected_state = None
+            self._flow_armed = False
             _log("info", "OAuth2 callback server stopped")
         except Exception as e:
             _log("error", f"Error stopping OAuth2 callback server: {e}")
 
-    async def wait_for_callback(self, state: str, timeout: int = 300) -> str:
-        self.state = state
-        self.callback_future = asyncio.Future()
+    def prepare_callback(self, expected_state: str) -> None:
+        if not expected_state:
+            raise ValueError("expected_state is required")
+        loop = asyncio.get_running_loop()
+        self.expected_state = expected_state
+        self.callback_future = loop.create_future()
+        self._flow_armed = True
+
+    async def wait_for_callback(self, timeout: int = 300) -> str:
+        if self.callback_future is None:
+            raise RuntimeError("OAuth2 callback flow not prepared")
 
         try:
             code = await asyncio.wait_for(self.callback_future, timeout=timeout)
@@ -131,4 +156,5 @@ class OAuth2CallbackServer:
             raise
         finally:
             self.callback_future = None
-            self.state = None
+            self.expected_state = None
+            self._flow_armed = False

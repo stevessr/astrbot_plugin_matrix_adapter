@@ -21,6 +21,8 @@ import aiohttp
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 
+from ..plugin_config import get_plugin_config
+
 _SHORTCODE_PATTERN = re.compile(r"(?<!\\):([a-zA-Z0-9_+\-]+):")
 
 _DEFAULT_SHORTCODES_URLS = (
@@ -315,7 +317,18 @@ def _parse_remote_shortcodes(payload) -> dict[str, str]:
 async def _fetch_remote_shortcodes_async(urls: list[str]) -> dict[str, str]:
     merged: dict[str, str] = {}
     loaded_sources = 0
-    timeout = aiohttp.ClientTimeout(total=10, connect=5, sock_connect=5, sock_read=10)
+    try:
+        configured_timeout = float(get_plugin_config().http_timeout_seconds)
+    except Exception:
+        configured_timeout = 10.0
+    total_timeout = max(5.0, min(configured_timeout, 60.0))
+    connect_timeout = min(5.0, total_timeout)
+    timeout = aiohttp.ClientTimeout(
+        total=total_timeout,
+        connect=connect_timeout,
+        sock_connect=connect_timeout,
+        sock_read=total_timeout,
+    )
     headers = {
         "User-Agent": "astrbot-matrix-adapter/emoji-shortcodes",
         "Accept": "application/json",
