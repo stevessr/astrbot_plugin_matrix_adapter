@@ -209,7 +209,7 @@ await adapter.sender.send_poll(
 )
 ```
 
-也可以使用适配器自带的 `Poll` 组件构造消息链：
+也可以使用适配器自带的 `Poll` 组件构造消息链：[^patch1]
 
 ```python
 from astrbot.api.event import MessageChain
@@ -366,3 +366,15 @@ MIT License
 房间类型可能更新不及时，有的时候会被联邦做局
 
 不建议在多人群里面使用加密，这会造成较重的负担
+
+也许是一个简单的插件配置演示？
+[Link](https://www.bilibili.com/video/BV1geZ5BzERx/)[^1]
+
+视频里面可能出现非官方 fluffychat 版本
+
+嗯，还是推荐自建 ( matrix 官方好像要出账号跨服务器迁移的功能 )，请保存好 tuwunel 的数据库 (里面有加密密钥)
+请谨慎使用 Mozilla 的 matrix 服务器 (有限速)，在使用服务器之前请详细查看各个服务器的用户协议
+推荐使用 tuwunel 的原因是单文件足够简单，维护也比较活跃，但是官方版本配置 linux do 登录会有问题 (重复的字段)
+
+[patch1]: 需要给 Astrbot 本体打一点小 patch
+[1]: 音量有点大
