@@ -76,6 +76,16 @@ class MediaCacheIndexStore:
             return None
         return self._to_abs_path(row[0])
 
+    def list_entries(self) -> list[tuple[str, Path]]:
+        with self._lock:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT cache_key, rel_path FROM media_cache_index"
+                ).fetchall()
+        return [
+            (cache_key, self._to_abs_path(rel_path)) for cache_key, rel_path in rows
+        ]
+
     def upsert(
         self,
         cache_key: str,

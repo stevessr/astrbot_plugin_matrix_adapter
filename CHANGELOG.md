@@ -17,6 +17,9 @@
 - 新增媒体缓存索引持久化：`matrix_media_cache_index_persist`，使用 SQLite 保存缓存索引，重启后可快速命中。
 - 新增媒体上传安全校验：扩展名黑名单与 MIME 规则白名单，上传前校验声明 MIME / 扩展名 / 文件签名一致性。
 - `matrix_media_upload_blocked_extensions` 与 `matrix_media_upload_allowed_mime_rules` 改为 `list` 配置类型（兼容旧字符串格式）。
+- 启动时增加媒体缓存索引自愈：自动回填缺失索引并移除失效索引项。
+- 优化路径上传 I/O：去除上传前整文件预哈希，改为上传流中实时哈希，减少双重读盘。
+- 下调媒体下载相关重试/回退日志级别，降低高频场景日志噪音。
 
 ## 0.3.1
 

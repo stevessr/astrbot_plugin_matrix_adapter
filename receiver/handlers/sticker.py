@@ -11,7 +11,7 @@ async def handle_sticker(receiver, chain, event, _: str):
     size_bytes = receiver._normalize_media_size(info_data.get("size"))
     over_limit = receiver._is_media_over_auto_download_limit(size_bytes)
     if over_limit:
-        logger.info(
+        logger.debug(
             f"Skip auto-downloading Matrix sticker over size limit: {event.content.get('body', 'sticker.png')} ({size_bytes} bytes)"
         )
 
