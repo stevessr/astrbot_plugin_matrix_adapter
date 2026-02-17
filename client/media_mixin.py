@@ -94,6 +94,12 @@ class MediaMixin:
             self._media_download_rate_locks: dict[str, asyncio.Lock] = {}
         if not hasattr(self, "_media_download_next_allowed_at"):
             self._media_download_next_allowed_at: dict[str, float] = {}
+        if not hasattr(self, "_media_download_breaker_failures"):
+            self._media_download_breaker_failures: dict[str, int] = {}
+        if not hasattr(self, "_media_download_breaker_open_until"):
+            self._media_download_breaker_open_until: dict[str, float] = {}
+        if not hasattr(self, "_media_download_breaker_locks"):
+            self._media_download_breaker_locks: dict[str, asyncio.Lock] = {}
 
     @staticmethod
     def _normalize_media_source_key(source_key: str | None) -> str:
@@ -121,6 +127,115 @@ class MediaMixin:
         if interval_ms <= 0:
             return 0.0
         return interval_ms / 1000.0
+
+    def _get_media_download_breaker_fail_threshold(self) -> int:
+        try:
+            threshold = int(get_plugin_config().media_download_breaker_fail_threshold)
+        except Exception:
+            return 6
+        return max(0, threshold)
+
+    def _get_media_download_breaker_base_cooldown_seconds(self) -> float:
+        try:
+            cooldown_ms = int(get_plugin_config().media_download_breaker_cooldown_ms)
+        except Exception:
+            return 5.0
+        if cooldown_ms <= 0:
+            return 0.0
+        return cooldown_ms / 1000.0
+
+    def _get_media_download_breaker_max_cooldown_seconds(self) -> float:
+        try:
+            cooldown_ms = int(
+                get_plugin_config().media_download_breaker_max_cooldown_ms
+            )
+        except Exception:
+            return 120.0
+        if cooldown_ms <= 0:
+            return 0.0
+        return cooldown_ms / 1000.0
+
+    def _is_media_download_breaker_enabled(self) -> bool:
+        if self._get_media_download_breaker_fail_threshold() <= 0:
+            return False
+        return self._get_media_download_breaker_base_cooldown_seconds() > 0
+
+    @staticmethod
+    def _is_media_download_breaker_failure_status(status: int) -> bool:
+        return status == 429 or status >= 500
+
+    async def _wait_media_download_breaker(self, source_key: str) -> None:
+        if not self._is_media_download_breaker_enabled():
+            return
+
+        self._ensure_media_download_flow_control()
+        normalized_source = self._normalize_media_source_key(source_key)
+        lock = self._media_download_breaker_locks.setdefault(
+            normalized_source, asyncio.Lock()
+        )
+        sleep_for = 0.0
+
+        async with lock:
+            open_until = self._media_download_breaker_open_until.get(
+                normalized_source, 0.0
+            )
+            now = time.monotonic()
+            if open_until > now:
+                sleep_for = open_until - now
+
+        if sleep_for > 0:
+            logger.debug(
+                "Matrix media download breaker open for "
+                f"{normalized_source}, waiting {sleep_for:.2f}s"
+            )
+            await asyncio.sleep(sleep_for)
+
+    def _record_media_download_success(self, source_key: str) -> None:
+        self._ensure_media_download_flow_control()
+        normalized_source = self._normalize_media_source_key(source_key)
+        if self._media_download_breaker_failures.get(normalized_source, 0) > 0:
+            self._media_download_breaker_failures[normalized_source] = 0
+            self._media_download_breaker_open_until[normalized_source] = 0.0
+
+    def _record_media_download_failure(
+        self, source_key: str, status: int | None
+    ) -> None:
+        if not self._is_media_download_breaker_enabled():
+            return
+        self._ensure_media_download_flow_control()
+
+        normalized_source = self._normalize_media_source_key(source_key)
+        failure_count = (
+            self._media_download_breaker_failures.get(normalized_source, 0) + 1
+        )
+        self._media_download_breaker_failures[normalized_source] = failure_count
+
+        threshold = self._get_media_download_breaker_fail_threshold()
+        if failure_count < threshold:
+            return
+
+        base_cooldown = self._get_media_download_breaker_base_cooldown_seconds()
+        max_cooldown = self._get_media_download_breaker_max_cooldown_seconds()
+        if max_cooldown <= 0:
+            max_cooldown = base_cooldown
+        if max_cooldown <= 0:
+            return
+
+        backoff_level = failure_count - threshold
+        cooldown_seconds = min(base_cooldown * (2**backoff_level), max_cooldown)
+        now = time.monotonic()
+        new_open_until = now + cooldown_seconds
+        current_open_until = self._media_download_breaker_open_until.get(
+            normalized_source, 0.0
+        )
+        if new_open_until > current_open_until:
+            self._media_download_breaker_open_until[normalized_source] = new_open_until
+
+        logger.debug(
+            "Opened Matrix media download breaker for "
+            f"{normalized_source}: failures={failure_count}, "
+            f"status={status}, cooldown={cooldown_seconds:.2f}s"
+        )
 
     def _get_media_download_semaphore(self, source_key: str) -> asyncio.Semaphore:
         self._ensure_media_download_flow_control()
@@ -849,12 +964,14 @@ class MediaMixin:
             attempt = 0
             while True:
                 try:
+                    await self._wait_media_download_breaker(source_key)
                     async with self._media_download_slot(source_key):
                         async with self.session.get(
                             url, headers=headers, allow_redirects=True
                         ) as response:
                             last_status = response.status
                             if response.status == 200:
+                                self._record_media_download_success(source_key)
                                 logger.debug(
                                     f"Successfully downloaded media from {url}"
                                 )
@@ -898,6 +1015,12 @@ class MediaMixin:
                                 await asyncio.sleep(delay)
                                 continue
 
+                            if self._is_media_download_breaker_failure_status(
+                                response.status
+                            ):
+                                self._record_media_download_failure(
+                                    source_key, response.status
+                                )
                             if response.status == 404:
                                 last_error = f"Media not found: {response.status}"
                             elif response.status == 403:
@@ -919,6 +1042,7 @@ class MediaMixin:
                         )
                         await asyncio.sleep(delay)
                         continue
+                    self._record_media_download_failure(source_key, None)
                     last_error = str(e)
                     logger.debug(f"Network error downloading from {url}: {e}")
                     break
@@ -942,11 +1066,13 @@ class MediaMixin:
                 attempt = 0
                 while True:
                     try:
+                        await self._wait_media_download_breaker(source_key)
                         async with self._media_download_slot(source_key):
                             async with self.session.get(
                                 url, headers=headers, allow_redirects=True
                             ) as response:
                                 if response.status == 200:
+                                    self._record_media_download_success(source_key)
                                     logger.debug(
                                         "Downloaded thumbnail instead of full media"
                                     )
@@ -972,6 +1098,12 @@ class MediaMixin:
                                     attempt += 1
                                     await asyncio.sleep(delay)
                                     continue
+                                if self._is_media_download_breaker_failure_status(
+                                    response.status
+                                ):
+                                    self._record_media_download_failure(
+                                        source_key, response.status
+                                    )
                                 break
                     except aiohttp.ClientError:
                         if attempt < self._MEDIA_HTTP_MAX_RETRIES:
@@ -979,6 +1111,7 @@ class MediaMixin:
                             attempt += 1
                             await asyncio.sleep(delay)
                             continue
+                        self._record_media_download_failure(source_key, None)
                         break
                     except Exception:
                         break
@@ -1039,14 +1172,26 @@ class MediaMixin:
                 headers["Authorization"] = f"Bearer {self.access_token}"
 
             try:
+                await self._wait_media_download_breaker(source_key)
                 async with self._media_download_slot(source_key):
                     async with self.session.get(
                         url, headers=headers, allow_redirects=True
                     ) as response:
                         last_status = response.status
                         if response.status == 200:
+                            self._record_media_download_success(source_key)
                             return await response.read()
+                        if self._is_media_download_breaker_failure_status(
+                            response.status
+                        ):
+                            self._record_media_download_failure(
+                                source_key, response.status
+                            )
                         last_error = f"HTTP {response.status}"
+            except aiohttp.ClientError as e:
+                self._record_media_download_failure(source_key, None)
+                last_error = str(e)
+                continue
             except Exception as e:
                 last_error = str(e)
                 continue

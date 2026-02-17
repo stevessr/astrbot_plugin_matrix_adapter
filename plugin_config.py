@@ -142,6 +142,9 @@ class PluginConfig:
         self._media_cache_gc_days: int = 30
         self._media_download_concurrency: int = 4
         self._media_download_min_interval_ms: int = 0
+        self._media_download_breaker_fail_threshold: int = 6
+        self._media_download_breaker_cooldown_ms: int = 5000
+        self._media_download_breaker_max_cooldown_ms: int = 120000
         self._media_cache_index_persist: bool = True
         self._media_auto_download_max_bytes: int = 0
         self._media_auto_download_image: bool = True
@@ -207,6 +210,15 @@ class PluginConfig:
         )
         self._media_download_min_interval_ms = _normalize_non_negative_int(
             config.get("matrix_media_download_min_interval_ms"), 0
+        )
+        self._media_download_breaker_fail_threshold = _normalize_non_negative_int(
+            config.get("matrix_media_download_breaker_fail_threshold"), 6
+        )
+        self._media_download_breaker_cooldown_ms = _normalize_non_negative_int(
+            config.get("matrix_media_download_breaker_cooldown_ms"), 5000
+        )
+        self._media_download_breaker_max_cooldown_ms = _normalize_non_negative_int(
+            config.get("matrix_media_download_breaker_max_cooldown_ms"), 120000
         )
         self._media_cache_index_persist = _normalize_bool(
             config.get("matrix_media_cache_index_persist"), True
@@ -325,6 +337,21 @@ class PluginConfig:
     def media_download_min_interval_ms(self) -> int:
         """同一媒体源 server 的最小下载请求间隔（毫秒）"""
         return self._media_download_min_interval_ms
+
+    @property
+    def media_download_breaker_fail_threshold(self) -> int:
+        """媒体下载熔断触发连续失败阈值，<=0 表示禁用"""
+        return self._media_download_breaker_fail_threshold
+
+    @property
+    def media_download_breaker_cooldown_ms(self) -> int:
+        """媒体下载熔断基础冷却时间（毫秒）"""
+        return self._media_download_breaker_cooldown_ms
+
+    @property
+    def media_download_breaker_max_cooldown_ms(self) -> int:
+        """媒体下载熔断最大冷却时间（毫秒）"""
+        return self._media_download_breaker_max_cooldown_ms
 
     @property
     def media_cache_index_persist(self) -> bool:

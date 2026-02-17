@@ -66,6 +66,9 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 | `matrix_media_cache_gc_days` | int | `30` | 媒体缓存清理天数，<=0 表示禁用 |
 | `matrix_media_download_concurrency` | int | `4` | 每个媒体源 server 的并发下载上限（最小为 1） |
 | `matrix_media_download_min_interval_ms` | int | `0` | 同一媒体源 server 的最小下载请求间隔（毫秒），<=0 表示不限制 |
+| `matrix_media_download_breaker_fail_threshold` | int | `6` | 下载熔断触发的连续失败阈值（<=0 表示禁用） |
+| `matrix_media_download_breaker_cooldown_ms` | int | `5000` | 下载熔断基础冷却时长（毫秒） |
+| `matrix_media_download_breaker_max_cooldown_ms` | int | `120000` | 下载熔断最大冷却时长（毫秒） |
 | `matrix_media_cache_index_persist` | bool | `true` | 是否启用 SQLite 持久化媒体缓存索引 |
 | `matrix_media_auto_download_max_bytes` | int | `0` | 媒体自动下载大小上限（字节），超过后跳过自动下载并尽量保留 URL，<=0 表示不限制 |
 | `matrix_media_auto_download_image` | bool | `true` | 是否自动下载图片消息（m.image） |
