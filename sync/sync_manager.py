@@ -5,13 +5,14 @@ Handles the sync loop and event distribution
 
 import asyncio
 import json
+import random
 from collections.abc import Callable
 from pathlib import Path
 
 from astrbot.api import logger
 
 from ..client.http_client import MatrixAPIError
-from ..constants import DEFAULT_TIMEOUT_MS_30000, DISPLAY_TRUNCATE_LENGTH_20
+from ..constants import DEFAULT_TIMEOUT_MS_30000
 from ..plugin_config import get_plugin_config
 from ..storage_backend import (
     MatrixFolderDataStore,
@@ -26,6 +27,11 @@ class MatrixSyncManager:
 
     _SYNC_TOKEN_SAVE_INTERVAL_SECONDS = 5.0
     _SYNC_CALLBACK_TIMEOUT_SECONDS = 20.0
+    _SYNC_RETRY_BASE_DELAY_SECONDS = 2.0
+    _SYNC_RETRY_MAX_DELAY_SECONDS = 120.0
+    _SYNC_RETRY_JITTER_MIN = 0.8
+    _SYNC_RETRY_JITTER_MAX = 1.2
+    _SYNC_RETRY_ALERT_THRESHOLD = 8
 
     def __init__(
         self,
@@ -97,6 +103,7 @@ class MatrixSyncManager:
         self._running = False
         self._last_saved_next_batch: str | None = None
         self._last_sync_token_save_at: float = 0.0
+        self._sync_consecutive_failures: int = 0
 
         # Load saved sync token if available
         self._load_sync_token()
@@ -147,7 +154,7 @@ class MatrixSyncManager:
                         self._next_batch = next_batch
                         self._first_sync = False
                         logger.info(
-                            f"恢复同步令牌（backend={self.data_storage_backend}）：{self._next_batch[:DISPLAY_TRUNCATE_LENGTH_20]}..."
+                            f"恢复同步令牌（backend={self.data_storage_backend}）"
                         )
                         return
             except Exception as e:
@@ -163,9 +170,7 @@ class MatrixSyncManager:
                     self._next_batch = data.get("next_batch")
                     if self._next_batch:
                         self._first_sync = False
-                        logger.info(
-                            f"恢复同步令牌：{self._next_batch[:DISPLAY_TRUNCATE_LENGTH_20]}..."
-                        )
+                        logger.info("恢复同步令牌")
                         if (
                             self._sync_data_store
                             and self.data_storage_backend != "json"
@@ -224,6 +229,37 @@ class MatrixSyncManager:
             self._last_sync_token_save_at = now
         except Exception as e:
             logger.warning(f"保存同步令牌失败：{e}")
+
+    def _reset_sync_failures(self) -> None:
+        self._sync_consecutive_failures = 0
+
+    def _compute_sync_retry_delay(self) -> float:
+        self._sync_consecutive_failures += 1
+        exponent = min(10, max(0, self._sync_consecutive_failures - 1))
+        base_delay = min(
+            self._SYNC_RETRY_MAX_DELAY_SECONDS,
+            self._SYNC_RETRY_BASE_DELAY_SECONDS * (2**exponent),
+        )
+        jitter = random.uniform(
+            self._SYNC_RETRY_JITTER_MIN, self._SYNC_RETRY_JITTER_MAX
+        )
+        return max(
+            1.0,
+            min(self._SYNC_RETRY_MAX_DELAY_SECONDS, base_delay * jitter),
+        )
+
+    async def _sleep_after_sync_failure(self, reason: str) -> None:
+        delay = self._compute_sync_retry_delay()
+        logger.warning(
+            f"{reason}. Retrying in {delay:.2f}s "
+            f"(consecutive_failures={self._sync_consecutive_failures})"
+        )
+        if self._sync_consecutive_failures >= self._SYNC_RETRY_ALERT_THRESHOLD:
+            logger.error(
+                "Matrix sync loop is in prolonged failure state "
+                f"(failures={self._sync_consecutive_failures})"
+            )
+        await asyncio.sleep(delay)
 
     async def _run_callback_with_guard(
         self,
@@ -369,6 +405,7 @@ class MatrixSyncManager:
 
                     self._next_batch = sync_response.get("next_batch")
                     self._first_sync = False
+                    self._reset_sync_failures()
 
                     # Save sync token for resumption (throttled)
                     await self._save_sync_token()
@@ -509,22 +546,23 @@ class MatrixSyncManager:
                             logger.info(
                                 "Token refreshed successfully. Retrying sync..."
                             )
+                            self._reset_sync_failures()
                             continue
                         else:
                             logger.error("Failed to refresh token. Stopping sync loop.")
                             raise
 
                     logger.error(f"Matrix API error in sync loop: {e}")
-                    # Wait a bit before retrying
-                    await asyncio.sleep(5)
+                    await self._sleep_after_sync_failure(
+                        "Matrix API error in sync loop"
+                    )
 
                 except KeyboardInterrupt:
                     logger.info("Sync loop interrupted by user")
                     raise
                 except Exception as e:
                     logger.error(f"Error in sync loop: {e}")
-                    # Wait a bit before retrying
-                    await asyncio.sleep(5)
+                    await self._sleep_after_sync_failure("Error in sync loop")
         finally:
             await self._save_sync_token(force=True)
 

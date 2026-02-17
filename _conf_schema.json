@@ -3,6 +3,7 @@
     "description": "OAuth2 回调服务器端口",
     "type": "int",
     "hint": "OAuth2 认证回调服务器监听端口，用于接收认证重定向",
+    "min": 1,
     "default": 8765
   },
   "matrix_oauth2_callback_host": {
@@ -15,36 +16,42 @@
     "description": "媒体缓存清理天数",
     "type": "int",
     "hint": "清理超过指定天数未使用的媒体缓存，<=0 表示禁用",
+    "min": 0,
     "default": 30
   },
   "matrix_media_download_concurrency": {
     "description": "媒体下载并发上限",
     "type": "int",
     "hint": "每个媒体源 server 的并发下载上限，最小为 1",
+    "min": 1,
     "default": 4
   },
   "matrix_media_download_min_interval_ms": {
     "description": "媒体下载最小间隔（毫秒）",
     "type": "int",
     "hint": "同一媒体源 server 两次下载请求之间的最小间隔，<=0 表示不限制",
+    "min": 0,
     "default": 0
   },
   "matrix_media_download_breaker_fail_threshold": {
     "description": "媒体下载熔断失败阈值",
     "type": "int",
     "hint": "按媒体源 server 统计的连续失败次数阈值，达到后进入熔断冷却（<=0 表示禁用）",
+    "min": 0,
     "default": 6
   },
   "matrix_media_download_breaker_cooldown_ms": {
     "description": "媒体下载熔断基础冷却（毫秒）",
     "type": "int",
     "hint": "首次熔断的冷却时长；连续失败会指数退避增长",
+    "min": 0,
     "default": 5000
   },
   "matrix_media_download_breaker_max_cooldown_ms": {
     "description": "媒体下载熔断最大冷却（毫秒）",
     "type": "int",
     "hint": "熔断冷却时长上限",
+    "min": 0,
     "default": 120000
   },
   "matrix_media_cache_index_persist": {
@@ -57,6 +64,7 @@
     "description": "媒体自动下载大小上限（字节）",
     "type": "int",
     "hint": "当收到媒体消息时，超过该大小将跳过自动下载并尽量保留 URL（<=0 表示不限制）",
+    "min": 0,
     "default": 0
   },
   "matrix_media_auto_download_image": {
@@ -148,6 +156,7 @@
         "description": "PostgreSQL DSN",
         "type": "string",
         "hint": "例如 postgresql://user:pass@127.0.0.1:5432/dbname",
+        "required": true,
         "default": ""
       },
       "schema": {

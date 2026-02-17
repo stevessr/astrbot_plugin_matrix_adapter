@@ -8,6 +8,8 @@ Crypto Store - E2EE 密钥和会话的持久化存储
 - 一次性密钥
 """
 
+import copy
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +68,11 @@ class CryptoStore:
             json_filename_resolver=self._json_filename_resolver,
             store_name="crypto",
         )
+        self._persist_executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="matrix-e2ee-store",
+        )
+        self._initializing = True
 
         # 内存缓存
         self._account_pickle: str | None = None
@@ -79,6 +86,7 @@ class CryptoStore:
 
         # 加载现有数据
         self._load_all()
+        self._initializing = False
 
     @classmethod
     def _json_filename_resolver(cls, record_key: str) -> str:
@@ -86,6 +94,48 @@ class CryptoStore:
 
     def _legacy_path_for_record(self, record_key: str) -> Path:
         return self.store_path / self._json_filename_resolver(record_key)
+
+    @staticmethod
+    def _clone_record_data(data: Any) -> Any:
+        try:
+            return copy.deepcopy(data)
+        except Exception:
+            return data
+
+    @staticmethod
+    def _log_persist_failure(
+        future: Future,
+        *,
+        operation: str,
+        record_key: str,
+    ) -> None:
+        try:
+            future.result()
+        except Exception as e:
+            logger.error(f"{operation} 加密存储记录失败 {record_key}: {e}")
+
+    def _submit_persist_job(
+        self,
+        operation: str,
+        record_key: str,
+        job,
+        *job_args,
+    ) -> None:
+        if self._initializing:
+            job(*job_args)
+            return
+
+        try:
+            future = self._persist_executor.submit(job, *job_args)
+            future.add_done_callback(
+                lambda done: self._log_persist_failure(
+                    done,
+                    operation=operation,
+                    record_key=record_key,
+                )
+            )
+        except Exception as e:
+            logger.error(f"提交加密存储任务失败 {operation}/{record_key}: {e}")
 
     def _read_record(self, record_key: str) -> Any | None:
         try:
@@ -96,16 +146,31 @@ class CryptoStore:
 
     def _save_record(self, record_key: str, data: Any):
         try:
-            self._data_store.upsert(record_key, data)
+            payload = self._clone_record_data(data)
+            self._submit_persist_job(
+                "保存",
+                record_key,
+                self._data_store.upsert,
+                record_key,
+                payload,
+            )
         except Exception as e:
             logger.error(f"保存加密存储记录失败 {record_key}: {e}")
 
+    def _delete_record_sync(self, record_key: str) -> None:
+        self._data_store.delete(record_key)
+        legacy_path = self._legacy_path_for_record(record_key)
+        if legacy_path.exists():
+            legacy_path.unlink()
+
     def _delete_record(self, record_key: str):
         try:
-            self._data_store.delete(record_key)
-            legacy_path = self._legacy_path_for_record(record_key)
-            if legacy_path.exists():
-                legacy_path.unlink()
+            self._submit_persist_job(
+                "删除",
+                record_key,
+                self._delete_record_sync,
+                record_key,
+            )
         except Exception as e:
             logger.error(f"删除加密存储记录失败 {record_key}: {e}")
 

@@ -58,6 +58,18 @@ def _normalize_message_type(value, legacy_value) -> str:
     return "auto"
 
 
+def _warn_config_coercion(
+    config_key: str,
+    raw_value,
+    normalized_value,
+    reason: str,
+) -> None:
+    logger.warning(
+        f"Config {config_key} coerced: raw={raw_value!r}, "
+        f"normalized={normalized_value!r} ({reason})"
+    )
+
+
 def _normalize_pgsql_schema(value) -> str:
     if isinstance(value, str):
         normalized = value.strip()
@@ -80,14 +92,36 @@ def _normalize_bool(value, default: bool = False) -> bool:
     return default
 
 
-def _normalize_non_negative_int(value, default: int = 0) -> int:
+def _normalize_non_negative_int(
+    value,
+    default: int = 0,
+    *,
+    min_value: int = 0,
+    config_key: str | None = None,
+) -> int:
     if value is None:
         return default
     try:
         normalized = int(value)
     except Exception:
+        if config_key:
+            _warn_config_coercion(
+                config_key=config_key,
+                raw_value=value,
+                normalized_value=default,
+                reason="invalid integer, fallback to default",
+            )
         return default
-    return max(0, normalized)
+    if normalized < min_value:
+        if config_key:
+            _warn_config_coercion(
+                config_key=config_key,
+                raw_value=value,
+                normalized_value=min_value,
+                reason=f"value below minimum {min_value}",
+            )
+        return min_value
+    return normalized
 
 
 def _normalize_token_list(
@@ -95,6 +129,7 @@ def _normalize_token_list(
     default: tuple[str, ...],
     *,
     extension_mode: bool = False,
+    config_key: str | None = None,
 ) -> tuple[str, ...]:
     raw_tokens: list[str] = []
     if isinstance(value, str):
@@ -102,19 +137,52 @@ def _normalize_token_list(
     elif isinstance(value, (list, tuple, set)):
         raw_tokens = [str(item) for item in value if isinstance(item, str)]
     else:
+        if value is not None and config_key:
+            _warn_config_coercion(
+                config_key=config_key,
+                raw_value=value,
+                normalized_value=default,
+                reason="invalid list type, fallback to default",
+            )
         return default
 
     normalized_tokens: list[str] = []
+    changed = False
     for token in raw_tokens:
+        original = token
         normalized = token.strip().lower()
         if not normalized:
+            changed = True
             continue
         if extension_mode and normalized != "*" and not normalized.startswith("."):
             normalized = f".{normalized}"
+            changed = True
+        if normalized != original:
+            changed = True
         if normalized not in normalized_tokens:
             normalized_tokens.append(normalized)
+        else:
+            changed = True
 
-    return tuple(normalized_tokens) if normalized_tokens else default
+    if not normalized_tokens:
+        if config_key and value is not None:
+            _warn_config_coercion(
+                config_key=config_key,
+                raw_value=value,
+                normalized_value=default,
+                reason="no valid tokens, fallback to default",
+            )
+        return default
+
+    result = tuple(normalized_tokens)
+    if changed and config_key:
+        _warn_config_coercion(
+            config_key=config_key,
+            raw_value=value,
+            normalized_value=result,
+            reason="normalized tokens",
+        )
+    return result
 
 
 class PluginConfig:
@@ -200,31 +268,49 @@ class PluginConfig:
             "matrix_oauth2_callback_host", "127.0.0.1"
         )
         self._media_cache_gc_days = _normalize_non_negative_int(
-            config.get("matrix_media_cache_gc_days"), 30
+            config.get("matrix_media_cache_gc_days"),
+            30,
+            min_value=0,
+            config_key="matrix_media_cache_gc_days",
         )
-        self._media_download_concurrency = max(
-            1,
-            _normalize_non_negative_int(
-                config.get("matrix_media_download_concurrency"), 4
-            ),
+        self._media_download_concurrency = _normalize_non_negative_int(
+            config.get("matrix_media_download_concurrency"),
+            4,
+            min_value=1,
+            config_key="matrix_media_download_concurrency",
         )
         self._media_download_min_interval_ms = _normalize_non_negative_int(
-            config.get("matrix_media_download_min_interval_ms"), 0
+            config.get("matrix_media_download_min_interval_ms"),
+            0,
+            min_value=0,
+            config_key="matrix_media_download_min_interval_ms",
         )
         self._media_download_breaker_fail_threshold = _normalize_non_negative_int(
-            config.get("matrix_media_download_breaker_fail_threshold"), 6
+            config.get("matrix_media_download_breaker_fail_threshold"),
+            6,
+            min_value=0,
+            config_key="matrix_media_download_breaker_fail_threshold",
         )
         self._media_download_breaker_cooldown_ms = _normalize_non_negative_int(
-            config.get("matrix_media_download_breaker_cooldown_ms"), 5000
+            config.get("matrix_media_download_breaker_cooldown_ms"),
+            5000,
+            min_value=0,
+            config_key="matrix_media_download_breaker_cooldown_ms",
         )
         self._media_download_breaker_max_cooldown_ms = _normalize_non_negative_int(
-            config.get("matrix_media_download_breaker_max_cooldown_ms"), 120000
+            config.get("matrix_media_download_breaker_max_cooldown_ms"),
+            120000,
+            min_value=0,
+            config_key="matrix_media_download_breaker_max_cooldown_ms",
         )
         self._media_cache_index_persist = _normalize_bool(
             config.get("matrix_media_cache_index_persist"), True
         )
         self._media_auto_download_max_bytes = _normalize_non_negative_int(
-            config.get("matrix_media_auto_download_max_bytes"), 0
+            config.get("matrix_media_auto_download_max_bytes"),
+            0,
+            min_value=0,
+            config_key="matrix_media_auto_download_max_bytes",
         )
         self._media_auto_download_image = _normalize_bool(
             config.get("matrix_media_auto_download_image"), True
@@ -248,10 +334,12 @@ class PluginConfig:
             config.get("matrix_media_upload_blocked_extensions"),
             _DEFAULT_MEDIA_UPLOAD_BLOCKED_EXTENSIONS,
             extension_mode=True,
+            config_key="matrix_media_upload_blocked_extensions",
         )
         self._media_upload_allowed_mime_rules = _normalize_token_list(
             config.get("matrix_media_upload_allowed_mime_rules"),
             _DEFAULT_MEDIA_UPLOAD_ALLOWED_MIME_RULES,
+            config_key="matrix_media_upload_allowed_mime_rules",
         )
         # Sticker 相关配置
         self._sticker_auto_sync = config.get("matrix_sticker_auto_sync", False)
@@ -263,6 +351,20 @@ class PluginConfig:
             config.get("matrix_force_message_type"),
             config.get("matrix_force_private_message"),
         )
+        raw_force_type = config.get("matrix_force_message_type")
+        if raw_force_type is not None:
+            normalized_force_type = (
+                raw_force_type.strip().lower()
+                if isinstance(raw_force_type, str)
+                else raw_force_type
+            )
+            if normalized_force_type != self._force_message_type:
+                _warn_config_coercion(
+                    config_key="matrix_force_message_type",
+                    raw_value=raw_force_type,
+                    normalized_value=self._force_message_type,
+                    reason="invalid or legacy message type value",
+                )
 
         # 数据存储后端配置
         self._data_storage_backend = normalize_storage_backend(
@@ -290,11 +392,10 @@ class PluginConfig:
         self._pgsql_table_prefix = _normalize_pgsql_table_prefix(pgsql_table_prefix)
 
         if self._data_storage_backend == "pgsql" and not self._pgsql_dsn:
-            logger.warning(
-                "matrix_data_storage_backend=pgsql 但未配置 matrix_pgsql.dsn（或旧字段 matrix_pgsql_dsn），已回退到 json",
-                extra={"plugin_tag": "matrix", "short_levelname": "WARN"},
+            raise ValueError(
+                "matrix_data_storage_backend=pgsql requires matrix_pgsql.dsn "
+                "(or legacy matrix_pgsql_dsn)"
             )
-            self._data_storage_backend = "json"
 
         self._storage_backend_config = StorageBackendConfig.create(
             backend=self._data_storage_backend,

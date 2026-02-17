@@ -3,6 +3,9 @@ Matrix auth token storage helpers.
 """
 
 import json
+import os
+import threading
+import time
 from pathlib import Path
 
 from ..plugin_config import get_plugin_config
@@ -15,6 +18,8 @@ from ..storage_backend import (
 
 class MatrixAuthStore:
     """Mixin providing token storage helpers."""
+
+    _token_file_save_lock = threading.Lock()
 
     def _get_token_store_path(self) -> str:
         """Get path for storing auth token."""
@@ -110,17 +115,46 @@ class MatrixAuthStore:
         path_obj = Path(path)
         if not path_obj.exists():
             return None, path
+        self._harden_path_mode(path_obj, 0o600)
 
         with open(path_obj, encoding="utf-8") as f:
             data = json.load(f)
         return data, path
 
+    @staticmethod
+    def _harden_path_mode(path: Path, mode: int) -> None:
+        try:
+            path.chmod(mode)
+        except Exception:
+            # Ignore platforms/filesystems that don't support POSIX chmod semantics.
+            pass
+
+    def _write_json_token_atomically(self, path_obj: Path, data: dict) -> None:
+        temp_path = path_obj.with_name(
+            f".{path_obj.name}.{os.getpid()}.{time.time_ns()}.tmp"
+        )
+        try:
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            self._harden_path_mode(temp_path, 0o600)
+            temp_path.replace(path_obj)
+            self._harden_path_mode(path_obj, 0o600)
+        finally:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
     def _save_token_to_json_file(self, data: dict) -> str:
         path = self._get_token_store_path()
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        return path
+        path_obj = Path(path)
+        path_obj.parent.mkdir(parents=True, exist_ok=True)
+        self._harden_path_mode(path_obj.parent, 0o700)
+        with self._token_file_save_lock:
+            self._write_json_token_atomically(path_obj, data)
+        return str(path_obj)
 
     def _save_token(self):
         """Save access token to disk."""

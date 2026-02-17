@@ -23,6 +23,7 @@ class SSOCallbackServer:
         self.site: web.TCPSite | None = None
         self.callback_future: asyncio.Future | None = None
         self.expected_state: str | None = None
+        self._flow_armed = False
 
         self.app.router.add_get("/callback", self._handle_callback)
         self.app.router.add_get("/", self._handle_root)
@@ -35,6 +36,17 @@ class SSOCallbackServer:
 
     async def _handle_callback(self, request: web.Request) -> web.Response:
         try:
+            if (
+                not self._flow_armed
+                or self.callback_future is None
+                or self.expected_state is None
+            ):
+                _log("warning", "SSO callback received before flow was armed")
+                return web.Response(
+                    text="SSO flow is not ready, please retry.",
+                    status=503,
+                )
+
             query_params = request.query
             if self.expected_state:
                 state = query_params.get("state")
@@ -98,17 +110,31 @@ class SSOCallbackServer:
             await self.site.stop()
         if self.runner:
             await self.runner.cleanup()
+        if self.callback_future and not self.callback_future.done():
+            self.callback_future.cancel()
+        self.callback_future = None
+        self.expected_state = None
+        self._flow_armed = False
         _log("info", "SSO callback server stopped")
 
-    async def wait_for_callback(self, expected_state: str, timeout: int = 300) -> str:
+    def prepare_callback(self, expected_state: str) -> None:
+        if not expected_state:
+            raise ValueError("expected_state is required")
+        loop = asyncio.get_running_loop()
         self.expected_state = expected_state
-        self.callback_future = asyncio.Future()
+        self.callback_future = loop.create_future()
+        self._flow_armed = True
+
+    async def wait_for_callback(self, timeout: int = 300) -> str:
+        if self.callback_future is None:
+            raise RuntimeError("SSO callback flow not prepared")
         try:
             token = await asyncio.wait_for(self.callback_future, timeout=timeout)
             return token
         finally:
             self.callback_future = None
             self.expected_state = None
+            self._flow_armed = False
 
 
 def _attach_state_param(url: str, state: str) -> str:
@@ -153,11 +179,12 @@ class MatrixSSO:
                 )
                 _log("info", f"SSO identity providers: {idp_names}")
 
+            state = secrets.token_urlsafe(24)
             self.callback_server = SSOCallbackServer(
                 host=self.callback_host, port=self.callback_port
             )
+            self.callback_server.prepare_callback(expected_state=state)
             redirect_uri = await self.callback_server.start()
-            state = secrets.token_urlsafe(24)
             redirect_uri_with_state = _attach_state_param(redirect_uri, state)
 
             params = {"redirectUrl": redirect_uri_with_state}
@@ -173,9 +200,7 @@ class MatrixSSO:
             _log("info", "Waiting for SSO callback...")
             _log("info", "=" * 60)
 
-            login_token = await self.callback_server.wait_for_callback(
-                expected_state=state
-            )
+            login_token = await self.callback_server.wait_for_callback()
 
             response = await self.client.login_token(
                 token=login_token,
