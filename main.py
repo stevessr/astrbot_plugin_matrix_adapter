@@ -4,6 +4,7 @@ import markdown_it  # noqa: F401
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
+from astrbot.core.star.filter.permission import PermissionType
 
 from .constants import PREFIX_ED25519
 
@@ -58,6 +59,7 @@ class MatrixPlugin(Star):
     # 装饰器必须定义在 main.py 中，否则 handler 的 __module__ 不匹配
 
     @filter.command("approve_device")
+    @filter.permission_type(PermissionType.ADMIN)
     async def approve_device(
         self, event: AstrMessageEvent, user_id: str, device_id: str
     ):

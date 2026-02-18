@@ -158,6 +158,7 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 ### `/approve_device`
 
 手动批准 Matrix 设备，用于 E2EE 设备验证。
+此命令需要管理员权限。
 
 **用法**：
 ```
