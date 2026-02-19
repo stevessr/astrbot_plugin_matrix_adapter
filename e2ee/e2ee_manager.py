@@ -165,19 +165,29 @@ class E2EEManager(
                 except Exception as e:
                     logger.warning(f"定期密钥分发检查失败：{e}")
 
-        self._key_share_check_task = asyncio.create_task(_check_loop())
+        self._key_share_check_task = asyncio.create_task(
+            _check_loop(),
+            name="matrix-key-share-check",
+        )
 
-    def stop_key_share_check_task(self):
+    def stop_key_share_check_task(self) -> asyncio.Task | None:
         """停止定期密钥分发检查任务"""
-        if self._key_share_check_task and not self._key_share_check_task.done():
-            self._key_share_check_task.cancel()
-            self._key_share_check_task = None
+        task = self._key_share_check_task
+        if task and not task.done():
+            task.cancel()
             logger.debug("已停止定期密钥分发检查任务")
+        self._key_share_check_task = None
+        return task
 
     async def close(self) -> None:
         """Release runtime resources and flush pending persistence jobs."""
         self._initialized = False
-        self.stop_key_share_check_task()
+        key_share_task = self.stop_key_share_check_task()
+        if key_share_task and not key_share_task.done():
+            try:
+                await key_share_task
+            except asyncio.CancelledError:
+                pass
         store = self._store
         self._store = None
         self._olm = None

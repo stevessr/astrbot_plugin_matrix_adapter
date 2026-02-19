@@ -13,7 +13,7 @@ from .constants import PREFIX_ED25519
     "astrbot_plugin_matrix_adapter",
     "stevessr",
     "Matrix 协议适配器，支持端到端加密、消息线程等功能",
-    "0.3.0",
+    "0.3.1",
 )
 class MatrixPlugin(Star):
     def __init__(self, context: Context, config=None):
@@ -71,7 +71,7 @@ class MatrixPlugin(Star):
             /approve_device @user:example.com DEVICEID123
         """
         # Check if this is a Matrix event
-        if event.platform_meta.name != "matrix":
+        if event.get_platform_name() != "matrix":
             yield event.plain_result("此命令仅在 Matrix 平台可用")
             return
 

@@ -142,9 +142,17 @@ class MatrixAdapterRuntimeMixin:
                 logger.debug(f"设置离线状态失败：{e}")
 
             # 停止定期密钥分发检查任务
+            key_share_check_task = None
             if hasattr(self, "e2ee_manager") and self.e2ee_manager:
                 if hasattr(self.e2ee_manager, "stop_key_share_check_task"):
-                    self.e2ee_manager.stop_key_share_check_task()
+                    key_share_check_task = (
+                        self.e2ee_manager.stop_key_share_check_task()
+                    )
+            if key_share_check_task and not key_share_check_task.done():
+                try:
+                    await key_share_check_task
+                except asyncio.CancelledError:
+                    pass
 
             if hasattr(self, "sync_manager"):
                 self.sync_manager.stop()
