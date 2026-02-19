@@ -27,6 +27,35 @@ from .verification_utils import _canonical_json, _compute_hkdf
 
 
 class SASVerificationSendRoomMixin:
+    @staticmethod
+    def _normalize_algorithm_values(value: object) -> list[str]:
+        if isinstance(value, str):
+            normalized = value.strip()
+            return [normalized] if normalized else []
+        if isinstance(value, (list, tuple, set)):
+            values: list[str] = []
+            for item in value:
+                if not isinstance(item, str):
+                    continue
+                normalized = item.strip()
+                if normalized:
+                    values.append(normalized)
+            return values
+        return []
+
+    @staticmethod
+    def _pick_algorithm(
+        supported: list[str], peer_supported: list[str], fallback: str = ""
+    ) -> str:
+        for algorithm in supported:
+            if algorithm in peer_supported:
+                return algorithm
+        if supported:
+            return supported[0]
+        if peer_supported:
+            return peer_supported[0]
+        return fallback
+
     async def _send_in_room_event(
         self, room_id: str, event_type: str, content: dict, transaction_id: str
     ):
@@ -89,21 +118,31 @@ class SASVerificationSendRoomMixin:
         self, room_id: str, transaction_id: str, start_content: dict
     ):
         """发送房间内 accept"""
-        their_key_agreement = start_content.get("key_agreement_protocols", [])
-        their_hashes = start_content.get("hashes", [])
-        their_macs = start_content.get("message_authentication_codes", [])
-        their_sas = start_content.get("short_authentication_string", [])
-
-        key_agreement = next(
-            (k for k in KEY_AGREEMENT_PROTOCOLS if k in their_key_agreement),
-            KEY_AGREEMENT_PROTOCOLS[0],
+        their_key_agreement = self._normalize_algorithm_values(
+            start_content.get("key_agreement_protocols", [])
         )
-        hash_algo = next((h for h in HASHES if h in their_hashes), HASHES[0])
-        mac = next(
-            (m for m in MESSAGE_AUTHENTICATION_CODES if m in their_macs),
-            MESSAGE_AUTHENTICATION_CODES[0],
+        their_hashes = self._normalize_algorithm_values(start_content.get("hashes", []))
+        their_macs = self._normalize_algorithm_values(
+            start_content.get("message_authentication_codes", [])
+        )
+        their_sas = self._normalize_algorithm_values(
+            start_content.get("short_authentication_string", [])
+        )
+
+        key_agreement = self._pick_algorithm(
+            KEY_AGREEMENT_PROTOCOLS,
+            their_key_agreement,
+            fallback="curve25519-hkdf-sha256",
+        )
+        hash_algo = self._pick_algorithm(HASHES, their_hashes, fallback="sha256")
+        mac = self._pick_algorithm(
+            MESSAGE_AUTHENTICATION_CODES,
+            their_macs,
+            fallback="hkdf-hmac-sha256.v2",
         )
         sas_methods = [s for s in SHORT_AUTHENTICATION_STRING if s in their_sas]
+        if not sas_methods:
+            sas_methods = list(SHORT_AUTHENTICATION_STRING)
 
         session = self._sessions.get(transaction_id, {})
 
