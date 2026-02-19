@@ -106,6 +106,7 @@ class MatrixSyncManager:
         self._last_sync_token_save_at: float = 0.0
         self._sync_consecutive_failures: int = 0
         self._sync_request_task: asyncio.Task | None = None
+        self._active_callback_tasks: set[asyncio.Task] = set()
 
         # Load saved sync token if available
         self._load_sync_token()
@@ -225,7 +226,11 @@ class MatrixSyncManager:
             from ..storage_paths import MatrixStoragePaths
 
             sync_path = Path(self.sync_store_path)
-            await asyncio.to_thread(MatrixStoragePaths.ensure_directory, sync_path)
+            await asyncio.to_thread(
+                MatrixStoragePaths.ensure_directory,
+                sync_path,
+                treat_as_file=True,
+            )
             await asyncio.to_thread(self._write_sync_token_file, sync_path, payload)
             self._last_saved_next_batch = self._next_batch
             self._last_sync_token_save_at = now
@@ -546,16 +551,21 @@ class MatrixSyncManager:
                         )
 
                     if callback_tasks:
-                        callback_results = await asyncio.gather(
-                            *callback_tasks, return_exceptions=True
-                        )
-                        for callback_result in callback_results:
-                            if isinstance(callback_result, asyncio.CancelledError):
-                                logger.debug("A sync callback task was cancelled")
-                            elif isinstance(callback_result, Exception):
-                                logger.debug(
-                                    f"A sync callback task failed unexpectedly: {callback_result}"
-                                )
+                        self._active_callback_tasks = set(callback_tasks)
+                        try:
+                            callback_results = await asyncio.gather(
+                                *callback_tasks, return_exceptions=True
+                            )
+                            for callback_result in callback_results:
+                                if isinstance(callback_result, asyncio.CancelledError):
+                                    logger.debug("A sync callback task was cancelled")
+                                elif isinstance(callback_result, Exception):
+                                    logger.debug(
+                                        "A sync callback task failed unexpectedly: "
+                                        f"{callback_result}"
+                                    )
+                        finally:
+                            self._active_callback_tasks.clear()
 
                 except MatrixAPIError as e:
                     # Handle token expiration
@@ -606,6 +616,12 @@ class MatrixSyncManager:
                 sync_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await sync_task
+            callback_tasks = [t for t in self._active_callback_tasks if not t.done()]
+            if callback_tasks:
+                for callback_task in callback_tasks:
+                    callback_task.cancel()
+                await asyncio.gather(*callback_tasks, return_exceptions=True)
+            self._active_callback_tasks.clear()
             await self._save_sync_token(force=True)
 
     def stop(self):
@@ -614,6 +630,9 @@ class MatrixSyncManager:
         sync_task = self._sync_request_task
         if sync_task and not sync_task.done():
             sync_task.cancel()
+        for callback_task in tuple(self._active_callback_tasks):
+            if not callback_task.done():
+                callback_task.cancel()
         logger.info("Stopping Matrix sync loop")
 
     async def stop_and_wait(self, timeout_seconds: float = 5.0) -> None:
@@ -621,16 +640,23 @@ class MatrixSyncManager:
         self.stop()
         sync_task = self._sync_request_task
         if sync_task is None or sync_task.done():
+            sync_tasks: list[asyncio.Task] = []
+        else:
+            sync_tasks = [sync_task]
+        callback_tasks = [t for t in self._active_callback_tasks if not t.done()]
+        wait_tasks = sync_tasks + callback_tasks
+        if not wait_tasks:
             return
         try:
-            await asyncio.wait_for(asyncio.shield(sync_task), timeout_seconds)
+            await asyncio.wait_for(
+                asyncio.gather(*wait_tasks, return_exceptions=True),
+                timeout_seconds,
+            )
         except asyncio.TimeoutError:
             logger.warning(
-                "Timed out waiting for Matrix sync request to stop "
+                "Timed out waiting for Matrix sync shutdown "
                 f"(timeout={timeout_seconds:.1f}s)"
             )
-        except asyncio.CancelledError:
-            pass
 
     def is_running(self) -> bool:
         """Check if sync loop is running"""

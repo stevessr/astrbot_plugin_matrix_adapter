@@ -34,9 +34,22 @@ class MatrixAdapterRuntimeMixin:
         except asyncio.CancelledError:
             raise
 
+    def _handle_media_cache_gc_task_done(self, task: asyncio.Task) -> None:
+        if getattr(self, "_media_cache_gc_task", None) is task:
+            self._media_cache_gc_task = None
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"媒体缓存清理任务异常退出：{e}")
+
     async def run(self):
         try:
             await self.auth.login()
+            persist_auth_config = getattr(self, "_persist_auth_config_if_needed", None)
+            if callable(persist_auth_config):
+                await persist_auth_config()
 
             if self.auth.user_id:
                 current_user_id = self.auth.user_id
@@ -118,6 +131,9 @@ class MatrixAdapterRuntimeMixin:
             ):
                 self._media_cache_gc_task = asyncio.create_task(
                     self._media_cache_gc_loop()
+                )
+                self._media_cache_gc_task.add_done_callback(
+                    self._handle_media_cache_gc_task_done
                 )
 
             logger.info(

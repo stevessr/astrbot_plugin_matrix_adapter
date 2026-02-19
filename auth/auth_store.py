@@ -33,7 +33,7 @@ class MatrixAuthStore:
             auth_path = MatrixStoragePaths.get_auth_file_path(
                 self.config.store_path, self.config.homeserver, self.user_id
             )
-            MatrixStoragePaths.ensure_directory(auth_path)
+            MatrixStoragePaths.ensure_directory(auth_path, treat_as_file=True)
             return str(auth_path)
 
         sanitized_user = (

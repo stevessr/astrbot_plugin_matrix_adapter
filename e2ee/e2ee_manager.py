@@ -98,7 +98,7 @@ class E2EEManager(
         )
 
         # Ensure the directory exists
-        MatrixStoragePaths.ensure_directory(self.store_path)
+        MatrixStoragePaths.ensure_directory(self.store_path, treat_as_file=False)
         self.auto_verify_mode = auto_verify_mode
         self.enable_key_backup = enable_key_backup
         self.recovery_key = recovery_key
@@ -169,6 +169,19 @@ class E2EEManager(
             _check_loop(),
             name="matrix-key-share-check",
         )
+        self._key_share_check_task.add_done_callback(
+            self._handle_key_share_check_task_done
+        )
+
+    def _handle_key_share_check_task_done(self, task: asyncio.Task) -> None:
+        if self._key_share_check_task is task:
+            self._key_share_check_task = None
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"定期密钥分发检查任务异常退出：{e}")
 
     def stop_key_share_check_task(self) -> asyncio.Task | None:
         """停止定期密钥分发检查任务"""

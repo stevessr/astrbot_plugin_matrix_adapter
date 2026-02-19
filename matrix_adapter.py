@@ -184,7 +184,7 @@ class MatrixPlatformAdapter(
         )
 
         # 确保目录存在
-        MatrixStoragePaths.ensure_directory(user_storage_dir)
+        MatrixStoragePaths.ensure_directory(user_storage_dir, treat_as_file=False)
 
         self.storage_dir = str(user_storage_dir)
 
@@ -219,7 +219,7 @@ class MatrixPlatformAdapter(
             homeserver=self._matrix_config.homeserver,
             user_id=self._matrix_config.user_id,
             store_path=self._matrix_config.store_path,
-            on_token_invalid=self.auth.refresh_session,
+            on_token_invalid=self._sync_on_token_invalid,
         )
 
         # Initialize event processor
@@ -340,7 +340,27 @@ class MatrixPlatformAdapter(
         except Exception as e:
             logger.error(f"加入房间时出错 {room_id}: {e}")
 
-    async def _save_config(self):
+    async def _persist_auth_config_if_needed(self) -> None:
+        access_token = str(getattr(self.auth, "access_token", "") or "")
+        refresh_token = str(getattr(self.auth, "refresh_token", "") or "")
+        if access_token:
+            self._matrix_config.access_token = access_token
+        if refresh_token:
+            self._matrix_config.refresh_token = refresh_token
+        needs_save = bool(getattr(self.auth, "_config_needs_save", False))
+        persisted = True
+        if access_token or refresh_token or needs_save:
+            persisted = await self._save_config()
+        if hasattr(self.auth, "_config_needs_save") and persisted:
+            self.auth._config_needs_save = False
+
+    async def _sync_on_token_invalid(self) -> bool:
+        refreshed = await self.auth.refresh_session()
+        if refreshed:
+            await self._persist_auth_config_if_needed()
+        return refreshed
+
+    async def _save_config(self) -> bool:
         """Save configuration changes back to the platform config"""
         try:
             # Import here to avoid circular dependency
@@ -349,23 +369,42 @@ class MatrixPlatformAdapter(
             main_config = AstrBotConfig()
 
             # Find and update our platform config
+            changed_fields: list[str] = []
             for platform in main_config.get("platform", []):
                 if platform.get("id") == self._original_config.get("id"):
                     # device_id 现在由系统管理，不再保存到配置中
-                    if self._matrix_config.access_token and not platform.get(
-                        "matrix_access_token"
+                    access_token = str(self._matrix_config.access_token or "").strip()
+                    refresh_token = str(
+                        getattr(self._matrix_config, "refresh_token", "") or ""
+                    ).strip()
+                    user_id = str(self._matrix_config.user_id or "").strip()
+                    if (
+                        access_token
+                        and platform.get("matrix_access_token") != access_token
                     ):
-                        platform["matrix_access_token"] = (
-                            self._matrix_config.access_token
-                        )
-                        logger.info("已保存 access_token 到配置以供将来使用")
+                        platform["matrix_access_token"] = access_token
+                        changed_fields.append("matrix_access_token")
+                    if (
+                        refresh_token
+                        and platform.get("matrix_refresh_token") != refresh_token
+                    ):
+                        platform["matrix_refresh_token"] = refresh_token
+                        changed_fields.append("matrix_refresh_token")
+                    if user_id and platform.get("matrix_user_id") != user_id:
+                        platform["matrix_user_id"] = user_id
+                        changed_fields.append("matrix_user_id")
                     break
+            if not changed_fields:
+                logger.debug("Matrix 配置无变化，跳过保存")
+                return True
 
             # Save the updated config
             main_config.save_config()
-            logger.debug("Matrix 适配器配置保存成功")
+            logger.info(f"Matrix 适配器配置已更新：{', '.join(changed_fields)}")
+            return True
         except Exception as e:
             logger.warning(f"保存 Matrix 配置失败：{e}")
+            return False
 
     def get_client(self) -> MatrixHTTPClient:
         return self.client

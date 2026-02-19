@@ -65,7 +65,7 @@ class MatrixDeviceManager:
 
         # 确保目录存在
 
-        MatrixStoragePaths.ensure_directory(self.user_store_path)
+        MatrixStoragePaths.ensure_directory(self.user_store_path, treat_as_file=False)
 
         # 设备信息文件路径
 
