@@ -298,12 +298,21 @@ class E2EEManagerSecretsMixin:
                     )
                     return None
 
-                # 取第一个一次性密钥
-                otk_id = list(device_otks.keys())[0]
-                otk_data = device_otks[otk_id]
+                # 取一个可用的一次性密钥
+                otk_id, otk_data = next(iter(device_otks.items()), (None, None))
+                if not otk_id:
+                    logger.warning(
+                        f"[E2EE-Secrets] 设备 {target_device} 未返回可用的一次性密钥条目"
+                    )
+                    return None
                 one_time_key = (
                     otk_data.get("key") if isinstance(otk_data, dict) else otk_data
                 )
+                if not one_time_key:
+                    logger.warning(
+                        f"[E2EE-Secrets] 设备 {target_device} 的一次性密钥内容为空"
+                    )
+                    return None
 
                 # 创建 Olm 会话
                 session = self._olm.create_outbound_session(

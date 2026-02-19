@@ -204,9 +204,11 @@ class ProfileMixin:
 
             # Look for rooms with this user
             rooms = content.get(user_id, [])
-            if rooms and isinstance(rooms, list) and len(rooms) > 0:
-                # Return the first room found
-                return rooms[0]
+            if isinstance(rooms, list):
+                for room_id in rooms:
+                    room_id_text = str(room_id or "").strip()
+                    if room_id_text:
+                        return room_id_text
 
             return None
         except Exception as e:

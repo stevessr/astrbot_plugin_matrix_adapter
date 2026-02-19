@@ -27,9 +27,14 @@ def normalize_storage_backend(value: str | None) -> str:
 
 def _sanitize_pg_identifier(value: str, fallback: str) -> str:
     identifier = re.sub(r"[^a-zA-Z0-9_]+", "_", (value or "").strip()).strip("_")
+    fallback_identifier = re.sub(
+        r"[^a-zA-Z0-9_]+", "_", (fallback or "").strip()
+    ).strip("_")
+    if not fallback_identifier:
+        fallback_identifier = "id"
     if not identifier:
-        identifier = fallback
-    if identifier[0].isdigit():
+        identifier = fallback_identifier
+    if identifier and identifier[0].isdigit():
         identifier = f"_{identifier}"
     return identifier.lower()
 
@@ -45,9 +50,10 @@ def build_pg_table_name(namespace_key: str, prefix: str = "matrix_store") -> str
 
     PostgreSQL identifier length limit is 63 bytes.
     """
+    namespace_text = str(namespace_key or "")
     safe_prefix = _sanitize_pg_identifier(prefix, "matrix_store")
-    safe_namespace = _sanitize_pg_identifier(namespace_key.replace("/", "_"), "store")
-    digest = hashlib.sha1(namespace_key.encode("utf-8")).hexdigest()[:8]
+    safe_namespace = _sanitize_pg_identifier(namespace_text.replace("/", "_"), "store")
+    digest = hashlib.sha1(namespace_text.encode("utf-8")).hexdigest()[:8]
 
     base = f"{safe_prefix}_{safe_namespace}"
     max_base_len = 63 - len(digest) - 1

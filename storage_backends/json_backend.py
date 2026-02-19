@@ -5,6 +5,8 @@ JSON storage backend.
 from __future__ import annotations
 
 import json
+import os
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -38,10 +40,19 @@ class JsonBackend:
     def upsert(self, record_key: str, data: Any) -> None:
         path = self._path_for_key(record_key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+        temp_path = path.with_name(f".{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
+        try:
+            with open(temp_path, "w", encoding="utf-8") as f:
+                f.write(payload)
+                f.flush()
+                os.fsync(f.fileno())
+            temp_path.replace(path)
+        finally:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def delete(self, record_key: str) -> None:
         path = self._path_for_key(record_key)

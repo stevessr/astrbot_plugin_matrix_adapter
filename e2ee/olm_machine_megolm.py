@@ -23,6 +23,8 @@ def _convert_session_key_v2_to_v1(session_key_b64: str) -> str:
     # 添加 base64 填充
     padded = session_key_b64 + "=" * (-len(session_key_b64) % 4)
     raw = base64.b64decode(padded)
+    if not raw:
+        return session_key_b64
 
     if raw[0] == 2:
         # 版本 2 -> 版本 1

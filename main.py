@@ -71,7 +71,7 @@ class MatrixPlugin(Star):
             /approve_device @user:example.com DEVICEID123
         """
         # Check if this is a Matrix event
-        if event.get_platform_name() != "matrix":
+        if str(event.get_platform_name() or "").strip().lower() != "matrix":
             yield event.plain_result("此命令仅在 Matrix 平台可用")
             return
 

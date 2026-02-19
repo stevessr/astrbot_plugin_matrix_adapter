@@ -92,8 +92,7 @@ class CrossSigning:
                 keys = master_keys.get("keys", {})
                 if keys:
                     # 获取 key ID 和公钥值
-                    key_id = list(keys.keys())[0]
-                    server_master = list(keys.values())[0]
+                    key_id, server_master = next(iter(keys.items()))
                     self._master_key = server_master
                     logger.debug("[E2EE-CrossSign] 发现服务器主密钥")
 
@@ -110,8 +109,7 @@ class CrossSigning:
             if self_keys:
                 keys = self_keys.get("keys", {})
                 if keys:
-                    key_id = list(keys.keys())[0]
-                    server_self_signing = list(keys.values())[0]
+                    key_id, server_self_signing = next(iter(keys.items()))
                     self._self_signing_key = server_self_signing
                     logger.debug("[E2EE-CrossSign] 发现服务器自签名密钥")
 
@@ -125,8 +123,7 @@ class CrossSigning:
             if user_keys:
                 keys = user_keys.get("keys", {})
                 if keys:
-                    key_id = list(keys.keys())[0]
-                    server_user_signing = list(keys.values())[0]
+                    key_id, server_user_signing = next(iter(keys.items()))
                     self._user_signing_key = server_user_signing
                     logger.debug("[E2EE-CrossSign] 发现服务器用户签名密钥")
 
@@ -417,7 +414,7 @@ class CrossSigning:
         if not keys:
             logger.debug("[E2EE-CrossSign] 目标用户 master key 格式无效")
             return
-        key_id = list(keys.keys())[0]
+        key_id = next(iter(keys))
 
         # /keys/signatures/upload 请求格式：{user_id: {key_id: master_key}}
         await self.client._request(

@@ -86,12 +86,31 @@ class E2EEManagerRequestsMixin:
                 )
                 return
 
-            # 获取第一个一次性密钥
-            otk_key_id = list(one_time_keys.keys())[0]
-            otk_data = one_time_keys[otk_key_id]
+            # 获取一个可用的一次性密钥
+            otk_key_id, otk_data = next(iter(one_time_keys.items()), (None, None))
+            if not otk_key_id:
+                logger.warning(f"未找到 {target_user}/{target_device} 的一次性密钥条目")
+                txn_id = secrets.token_hex(16)
+                await self.client.send_to_device(
+                    "m.dummy",
+                    {target_user: {target_device: {}}},
+                    txn_id,
+                )
+                return
             their_one_time_key = (
                 otk_data.get("key") if isinstance(otk_data, dict) else otk_data
             )
+            if not their_one_time_key:
+                logger.warning(
+                    f"{target_user}/{target_device} 的一次性密钥内容为空，回退发送 m.dummy"
+                )
+                txn_id = secrets.token_hex(16)
+                await self.client.send_to_device(
+                    "m.dummy",
+                    {target_user: {target_device: {}}},
+                    txn_id,
+                )
+                return
 
             logger.debug(f"获取到一次性密钥：{otk_key_id}")
 

@@ -3,6 +3,7 @@ Matrix 工具方法组件
 """
 
 import io
+from urllib.parse import quote
 
 from astrbot.api import logger
 
@@ -146,12 +147,32 @@ class MatrixUtils:
         )
 
     @staticmethod
+    def _parse_mxc_url(mxc_url: str) -> tuple[str, str] | None:
+        normalized = str(mxc_url or "").strip()
+        if not normalized.startswith("mxc://"):
+            return None
+        parts = normalized[6:].split("/", 1)
+        if len(parts) != 2:
+            return None
+        server_name = parts[0].strip()
+        media_id = parts[1].split("?", 1)[0].split("#", 1)[0].strip().lstrip("/")
+        if not server_name or not media_id:
+            return None
+        return server_name, media_id
+
+    @staticmethod
     def mxc_to_http(mxc_url: str, homeserver: str) -> str:
-        if not mxc_url.startswith("mxc://"):
+        parsed = MatrixUtils._parse_mxc_url(mxc_url)
+        if parsed is None:
             return mxc_url
-        server_name = mxc_url[6:].split("/")[0]
-        media_id = mxc_url[6:].split("/")[1]
-        return f"{homeserver}/_matrix/client/v1/media/download/{server_name}/{media_id}"
+        base_url = str(homeserver or "").strip().rstrip("/")
+        if not base_url:
+            return mxc_url
+        server_name, media_id = parsed
+        return (
+            f"{base_url}/_matrix/client/v1/media/download/"
+            f"{quote(server_name, safe='')}/{quote(media_id, safe='')}"
+        )
 
     @staticmethod
     def create_reply_fallback(
@@ -221,7 +242,6 @@ class MatrixUtils:
         lines = body.split("\n")
         # 统计开头的 fallback 行数
         fallback_line_count = 0
-        _is_fallback = True
 
         for line in lines:
             if line.startswith(">") or (fallback_line_count > 0 and line.strip() == ""):
