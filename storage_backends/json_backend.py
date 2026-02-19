@@ -33,7 +33,7 @@ class JsonBackend:
             return None
         try:
             return json.loads(path.read_text(encoding="utf-8"))
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as e:
             logger.debug(f"Failed to read json record {record_key}: {e}")
             return None
 
@@ -51,10 +51,12 @@ class JsonBackend:
         finally:
             try:
                 temp_path.unlink(missing_ok=True)
-            except Exception:
+            except OSError:
                 pass
 
     def delete(self, record_key: str) -> None:
         path = self._path_for_key(record_key)
-        if path.exists():
-            path.unlink()
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as e:
+            logger.debug(f"Failed to delete json record {record_key}: {e}")
