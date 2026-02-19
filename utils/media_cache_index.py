@@ -56,7 +56,7 @@ class MediaCacheIndexStore:
         resolved_cache_dir = self._cache_dir.resolve()
         try:
             return resolved_path.relative_to(resolved_cache_dir).as_posix()
-        except Exception:
+        except ValueError:
             return resolved_path.as_posix()
 
     def _to_abs_path(self, stored_path: str) -> Path:
@@ -74,7 +74,10 @@ class MediaCacheIndexStore:
                 ).fetchone()
         if not row:
             return None
-        return self._to_abs_path(row[0])
+        stored_path = row[0]
+        if not isinstance(stored_path, str):
+            return None
+        return self._to_abs_path(stored_path)
 
     def list_entries(self) -> list[tuple[str, Path]]:
         with self._lock:
@@ -82,9 +85,15 @@ class MediaCacheIndexStore:
                 rows = conn.execute(
                     "SELECT cache_key, rel_path FROM media_cache_index"
                 ).fetchall()
-        return [
-            (cache_key, self._to_abs_path(rel_path)) for cache_key, rel_path in rows
-        ]
+        entries: list[tuple[str, Path]] = []
+        for row in rows:
+            if not isinstance(row, tuple) or len(row) != 2:
+                continue
+            cache_key, rel_path = row
+            if not isinstance(cache_key, str) or not isinstance(rel_path, str):
+                continue
+            entries.append((cache_key, self._to_abs_path(rel_path)))
+        return entries
 
     def upsert(
         self,
@@ -99,7 +108,7 @@ class MediaCacheIndexStore:
         if size_bytes is not None:
             try:
                 normalized_size = max(0, int(size_bytes))
-            except Exception:
+            except (TypeError, ValueError):
                 normalized_size = 0
         with self._lock:
             with self._connect() as conn:
