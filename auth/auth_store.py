@@ -69,7 +69,10 @@ class MatrixAuthStore:
         hs_dir = MatrixStoragePaths.sanitize_homeserver(self.config.homeserver)
         hs_path = base / hs_dir
         if hs_path.exists() and hs_path.is_dir():
-            subdirs = sorted((d for d in hs_path.iterdir() if d.is_dir()), key=str)
+            try:
+                subdirs = sorted((d for d in hs_path.iterdir() if d.is_dir()), key=str)
+            except Exception:
+                return None
             auth_json_dirs = [d for d in subdirs if (d / "auth.json").exists()]
             if len(auth_json_dirs) == 1:
                 return auth_json_dirs[0]
