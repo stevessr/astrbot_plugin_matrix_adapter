@@ -314,6 +314,16 @@ class StickerStorage:
 
         return self._build_sticker_from_meta(sticker_id, meta)
 
+    def touch_sticker_usage(self, sticker_id: str) -> bool:
+        """仅更新使用计数，不构建 Sticker 对象。"""
+        meta = self._index.get(sticker_id)
+        if meta is None:
+            return False
+        meta.last_used = time.time()
+        meta.use_count += 1
+        self._save_index()
+        return True
+
     def find_stickers(
         self,
         query: str | None = None,

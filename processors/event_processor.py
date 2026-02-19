@@ -85,6 +85,19 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         while len(self._processed_messages) > self._max_processed_messages:
             self._processed_messages.popitem(last=False)
 
+    @staticmethod
+    def _parse_bool_like(value: object, default: bool = False) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        raw = str(value).strip().lower()
+        if raw in {"1", "true", "yes", "on", "enable", "enabled"}:
+            return True
+        if raw in {"0", "false", "no", "off", "disable", "disabled"}:
+            return False
+        return default
+
     def _apply_room_state_event(self, room, event_data: dict) -> None:
         event_type = event_data.get("type", "")
         if not (event_type.startswith("m.room.") or event_type.startswith("m.space.")):
@@ -189,7 +202,10 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                             and room.is_direct is None
                             and "is_direct" in content
                         ):
-                            room.is_direct = bool(content.get("is_direct"))
+                            room.is_direct = self._parse_bool_like(
+                                content.get("is_direct"),
+                                False,
+                            )
 
                         # Only count joined members
                         if membership == "join":

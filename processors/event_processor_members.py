@@ -35,7 +35,7 @@ class MatrixEventProcessorMembers:
         room.member_avatars = room_data.get("member_avatars", {})
         room.member_count = room_data.get("member_count", 0)
         if "is_direct" in room_data:
-            room.is_direct = room_data.get("is_direct")
+            room.is_direct = self._parse_bool_like(room_data.get("is_direct"), False)
         if "room_name" in room_data:
             room.display_name = room_data.get("room_name", "")
         if "topic" in room_data:

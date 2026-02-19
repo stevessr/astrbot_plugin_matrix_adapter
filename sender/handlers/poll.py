@@ -21,7 +21,9 @@ def _build_poll_fallback(question: str, answers: list[str]) -> tuple[str, str]:
 
 def _build_poll_fallback_msc1767(question: str, answers: list[str]) -> str:
     safe_question = question.strip()
-    text_lines = [safe_question] + [f"{idx}. {ans}" for idx, ans in enumerate(answers)]
+    text_lines = [safe_question] + [
+        f"{idx + 1}. {ans}" for idx, ans in enumerate(answers)
+    ]
     return "\n".join(text_lines)
 
 
