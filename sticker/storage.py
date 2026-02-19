@@ -264,35 +264,14 @@ class StickerStorage:
         logger.info(f"保存 sticker: {sticker_id} ({sticker.body})")
         return meta
 
-    def get_sticker(self, sticker_id: str) -> Sticker | None:
-        """
-        根据 ID 获取 sticker
-
-        Args:
-            sticker_id: sticker ID
-
-        Returns:
-            Sticker 对象，如果不存在返回 None
-        """
-        if sticker_id not in self._index:
-            return None
-
-        meta = self._index[sticker_id]
-
-        # 更新使用信息
-        meta.last_used = time.time()
-        meta.use_count += 1
-        self._save_index()
-
-        # 创建 Sticker 对象
+    def _build_sticker_from_meta(self, sticker_id: str, meta: StickerMeta) -> Sticker:
+        """从元数据构建 Sticker 对象，不修改使用计数。"""
         info = StickerInfo(
             mimetype=meta.mimetype,
             width=meta.width,
             height=meta.height,
         )
 
-        # 优先使用 mxc:// URL（Matrix 发送时直接使用，无需重新上传）
-        # 如果没有 mxc URL，则使用本地路径
         has_mxc = meta.mxc_url and meta.mxc_url.startswith("mxc://")
         has_local = meta.local_path and os.path.exists(meta.local_path)
 
@@ -311,6 +290,29 @@ class StickerStorage:
             sticker_id=sticker_id,
             pack_name=meta.pack_name,
         )
+
+    def get_sticker(self, sticker_id: str, update_usage: bool = True) -> Sticker | None:
+        """
+        根据 ID 获取 sticker
+
+        Args:
+            sticker_id: sticker ID
+            update_usage: 是否更新使用计数与最近使用时间
+
+        Returns:
+            Sticker 对象，如果不存在返回 None
+        """
+        if sticker_id not in self._index:
+            return None
+
+        meta = self._index[sticker_id]
+
+        if update_usage:
+            meta.last_used = time.time()
+            meta.use_count += 1
+            self._save_index()
+
+        return self._build_sticker_from_meta(sticker_id, meta)
 
     def find_stickers(
         self,
@@ -357,7 +359,7 @@ class StickerStorage:
                     continue
 
             # 创建 Sticker 对象
-            sticker = self.get_sticker(sticker_id)
+            sticker = self.get_sticker(sticker_id, update_usage=False)
             if sticker:
                 results.append(sticker)
 
