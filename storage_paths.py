@@ -159,18 +159,25 @@ class MatrixStoragePaths:
         return user_dir / filename
 
     @classmethod
-    def ensure_directory(cls, file_path: Path) -> Path:
+    def ensure_directory(
+        cls, file_path: str | Path, *, treat_as_file: bool | None = None
+    ) -> Path:
         """
         确保文件的目录存在
 
         Args:
-            file_path: 文件路径
+            file_path: 文件或目录路径
+            treat_as_file: 是否将 file_path 视为文件路径（None 时自动推断）
 
         Returns:
             文件路径（确保目录已创建）
         """
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        return file_path
+        path_obj = Path(file_path)
+        if treat_as_file is None:
+            treat_as_file = path_obj.suffix != ""
+        target_dir = path_obj.parent if treat_as_file else path_obj
+        target_dir.mkdir(parents=True, exist_ok=True)
+        return path_obj
 
     @staticmethod
     def migrate_old_paths(

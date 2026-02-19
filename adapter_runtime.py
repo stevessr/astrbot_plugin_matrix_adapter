@@ -145,9 +145,7 @@ class MatrixAdapterRuntimeMixin:
             key_share_check_task = None
             if hasattr(self, "e2ee_manager") and self.e2ee_manager:
                 if hasattr(self.e2ee_manager, "stop_key_share_check_task"):
-                    key_share_check_task = (
-                        self.e2ee_manager.stop_key_share_check_task()
-                    )
+                    key_share_check_task = self.e2ee_manager.stop_key_share_check_task()
             if key_share_check_task and not key_share_check_task.done():
                 try:
                     await key_share_check_task
@@ -155,7 +153,11 @@ class MatrixAdapterRuntimeMixin:
                     pass
 
             if hasattr(self, "sync_manager"):
-                self.sync_manager.stop()
+                stop_and_wait = getattr(self.sync_manager, "stop_and_wait", None)
+                if callable(stop_and_wait):
+                    await stop_and_wait()
+                else:
+                    self.sync_manager.stop()
 
             if (
                 hasattr(self, "e2ee_manager")

@@ -4,6 +4,7 @@ Handles the sync loop and event distribution
 """
 
 import asyncio
+import contextlib
 import json
 import random
 from collections.abc import Callable
@@ -104,6 +105,7 @@ class MatrixSyncManager:
         self._last_saved_next_batch: str | None = None
         self._last_sync_token_save_at: float = 0.0
         self._sync_consecutive_failures: int = 0
+        self._sync_request_task: asyncio.Task | None = None
 
         # Load saved sync token if available
         self._load_sync_token()
@@ -249,6 +251,9 @@ class MatrixSyncManager:
         )
 
     async def _sleep_after_sync_failure(self, reason: str) -> None:
+        if not self._running:
+            logger.debug(f"{reason}，sync loop 已停止，跳过重试等待")
+            return
         delay = self._compute_sync_retry_delay()
         logger.warning(
             f"{reason}. Retrying in {delay:.2f}s "
@@ -397,11 +402,20 @@ class MatrixSyncManager:
             while self._running:
                 try:
                     # Execute sync
-                    sync_response = await self.client.sync(
-                        since=self._next_batch,
-                        timeout=self.sync_timeout,
-                        full_state=self._first_sync,
+                    sync_task = asyncio.create_task(
+                        self.client.sync(
+                            since=self._next_batch,
+                            timeout=self.sync_timeout,
+                            full_state=self._first_sync,
+                        ),
+                        name="matrix-sync-request",
                     )
+                    self._sync_request_task = sync_task
+                    try:
+                        sync_response = await sync_task
+                    finally:
+                        if self._sync_request_task is sync_task:
+                            self._sync_request_task = None
 
                     self._next_batch = sync_response.get("next_batch")
                     self._first_sync = False
@@ -532,7 +546,16 @@ class MatrixSyncManager:
                         )
 
                     if callback_tasks:
-                        await asyncio.gather(*callback_tasks)
+                        callback_results = await asyncio.gather(
+                            *callback_tasks, return_exceptions=True
+                        )
+                        for callback_result in callback_results:
+                            if isinstance(callback_result, asyncio.CancelledError):
+                                logger.debug("A sync callback task was cancelled")
+                            elif isinstance(callback_result, Exception):
+                                logger.debug(
+                                    f"A sync callback task failed unexpectedly: {callback_result}"
+                                )
 
                 except MatrixAPIError as e:
                     # Handle token expiration
@@ -552,6 +575,11 @@ class MatrixSyncManager:
                             logger.error("Failed to refresh token. Stopping sync loop.")
                             raise
 
+                    if not self._running:
+                        logger.debug(
+                            "Sync loop stopped while handling Matrix API error"
+                        )
+                        break
                     logger.error(f"Matrix API error in sync loop: {e}")
                     await self._sleep_after_sync_failure(
                         "Matrix API error in sync loop"
@@ -560,16 +588,49 @@ class MatrixSyncManager:
                 except KeyboardInterrupt:
                     logger.info("Sync loop interrupted by user")
                     raise
+                except asyncio.CancelledError:
+                    if not self._running:
+                        logger.info("Matrix sync request cancelled due to stop signal")
+                        break
+                    raise
                 except Exception as e:
+                    if not self._running:
+                        logger.debug("Sync loop stopped while handling generic error")
+                        break
                     logger.error(f"Error in sync loop: {e}")
                     await self._sleep_after_sync_failure("Error in sync loop")
         finally:
+            sync_task = self._sync_request_task
+            self._sync_request_task = None
+            if sync_task and not sync_task.done():
+                sync_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await sync_task
             await self._save_sync_token(force=True)
 
     def stop(self):
         """Stop the sync loop"""
         self._running = False
+        sync_task = self._sync_request_task
+        if sync_task and not sync_task.done():
+            sync_task.cancel()
         logger.info("Stopping Matrix sync loop")
+
+    async def stop_and_wait(self, timeout_seconds: float = 5.0) -> None:
+        """Stop sync loop and wait for in-flight sync request to finish."""
+        self.stop()
+        sync_task = self._sync_request_task
+        if sync_task is None or sync_task.done():
+            return
+        try:
+            await asyncio.wait_for(asyncio.shield(sync_task), timeout_seconds)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Timed out waiting for Matrix sync request to stop "
+                f"(timeout={timeout_seconds:.1f}s)"
+            )
+        except asyncio.CancelledError:
+            pass
 
     def is_running(self) -> bool:
         """Check if sync loop is running"""
