@@ -7,6 +7,7 @@ from astrbot.api.star import Context, Star, register
 from astrbot.core.star.filter.permission import PermissionType
 
 from .constants import PREFIX_ED25519
+from .utils import MatrixUtils
 
 
 @register(
@@ -91,45 +92,11 @@ class MatrixPlugin(Star):
             logger.debug(f"获取 e2ee_manager 失败：{e}")
 
         if not e2ee_manager:
-            try:
-                platform_manager = getattr(self.context, "platform_manager", None)
-                if platform_manager is not None:
-                    get_insts = getattr(platform_manager, "get_insts", None)
-                    if callable(get_insts):
-                        try:
-                            platforms = get_insts()
-                        except Exception:
-                            platforms = getattr(
-                                platform_manager,
-                                "platform_insts",
-                                [],
-                            )
-                    else:
-                        platforms = getattr(platform_manager, "platform_insts", [])
-
-                    target_platform_id = str(event.get_platform_id() or "")
-                    fallback_e2ee_manager = None
-                    for platform in platforms:
-                        try:
-                            meta = platform.meta()
-                        except Exception:
-                            continue
-                        meta_name = str(getattr(meta, "name", "") or "").strip().lower()
-                        if meta_name != "matrix":
-                            continue
-                        manager = getattr(platform, "e2ee_manager", None)
-                        if manager is None:
-                            continue
-                        meta_id = str(getattr(meta, "id", "") or "")
-                        if target_platform_id and meta_id == target_platform_id:
-                            e2ee_manager = manager
-                            break
-                        if fallback_e2ee_manager is None:
-                            fallback_e2ee_manager = manager
-                    if e2ee_manager is None:
-                        e2ee_manager = fallback_e2ee_manager
-            except Exception as e:
-                logger.debug(f"从 platform_manager 获取 e2ee_manager 失败：{e}")
+            target_platform_id = str(event.get_platform_id() or "")
+            e2ee_manager = MatrixUtils.get_matrix_e2ee_manager(
+                self.context,
+                target_platform_id,
+            )
 
         if not e2ee_manager:
             yield event.plain_result("端到端加密未启用或不可用")

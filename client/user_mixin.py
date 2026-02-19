@@ -388,6 +388,8 @@ class UserMixin:
         invite: list[str] | None = None,
         is_public: bool = False,
         preset: str | None = None,
+        creation_content: dict[str, Any] | None = None,
+        initial_state: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """
         Create a new room
@@ -398,6 +400,8 @@ class UserMixin:
             invite: List of user IDs to invite
             is_public: Whether room is public
             preset: Room preset (private_chat, public_chat, trusted_private_chat)
+            creation_content: Room creation_content payload
+            initial_state: Room initial_state payload
 
         Returns:
             Response with room_id
@@ -417,6 +421,12 @@ class UserMixin:
 
         if is_public:
             data["visibility"] = "public"
+
+        if creation_content and isinstance(creation_content, dict):
+            data["creation_content"] = creation_content
+
+        if initial_state and isinstance(initial_state, list):
+            data["initial_state"] = initial_state
 
         endpoint = "/_matrix/client/v3/createRoom"
         return await self._request("POST", endpoint, data=data)
