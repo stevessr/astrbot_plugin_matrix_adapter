@@ -58,17 +58,19 @@ class OlmMachineOlmMixin:
         """
         sessions = self._olm_sessions.get(their_identity_key, [])
         if sessions:
-            return sessions[0]
+            return sessions[-1]
 
         # 尝试从存储加载
         pickles = self.store.get_olm_sessions(their_identity_key)
         if pickles:
             try:
-                session = Session.from_pickle(pickles[0], self._pickle_key)
-                if their_identity_key not in self._olm_sessions:
-                    self._olm_sessions[their_identity_key] = []
-                self._olm_sessions[their_identity_key].append(session)
-                return session
+                loaded_sessions: list[Session] = []
+                for pickle_data in pickles:
+                    loaded_sessions.append(
+                        Session.from_pickle(pickle_data, self._pickle_key)
+                    )
+                self._olm_sessions[their_identity_key] = loaded_sessions
+                return loaded_sessions[-1]
             except Exception as e:
                 logger.debug(f"加载 Olm 会话失败：{e}")
 
@@ -97,15 +99,26 @@ class OlmMachineOlmMixin:
         Returns:
             符合 m.room.encrypted (Olm) 格式的字典
         """
+        session_index: int | None = None
         if not session:
             # 尝试使用现有会话
             sessions = self._olm_sessions.get(their_identity_key, [])
             if sessions:
-                session = sessions[0]
+                session_index = len(sessions) - 1
+                session = sessions[session_index]
                 logger.debug(f"使用现有 Olm 会话对 {their_identity_key[:8]}... 加密")
             else:
                 logger.warning(f"没有可用于 {their_identity_key[:8]}... 的 Olm 会话")
                 raise RuntimeError(f"没有可用于 {their_identity_key} 的 Olm 会话")
+        else:
+            sessions = self._olm_sessions.get(their_identity_key, [])
+            if sessions:
+                for idx, existing in enumerate(sessions):
+                    if existing is session:
+                        session_index = idx
+                        break
+                if session_index is None:
+                    session_index = len(sessions) - 1
 
         # 构造 Matrix 协议外壳
         wrapper = {
@@ -136,9 +149,12 @@ class OlmMachineOlmMixin:
         )
 
         # 更新存储
-        self.store.update_olm_session(
-            their_identity_key, 0, session.pickle(self._pickle_key)
-        )
+        if session_index is not None and session_index >= 0:
+            self.store.update_olm_session(
+                their_identity_key,
+                session_index,
+                session.pickle(self._pickle_key),
+            )
 
         return {
             "algorithm": OLM_ALGO,
