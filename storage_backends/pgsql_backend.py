@@ -69,7 +69,17 @@ class PgSQLBackend:
                     row = cur.fetchone()
             if not row:
                 return None
-            return json.loads(row[0])
+            payload_text = row[0]
+            if not isinstance(payload_text, str):
+                logger.debug(
+                    f"Invalid pgsql payload type for key {record_key}: {type(payload_text)}"
+                )
+                return None
+            try:
+                return json.loads(payload_text)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Invalid pgsql JSON payload for key {record_key}: {e}")
+                return None
         except Exception as e:
             logger.debug(f"Failed to read pgsql record {record_key}: {e}")
             return None
