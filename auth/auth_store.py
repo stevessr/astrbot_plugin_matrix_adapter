@@ -71,7 +71,7 @@ class MatrixAuthStore:
         if hs_path.exists() and hs_path.is_dir():
             try:
                 subdirs = sorted((d for d in hs_path.iterdir() if d.is_dir()), key=str)
-            except Exception:
+            except OSError:
                 return None
             auth_json_dirs = [d for d in subdirs if (d / "auth.json").exists()]
             if len(auth_json_dirs) == 1:
@@ -132,7 +132,7 @@ class MatrixAuthStore:
     def _harden_path_mode(path: Path, mode: int) -> None:
         try:
             path.chmod(mode)
-        except Exception:
+        except OSError:
             # Ignore platforms/filesystems that don't support POSIX chmod semantics.
             pass
 
@@ -151,7 +151,7 @@ class MatrixAuthStore:
         finally:
             try:
                 temp_path.unlink(missing_ok=True)
-            except Exception:
+            except OSError:
                 pass
 
     def _save_token_to_json_file(self, data: dict) -> str:
