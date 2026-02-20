@@ -2,5 +2,5 @@ name: astrbot_plugin_matrix_adapter
 display_name: Matrix 协议适配器
 author: stevessr
 description: Matrix 协议适配器，支持端到端加密（E2EE）、设备验证（SAS）、密钥备份和恢复、消息线程等功能。支持 OAuth2 登录。SAS 验证的过程可能很有趣。
-version: 0.3.1
+version: 0.3.2
 repo: https://github.com/stevessr/astrbot_plugin_matrix_adapter
