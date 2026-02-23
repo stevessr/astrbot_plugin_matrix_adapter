@@ -5,6 +5,7 @@ Provides file upload and download methods
 
 import asyncio
 import hashlib
+import io
 import mimetypes
 import time
 from contextlib import asynccontextmanager
@@ -61,18 +62,49 @@ class MediaMixin:
         "application/x-zip-compressed": "application/zip",
     }
 
-    class _HashingFileReader:
-        """File wrapper that updates SHA-256 while aiohttp reads upload body."""
+    class _HashingFileReader(io.IOBase):
+        """IOBase-compatible file wrapper that hashes uploaded bytes."""
 
-        def __init__(self, file_handle):
+        def __init__(self, file_handle: io.BufferedReader):
             self._file_handle = file_handle
             self._hasher = hashlib.sha256()
 
-        def read(self, size: int = -1):
+        def read(self, size: int = -1) -> bytes:
             chunk = self._file_handle.read(size)
             if chunk:
                 self._hasher.update(chunk)
             return chunk
+
+        def readline(self, size: int = -1) -> bytes:
+            chunk = self._file_handle.readline(size)
+            if chunk:
+                self._hasher.update(chunk)
+            return chunk
+
+        def readable(self) -> bool:
+            return True
+
+        def seekable(self) -> bool:
+            return self._file_handle.seekable()
+
+        def writable(self) -> bool:
+            return False
+
+        def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+            return self._file_handle.seek(offset, whence)
+
+        def tell(self) -> int:
+            return self._file_handle.tell()
+
+        def fileno(self) -> int:
+            return self._file_handle.fileno()
+
+        @property
+        def closed(self) -> bool:
+            return self._file_handle.closed
+
+        def close(self) -> None:
+            self._file_handle.close()
 
         def hexdigest(self) -> str:
             return self._hasher.hexdigest()
