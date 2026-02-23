@@ -28,7 +28,7 @@ class MediaMixin:
     _MEDIA_HTTP_MAX_RETRIES = 3
     _MEDIA_RETRY_BASE_DELAY_SECONDS = 0.75
     _MEDIA_RETRY_MAX_DELAY_SECONDS = 10.0
-    _MEDIA_UPLOAD_SNIFF_BYTES = 512
+    _MEDIA_UPLOAD_SNIFF_BYTES = 4096
     _MEDIA_DOWNLOAD_CONCURRENCY_DEFAULT = 4
     _MEDIA_DOWNLOAD_MAX_IN_MEMORY_BYTES_DEFAULT = 32 * 1024 * 1024
     _MEDIA_UPLOAD_DEFAULT_BLOCKED_EXTENSIONS = frozenset(
@@ -463,6 +463,19 @@ class MediaMixin:
         if data[:4] == b"RIFF" and data[8:11] == b"AVI":
             return "video/x-msvideo"
         if len(data) >= 12 and data[4:8] == b"ftyp":
+            # ISO BMFF family (MP4/HEIF/AVIF/etc.)
+            # bytes[8:12] is major brand, then minor version, then compatible brands.
+            # We scan early brand slots to avoid misclassifying AVIF as generic MP4.
+            brand_bytes = [
+                data[i : i + 4] for i in range(8, min(len(data), 64) - 3, 4)
+            ]
+            if any(brand in {b"avif", b"avis"} for brand in brand_bytes):
+                return "image/avif"
+            if any(
+                brand in {b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1"}
+                for brand in brand_bytes
+            ):
+                return "image/heif"
             return "video/mp4"
         if data.startswith(b"\x1a\x45\xdf\xa3"):
             return "video/webm"

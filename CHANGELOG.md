@@ -3,6 +3,7 @@
 ## 0.3.3
 
 - 修复 _HashingFileReader 与 IOBase 的兼容性
+- 修复嗅探 AVIF
 
 ## 0.3.2
 
