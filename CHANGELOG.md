@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.3
+
+- 修复 _HashingFileReader 与 IOBase 的兼容性
+
 ## 0.3.2
 
 - 优化多媒体接收缓存：下载任务按 `mxc://` 并发去重，避免同一资源重复下载。
