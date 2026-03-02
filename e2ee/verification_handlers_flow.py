@@ -141,9 +141,12 @@ class SASVerificationFlowMixin:
         method = content.get("method")
         their_commitment = content.get("commitment")
 
+        masked_their_commitment = (
+            their_commitment[:16] if isinstance(their_commitment, str) else "None"
+        )
         logger.info(
             f"[E2EE-Verify] 验证开始：method={method} "
-            f"commitment={their_commitment[:16] if their_commitment else 'None'}..."
+            f"commitment={masked_their_commitment}..."
         )
 
         session = self._sessions.get(transaction_id, {})
@@ -241,8 +244,9 @@ class SASVerificationFlowMixin:
 
             if computed != their_commitment:
                 logger.warning(
-                    f"[E2EE-Verify] Commitment 验证失败！"
-                    f"expected={their_commitment[:16]}... computed={computed[:16]}..."
+                    "[E2EE-Verify] Commitment 验证失败！"
+                    f"expected={(their_commitment if isinstance(their_commitment, str) else '')[:16]}... "
+                    f"computed={(computed or '')[:16]}..."
                 )
                 # 根据规范，commitment 不匹配应该取消验证
                 their_device = session.get(

@@ -750,10 +750,13 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 if self.e2ee_manager:
                     try:
                         algorithm = content.get("algorithm", "unknown")
-                        sender_key = content.get("sender_key", "")[:16]
+                        sender_key = content.get("sender_key")
+                        masked_sender_key = (
+                            sender_key[:16] if isinstance(sender_key, str) else ""
+                        )
                         logger.debug(
                             f"收到加密的 to_device 消息：algorithm={algorithm} "
-                            f"sender_key={sender_key}..."
+                            f"sender_key={masked_sender_key}..."
                         )
 
                         decrypted = await self.e2ee_manager.decrypt_event(
