@@ -236,7 +236,7 @@ class CrossSigning:
                 ("self_signing", "_self_signing_priv"),
                 ("user_signing", "_user_signing_priv"),
             ]:
-                if k in data and data[k].get("priv"):
+                if data.get(k) and isinstance(data[k], dict) and data[k].get("priv"):
                     # Add padding if missing
                     priv_str = data[k]["priv"]
                     padding = 4 - len(priv_str) % 4
@@ -244,7 +244,7 @@ class CrossSigning:
                         priv_str += "=" * padding
                     setattr(self, attr, base64.b64decode(priv_str))
 
-                if k in data and data[k].get("pub"):
+                if data.get(k) and isinstance(data[k], dict) and data[k].get("pub"):
                     pub_val = data[k]["pub"]
                     if k == "master":
                         self._master_key = pub_val

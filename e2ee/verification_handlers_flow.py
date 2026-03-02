@@ -175,7 +175,7 @@ class SASVerificationFlowMixin:
         key_agreement = content.get("key_agreement_protocol")
         hash_algo = content.get("hash")
         mac = content.get("message_authentication_code")
-        sas_methods = content.get("short_authentication_string", [])
+        sas_methods = content.get("short_authentication_string") or []
 
         logger.info(
             f"[E2EE-Verify] 对方接受验证："
@@ -391,7 +391,7 @@ class SASVerificationFlowMixin:
 
     async def _handle_mac(self, sender: str, content: dict, transaction_id: str):
         """处理 MAC 验证"""
-        their_mac = content.get("mac", {})
+        their_mac = content.get("mac") or {}
         their_keys = content.get("keys")
 
         logger.debug(f"[E2EE-Verify] 收到 MAC: keys={their_keys}")

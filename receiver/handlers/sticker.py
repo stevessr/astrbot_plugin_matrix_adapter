@@ -7,7 +7,7 @@ from ...sticker import Sticker, StickerInfo
 async def handle_sticker(receiver, chain, event, _: str):
     mxc_url = event.content.get("url")
     file_info = event.content.get("file")
-    info_data = event.content.get("info", {})
+    info_data = event.content.get("info") or {}
     size_bytes = receiver._normalize_media_size(info_data.get("size"))
     over_limit = receiver._is_media_over_auto_download_limit(size_bytes)
     if over_limit:

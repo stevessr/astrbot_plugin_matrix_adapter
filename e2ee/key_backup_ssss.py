@@ -29,7 +29,7 @@ class KeyBackupSSSSMixin:
             default_key_data = await self.client.get_global_account_data(
                 SSSS_DEFAULT_KEY
             )
-            key_id = default_key_data.get("key")
+            key_id = (default_key_data or {}).get("key")
             if not key_id:
                 logger.warning(
                     "SSSS Account Data 'm.secret_storage.default_key' 未找到或无 'key'"

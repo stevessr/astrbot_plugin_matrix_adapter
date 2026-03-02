@@ -191,7 +191,7 @@ class SASVerificationEventMixin:
     ):
         """处理房间内验证请求"""
         from_device = content.get("from_device")
-        methods = content.get("methods", [])
+        methods = content.get("methods") or []
 
         if not from_device:
             logger.warning("[E2EE-Verify] 房间内验证请求缺少 from_device")
@@ -232,9 +232,10 @@ class SASVerificationEventMixin:
             # Query device keys to get the real fingerprint (Ed25519 key)
             logger.debug(f"[E2EE-Verify] Querying keys for {sender}|{from_device}")
             resp = await self.client.query_keys({sender: []})
-            devices = resp.get("device_keys", {}).get(sender, {})
-            device_info = devices.get(from_device, {})
-            keys = device_info.get("keys", {})
+            devices = resp.get("device_keys") or {}
+            user_devices = devices.get(sender) or {}
+            device_info = user_devices.get(from_device) or {}
+            keys = device_info.get("keys") or {}
             # Key format: "ed25519:<device_id>"
             fingerprint = keys.get(f"{PREFIX_ED25519}{from_device}")
         except Exception as e:

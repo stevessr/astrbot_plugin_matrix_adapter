@@ -8,7 +8,7 @@ async def handle_audio(receiver, chain, event, _: str):
     content = event.content or {}
     mxc_url = content.get("url")
     file_info = content.get("file")
-    info_data = content.get("info", {})
+    info_data = content.get("info") or {}
     filename = content.get("filename") or content.get("body", "audio.mp3")
     mimetype = info_data.get("mimetype")
     size_bytes = receiver._extract_media_size(content)

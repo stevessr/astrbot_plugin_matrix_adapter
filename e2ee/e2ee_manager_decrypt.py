@@ -86,7 +86,10 @@ class E2EEManagerDecryptMixin:
                 )
                 return None
 
-            my_ciphertext = ciphertext_data[my_key]
+            my_ciphertext = ciphertext_data.get(my_key)
+            if not isinstance(my_ciphertext, dict):
+                logger.warning(f"Olm ciphertext for this device is not a dictionary: {type(my_ciphertext)}")
+                return None
             message_type = my_ciphertext.get("type")
             body = my_ciphertext.get("body")
 

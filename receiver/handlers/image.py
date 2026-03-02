@@ -6,7 +6,7 @@ from .text import append_formatted_text, should_append_caption
 
 async def handle_image(receiver, chain, event, _: str):
     content = event.content or {}
-    info_data = content.get("info", {})
+    info_data = content.get("info") or {}
     file_info = content.get("file")
     mxc_url = content.get("url")
     filename = content.get("filename") or content.get("body", "image.jpg")
