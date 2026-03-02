@@ -765,7 +765,12 @@ class MatrixReceiver:
             )
 
         # 发送者信息
-        sender_id = event.sender
+        sender_id = getattr(event, "sender", None)
+        if not isinstance(sender_id, str) or not sender_id:
+            logger.warning(
+                f"消息事件缺少 sender，使用占位发送者：event_id={getattr(event, 'event_id', '<unknown>')}"
+            )
+            sender_id = ""
         sender_name = room.members.get(sender_id, sender_id)
 
         message.sender = MessageMember(
@@ -879,9 +884,14 @@ class MatrixReceiver:
             message.group = Group(group_id=room.room_id)
 
         sender_id = getattr(event, "sender", None)
-        sender_name = room.members.get(sender_id, sender_id) if sender_id else None
+        if not isinstance(sender_id, str) or not sender_id:
+            logger.warning(
+                f"系统事件缺少 sender，使用占位发送者：event_id={getattr(event, 'event_id', '<unknown>')}"
+            )
+            sender_id = ""
+        sender_name = room.members.get(sender_id, sender_id)
         message.sender = MessageMember(
-            user_id=sender_id or "",
+            user_id=sender_id,
             nickname=sender_name,
         )
 

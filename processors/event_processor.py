@@ -414,7 +414,14 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             event: Parsed event object
         """
         try:
-            if event.sender == self.user_id:
+            sender = getattr(event, "sender", None)
+            if not isinstance(sender, str) or not sender:
+                logger.warning(
+                    f"成员事件缺少 sender，跳过：event_id={getattr(event, 'event_id', '<unknown>')}"
+                )
+                return
+
+            if sender == self.user_id:
                 logger.debug(f"忽略来自自身的成员事件：{event.event_id}")
                 return
 
@@ -453,8 +460,15 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             event: Parsed event object
         """
         try:
+            sender = getattr(event, "sender", None)
+            if not isinstance(sender, str) or not sender:
+                logger.warning(
+                    f"状态事件缺少 sender，跳过：event_id={getattr(event, 'event_id', '<unknown>')}"
+                )
+                return
+
             # Don't process events from self
-            if event.sender == self.user_id:
+            if sender == self.user_id:
                 logger.debug(f"忽略来自自身的状态事件：{event.event_id}")
                 return
 
@@ -494,6 +508,13 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             event: Parsed event object
         """
         try:
+            sender = getattr(event, "sender", None)
+            if not isinstance(sender, str) or not sender:
+                logger.warning(
+                    f"room timeline 事件缺少 sender，跳过：event_id={getattr(event, 'event_id', '<unknown>')}"
+                )
+                return
+
             # Check if message is encrypted
             event_type = event.event_type
             event_content = event.content
@@ -506,7 +527,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
                     # 尝试解密
                     decrypted = await self.e2ee_manager.decrypt_event(
-                        event_content, event.sender, room.room_id
+                        event_content, sender, room.room_id
                     )
                     if decrypted:
                         # 替换事件内容为解密后的内容
@@ -526,7 +547,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
                         if is_verification:
                             # Check if it's from self (same user)
-                            if event.sender == self.user_id:
+                            if sender == self.user_id:
                                 # Only process if from a different device
                                 from_device = event.content.get("from_device")
                                 if (
@@ -551,7 +572,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                             # Reconstruct event_data for verification handler
                             verification_event = {
                                 "type": event.event_type,
-                                "sender": event.sender,
+                                "sender": sender,
                                 "event_id": event.event_id,
                                 "content": event.content,
                             }
@@ -569,7 +590,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                     return
 
             # Ignore messages from self (unless it was a verification request handled above)
-            if event.sender == self.user_id:
+            if sender == self.user_id:
                 # Double check to ensure we don't process own messages
                 logger.debug(f"忽略来自自身的消息：{event.event_id}")
                 return
@@ -624,7 +645,13 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         event_id = event_data.get("event_id")
 
         # 验证必需字段
-        if not event_type or not sender or not event_id:
+        if not isinstance(sender, str) or not sender:
+            logger.debug(
+                f"房间内验证事件缺少 sender：type={event_type}, event_id={event_id}"
+            )
+            return
+
+        if not event_type or not event_id:
             logger.debug(
                 f"房间内验证事件缺少必需字段：type={event_type}, sender={sender}, event_id={event_id}"
             )
