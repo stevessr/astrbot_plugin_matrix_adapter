@@ -83,9 +83,9 @@ class E2EEManagerKeysMixin:
                         verify_response = await self.client.query_keys(
                             {self.user_id: []}
                         )
-                        my_devices = verify_response.get("device_keys", {}).get(
-                            self.user_id, {}
-                        )
+                        my_devices = (verify_response.get("device_keys") or {}).get(
+                            self.user_id
+                        ) or {}
                         if self.device_id in my_devices:
                             my_device_info = my_devices[self.device_id]
                             my_keys = my_device_info.get("keys", {})

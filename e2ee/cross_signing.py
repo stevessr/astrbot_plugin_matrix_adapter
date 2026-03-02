@@ -401,7 +401,7 @@ class CrossSigning:
         try:
             response = await self.client.query_keys({self.user_id: [device_id]})
             device_keys = (
-                response.get("device_keys", {}).get(self.user_id, {}).get(device_id)
+                (response.get("device_keys") or {}).get(self.user_id, {}).get(device_id)
             )
             if not device_keys:
                 logger.debug("[E2EE-CrossSign] 未找到设备密钥，无法签名")

@@ -117,7 +117,7 @@ class MatrixPlugin(Star):
             client = e2ee_manager.client
             response = await client.query_keys({user_id: []})
 
-            devices = response.get("device_keys", {}).get(user_id, {})
+            devices = (response.get("device_keys") or {}).get(user_id) or {}
             if not devices:
                 yield event.plain_result(f"未找到用户 {user_id} 的设备")
                 return

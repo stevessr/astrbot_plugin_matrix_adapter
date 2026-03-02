@@ -506,7 +506,7 @@ class E2EEManagerSecretsMixin:
         """获取自己的所有设备 ID"""
         try:
             response = await self.client.query_keys({self.user_id: []})
-            device_keys = response.get("device_keys", {}).get(self.user_id, {})
+            device_keys = (response.get("device_keys") or {}).get(self.user_id) or {}
             return list(device_keys.keys())
         except Exception as e:
             logger.error(f"[E2EE-Secrets] 获取设备列表失败：{e}")
@@ -532,7 +532,7 @@ class E2EEManagerSecretsMixin:
             if missing_devices:
                 # 查询缺失的设备密钥
                 response = await self.client.query_keys({user_id: []})
-                device_keys = response.get("device_keys", {}).get(user_id, {})
+                device_keys = (response.get("device_keys") or {}).get(user_id) or {}
                 for device_id in missing_devices:
                     device_info = device_keys.get(device_id)
                     if device_info:

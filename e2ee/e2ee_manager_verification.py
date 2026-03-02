@@ -45,7 +45,7 @@ class E2EEManagerVerificationMixin:
                 {"device_keys": {self.user_id: []}},
             )
 
-            device_keys = response.get("device_keys", {}).get(self.user_id, {})
+            device_keys = (response.get("device_keys") or {}).get(self.user_id) or {}
             if not device_keys:
                 logger.debug("未找到其他设备")
                 return

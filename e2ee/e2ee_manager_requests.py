@@ -47,7 +47,7 @@ class E2EEManagerRequestsMixin:
 
                 # 回退：使用 sender_user_id 的任一设备尝试建立新会话
                 resp = await self.client.query_keys({sender_user_id: []})
-                devices = resp.get("device_keys", {}).get(sender_user_id, {})
+                devices = (resp.get("device_keys") or {}).get(sender_user_id) or {}
                 if not devices:
                     logger.warning(
                         f"用户 {sender_user_id} 没有可用设备，无法请求新会话"
@@ -62,7 +62,7 @@ class E2EEManagerRequestsMixin:
 
             # 1. 获取对方设备的身份密钥
             resp = await self.client.query_keys({target_user: []})
-            devices = resp.get("device_keys", {}).get(target_user, {})
+            devices = (resp.get("device_keys") or {}).get(target_user) or {}
             device_info = devices.get(target_device, {})
             their_curve_key = device_info.get("keys", {}).get(
                 f"{PREFIX_CURVE25519}{target_device}"
@@ -298,7 +298,7 @@ class E2EEManagerRequestsMixin:
 
             # 获取请求者的设备密钥信息
             resp = await self.client.query_keys({sender: []})
-            devices = resp.get("device_keys", {}).get(sender, {})
+            devices = (resp.get("device_keys") or {}).get(sender) or {}
             device_info = devices.get(requesting_device_id, {})
             curve_key = device_info.get("keys", {}).get(
                 f"{PREFIX_CURVE25519}{requesting_device_id}"
