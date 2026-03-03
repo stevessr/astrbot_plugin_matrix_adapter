@@ -114,13 +114,11 @@ class MatrixPlatformEvent(AstrMessageEvent):
                 )
 
                 if has_reply_component:
-                    # 获取房间当前状态以找到自己的用户 ID
-                    try:
-                        # 尝试通过客户端获取自己的用户 ID
-                        whoami = await self.client.whoami()
-                        my_user_id = whoami.get("user_id")
+                    # 直接使用已缓存的 user_id（登录时已设置），无需额外 API 调用
+                    my_user_id = getattr(self.client, "user_id", None)
 
-                        if my_user_id:
+                    if my_user_id:
+                        try:
                             # 获取房间最近的消息
                             messages_resp = await self.client.room_messages(
                                 room_id=room_id,
@@ -142,8 +140,8 @@ class MatrixPlatformEvent(AstrMessageEvent):
                                         f"找到自己最近的消息作为回复对象：{reply_to}"
                                     )
                                     break
-                    except Exception as e:
-                        logger.debug(f"获取自己最近消息失败：{e}")
+                        except Exception as e:
+                            logger.debug(f"获取自己最近消息失败：{e}")
             except Exception as e:
                 logger.debug(f"处理回复模式时出错：{e}")
 

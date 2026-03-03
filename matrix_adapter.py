@@ -325,20 +325,6 @@ class MatrixPlatformAdapter(
             support_streaming_message=False,
         )
 
-    async def _handle_invite(self, room_id: str, _invite_data: dict):
-        """处理房间邀请"""
-        # This wrapper can be removed since we use event_handler directly,
-        # but sticking to existing logic, it seems I removed it and used event_handler.invite_callback directly above
-        # Keeping it for now if needed, but it seems unused in my updated __init__
-        try:
-            logger.info(f"收到房间邀请到 {room_id}")
-            result = await self.client.join_room(room_id)
-            if result.get("room_id"):
-                logger.info(f"成功加入房间 {room_id}")
-            else:
-                logger.error(f"加入房间失败 {room_id}: {result}")
-        except Exception as e:
-            logger.error(f"加入房间时出错 {room_id}: {e}")
 
     async def _persist_auth_config_if_needed(self) -> None:
         access_token = str(getattr(self.auth, "access_token", "") or "")

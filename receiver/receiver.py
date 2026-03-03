@@ -59,6 +59,21 @@ class MatrixReceiver:
         ".heif",
     }
 
+    # 消息类型 -> handler 映射（类常量，避免每次 convert_message 时重建）
+    _MSGTYPE_HANDLERS = {
+        "m.text": handle_text,
+        "m.notice": handle_text,
+        "m.emote": handle_text,
+        "m.image": handle_image,
+        "m.redaction": handle_redaction,
+        "m.sticker": handle_sticker,
+        "m.video": handle_video,
+        "m.audio": handle_audio,
+        "m.file": handle_file,
+        "m.reaction": handle_reaction,
+        "m.location": handle_location,
+    }
+
     def __init__(
         self,
         user_id: str,
@@ -838,19 +853,6 @@ class MatrixReceiver:
         # 处理消息内容
         msgtype = event.content.get("msgtype")
         event_type = getattr(event, "event_type", None)
-        handlers = {
-            "m.text": handle_text,
-            "m.notice": handle_text,
-            "m.emote": handle_text,
-            "m.image": handle_image,
-            "m.redaction": handle_redaction,
-            "m.sticker": handle_sticker,
-            "m.video": handle_video,
-            "m.audio": handle_audio,
-            "m.file": handle_file,
-            "m.reaction": handle_reaction,
-            "m.location": handle_location,
-        }
 
         # Handle poll events by event type rather than msgtype
         if event_type in ("m.poll.response", "org.matrix.msc3381.poll.response"):
@@ -858,7 +860,7 @@ class MatrixReceiver:
         elif event_type in ("m.poll.end", "org.matrix.msc3381.poll.end"):
             await handle_poll_end(self, chain, event, event_type)
         else:
-            handler = handlers.get(msgtype, handle_unknown)
+            handler = self._MSGTYPE_HANDLERS.get(msgtype, handle_unknown)
             await handler(self, chain, event, msgtype)
 
         message.message = (

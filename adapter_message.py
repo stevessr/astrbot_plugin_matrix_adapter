@@ -157,6 +157,7 @@ class MatrixAdapterMessageMixin:
                     logger.info(f"[matrix(matrix)] {sender_name}/{sender_id}: {text}")
                 except Exception:
                     pass
+                return  # Reactions 已处理，不再进入后续消息/系统事件转换流程
             if getattr(event, "msgtype", None):
                 abm = await self.receiver.convert_message(room, event)
             else:

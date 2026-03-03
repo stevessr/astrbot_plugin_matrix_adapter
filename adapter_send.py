@@ -9,6 +9,13 @@ from astrbot.api.message_components import Plain, Reply
 from .constants import DEFAULT_TYPING_TIMEOUT_MS, MATRIX_HTML_FORMAT
 from .utils.markdown_utils import markdown_to_html
 
+_MARKDOWN_MARKERS = ("**", "*", "`", "#", "- ", "> ", "[", "](")
+
+
+def _looks_like_markdown(text: str) -> bool:
+    """检测文本是否包含 Markdown 标记特征。"""
+    return any(marker in text for marker in _MARKDOWN_MARKERS)
+
 
 class MatrixAdapterSendMixin:
     async def send_by_session(
@@ -79,13 +86,7 @@ class MatrixAdapterSendMixin:
                 new_chain = []
 
                 if merged_text:
-                    if (
-                        any(
-                            x in merged_text
-                            for x in ["**", "*", "`", "#", "- ", "> ", "[", "]("]
-                        )
-                        or reply_to
-                    ):
+                    if _looks_like_markdown(merged_text) or reply_to:
                         html = markdown_to_html(merged_text)
                         new_chain.append(
                             Plain(
@@ -137,9 +138,7 @@ class MatrixAdapterSendMixin:
         """发送单个消息段落"""
         if isinstance(segment, Plain):
             text = segment.text or ""
-            if any(x in text for x in ["**", "*", "`", "#", "- ", "> ", "[", "]("]) or (
-                reply_to and len(header_comps) > 0
-            ):
+            if _looks_like_markdown(text) or (reply_to and len(header_comps) > 0):
                 html = markdown_to_html(text)
                 processed_segment = Plain(
                     text=text,

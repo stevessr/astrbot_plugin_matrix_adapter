@@ -7,19 +7,15 @@ import asyncio
 from astrbot.api import logger
 
 from .storage_paths import MatrixStoragePaths
+from .utils.utils import mask_device_id
 
 
 class MatrixAdapterRuntimeMixin:
     _MEDIA_CACHE_GC_INTERVAL_SECONDS = 6 * 60 * 60
 
-    @staticmethod
-    def _mask_device_id(device_id: str | None) -> str:
-        if not isinstance(device_id, str) or not device_id:
-            return "<empty>"
-        normalized = device_id.strip()
-        if len(normalized) <= 4:
-            return "***"
-        return f"{normalized[:2]}***{normalized[-2:]}"
+    # 使用公共工具函数代替内联实现
+    _mask_device_id = staticmethod(mask_device_id)
+
 
     async def _media_cache_gc_loop(self):
         try:

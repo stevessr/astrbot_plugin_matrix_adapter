@@ -5,7 +5,6 @@
 """
 
 from pathlib import Path
-from typing import Optional
 
 from astrbot.api import logger
 from astrbot.api.star import StarTools
@@ -198,7 +197,7 @@ def _normalize_token_list(
 class PluginConfig:
     """单例类，存储插件级别的配置"""
 
-    _instance: Optional["PluginConfig"] = None
+    _instance: "PluginConfig | None" = None
     _initialized: bool = False
     _data_dir: Path | None = None
 

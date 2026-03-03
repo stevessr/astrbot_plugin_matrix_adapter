@@ -12,6 +12,7 @@ from astrbot.api import logger
 
 from ..plugin_config import get_plugin_config
 from ..storage_backend import build_folder_namespace
+from ..utils.utils import mask_device_id
 from ..storage_paths import MatrixStoragePaths
 from .crypto_store import CryptoStore
 from .e2ee_manager_decrypt import E2EEManagerDecryptMixin
@@ -132,14 +133,8 @@ class E2EEManager(
         self._key_share_check_task: asyncio.Task | None = None
         self._key_share_check_lock = asyncio.Lock()
 
-    @staticmethod
-    def _mask_device_id(device_id: str | None) -> str:
-        if not isinstance(device_id, str) or not device_id:
-            return "<empty>"
-        normalized = device_id.strip()
-        if len(normalized) <= 4:
-            return "***"
-        return f"{normalized[:2]}***{normalized[-2:]}"
+    # 使用公共工具函数代替内联实现
+    _mask_device_id = staticmethod(mask_device_id)
 
     @property
     def is_available(self) -> bool:
