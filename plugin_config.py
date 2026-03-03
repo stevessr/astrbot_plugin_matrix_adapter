@@ -88,17 +88,8 @@ def _normalize_pgsql_table_prefix(value) -> str:
             return normalized
     return "matrix_store"
 
-
-def _normalize_bool(value, default: bool = False) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "yes", "on", "enable", "enabled"}:
-            return True
-        if normalized in {"0", "false", "no", "off", "disable", "disabled"}:
-            return False
-    return default
+from .utils import parse_bool
+_normalize_bool = parse_bool
 
 
 def _normalize_non_negative_int(

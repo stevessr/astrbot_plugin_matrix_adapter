@@ -17,6 +17,21 @@ from ..constants import (
 )
 
 
+def parse_bool(value: object, default: bool = False) -> bool:
+    """Consolidated boolean parsing helper."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on", "enable", "enabled"}:
+        return True
+    if normalized in {"0", "false", "no", "off", "disable", "disabled"}:
+        return False
+    return default
+
+
+
 def mask_device_id(device_id: str | None) -> str:
     """统一的 device_id 脱敏显示函数。
 

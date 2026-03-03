@@ -3,7 +3,8 @@ Matrix 消息接收组件
 """
 
 import asyncio
-import hashlib
+
+
 import mimetypes
 import string
 import time
@@ -311,17 +312,23 @@ class MatrixReceiver:
 
     @staticmethod
     def _media_cache_key(mxc_url: str) -> str:
-        return hashlib.md5(mxc_url.encode()).hexdigest()
+        """
+        生成缓存键。因为 mxc_url 本身已包含唯一的媒体 ID，
+        不需要计算 hash，只需替换掉文件系统不允许的字符即可。
+        """
+        if mxc_url.startswith("mxc://"):
+            mxc_url = mxc_url[6:]
+        return mxc_url.replace("/", "_").replace("\\", "_").replace(":", "_")
 
     @staticmethod
     def _extract_cache_key_from_path(path: Path) -> str | None:
+        """从缓存文件路径剥离后缀还原出 cache_key。"""
         name = path.name
-        if len(name) < 32:
-            return None
-        candidate = name[:32].lower()
-        if all(ch in string.hexdigits for ch in candidate):
-            return candidate
-        return None
+        idx = name.rfind('.')
+        # 如果存在点且后缀长度在合理范围内（如 .jpg / .heic 等），则去掉后缀
+        if idx > 0 and (len(name) - idx) <= 6:
+            return name[:idx]
+        return name
 
     @staticmethod
     def _guess_media_ext(filename: str | None, mimetype: str | None) -> str:

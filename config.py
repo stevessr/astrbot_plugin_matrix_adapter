@@ -11,20 +11,10 @@ from .device_manager import MatrixDeviceManager
 from .plugin_config import get_plugin_config
 from .storage_backend import StorageBackendConfig
 
+from .utils import parse_bool
 
 class MatrixConfig:
-    @staticmethod
-    def _parse_bool(value: object, default: bool) -> bool:
-        if isinstance(value, bool):
-            return value
-        if value is None:
-            return default
-        normalized = str(value).strip().lower()
-        if normalized in {"1", "true", "yes", "on", "enable", "enabled"}:
-            return True
-        if normalized in {"0", "false", "no", "off", "disable", "disabled"}:
-            return False
-        return default
+    _parse_bool = staticmethod(parse_bool)
 
     @staticmethod
     def _parse_int(

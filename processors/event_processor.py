@@ -14,6 +14,7 @@ from ..constants import MAX_PROCESSED_MESSAGES_1000, TIMESTAMP_BUFFER_MS_1000
 from ..plugin_config import get_plugin_config
 from .event_processor_members import MatrixEventProcessorMembers
 from .event_processor_streams import MatrixEventProcessorStreams
+from ..utils import parse_bool
 
 if TYPE_CHECKING:
     from ..e2ee import E2EEManager
@@ -85,18 +86,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         while len(self._processed_messages) > self._max_processed_messages:
             self._processed_messages.popitem(last=False)
 
-    @staticmethod
-    def _parse_bool_like(value: object, default: bool = False) -> bool:
-        if isinstance(value, bool):
-            return value
-        if value is None:
-            return default
-        raw = str(value).strip().lower()
-        if raw in {"1", "true", "yes", "on", "enable", "enabled"}:
-            return True
-        if raw in {"0", "false", "no", "off", "disable", "disabled"}:
-            return False
-        return default
+    _parse_bool_like = staticmethod(parse_bool)
 
     async def _persist_room_state(self, room) -> None:
         """将房间状态/成员数据持久化到存储后端。"""
