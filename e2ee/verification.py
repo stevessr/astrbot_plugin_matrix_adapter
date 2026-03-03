@@ -15,6 +15,7 @@ from .device_store import DeviceStore
 from .verification_handlers_display import SASVerificationDisplayMixin
 from .verification_handlers_event import SASVerificationEventMixin
 from .verification_handlers_flow import SASVerificationFlowMixin
+from .verification_manual_notify import SASVerificationManualNotifyMixin
 from .verification_send_device import SASVerificationSendDeviceMixin
 from .verification_send_room import SASVerificationSendRoomMixin
 
@@ -23,6 +24,7 @@ class SASVerification(
     SASVerificationEventMixin,
     SASVerificationFlowMixin,
     SASVerificationDisplayMixin,
+    SASVerificationManualNotifyMixin,
     SASVerificationSendDeviceMixin,
     SASVerificationSendRoomMixin,
 ):
@@ -53,6 +55,7 @@ class SASVerification(
         self.auto_verify_mode = auto_verify_mode
         self.trust_on_first_use = trust_on_first_use
         self.admin_notify_room_id: str | None = None
+        self.admin_notify_room_ids: list[str] = []
 
         # 活跃的验证会话：transaction_id -> session_data
         self._sessions: dict[str, dict[str, Any]] = {}
@@ -74,7 +77,8 @@ class SASVerification(
 
     def set_admin_notify_room(self, room_id: str | None):
         """设置管理员验证通知房间（用于手动 SAS 验证提示）。"""
-        self.admin_notify_room_id = room_id
+        normalized_room = str(room_id or "").strip()
+        self.admin_notify_room_id = normalized_room or None
 
     async def approve_device(self, device_id: str) -> tuple[bool, str]:
         """手动确认某个设备的 SAS 验证（发送 MAC 与 DONE）。"""

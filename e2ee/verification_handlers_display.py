@@ -11,14 +11,12 @@ from .verification_constants import (
 
 class SASVerificationDisplayMixin:
     async def _notify_admin_for_verification(self, session: dict, transaction_id: str):
-        room_id = getattr(self, "admin_notify_room_id", None)
-        if not room_id:
-            return
-
-        sender = session.get("sender", "")
-        device_id = session.get("from_device") or session.get("their_device") or ""
+        sender = str(session.get("sender", "") or "").strip()
+        device_id = str(
+            session.get("from_device") or session.get("their_device") or ""
+        ).strip()
         emojis = session.get("sas_emojis") or []
-        decimals = session.get("sas_decimals") or ""
+        decimals = str(session.get("sas_decimals") or "").strip()
         emoji_str = " ".join(e[0] for e in emojis) if emojis else ""
 
         lines = [
@@ -27,7 +25,7 @@ class SASVerificationDisplayMixin:
             f"设备：{device_id}",
         ]
         if emoji_str:
-            lines.append(f"Emoji:{emoji_str}")
+            lines.append(f"Emoji: {emoji_str}")
         if decimals:
             lines.append(f"数字：{decimals}")
         lines.append(f"事务：{transaction_id}")
@@ -36,9 +34,22 @@ class SASVerificationDisplayMixin:
 
         message = "\n".join(lines)
         try:
-            await self.client.send_room_message(room_id, message)
+            sent_count = await self._notify_admin_rooms_for_verification(
+                message,
+                transaction_id,
+            )
+            if sent_count > 0:
+                logger.info(
+                    "[E2EE-Verify] 手动验证通知已发送："
+                    f"rooms={sent_count} txn={self._mask_txn_id(transaction_id)}"
+                )
+            else:
+                logger.debug(
+                    "[E2EE-Verify] 手动验证通知未发送（无目标房间）："
+                    f"txn={self._mask_txn_id(transaction_id)}"
+                )
         except Exception as e:
-            logger.warning(f"发送验证通知失败：{e}")
+            logger.error(f"发送验证通知失败：{e}")
 
     async def _notify_user_for_approval(
         self, sender: str, device_id: str, room_id: str | None = None
