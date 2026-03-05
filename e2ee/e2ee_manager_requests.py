@@ -361,10 +361,11 @@ class E2EEManagerRequestsMixin:
 
             # 导出会话密钥
             try:
-                exported_key = session.export_at_first_known_index()
+                first_index = session.first_known_index()
+                exported_key = session.export_at(first_index)
                 logger.info(
                     f"导出会话密钥：session={(session_id or '')[:8]}..., "
-                    f"first_index={session.first_known_index}"
+                    f"first_index={first_index}"
                 )
             except Exception as e:
                 logger.warning(f"导出会话密钥失败：{e}")
