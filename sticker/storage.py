@@ -13,6 +13,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+import anyio
+
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 
@@ -119,6 +121,42 @@ class StickerStorage:
         """重新加载索引（用于同步多个实例）"""
         self._load_index()
 
+    def save_index(self):
+        """保存索引到文件。"""
+        self._save_index()
+
+    def get_sticker_meta(self, sticker_id: str) -> StickerMeta | None:
+        """按 ID 获取 sticker 元数据。"""
+        return self._index.get(sticker_id)
+
+    def iter_sticker_metas(self):
+        """遍历全部 sticker 元数据。"""
+        return iter(self._index.values())
+
+    def build_meta_fingerprint(self, meta: StickerMeta) -> str:
+        """构建用于外部索引同步的稳定指纹。"""
+        local_path = str(meta.local_path or "").strip()
+        stat_sig = "missing"
+        if local_path and os.path.exists(local_path):
+            try:
+                stat = Path(local_path).stat()
+                stat_sig = f"{int(stat.st_mtime_ns)}:{int(stat.st_size)}"
+            except OSError:
+                stat_sig = "stat_error"
+        tags = [str(tag).strip() for tag in (meta.tags or []) if str(tag).strip()]
+        return "|".join(
+            [
+                str(meta.sticker_id or ""),
+                str(meta.body or ""),
+                str(meta.pack_name or ""),
+                str(meta.room_id or ""),
+                ",".join(sorted(tags)),
+                str(meta.mxc_url or ""),
+                str(meta.mimetype or ""),
+                stat_sig,
+            ]
+        )
+
     def _save_index(self):
         """保存索引到文件"""
         try:
@@ -190,7 +228,7 @@ class StickerStorage:
                 meta.pack_name = pack_name
             if tags:
                 meta.tags = tags
-            self._save_index()
+            self.save_index()
             return meta
 
         # 确定缓存路径
@@ -216,8 +254,7 @@ class StickerStorage:
                 # 从本地或 HTTP URL 获取
                 try:
                     file_path = await sticker.convert_to_file_path()
-                    with open(file_path, "rb") as f:
-                        file_data = f.read()
+                    file_data = await anyio.Path(file_path).read_bytes()
                 except Exception as e:
                     logger.error(f"获取 sticker 文件失败：{e}")
                     raise
@@ -225,8 +262,7 @@ class StickerStorage:
                 raise ValueError("需要提供 file_data 或 client 来下载 mxc:// URL")
 
         # 保存文件
-        with open(cache_path, "wb") as f:
-            f.write(file_data)
+        await anyio.Path(cache_path).write_bytes(bytes(file_data))
 
         # 获取图片尺寸
         width, height = sticker.info.width, sticker.info.height
@@ -259,7 +295,7 @@ class StickerStorage:
 
         # 更新索引
         self._index[sticker_id] = meta
-        self._save_index()
+        self.save_index()
 
         logger.info(f"保存 sticker: {sticker_id} ({sticker.body})")
         return meta
@@ -310,7 +346,7 @@ class StickerStorage:
         if update_usage:
             meta.last_used = time.time()
             meta.use_count += 1
-            self._save_index()
+            self.save_index()
 
         return self._build_sticker_from_meta(sticker_id, meta)
 
@@ -321,7 +357,7 @@ class StickerStorage:
             return False
         meta.last_used = time.time()
         meta.use_count += 1
-        self._save_index()
+        self.save_index()
         return True
 
     def find_stickers(
@@ -450,7 +486,7 @@ class StickerStorage:
 
         # 从索引中移除
         del self._index[sticker_id]
-        self._save_index()
+        self.save_index()
 
         logger.info(f"删除 sticker: {sticker_id}")
         return True
