@@ -311,7 +311,7 @@ class MatrixPlatformAdapter(
         logger.info("Matrix Adapter 初始化完成")
 
     def meta(self) -> PlatformMetadata:
-        id_ = getattr(self._matrix_config, "id", None) or "matrix"
+        id_ = str(self.config.get("id") or "matrix")
         return PlatformMetadata(
             name="matrix",
             description="Matrix 协议适配器",
