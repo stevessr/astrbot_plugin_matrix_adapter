@@ -15,6 +15,120 @@ from .key_backup_crypto import CRYPTO_AVAILABLE, _aes_ctr_decrypt, _compute_hkdf
 
 
 class KeyBackupSSSSMixin:
+    async def _get_dehydrated_device(self) -> dict | None:
+        dehydrated_device = await self.client.get_global_account_data(
+            DEHYDRATED_DEVICE_EVENT
+        )
+        if dehydrated_device:
+            logger.info("Found stable dehydrated device event")
+            return dehydrated_device
+
+        dehydrated_device = await self.client.get_global_account_data(
+            MSC2697_DEHYDRATED_DEVICE_EVENT
+        )
+        if dehydrated_device:
+            logger.info("Found MSC2697 dehydrated device event")
+
+        return dehydrated_device
+
+    def _extract_backup_key_from_dehydrated_device(
+        self, provided_key_bytes: bytes, dehydrated_device: dict | None
+    ) -> bytes | None:
+        if not dehydrated_device:
+            logger.info("No dehydrated device event found")
+            return None
+
+        logger.info(f"Found dehydrated device event: {dehydrated_device.keys()}")
+        device_data = dehydrated_device.get("device_data")
+        if not isinstance(device_data, dict):
+            device_data = dehydrated_device if isinstance(dehydrated_device, dict) else {}
+
+        if not device_data:
+            logger.warning("Dehydrated device event does not contain usable device data")
+            return None
+
+        logger.info(f"Dehydrated device data keys: {device_data.keys()}")
+
+        decrypted_device = None
+        for secret_name in (
+            DEHYDRATED_DEVICE_EVENT,
+            MSC2697_DEHYDRATED_DEVICE_EVENT,
+        ):
+            decrypted_device = self._decrypt_ssss_data(
+                provided_key_bytes,
+                device_data,
+                secret_name=secret_name,
+            )
+            if decrypted_device:
+                logger.info(
+                    "✅ Successfully decrypted Dehydrated Device data "
+                    f"with secret name {secret_name}!"
+                )
+                break
+
+        if not decrypted_device:
+            logger.warning("Failed to decrypt Dehydrated Device with provided key")
+            return None
+
+        try:
+            try:
+                device_info = json.loads(decrypted_device)
+                logger.info(
+                    f"Decrypted Dehydrated Device Info keys: {device_info.keys()}"
+                )
+
+                backup_key = None
+                if "m.megolm_backup.v1" in device_info:
+                    backup_key = device_info["m.megolm_backup.v1"]
+                    logger.info(
+                        "Found backup key in dehydrated device: m.megolm_backup.v1"
+                    )
+                elif "backup_key" in device_info:
+                    backup_key = device_info["backup_key"]
+                    logger.info(
+                        "Found backup key in dehydrated device: backup_key"
+                    )
+                elif "recovery_key" in device_info:
+                    backup_key = device_info["recovery_key"]
+                    logger.info(
+                        "Found backup key in dehydrated device: recovery_key"
+                    )
+
+                if backup_key:
+                    if isinstance(backup_key, str):
+                        try:
+                            extracted_key = base64.b64decode(backup_key)
+                            logger.info(
+                                "✅ Extracted backup key from dehydrated device "
+                                f"({len(extracted_key)} bytes)"
+                            )
+                            return extracted_key
+                        except Exception:
+                            logger.warning(
+                                "Failed to base64 decode backup key from device"
+                            )
+                    elif isinstance(backup_key, bytes):
+                        logger.info(
+                            "✅ Extracted backup key from dehydrated device "
+                            f"({len(backup_key)} bytes)"
+                        )
+                        return backup_key
+
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+                logger.info(
+                    "Decrypted Dehydrated Device data is not JSON "
+                    f"(len: {len(decrypted_device)})"
+                )
+                if len(decrypted_device) == CRYPTO_KEY_SIZE_32:
+                    logger.info(
+                        "✅ Dehydrated device data is exactly 32 bytes, using as backup key"
+                    )
+                    return decrypted_device
+        except Exception as e:
+            logger.warning(f"Failed to extract backup key from dehydrated device: {e}")
+
+        return None
+
     async def _try_restore_from_secret_storage(
         self, provided_key_bytes: bytes
     ) -> bytes | None:
@@ -23,8 +137,14 @@ class KeyBackupSSSSMixin:
         支持直接解密和通过 Recovery Key 解密 SSSS Key 的链式解密
         """
         logger.info("尝试从 Secret Storage 恢复密钥...")
-        dehydrated_device = None
         try:
+            dehydrated_device = await self._get_dehydrated_device()
+            dehydrated_key = self._extract_backup_key_from_dehydrated_device(
+                provided_key_bytes, dehydrated_device
+            )
+            if dehydrated_key:
+                return dehydrated_key
+
             # 1. Get default key ID
             default_key_data = await self.client.get_global_account_data(
                 SSSS_DEFAULT_KEY
@@ -56,97 +176,6 @@ class KeyBackupSSSSMixin:
                     )
             else:
                 logger.warning(f"Could not fetch data for key {key_id}")
-                # Check for Dehydrated Device
-                dehydrated_device = await self.client.get_global_account_data(
-                    DEHYDRATED_DEVICE_EVENT
-                )
-                if not dehydrated_device:
-                    dehydrated_device = await self.client.get_global_account_data(
-                        MSC2697_DEHYDRATED_DEVICE_EVENT
-                    )
-                    if dehydrated_device:
-                        logger.info("Found MSC2697 dehydrated device event")
-            if dehydrated_device:
-                logger.info(
-                    f"Found dehydrated device event: {dehydrated_device.keys()}"
-                )
-                device_data = dehydrated_device.get("device_data", {})
-                if device_data:
-                    logger.info(f"Dehydrated device data keys: {device_data.keys()}")
-                    # Try to decrypt using provided key (dehydrated device key from FluffyChat)
-                    # Dehydrated device uses "org.matrix.msc2697.dehydrated_device" or "m.dehydrated_device" as secret name
-                    decrypted_device = self._decrypt_ssss_data(
-                        provided_key_bytes,
-                        device_data,
-                        secret_name="m.dehydrated_device",
-                    )
-                    if decrypted_device:
-                        logger.info("✅ Successfully decrypted Dehydrated Device data!")
-                        # The decrypted data might contain the actual backup recovery key
-                        # Try to extract it and use it as the SSSS key
-                        try:
-                            # Try to parse as JSON first
-                            try:
-                                device_info = json.loads(decrypted_device)
-                                logger.info(
-                                    f"Decrypted Dehydrated Device Info keys: {device_info.keys()}"
-                                )
-
-                                # Look for backup key in common locations
-                                # FluffyChat might store it as 'm.megolm_backup.v1' or similar
-                                backup_key = None
-                                if "m.megolm_backup.v1" in device_info:
-                                    backup_key = device_info["m.megolm_backup.v1"]
-                                    logger.info(
-                                        "Found backup key in dehydrated device: m.megolm_backup.v1"
-                                    )
-                                elif "backup_key" in device_info:
-                                    backup_key = device_info["backup_key"]
-                                    logger.info(
-                                        "Found backup key in dehydrated device: backup_key"
-                                    )
-
-                                if backup_key:
-                                    # The backup key might be base64 encoded
-                                    if isinstance(backup_key, str):
-                                        try:
-                                            extracted_key = base64.b64decode(backup_key)
-                                            logger.info(
-                                                f"✅ Extracted backup key from dehydrated device ({len(extracted_key)} bytes)"
-                                            )
-                                            # Use this as the actual recovery key!
-                                            return extracted_key
-                                        except Exception:
-                                            logger.warning(
-                                                "Failed to base64 decode backup key from device"
-                                            )
-                                    elif isinstance(backup_key, bytes):
-                                        logger.info(
-                                            f"✅ Extracted backup key from dehydrated device ({len(backup_key)} bytes)"
-                                        )
-                                        return backup_key
-
-                            except (json.JSONDecodeError, ValueError):
-                                # Not JSON, might be pickled Olm account or raw key material
-                                logger.info(
-                                    f"Decrypted Dehydrated Device data is not JSON (len: {len(decrypted_device)})"
-                                )
-                                # If it's exactly 32 bytes, it might be the raw backup key
-                                if len(decrypted_device) == CRYPTO_KEY_SIZE_32:
-                                    logger.info(
-                                        "✅ Dehydrated device data is exactly 32 bytes, using as backup key"
-                                    )
-                                    return decrypted_device
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to extract backup key from dehydrated device: {e}"
-                            )
-                    else:
-                        logger.warning(
-                            "Failed to decrypt Dehydrated Device with provided key"
-                        )
-            else:
-                logger.info("No dehydrated device event found")
 
             ssss_key = provided_key_bytes
             # If the key definition contains 'encrypted', it means the actual SSSS key is encrypted
@@ -184,8 +213,8 @@ class KeyBackupSSSSMixin:
                     )
 
             # 3. Get Backup Secret (m.megolm_backup.v1)
-            backup_secret_data = await self.client.get_global_account_data(
-                SSSS_BACKUP_SECRET
+            backup_secret_data = (
+                await self.client.get_global_account_data(SSSS_BACKUP_SECRET) or {}
             )
             encrypted_data = backup_secret_data.get("encrypted", {}).get(key_id)
 

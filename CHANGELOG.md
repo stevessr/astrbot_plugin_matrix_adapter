@@ -1,6 +1,10 @@
 # Changelog
 
 ## unreleased
+
+- compat: OAuth2 discovery 现在优先使用 `/_matrix/client/v1/auth_metadata`，默认请求 stable Matrix API / device scopes。
+- compat: 对话投票默认切换到稳定版 `m.poll.start` / `m.poll`，同时保留 MSC3381 兼容参数。
+- compat: E2EE 密钥恢复补强 `m.dehydrated_device` / `org.matrix.msc2697.dehydrated_device` 双栈 fallback。
 - refactor: centralize device ID masking, optimize message handler lookup, and extract room state persistence logic.
 
 ## 0.3.4

@@ -139,7 +139,7 @@ async def send_poll_response(
         poll_start_event_id: The event ID of the poll start event
         answer_ids: List of answer IDs to vote for
         event_type: Event type to use (m.poll.response or org.matrix.msc3381.poll.response)
-        poll_key: Poll key to use (m.poll or org.matrix.msc3381.poll.start)
+        poll_key: Poll key to use (m.poll or org.matrix.msc3381.poll.response)
 
     Returns:
         The response from the server, or None on failure
