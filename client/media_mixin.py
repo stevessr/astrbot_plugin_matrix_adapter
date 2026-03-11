@@ -660,6 +660,22 @@ class MediaMixin:
     def _should_retry_http_status(status: int) -> bool:
         return status == 429 or status >= 500
 
+    @staticmethod
+    def _get_media_upload_endpoints() -> tuple[str, ...]:
+        """Return preferred media upload endpoints in compatibility order."""
+        return (
+            "/_matrix/client/v1/media/upload",
+            "/_matrix/media/v3/upload",
+        )
+
+    @staticmethod
+    def _should_try_next_media_upload_endpoint(
+        status: int,
+        endpoint_index: int,
+        total_endpoints: int,
+    ) -> bool:
+        return status == 404 and endpoint_index < (total_endpoints - 1)
+
     def _get_cached_upload_result(self, cache_key: str) -> dict[str, Any] | None:
         now = time.monotonic()
         cached = self._media_upload_cache.get(cache_key)
@@ -769,76 +785,100 @@ class MediaMixin:
             return await existing_task
 
         async def _perform_upload() -> dict[str, Any]:
-            url = f"{self.homeserver}/_matrix/media/v3/upload"
             headers = {
                 "Content-Type": safe_content_type,
                 "Authorization": f"Bearer {self.access_token}",
                 "User-Agent": "AstrBot Matrix Client/1.0",
             }
             params = {"filename": filename}
-            attempt = 0
-            while True:
-                try:
-                    async with self.session.post(
-                        url, data=data, headers=headers, params=params
-                    ) as response:
-                        response_data: dict[str, Any] = {}
-                        try:
-                            parsed = await response.json(content_type=None)
-                            if isinstance(parsed, dict):
-                                response_data = parsed
-                        except Exception:
+            endpoints = self._get_media_upload_endpoints()
+            last_error: Exception | None = None
+
+            for endpoint_index, endpoint in enumerate(endpoints):
+                url = f"{self.homeserver}{endpoint}"
+                attempt = 0
+
+                while True:
+                    try:
+                        async with self.session.post(
+                            url, data=data, headers=headers, params=params
+                        ) as response:
+                            response_data: dict[str, Any] = {}
                             try:
-                                response_data = {"error": await response.text()}
+                                parsed = await response.json(content_type=None)
+                                if isinstance(parsed, dict):
+                                    response_data = parsed
                             except Exception:
-                                response_data = {}
+                                try:
+                                    response_data = {"error": await response.text()}
+                                except Exception:
+                                    response_data = {}
 
-                        if response.status >= HTTP_ERROR_STATUS_400:
-                            retry_after_seconds = self._extract_retry_after_seconds(
-                                response.headers, response_data
-                            )
-                            if (
-                                self._should_retry_http_status(response.status)
-                                and attempt < self._MEDIA_HTTP_MAX_RETRIES
-                            ):
-                                delay = self._compute_retry_delay(
-                                    attempt, retry_after_seconds
+                            if response.status >= HTTP_ERROR_STATUS_400:
+                                if self._should_try_next_media_upload_endpoint(
+                                    response.status,
+                                    endpoint_index,
+                                    len(endpoints),
+                                ):
+                                    logger.warning(
+                                        "Matrix media upload endpoint returned 404, "
+                                        "trying fallback endpoint: %s",
+                                        endpoint,
+                                    )
+                                    break
+
+                                retry_after_seconds = self._extract_retry_after_seconds(
+                                    response.headers, response_data
                                 )
-                                attempt += 1
-                                logger.warning(
-                                    "Matrix media upload failed with status "
-                                    f"{response.status}, retrying in {delay:.2f}s "
-                                    f"({attempt}/{self._MEDIA_HTTP_MAX_RETRIES})"
+                                if (
+                                    self._should_retry_http_status(response.status)
+                                    and attempt < self._MEDIA_HTTP_MAX_RETRIES
+                                ):
+                                    delay = self._compute_retry_delay(
+                                        attempt, retry_after_seconds
+                                    )
+                                    attempt += 1
+                                    logger.warning(
+                                        "Matrix media upload failed with status "
+                                        f"{response.status}, retrying in {delay:.2f}s "
+                                        f"({attempt}/{self._MEDIA_HTTP_MAX_RETRIES})"
+                                    )
+                                    await asyncio.sleep(delay)
+                                    continue
+
+                                error_code = response_data.get("errcode", "UNKNOWN")
+                                error_msg = response_data.get("error", "Unknown error")
+                                last_error = Exception(
+                                    f"Matrix media upload error: {error_code} - {error_msg}"
                                 )
-                                await asyncio.sleep(delay)
-                                continue
+                                raise last_error
 
-                            error_code = response_data.get("errcode", "UNKNOWN")
-                            error_msg = response_data.get("error", "Unknown error")
-                            raise Exception(
-                                f"Matrix media upload error: {error_code} - {error_msg}"
+                            content_uri = response_data.get("content_uri")
+                            if not isinstance(content_uri, str) or not content_uri:
+                                last_error = Exception(
+                                    "Matrix media upload error: missing content_uri"
+                                )
+                                raise last_error
+
+                            self._save_upload_cache_result(cache_key, content_uri)
+                            return response_data
+
+                    except aiohttp.ClientError as e:
+                        last_error = e
+                        if attempt < self._MEDIA_HTTP_MAX_RETRIES:
+                            delay = self._compute_retry_delay(attempt)
+                            attempt += 1
+                            logger.warning(
+                                "Matrix media upload network error, retrying in "
+                                f"{delay:.2f}s ({attempt}/{self._MEDIA_HTTP_MAX_RETRIES}): {e}"
                             )
+                            await asyncio.sleep(delay)
+                            continue
+                        raise
 
-                        content_uri = response_data.get("content_uri")
-                        if not isinstance(content_uri, str) or not content_uri:
-                            raise Exception(
-                                "Matrix media upload error: missing content_uri"
-                            )
-
-                        self._save_upload_cache_result(cache_key, content_uri)
-                        return response_data
-
-                except aiohttp.ClientError as e:
-                    if attempt < self._MEDIA_HTTP_MAX_RETRIES:
-                        delay = self._compute_retry_delay(attempt)
-                        attempt += 1
-                        logger.warning(
-                            "Matrix media upload network error, retrying in "
-                            f"{delay:.2f}s ({attempt}/{self._MEDIA_HTTP_MAX_RETRIES}): {e}"
-                        )
-                        await asyncio.sleep(delay)
-                        continue
-                    raise
+            if last_error is not None:
+                raise last_error
+            raise Exception("Matrix media upload error: no upload endpoint available")
 
         upload_task = asyncio.create_task(_perform_upload())
         self._media_upload_inflight[cache_key] = upload_task
@@ -860,7 +900,7 @@ class MediaMixin:
         self._ensure_media_upload_cache()
 
         path = Path(file_path)
-        if not path.is_file():
+        if not await asyncio.to_thread(path.is_file):
             raise FileNotFoundError(
                 f"Matrix media upload source file not found: {path}"
             )
@@ -890,18 +930,23 @@ class MediaMixin:
             return await existing_task
 
         async def _perform_upload_from_path() -> dict[str, Any]:
-            url = f"{self.homeserver}/_matrix/media/v3/upload"
             headers = {
                 "Content-Type": safe_content_type,
                 "Authorization": f"Bearer {self.access_token}",
                 "User-Agent": "AstrBot Matrix Client/1.0",
             }
             params = {"filename": upload_filename}
-            attempt = 0
+            endpoints = self._get_media_upload_endpoints()
+            last_error: Exception | None = None
 
-            while True:
-                try:
-                    with path.open("rb") as file_handle:
+            for endpoint_index, endpoint in enumerate(endpoints):
+                url = f"{self.homeserver}{endpoint}"
+                attempt = 0
+
+                while True:
+                    file_handle = None
+                    try:
+                        file_handle = await asyncio.to_thread(path.open, "rb")
                         hashing_reader = self._HashingFileReader(file_handle)
                         async with self.session.post(
                             url,
@@ -921,6 +966,17 @@ class MediaMixin:
                                     response_data = {}
 
                             if response.status >= HTTP_ERROR_STATUS_400:
+                                if self._should_try_next_media_upload_endpoint(
+                                    response.status,
+                                    endpoint_index,
+                                    len(endpoints),
+                                ):
+                                    logger.warning(
+                                        "Matrix media upload endpoint returned 404, "
+                                        f"trying fallback endpoint: {endpoint}"
+                                    )
+                                    break
+
                                 retry_after_seconds = self._extract_retry_after_seconds(
                                     response.headers, response_data
                                 )
@@ -942,15 +998,17 @@ class MediaMixin:
 
                                 error_code = response_data.get("errcode", "UNKNOWN")
                                 error_msg = response_data.get("error", "Unknown error")
-                                raise Exception(
+                                last_error = Exception(
                                     f"Matrix media upload error: {error_code} - {error_msg}"
                                 )
+                                raise last_error
 
                             content_uri = response_data.get("content_uri")
                             if not isinstance(content_uri, str) or not content_uri:
-                                raise Exception(
+                                last_error = Exception(
                                     "Matrix media upload error: missing content_uri"
                                 )
+                                raise last_error
 
                             digest_cache_key = (
                                 self._build_media_upload_cache_key_from_digest(
@@ -964,17 +1022,25 @@ class MediaMixin:
                             )
                             return response_data
 
-                except aiohttp.ClientError as e:
-                    if attempt < self._MEDIA_HTTP_MAX_RETRIES:
-                        delay = self._compute_retry_delay(attempt)
-                        attempt += 1
-                        logger.warning(
-                            "Matrix media upload network error, retrying in "
-                            f"{delay:.2f}s ({attempt}/{self._MEDIA_HTTP_MAX_RETRIES}): {e}"
-                        )
-                        await asyncio.sleep(delay)
-                        continue
-                    raise
+                    except aiohttp.ClientError as e:
+                        last_error = e
+                        if attempt < self._MEDIA_HTTP_MAX_RETRIES:
+                            delay = self._compute_retry_delay(attempt)
+                            attempt += 1
+                            logger.warning(
+                                "Matrix media upload network error, retrying in "
+                                f"{delay:.2f}s ({attempt}/{self._MEDIA_HTTP_MAX_RETRIES}): {e}"
+                            )
+                            await asyncio.sleep(delay)
+                            continue
+                        raise
+                    finally:
+                        if file_handle is not None:
+                            await asyncio.to_thread(file_handle.close)
+
+            if last_error is not None:
+                raise last_error
+            raise Exception("Matrix media upload error: no upload endpoint available")
 
         upload_task = asyncio.create_task(_perform_upload_from_path())
         self._media_upload_inflight[path_cache_key] = upload_task
