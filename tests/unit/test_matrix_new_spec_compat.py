@@ -1,6 +1,7 @@
 import base64
 import importlib
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -37,15 +38,46 @@ def _install_astrbot_stubs() -> None:
         def __init__(self, text: str):
             self.text = text
 
+    class At(BaseMessageComponent):
+        def __init__(self, qq: str, name: str | None = None, **kwargs):
+            super().__init__(qq=qq, name=name or qq, **kwargs)
+
+    class AtAll(BaseMessageComponent):
+        pass
+
     class Location(BaseMessageComponent):
         pass
+
+    class Reply(BaseMessageComponent):
+        pass
+
+    class Record(BaseMessageComponent):
+        def __init__(self, file=None, url=None, **kwargs):
+            super().__init__(file=file, url=url, **kwargs)
+
+        @classmethod
+        def fromFileSystem(cls, file_path: str):
+            return cls(file=file_path)
+
+        @classmethod
+        def fromURL(cls, url: str):
+            return cls(url=url)
+
+        async def convert_to_file_path(self):
+            if not getattr(self, "file", None):
+                raise RuntimeError("Record stub missing file path")
+            return self.file
 
     class ComponentType:
         Unknown = "unknown"
 
     message_components.BaseMessageComponent = BaseMessageComponent
+    message_components.At = At
+    message_components.AtAll = AtAll
     message_components.Location = Location
     message_components.Plain = Plain
+    message_components.Record = Record
+    message_components.Reply = Reply
     message_components.ComponentType = ComponentType
 
 
@@ -360,6 +392,7 @@ class MatrixLocationCompatTests(unittest.IsolatedAsyncioTestCase):
                 f"{PACKAGE_NAME}.constants",
                 MAX_PROCESSED_MESSAGES_1000=1000,
                 TIMESTAMP_BUFFER_MS_1000=1000,
+                GROUP_CHAT_MIN_MEMBERS_2=2,
             ),
             f"{PACKAGE_NAME}.plugin_config": _make_module(
                 f"{PACKAGE_NAME}.plugin_config",
@@ -432,6 +465,166 @@ class MatrixLocationCompatTests(unittest.IsolatedAsyncioTestCase):
                         chain.chain[0].text,
                         "[位置标记] Big Ben, London, UK geo:51.5008,0.1247",
                     )
+
+
+class MatrixVoiceCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_audio_sender_emits_voice_indicator_and_unstable_audio_duration(self):
+        audio_sender = load_module("sender.handlers.audio")
+        record_cls = sys.modules["astrbot.api.message_components"].Record
+        captured = {}
+
+        class FakeProcess:
+            returncode = 0
+
+            async def communicate(self):
+                return (b'{"format": {"duration": "1.234"}}', b"")
+
+        class FakeClient:
+            async def upload_file_path(self, **kwargs):
+                return {"content_uri": "mxc://example.org/voice"}
+
+        async def fake_send_content(
+            client,
+            content,
+            room_id,
+            reply_to,
+            thread_root,
+            use_thread,
+            is_encrypted_room,
+            e2ee_manager,
+            msg_type="m.room.message",
+        ):
+            captured["content"] = content
+            captured["msg_type"] = msg_type
+            return {"event_id": "$voice"}
+
+        with tempfile.NamedTemporaryFile(suffix=".ogg") as audio_file:
+            audio_file.write(b"voice-bytes")
+            audio_file.flush()
+
+            segment = record_cls(file=audio_file.name)
+
+            with (
+                mock.patch.object(
+                    audio_sender.asyncio,
+                    "create_subprocess_exec",
+                    new=mock.AsyncMock(return_value=FakeProcess()),
+                ),
+                mock.patch.object(audio_sender, "send_content", new=fake_send_content),
+            ):
+                await audio_sender.send_audio(
+                    client=FakeClient(),
+                    segment=segment,
+                    room_id="!room:example.org",
+                    reply_to=None,
+                    thread_root=None,
+                    use_thread=False,
+                    is_encrypted_room=False,
+                    e2ee_manager=None,
+                    upload_size_limit=1024 * 1024,
+                )
+
+        self.assertEqual(captured["msg_type"], "m.room.message")
+        self.assertEqual(captured["content"]["msgtype"], "m.audio")
+        self.assertEqual(captured["content"]["org.matrix.msc3245.voice"], {})
+        self.assertEqual(
+            captured["content"]["org.matrix.msc1767.audio"], {"duration": 1234}
+        )
+        self.assertEqual(captured["content"]["info"]["duration"], 1234)
+
+    async def test_audio_handler_accepts_voice_and_extensible_file_fallback(self):
+        audio_handler = load_module("receiver.handlers.audio")
+
+        size_calls = []
+
+        def _is_media_over_auto_download_limit(size_bytes):
+            size_calls.append(size_bytes)
+            return False
+
+        receiver = types.SimpleNamespace(
+            client=None,
+            mxc_converter=lambda mxc: "https://cdn.example.org/voice.ogg",
+            _extract_media_size=lambda content: None,
+            _is_media_over_auto_download_limit=_is_media_over_auto_download_limit,
+            _should_auto_download_media=lambda msgtype: True,
+        )
+        chain = types.SimpleNamespace(chain=[])
+        event = types.SimpleNamespace(
+            body="Voice message",
+            content={
+                "org.matrix.msc3245.voice": {},
+                "org.matrix.msc1767.audio": {"duration": 2817},
+                "org.matrix.msc1767.file": {
+                    "url": "mxc://example.org/voice",
+                    "name": "Voice message.ogg",
+                    "mimetype": "audio/ogg",
+                    "size": 3385,
+                },
+            },
+        )
+
+        await audio_handler.handle_audio(receiver, chain, event, "m.audio")
+
+        self.assertEqual(size_calls, [3385])
+        self.assertEqual(chain.chain[0].url, "https://cdn.example.org/voice.ogg")
+
+
+class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_send_content_adds_thread_reply_fallback_to_root(self):
+        common_sender = load_module("sender.handlers.common")
+
+        class FakeClient:
+            async def send_message(self, **kwargs):
+                return kwargs
+
+        response = await common_sender.send_content(
+            client=FakeClient(),
+            content={"msgtype": "m.text", "body": "hello"},
+            room_id="!room:example.org",
+            reply_to=None,
+            thread_root="$root:example.org",
+            use_thread=True,
+            is_encrypted_room=False,
+            e2ee_manager=None,
+        )
+
+        self.assertEqual(
+            response["content"]["m.relates_to"],
+            {
+                "rel_type": "m.thread",
+                "event_id": "$root:example.org",
+                "m.in_reply_to": {"event_id": "$root:example.org"},
+                "is_falling_back": True,
+            },
+        )
+
+    async def test_send_content_prefers_explicit_reply_for_thread_fallback(self):
+        common_sender = load_module("sender.handlers.common")
+
+        class FakeClient:
+            async def send_message(self, **kwargs):
+                return kwargs
+
+        response = await common_sender.send_content(
+            client=FakeClient(),
+            content={"msgtype": "m.text", "body": "hello"},
+            room_id="!room:example.org",
+            reply_to="$reply:example.org",
+            thread_root="$root:example.org",
+            use_thread=True,
+            is_encrypted_room=False,
+            e2ee_manager=None,
+        )
+
+        self.assertEqual(
+            response["content"]["m.relates_to"],
+            {
+                "rel_type": "m.thread",
+                "event_id": "$root:example.org",
+                "m.in_reply_to": {"event_id": "$reply:example.org"},
+                "is_falling_back": True,
+            },
+        )
 
 
 class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
