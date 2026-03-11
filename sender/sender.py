@@ -168,8 +168,8 @@ class MatrixSender:
         reply_to: str | None = None,
         thread_root: str | None = None,
         use_thread: bool = False,
-        event_type: str = "org.matrix.msc3381.poll.start",
-        poll_key: str = "org.matrix.msc3381.poll.start",
+        event_type: str = "m.poll.start",
+        poll_key: str = "m.poll",
         fallback_text: str | None = None,
         fallback_html: str | None = None,
     ) -> dict | None:
@@ -206,8 +206,8 @@ class MatrixSender:
         room_id: str,
         poll_start_event_id: str,
         answer_ids: list[str],
-        event_type: str = "org.matrix.msc3381.poll.response",
-        poll_key: str = "org.matrix.msc3381.poll.start",
+        event_type: str = "m.poll.response",
+        poll_key: str = "m.poll",
     ) -> dict | None:
         """Send a response to an existing poll.
 

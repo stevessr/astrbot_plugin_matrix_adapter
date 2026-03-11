@@ -1,8 +1,43 @@
-"""
-Handler for Matrix poll events (m.poll.response, m.poll.end)
-"""
+"""Handler for Matrix poll events."""
 
 from astrbot.api.message_components import Plain
+
+
+def _get_poll_content(content: dict) -> dict:
+    return content.get("m.poll", {}) or content.get("org.matrix.msc3381.poll.start", {})
+
+
+def _extract_poll_answers(answers: list) -> list[str]:
+    result: list[str] = []
+    for answer in answers or []:
+        if isinstance(answer, dict):
+            body = answer.get("body") or answer.get("org.matrix.msc1767.text")
+            if body:
+                result.append(str(body))
+        elif answer:
+            result.append(str(answer))
+    return result
+
+
+async def handle_poll_start(receiver, chain, event, _: str):
+    """Handle m.poll.start / org.matrix.msc3381.poll.start events."""
+    content = event.content or {}
+    poll = _get_poll_content(content)
+
+    question = (
+        poll.get("question", {}).get("body")
+        or content.get("m.text")
+        or content.get("body")
+        or content.get("org.matrix.msc1767.text")
+        or ""
+    )
+    answers = _extract_poll_answers(poll.get("answers", []))
+
+    text = f"[Poll] {question}" if question else "[Poll]"
+    if answers:
+        text += f" | Options: {', '.join(answers)}"
+
+    chain.chain.append(Plain(text))
 
 
 async def handle_poll_response(receiver, chain, event, _: str):

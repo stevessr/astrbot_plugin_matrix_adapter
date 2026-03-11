@@ -34,6 +34,7 @@ from .handlers import (
     handle_location,
     handle_poll_end,
     handle_poll_response,
+    handle_poll_start,
     handle_reaction,
     handle_redaction,
     handle_sticker,
@@ -862,7 +863,9 @@ class MatrixReceiver:
         event_type = getattr(event, "event_type", None)
 
         # Handle poll events by event type rather than msgtype
-        if event_type in ("m.poll.response", "org.matrix.msc3381.poll.response"):
+        if event_type in ("m.poll.start", "org.matrix.msc3381.poll.start"):
+            await handle_poll_start(self, chain, event, event_type)
+        elif event_type in ("m.poll.response", "org.matrix.msc3381.poll.response"):
             await handle_poll_response(self, chain, event, event_type)
         elif event_type in ("m.poll.end", "org.matrix.msc3381.poll.end"):
             await handle_poll_end(self, chain, event, event_type)

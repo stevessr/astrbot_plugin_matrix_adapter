@@ -352,9 +352,9 @@ async def send_with_client_impl(
                     max_selections=getattr(segment, "max_selections", 1) or 1,
                     kind=getattr(segment, "kind", None) or "m.disclosed",
                     event_type=getattr(segment, "event_type", None)
-                    or "org.matrix.msc3381.poll.start",
+                    or "m.poll.start",
                     poll_key=getattr(segment, "poll_key", None)
-                    or "org.matrix.msc3381.poll.start",
+                    or "m.poll",
                     fallback_text=getattr(segment, "fallback_text", None),
                     fallback_html=getattr(segment, "fallback_html", None),
                 )

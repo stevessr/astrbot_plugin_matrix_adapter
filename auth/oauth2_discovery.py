@@ -19,6 +19,40 @@ class MatrixOAuth2Discovery:
                 pass
         return 30.0
 
+    def _apply_discovered_oauth_metadata(self, metadata: dict) -> dict:
+        issuer = metadata.get("issuer")
+        authorization_endpoint = metadata.get("authorization_endpoint")
+        token_endpoint = metadata.get("token_endpoint")
+        registration_endpoint = metadata.get("registration_endpoint")
+        account_management_uri = metadata.get("account_management_uri") or metadata.get(
+            "account"
+        )
+
+        if not issuer or not authorization_endpoint or not token_endpoint:
+            raise Exception("Missing required OAuth2 metadata fields")
+
+        self.issuer = issuer
+        self.authorization_endpoint = authorization_endpoint
+        self.token_endpoint = token_endpoint
+        self.registration_endpoint = registration_endpoint
+        self.account_management_uri = account_management_uri
+
+        _log("info", "✅ OAuth2 discovery successful!")
+        _log("info", f"  Authorization endpoint: {self.authorization_endpoint}")
+        _log("info", f"  Token endpoint: {self.token_endpoint}")
+        if self.registration_endpoint:
+            _log("info", f"  Registration endpoint: {self.registration_endpoint}")
+        if self.account_management_uri:
+            _log("info", f"  Account management URI: {self.account_management_uri}")
+
+        return {
+            "issuer": self.issuer,
+            "authorization_endpoint": self.authorization_endpoint,
+            "token_endpoint": self.token_endpoint,
+            "registration_endpoint": self.registration_endpoint,
+            "account": self.account_management_uri,
+        }
+
     async def _discover_oauth_endpoints(self) -> dict:
         try:
             _log("info", f"Discovering OAuth2 configuration from {self.homeserver}")
@@ -27,6 +61,27 @@ class MatrixOAuth2Discovery:
                 total=self._get_oauth_http_timeout_seconds()
             )
             async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
+                auth_metadata_url = f"{self.homeserver}/_matrix/client/v1/auth_metadata"
+                _log("debug", f"Fetching {auth_metadata_url}")
+
+                try:
+                    async with session.get(auth_metadata_url) as response:
+                        if response.status == 200:
+                            auth_metadata = await response.json()
+                            _log("debug", f"Auth metadata: {auth_metadata}")
+                            return self._apply_discovered_oauth_metadata(auth_metadata)
+                        _log(
+                            "debug",
+                            "Direct auth metadata unavailable, falling back to "
+                            f"/.well-known discovery (HTTP {response.status})",
+                        )
+                except Exception as e:
+                    _log(
+                        "warning",
+                        "Direct auth metadata discovery failed, falling back to "
+                        f"/.well-known discovery: {e}",
+                    )
+
                 well_known_url = f"{self.homeserver}/.well-known/matrix/client"
                 _log("debug", f"Fetching {well_known_url}")
 
@@ -95,11 +150,6 @@ class MatrixOAuth2Discovery:
                     self.issuer = issuer
                     _log("info", f"Found OAuth2 issuer: {issuer}")
 
-                    account = auth_config.get("account")
-                    if account:
-                        self.account_management_uri = account
-                        _log("info", f"Account management URI: {account}")
-
                     if not issuer.endswith("/"):
                         issuer = issuer + "/"
 
@@ -124,39 +174,11 @@ class MatrixOAuth2Discovery:
 
                         oidc_config = await oidc_response.json()
                         _log("debug", f"OIDC configuration: {oidc_config}")
-
-                        self.authorization_endpoint = oidc_config.get(
-                            "authorization_endpoint"
+                        oidc_config.setdefault("issuer", self.issuer)
+                        oidc_config.setdefault(
+                            "account_management_uri", auth_config.get("account")
                         )
-                        self.token_endpoint = oidc_config.get("token_endpoint")
-                        self.registration_endpoint = oidc_config.get(
-                            "registration_endpoint"
-                        )
-
-                        if not self.authorization_endpoint or not self.token_endpoint:
-                            raise Exception(
-                                "Missing required endpoints in OIDC configuration"
-                            )
-
-                        _log("info", "✅ OAuth2 discovery successful!")
-                        _log(
-                            "info",
-                            f"  Authorization endpoint: {self.authorization_endpoint}",
-                        )
-                        _log("info", f"  Token endpoint: {self.token_endpoint}")
-                        if self.registration_endpoint:
-                            _log(
-                                "info",
-                                f"  Registration endpoint: {self.registration_endpoint}",
-                            )
-
-                        return {
-                            "issuer": self.issuer,
-                            "authorization_endpoint": self.authorization_endpoint,
-                            "token_endpoint": self.token_endpoint,
-                            "registration_endpoint": self.registration_endpoint,
-                            "account": self.account_management_uri,
-                        }
+                        return self._apply_discovered_oauth_metadata(oidc_config)
 
         except Exception as e:
             error_msg = str(e)
@@ -172,7 +194,8 @@ class MatrixOAuth2Discovery:
                 _log(
                     "error",
                     "Please ensure your Matrix homeserver supports OAuth2/OIDC authentication. "
-                    "Check the server's /.well-known/matrix/client endpoint.",
+                    "Check the server's /_matrix/client/v1/auth_metadata or "
+                    "/.well-known/matrix/client endpoint.",
                 )
             raise
 

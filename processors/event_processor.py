@@ -366,8 +366,10 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             "m.room.encrypted",
             "m.sticker",
             "m.reaction",
+            "m.poll.start",
             "m.poll.response",
             "m.poll.end",
+            "org.matrix.msc3381.poll.start",
             "org.matrix.msc3381.poll.response",
             "org.matrix.msc3381.poll.end",
         ):
