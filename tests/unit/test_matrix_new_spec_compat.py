@@ -46,6 +46,14 @@ def _install_astrbot_stubs() -> None:
 
 
 def _install_aiohttp_stub() -> None:
+    try:
+        import aiohttp as _aiohttp  # type: ignore
+
+        sys.modules["aiohttp"] = _aiohttp
+        return
+    except ImportError:
+        pass
+
     aiohttp_module = sys.modules.setdefault("aiohttp", types.ModuleType("aiohttp"))
 
     class ClientTimeout:
