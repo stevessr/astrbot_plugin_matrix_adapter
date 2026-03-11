@@ -37,10 +37,14 @@ def _install_astrbot_stubs() -> None:
         def __init__(self, text: str):
             self.text = text
 
+    class Location(BaseMessageComponent):
+        pass
+
     class ComponentType:
         Unknown = "unknown"
 
     message_components.BaseMessageComponent = BaseMessageComponent
+    message_components.Location = Location
     message_components.Plain = Plain
     message_components.ComponentType = ComponentType
 
@@ -72,9 +76,14 @@ def _install_package_stubs() -> None:
     package_paths = {
         PACKAGE_NAME: REPO_ROOT,
         f"{PACKAGE_NAME}.auth": REPO_ROOT / "auth",
+        f"{PACKAGE_NAME}.client": REPO_ROOT / "client",
         f"{PACKAGE_NAME}.e2ee": REPO_ROOT / "e2ee",
+        f"{PACKAGE_NAME}.processors": REPO_ROOT / "processors",
         f"{PACKAGE_NAME}.receiver": REPO_ROOT / "receiver",
         f"{PACKAGE_NAME}.receiver.handlers": REPO_ROOT / "receiver" / "handlers",
+        f"{PACKAGE_NAME}.sender": REPO_ROOT / "sender",
+        f"{PACKAGE_NAME}.sender.handlers": REPO_ROOT / "sender" / "handlers",
+        f"{PACKAGE_NAME}.utils": REPO_ROOT / "utils",
     }
     for name, path in package_paths.items():
         module = sys.modules.setdefault(name, types.ModuleType(name))
@@ -112,6 +121,317 @@ class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
 
         await poll_handler.handle_poll_start(None, chain, event, "m.poll.start")
         self.assertEqual(chain.chain[0].text, "[Poll] 喝什么？ | Options: 茶, 咖啡")
+
+    async def test_stable_handler_accepts_extensible_poll_fields(self):
+        poll_handler = load_module("receiver.handlers.poll")
+
+        chain = types.SimpleNamespace(chain=[])
+        event = types.SimpleNamespace(
+            content={
+                "m.poll": {
+                    "question": {"m.text": [{"body": "喝什么？"}]},
+                    "answers": [
+                        {"m.id": "answer_1", "m.text": [{"body": "茶"}]},
+                        {"m.id": "answer_2", "m.text": [{"body": "咖啡"}]},
+                    ],
+                },
+                "m.text": [{"body": "喝什么？\n1. 茶\n2. 咖啡"}],
+            }
+        )
+
+        await poll_handler.handle_poll_start(None, chain, event, "m.poll.start")
+        self.assertEqual(chain.chain[0].text, "[Poll] 喝什么？ | Options: 茶, 咖啡")
+
+    async def test_stable_response_handler_reads_m_selections(self):
+        poll_handler = load_module("receiver.handlers.poll")
+
+        chain = types.SimpleNamespace(chain=[])
+        event = types.SimpleNamespace(
+            content={
+                "m.selections": ["answer_1", "answer_3"],
+                "m.relates_to": {
+                    "rel_type": "m.reference",
+                    "event_id": "$poll1234567890:example.org",
+                },
+            }
+        )
+
+        await poll_handler.handle_poll_response(None, chain, event, "m.poll.response")
+        self.assertIn("Selected: answer_1, answer_3", chain.chain[0].text)
+        self.assertIn("responding to", chain.chain[0].text)
+
+    async def test_stable_sender_emits_extensible_poll_fields(self):
+        poll_sender = load_module("sender.handlers.poll")
+        captured = {}
+
+        async def fake_send_content(
+            client,
+            content,
+            room_id,
+            reply_to,
+            thread_root,
+            use_thread,
+            is_encrypted_room,
+            e2ee_manager,
+            msg_type="m.room.message",
+        ):
+            captured["content"] = content
+            captured["room_id"] = room_id
+            captured["msg_type"] = msg_type
+            return {"event_id": "$event"}
+
+        with mock.patch.object(poll_sender, "send_content", new=fake_send_content):
+            await poll_sender.send_poll(
+                client=object(),
+                room_id="!room:example.org",
+                question="喝什么？",
+                answers=["茶", "咖啡"],
+                reply_to=None,
+                thread_root=None,
+                use_thread=False,
+                is_encrypted_room=False,
+                e2ee_manager=None,
+            )
+
+        content = captured["content"]
+        self.assertEqual(captured["msg_type"], "m.poll.start")
+        self.assertEqual(content["m.poll"]["question"]["m.text"], [{"body": "喝什么？"}])
+        self.assertEqual(content["m.poll"]["answers"][0]["m.id"], "answer_1")
+        self.assertEqual(content["m.poll"]["answers"][0]["m.text"], [{"body": "茶"}])
+        self.assertEqual(content["m.text"][0]["body"], "喝什么？\n1. 茶\n2. 咖啡")
+        self.assertEqual(content["body"], "喝什么？\n1. 茶\n2. 咖啡")
+
+    async def test_stable_sender_response_uses_m_selections(self):
+        poll_sender = load_module("sender.handlers.poll")
+        captured = {}
+
+        async def fake_send_content(
+            client,
+            content,
+            room_id,
+            reply_to,
+            thread_root,
+            use_thread,
+            is_encrypted_room,
+            e2ee_manager,
+            msg_type="m.room.message",
+        ):
+            captured["content"] = content
+            captured["room_id"] = room_id
+            captured["msg_type"] = msg_type
+            return {"event_id": "$response"}
+
+        with mock.patch.object(poll_sender, "send_content", new=fake_send_content):
+            await poll_sender.send_poll_response(
+                client=object(),
+                room_id="!room:example.org",
+                poll_start_event_id="$poll:example.org",
+                answer_ids=["answer_1", "answer_2"],
+            )
+
+        self.assertEqual(captured["msg_type"], "m.poll.response")
+        self.assertEqual(captured["content"]["m.selections"], ["answer_1", "answer_2"])
+        self.assertEqual(
+            captured["content"]["m.relates_to"],
+            {"rel_type": "m.reference", "event_id": "$poll:example.org"},
+        )
+        self.assertNotIn("m.poll", captured["content"])
+
+
+class MatrixLocationCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_location_sender_adds_text_fallback(self):
+        location_sender = load_module("sender.handlers.location")
+        location_cls = sys.modules["astrbot.api.message_components"].Location
+        captured = {}
+
+        async def fake_send_content(
+            client,
+            content,
+            room_id,
+            reply_to,
+            thread_root,
+            use_thread,
+            is_encrypted_room,
+            e2ee_manager,
+            msg_type="m.room.message",
+        ):
+            captured["content"] = content
+            captured["room_id"] = room_id
+            captured["msg_type"] = msg_type
+            return {"event_id": "$location"}
+
+        segment = location_cls(
+            lat="51.5008",
+            lon="0.1247",
+            title="Big Ben, London, UK",
+            content="",
+        )
+
+        with mock.patch.object(location_sender, "send_content", new=fake_send_content):
+            await location_sender.send_location(
+                client=object(),
+                segment=segment,
+                room_id="!room:example.org",
+                reply_to=None,
+                thread_root=None,
+                use_thread=False,
+                is_encrypted_room=False,
+                e2ee_manager=None,
+            )
+
+        self.assertEqual(captured["msg_type"], "m.room.message")
+        self.assertEqual(captured["content"]["msgtype"], "m.location")
+        self.assertEqual(captured["content"]["body"], "Big Ben, London, UK")
+        self.assertEqual(captured["content"]["geo_uri"], "geo:51.5008,0.1247")
+        self.assertEqual(
+            captured["content"]["m.text"], [{"body": "Big Ben, London, UK"}]
+        )
+        self.assertEqual(
+            captured["content"]["m.location"],
+            {"uri": "geo:51.5008,0.1247", "description": "Big Ben, London, UK"},
+        )
+        self.assertEqual(captured["content"]["m.asset"], {"type": "m.self"})
+        self.assertEqual(
+            captured["content"]["org.matrix.msc3488.location"],
+            {"uri": "geo:51.5008,0.1247", "description": "Big Ben, London, UK"},
+        )
+        self.assertEqual(
+            captured["content"]["org.matrix.msc3488.asset"], {"type": "m.self"}
+        )
+
+    async def test_location_handler_accepts_extensible_fallback_fields(self):
+        location_handler = load_module("receiver.handlers.location")
+
+        chain = types.SimpleNamespace(chain=[])
+        event = types.SimpleNamespace(
+            body="",
+            content={
+                "m.location": {"uri": "geo:51.5008,0.1247"},
+                "m.text": [{"body": "Big Ben, London, UK"}],
+            },
+        )
+
+        await location_handler.handle_location(None, chain, event, "m.location")
+        self.assertEqual(chain.chain[0].text, "[位置] Big Ben, London, UK geo:51.5008,0.1247")
+
+    async def test_location_handler_accepts_unstable_asset_and_pin_type(self):
+        location_handler = load_module("receiver.handlers.location")
+
+        chain = types.SimpleNamespace(chain=[])
+        event = types.SimpleNamespace(
+            body="",
+            content={
+                "org.matrix.msc3488.location": {
+                    "uri": "geo:51.5008,0.1247",
+                    "description": "Big Ben, London, UK",
+                },
+                "org.matrix.msc3488.asset": {"type": "m.pin"},
+            },
+        )
+
+        await location_handler.handle_location(
+            None, chain, event, "org.matrix.msc3488.location"
+        )
+        self.assertEqual(
+            chain.chain[0].text,
+            "[位置标记] Big Ben, London, UK geo:51.5008,0.1247",
+        )
+
+    async def test_event_processor_accepts_top_level_location_events(self):
+        location_handler = load_module("receiver.handlers.location")
+
+        module_name = f"{PACKAGE_NAME}.processors.event_processor"
+        sys.modules.pop(module_name, None)
+
+        def _make_module(name: str, **attrs):
+            module = types.ModuleType(name)
+            for key, value in attrs.items():
+                setattr(module, key, value)
+            return module
+
+        class _MatrixEventProcessorMembers:
+            pass
+
+        class _MatrixEventProcessorStreams:
+            pass
+
+        stubs = {
+            f"{PACKAGE_NAME}.constants": _make_module(
+                f"{PACKAGE_NAME}.constants",
+                MAX_PROCESSED_MESSAGES_1000=1000,
+                TIMESTAMP_BUFFER_MS_1000=1000,
+            ),
+            f"{PACKAGE_NAME}.plugin_config": _make_module(
+                f"{PACKAGE_NAME}.plugin_config",
+                get_plugin_config=lambda: types.SimpleNamespace(
+                    storage_backend_config=None
+                ),
+            ),
+            f"{PACKAGE_NAME}.processors.event_processor_members": _make_module(
+                f"{PACKAGE_NAME}.processors.event_processor_members",
+                MatrixEventProcessorMembers=_MatrixEventProcessorMembers,
+            ),
+            f"{PACKAGE_NAME}.processors.event_processor_streams": _make_module(
+                f"{PACKAGE_NAME}.processors.event_processor_streams",
+                MatrixEventProcessorStreams=_MatrixEventProcessorStreams,
+            ),
+            f"{PACKAGE_NAME}.utils": _make_module(
+                f"{PACKAGE_NAME}.utils",
+                parse_bool=lambda value, default=False: default,
+            ),
+        }
+
+        with mock.patch.dict(sys.modules, stubs):
+            event_processor = importlib.import_module(module_name)
+
+            for event_type, asset_key in (
+                ("m.location", "m.asset"),
+                ("org.matrix.msc3488.location", "org.matrix.msc3488.asset"),
+            ):
+                with self.subTest(event_type=event_type):
+                    captured = {}
+
+                    async def fake_process_message_event(room, event):
+                        captured["room_id"] = room.room_id
+                        captured["event"] = event
+
+                    processor = event_processor.MatrixEventProcessor.__new__(
+                        event_processor.MatrixEventProcessor
+                    )
+                    processor._process_message_event = fake_process_message_event
+
+                    room = types.SimpleNamespace(room_id="!room:example.org")
+                    await event_processor.MatrixEventProcessor._handle_event(
+                        processor,
+                        room,
+                        {
+                            "type": event_type,
+                            "event_id": "$location:example.org",
+                            "sender": "@alice:example.org",
+                            "origin_server_ts": 123,
+                            "content": {
+                                "uri": "geo:51.5008,0.1247",
+                                "description": "Big Ben, London, UK",
+                                asset_key: {"type": "m.pin"},
+                            },
+                        },
+                    )
+
+                    self.assertEqual(captured["room_id"], "!room:example.org")
+                    self.assertEqual(captured["event"].msgtype, "m.location")
+                    self.assertEqual(captured["event"].body, "Big Ben, London, UK")
+
+                    chain = types.SimpleNamespace(chain=[])
+                    await location_handler.handle_location(
+                        None,
+                        chain,
+                        captured["event"],
+                        captured["event"].event_type,
+                    )
+                    self.assertEqual(
+                        chain.chain[0].text,
+                        "[位置标记] Big Ben, London, UK geo:51.5008,0.1247",
+                    )
 
 
 class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):

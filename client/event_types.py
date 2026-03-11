@@ -155,6 +155,49 @@ class MatrixRoom:
         return effective_count > GROUP_CHAT_MIN_MEMBERS_2
 
 
+def _extract_text_repr(value) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return str(value.get("body") or value.get("text") or "")
+    if isinstance(value, list):
+        for item in value:
+            text = _extract_text_repr(item)
+            if text:
+                return text
+    return ""
+
+
+def _build_location_body(content: dict[str, Any]) -> str:
+    for location_content in (
+        content.get("m.location"),
+        content.get("org.matrix.msc3488.location"),
+        content,
+    ):
+        if isinstance(location_content, dict):
+            description = location_content.get("description")
+            if description:
+                return str(description)
+
+    text_repr = _extract_text_repr(content.get("m.text")) or _extract_text_repr(
+        content.get("org.matrix.msc1767.text")
+    )
+    if text_repr:
+        return text_repr
+
+    for location_content in (
+        content.get("m.location"),
+        content.get("org.matrix.msc3488.location"),
+        content,
+    ):
+        if isinstance(location_content, dict):
+            uri = location_content.get("uri") or location_content.get("geo_uri")
+            if uri:
+                return str(uri)
+
+    return ""
+
+
 def parse_event(event_data: dict[str, Any], room_id: str) -> MatrixEvent:
     """
     Parse event data into appropriate event type
@@ -208,6 +251,15 @@ def parse_event(event_data: dict[str, Any], room_id: str) -> MatrixEvent:
             event_data = dict(event_data)
             event_data["content"] = reaction_content
             return RoomMessageEvent.from_dict(event_data, room_id)
+        case "m.location" | "org.matrix.msc3488.location":
+            location_content = dict(content)
+            location_content.setdefault("msgtype", "m.location")
+            location_content.setdefault("body", _build_location_body(content))
+            event_data = dict(event_data)
+            event_data["content"] = location_content
+            event = RoomMessageEvent.from_dict(event_data, room_id)
+            event.msgtype = "m.location"
+            return event
         case "m.room.member" if content.get("membership") == "invite":
             return InviteEvent.from_dict(event_data, room_id)
         case "m.room.redaction":

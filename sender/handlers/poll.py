@@ -27,6 +27,13 @@ def _build_poll_fallback_msc1767(question: str, answers: list[str]) -> str:
     return "\n".join(text_lines)
 
 
+def _build_extensible_text(body: str, mimetype: str | None = None) -> list[dict[str, str]]:
+    text = {"body": body}
+    if mimetype:
+        text["mimetype"] = mimetype
+    return [text]
+
+
 async def send_poll(
     client,
     room_id: str,
@@ -89,7 +96,12 @@ async def send_poll(
         }
     else:
         answer_items = [
-            {"id": f"answer_{idx + 1}", "body": ans}
+            {
+                "id": f"answer_{idx + 1}",
+                "m.id": f"answer_{idx + 1}",
+                "body": ans,
+                "m.text": _build_extensible_text(ans),
+            }
             for idx, ans in enumerate(clean_answers)
         ]
 
@@ -98,14 +110,21 @@ async def send_poll(
             fallback_text = fallback_text or auto_text
             fallback_html = fallback_html or auto_html
 
+        fallback_m_text = _build_extensible_text(fallback_text)
+        if fallback_html:
+            fallback_m_text.append({"body": fallback_html, "mimetype": "text/html"})
+
         content = {
             poll_key: {
                 "kind": kind,
                 "max_selections": max_selections,
-                "question": {"body": clean_question},
+                "question": {
+                    "body": clean_question,
+                    "m.text": _build_extensible_text(clean_question),
+                },
                 "answers": answer_items,
             },
-            "m.text": fallback_text,
+            "m.text": fallback_m_text,
             "m.html": fallback_html,
             "body": fallback_text,
         }
@@ -144,8 +163,6 @@ async def send_poll_response(
     Returns:
         The response from the server, or None on failure
     """
-    from ..common import send_content
-
     if not poll_start_event_id:
         raise ValueError("poll_start_event_id is required for poll response")
 
@@ -165,14 +182,9 @@ async def send_poll_response(
             }
         }
     else:
-        content = {
-            poll_key: {
-                "answers": clean_answer_ids,
-            }
-        }
+        content = {"m.selections": clean_answer_ids}
 
-    # Send as a to-device message (relates to the poll start event)
-    # We need to send this as a regular event in the room
+    # Poll responses reference the corresponding poll start event.
     content["m.relates_to"] = {
         "rel_type": "m.reference",
         "event_id": poll_start_event_id,

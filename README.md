@@ -234,7 +234,8 @@ await adapter.sender.send_poll(
 )
 ```
 
-默认会发送稳定版投票事件：`m.poll.start` + `m.poll`。
+默认会发送稳定版投票事件：`m.poll.start` + `m.poll`，并在内容体中带上
+稳定版 `m.text` / `m.id` 字段。
 
 也可以使用适配器自带的 `Poll` 组件构造消息链：[^patch1]
 
@@ -263,6 +264,8 @@ await adapter.sender.send_poll(
 ### 响应投票
 
 Matrix 适配器暴露了 `MatrixSender.send_poll_response` 接口用于对投票进行响应：
+
+稳定版投票响应会使用顶层 `m.selections`，并通过 `m.reference` 指向原始投票事件。
 
 ```python
 # 对某个投票进行投票（选择第一个选项）
