@@ -30,6 +30,8 @@ from .sticker import StickerAvailabilityStore, StickerPackSyncer, StickerStorage
 from .sync.sync_manager import MatrixSyncManager
 from .utils.utils import MatrixUtils
 
+from .constants import DEFAULT_CONFIG,LOGO_PATH
+
 
 def _cleanup_platform_registration(adapter_name: str = "matrix") -> None:
     """清理之前的平台适配器注册（用于热重载）
@@ -78,7 +80,7 @@ def _inject_astrbot_field_metadata() -> dict | None:
         return matrix_items
 
     except Exception as e:
-        logger.error(f"注入 AstrBot 字段元数据失败: {e}")
+        logger.error(f"注入 AstrBot 字段元数据失败：{e}")
         return None
 
 
@@ -88,17 +90,13 @@ def _load_i18n_resources() -> dict[str, dict]:
     Returns:
         包含各语言 i18n 数据的字典
     """
+    LANG = ["zh-CN", "en-US","ru-RU"]
     i18n_data = {}
     try:
-        # 加载中文
-        zh_cn_path = Path(__file__).parent / "i18n" / "zh-CN.json"
-        if zh_cn_path.exists():
-            i18n_data["zh-CN"] = json.loads(zh_cn_path.read_text(encoding="utf-8"))
-
-        # 加载英文
-        en_us_path = Path(__file__).parent / "i18n" / "en-US.json"
-        if en_us_path.exists():
-            i18n_data["en-US"] = json.loads(en_us_path.read_text(encoding="utf-8"))
+        for lang in LANG:
+            path = Path(__file__).parent / "i18n" / f"{lang}.json"
+            if path.exists():
+                i18n_data[lang] = json.loads(path.read_text(encoding="utf-8"))
     except Exception as e:
         logger.debug(f"加载 i18n 资源失败：{e}")
 
@@ -108,40 +106,11 @@ def _load_i18n_resources() -> dict[str, dict]:
 @register_platform_adapter(
     "matrix",
     "Matrix 协议适配器",
-    default_config_tmpl={
-        # 核心配置
-        "id": "default",
-        "type": "matrix",
-        "enable": False,
-        "hint": "Matrix 协议适配器，支持端到端加密、OAuth2 认证、消息线程等功能。",
-        # 认证配置
-        "matrix_homeserver": "https://matrix.org",
-        "matrix_user_id": "",
-        "matrix_password": "",
-        "matrix_access_token": "",
-        "matrix_auth_method": "password",
-        "matrix_device_name": "AstrBot",
-        # 功能配置
-        "matrix_auto_join_rooms": True,
-        "matrix_sync_timeout": 30000,
-        "matrix_enable_threading": False,
-        "matrix_use_notice": False,
-        # E2EE 配置
-        "matrix_enable_e2ee": False,
-        "matrix_e2ee_auto_verify": "auto_accept",
-        "matrix_e2ee_trust_on_first_use": False,
-        "matrix_e2ee_key_backup": False,
-        "matrix_e2ee_recovery_key": "",
-        # 密钥交换积极性配置
-        "matrix_e2ee_proactive_key_exchange": False,
-        "matrix_e2ee_key_maintenance_interval": 60,
-        "matrix_e2ee_otk_threshold_ratio": 33,
-        "matrix_e2ee_key_share_check_interval": 0,
-    },
+    default_config_tmpl=DEFAULT_CONFIG,
     adapter_display_name="Matrix",
     # NOTE: Matrix 协议不支持流式消息，消息编辑方式不可靠且会导致 agent 工具调用后无响应
     support_streaming_message=False,
-    logo_path="matrix.svg",
+    logo_path=LOGO_PATH,
     i18n_resources=_load_i18n_resources(),
     config_metadata=_inject_astrbot_field_metadata(),
 )
