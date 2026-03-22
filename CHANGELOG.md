@@ -1,6 +1,6 @@
 # Changelog
 
-## unreleased
+## 0.3.5
 
 - compat: OAuth2 discovery 现在优先使用 `/_matrix/client/v1/auth_metadata`，默认请求 stable Matrix API / device scopes。
 - compat: 对话投票默认切换到稳定版 `m.poll.start` / `m.poll`，同时保留 MSC3381 兼容参数。

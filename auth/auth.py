@@ -24,6 +24,7 @@ class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
         self.device_name = config.device_name
         self.token_store_path = token_store_path
         self._config_needs_save = False
+        self.login_info = {}
 
         # OAuth2 specific attributes
         # All OAuth2 configuration is auto-discovered from server

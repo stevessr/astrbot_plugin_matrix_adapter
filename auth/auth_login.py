@@ -261,6 +261,7 @@ class MatrixAuthLogin:
             raise RuntimeError(f"OAuth2 login failed: {e}")
 
     async def _login_via_sso(self, show_qr: bool = False):
+        self.login_info.clear()
         self._log("info", "Logging in with SSO...")
         from .sso import MatrixSSO
 
@@ -271,11 +272,23 @@ class MatrixAuthLogin:
             callback_host=self.config.oauth2_callback_host,
         )
 
-        response = await sso.login(
-            device_name=self.device_name,
-            device_id=self.device_id,
-            show_qr=show_qr,
-        )
+        def url_callback(sso_url: str):
+            self.login_info["qrcode"] = sso_url
+            self.login_info["qrcode_img_content"] = sso_url
+            self.login_info["status"] = "wait"
+
+        try:
+            response = await sso.login(
+                device_name=self.device_name,
+                device_id=self.device_id,
+                show_qr=show_qr,
+                url_callback=url_callback,
+            )
+            self.login_info["status"] = "confirmed"
+        except Exception as e:
+            self.login_info["status"] = "error"
+            self.login_info["error"] = str(e)
+            raise e
 
         self.user_id = response.get("user_id")
         if self.user_id:

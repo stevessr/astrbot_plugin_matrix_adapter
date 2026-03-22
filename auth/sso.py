@@ -183,6 +183,7 @@ class MatrixSSO:
         device_name: str,
         device_id: str | None = None,
         show_qr: bool = False,
+        url_callback: callable = None,
     ) -> dict:
         try:
             flows_response = await self.client.get_login_flows()
@@ -217,6 +218,9 @@ class MatrixSSO:
                 f"{self.homeserver}/_matrix/client/v3/login/sso/redirect?"
                 f"{urlencode(params)}"
             )
+
+            if url_callback:
+                url_callback(sso_url)
 
             _log("info", "=" * 60)
             _log("info", "SSO Authentication Required")

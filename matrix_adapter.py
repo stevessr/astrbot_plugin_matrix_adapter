@@ -291,6 +291,20 @@ class MatrixPlatformAdapter(
             support_streaming_message=False,
         )
 
+    def get_stats(self) -> dict:
+        stat = super().get_stats()
+        login_info = getattr(self.auth, "login_info", {})
+        stat["matrix"] = {
+            "configured": bool(self._matrix_config.access_token),
+            "user_id": self._matrix_config.user_id,
+            "homeserver": self._matrix_config.homeserver,
+            "qr_status": login_info.get("status"),
+            "qrcode": login_info.get("qrcode"),
+            "qrcode_img_content": login_info.get("qrcode_img_content"),
+            "qr_error": login_info.get("error"),
+        }
+        return stat
+
     async def _persist_auth_config_if_needed(self) -> None:
         access_token = str(getattr(self.auth, "access_token", "") or "")
         refresh_token = str(getattr(self.auth, "refresh_token", "") or "")
