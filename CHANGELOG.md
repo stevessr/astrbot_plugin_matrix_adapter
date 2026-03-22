@@ -6,6 +6,8 @@
 - compat: 对话投票默认切换到稳定版 `m.poll.start` / `m.poll`，同时保留 MSC3381 兼容参数。
 - compat: E2EE 密钥恢复补强 `m.dehydrated_device` / `org.matrix.msc2697.dehydrated_device` 双栈 fallback。
 - refactor: centralize device ID masking, optimize message handler lookup, and extract room state persistence logic.
+- 现在提供 SSO 二维码生成支持
+- 补全俄语反应
 
 ## 0.3.4
 - 修复之前重构破坏的 E2EE 内部属性

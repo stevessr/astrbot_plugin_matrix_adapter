@@ -247,7 +247,7 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
             _log("info", "=" * 60)
             _log("info", "OAuth2 Authentication Required")
             _log("info", "=" * 60)
-            _log("info", f"Please open this URL in your browser:\n\n{auth_url}\n")
+            _log("info", f"Please open this URL in your browser:\n\n {auth_url} \n")
             _log("info", "Waiting for authentication...")
             _log("info", "=" * 60)
 

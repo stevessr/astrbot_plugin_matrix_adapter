@@ -37,7 +37,7 @@ class MatrixConfig:
     def __init__(self, config: dict):
         """Initialize Matrix configuration.
 
-        Supported authentication methods: 'password', 'token', and 'oauth2'.
+        Supported authentication methods: 'password', 'token', 'oauth2', and 'qr'.
         """
         # 创建配置副本以避免修改原始配置对象
         self.config = (config or {}).copy()
@@ -51,7 +51,7 @@ class MatrixConfig:
         self.access_token = (
             str(self.config.get("matrix_access_token", "") or "").strip() or None
         )
-        # Supported methods: password, token, oauth2
+        # Supported methods: password, token, oauth2, qr
         self.auth_method = (
             str(self.config.get("matrix_auth_method", "password") or "password")
             .strip()
@@ -256,7 +256,7 @@ class MatrixConfig:
                 "matrix_homeserver is required in configuration. Example: https://matrix.org"
             )
 
-        valid_auth_methods = ["password", "token", "oauth2"]
+        valid_auth_methods = ["password", "token", "oauth2", "qr"]
         if self.auth_method not in valid_auth_methods:
             raise ValueError(
                 f"Invalid matrix_auth_method: {self.auth_method}. Must be one of: {', '.join(valid_auth_methods)}"

@@ -59,6 +59,8 @@ class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
             if await self._restore_oauth2_session():
                 return
             await self._login_via_oauth2()
+        elif self.auth_method == "qr":
+            await self._login_via_qr()
         elif self.auth_method == "token":
             await self._login_via_token()
         elif self.auth_method == "password":
@@ -96,5 +98,5 @@ class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
             else:
                 raise ValueError(
                     "Either matrix_access_token or matrix_password is required. "
-                    "For OAuth2, set matrix_auth_method='oauth2'"
+                    "For OAuth2/QR, set matrix_auth_method='oauth2' or 'qr'"
                 )

@@ -4,12 +4,32 @@ Implements m.login.sso flow with local callback server
 """
 
 import asyncio
+import io
 import secrets
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from aiohttp import web
 
 from .oauth2_core import _log
+
+
+def _build_terminal_qr(data: str) -> str | None:
+    """Build an ASCII QR code for terminal display.
+
+    Returns None when qrcode dependency is unavailable.
+    """
+    try:
+        import qrcode
+    except Exception:
+        return None
+
+    qr = qrcode.QRCode(border=1)
+    qr.add_data(data)
+    qr.make(fit=True)
+
+    output = io.StringIO()
+    qr.print_ascii(out=output, invert=True)
+    return output.getvalue()
 
 
 class SSOCallbackServer:
@@ -158,7 +178,12 @@ class MatrixSSO:
         self.callback_host = callback_host
         self.callback_server: SSOCallbackServer | None = None
 
-    async def login(self, device_name: str, device_id: str | None = None) -> dict:
+    async def login(
+        self,
+        device_name: str,
+        device_id: str | None = None,
+        show_qr: bool = False,
+    ) -> dict:
         try:
             flows_response = await self.client.get_login_flows()
             flows = flows_response.get("flows", [])
@@ -197,6 +222,16 @@ class MatrixSSO:
             _log("info", "SSO Authentication Required")
             _log("info", "=" * 60)
             _log("info", f"Please open this URL in your browser:\\n\\n{sso_url}\\n")
+            if show_qr:
+                terminal_qr = _build_terminal_qr(sso_url)
+                if terminal_qr:
+                    _log("info", "Scan this QR code to continue authentication:")
+                    _log("info", f"\n{terminal_qr}")
+                else:
+                    _log(
+                        "warning",
+                        "QR rendering dependency missing. Install 'qrcode' to display terminal QR codes.",
+                    )
             _log("info", "Waiting for SSO callback...")
             _log("info", "=" * 60)
 

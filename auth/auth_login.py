@@ -6,6 +6,15 @@ Matrix authentication flows.
 class MatrixAuthLogin:
     """Mixin providing login/refresh flows."""
 
+    async def _login_via_qr(self):
+        self._log("info", "Logging in with QR code...")
+        self._log(
+            "info",
+            "QR login uses m.login.sso + m.login.token flow. "
+            "Scan the terminal QR code with a browser or mobile device.",
+        )
+        await self._login_via_sso(show_qr=True)
+
     async def _restore_oauth2_session(self) -> bool:
         if not self.access_token:
             return False
@@ -251,7 +260,7 @@ class MatrixAuthLogin:
 
             raise RuntimeError(f"OAuth2 login failed: {e}")
 
-    async def _login_via_sso(self):
+    async def _login_via_sso(self, show_qr: bool = False):
         self._log("info", "Logging in with SSO...")
         from .sso import MatrixSSO
 
@@ -265,6 +274,7 @@ class MatrixAuthLogin:
         response = await sso.login(
             device_name=self.device_name,
             device_id=self.device_id,
+            show_qr=show_qr,
         )
 
         self.user_id = response.get("user_id")
