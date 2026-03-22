@@ -17,7 +17,7 @@
   },
   "matrix_auth_method": {
     "description": "认证方式",
-    "hint": "认证方式：password（密码）、token（Token）、oauth2（OAuth2）"
+    "hint": "认证方式：password（密码）、token（Token）、oauth2（OAuth2）、qr（扫码登录）"
   },
   "matrix_device_name": {
     "description": "设备名称",

@@ -17,7 +17,7 @@
   },
   "matrix_auth_method": {
     "description": "Метод аутентификации",
-    "hint": "Метод аутентификации: password, token или oauth2"
+    "hint": "Метод аутентификации: password, token, oauth2 или qr (вход по QR-коду)"
   },
   "matrix_device_name": {
     "description": "Имя устройства",

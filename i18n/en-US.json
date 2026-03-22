@@ -17,7 +17,7 @@
   },
   "matrix_auth_method": {
     "description": "Authentication Method",
-    "hint": "Authentication method: password, token, or oauth2"
+    "hint": "Authentication method: password, token, oauth2, or qr (scan login)"
   },
   "matrix_device_name": {
     "description": "Device Name",
