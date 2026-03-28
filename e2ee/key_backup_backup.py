@@ -86,6 +86,14 @@ class KeyBackupBackupMixin:
 
     def _verify_recovery_key(self, key_bytes: bytes, log_mismatch: bool = True) -> bool:
         """验证恢复密钥是否与当前备份匹配"""
+        key_len = len(key_bytes) if key_bytes else 0
+        if key_len != CRYPTO_KEY_SIZE_32:
+            if log_mismatch:
+                logger.warning(f"恢复密钥长度无效：期望 32 字节，实际 {key_len} 字节")
+            else:
+                logger.debug("恢复密钥长度无效（静默模式）")
+            return False
+
         if not self._backup_auth_data:
             return True  # 无法验证，假设正确
 
@@ -139,7 +147,7 @@ class KeyBackupBackupMixin:
             import traceback
 
             logger.warning(traceback.format_exc())
-            return True
+            return False
 
     def should_restore_for_session(
         self, session_id: str | None = None, force: bool = False

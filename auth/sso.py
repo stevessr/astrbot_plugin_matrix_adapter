@@ -225,7 +225,7 @@ class MatrixSSO:
             _log("info", "=" * 60)
             _log("info", "SSO Authentication Required")
             _log("info", "=" * 60)
-            _log("info", f"Please open this URL in your browser:\\n\\n{sso_url}\\n")
+            _log("info", f"Please open this URL in your browser:\n\n{sso_url}\n")
             if show_qr:
                 terminal_qr = _build_terminal_qr(sso_url)
                 if terminal_qr:

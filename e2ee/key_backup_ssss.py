@@ -11,7 +11,12 @@ from ..constants import (
     SSSS_DEFAULT_KEY,
     SSSS_KEY_PREFIX,
 )
-from .key_backup_crypto import CRYPTO_AVAILABLE, _aes_ctr_decrypt, _compute_hkdf
+from .key_backup_crypto import (
+    CRYPTO_AVAILABLE,
+    _aes_ctr_decrypt,
+    _compute_hkdf,
+    _decode_recovery_key,
+)
 
 
 class KeyBackupSSSSMixin:
@@ -97,7 +102,7 @@ class KeyBackupSSSSMixin:
                 if backup_key:
                     if isinstance(backup_key, str):
                         try:
-                            extracted_key = base64.b64decode(backup_key)
+                            extracted_key = _decode_recovery_key(backup_key)
                             logger.info(
                                 "✅ Extracted backup key from dehydrated device "
                                 f"({len(extracted_key)} bytes)"
@@ -105,14 +110,15 @@ class KeyBackupSSSSMixin:
                             return extracted_key
                         except Exception:
                             logger.warning(
-                                "Failed to base64 decode backup key from device"
+                                "Failed to decode backup key from device"
                             )
                     elif isinstance(backup_key, bytes):
-                        logger.info(
-                            "✅ Extracted backup key from dehydrated device "
-                            f"({len(backup_key)} bytes)"
-                        )
-                        return backup_key
+                        if len(backup_key) == CRYPTO_KEY_SIZE_32:
+                            logger.info(
+                                "✅ Extracted backup key from dehydrated device "
+                                f"({len(backup_key)} bytes)"
+                            )
+                            return backup_key
 
             except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
                 logger.info(
@@ -232,11 +238,13 @@ class KeyBackupSSSSMixin:
 
             if decrypted_secret:
                 logger.info("SSSS MAC 验证成功，解密备份密钥成功")
-                # Check format (usually base64 string in Matrix)
                 try:
-                    secret_str = decrypted_secret.decode("utf-8")
-                    if len(secret_str.strip()) >= 43:
-                        return base64.b64decode(secret_str)
+                    secret_str = decrypted_secret.decode("utf-8").strip()
+                    if secret_str:
+                        try:
+                            return _decode_recovery_key(secret_str)
+                        except Exception:
+                            pass
                     return decrypted_secret
                 except Exception:
                     return decrypted_secret

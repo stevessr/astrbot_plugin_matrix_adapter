@@ -725,9 +725,10 @@ class MatrixDehydratedDeviceCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_restore_supports_legacy_secret_name_without_default_key(self):
         constants = load_module("constants")
         ssss_module = load_module("e2ee.key_backup_ssss")
+        crypto_module = load_module("e2ee.key_backup_crypto")
 
         expected_key = b"K" * 32
-        encoded_key = base64.b64encode(expected_key).decode("ascii")
+        encoded_key = crypto_module._encode_recovery_key(expected_key)
 
         class FakeClient:
             def __init__(self):
@@ -773,6 +774,18 @@ class MatrixDehydratedDeviceCompatTests(unittest.IsolatedAsyncioTestCase):
                 constants.MSC2697_DEHYDRATED_DEVICE_EVENT,
             ],
         )
+
+
+class MatrixKeyBackupCompatTests(unittest.TestCase):
+    def test_verify_recovery_key_rejects_non_32_byte_key(self):
+        backup_module = load_module("e2ee.key_backup_backup")
+
+        class DummyBackup(backup_module.KeyBackupBackupMixin):
+            def __init__(self):
+                self._backup_auth_data = {"public_key": "dummy"}
+
+        backup = DummyBackup()
+        self.assertFalse(backup._verify_recovery_key(b"short", log_mismatch=False))
 
 
 if __name__ == "__main__":
