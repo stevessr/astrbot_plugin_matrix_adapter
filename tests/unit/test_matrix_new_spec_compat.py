@@ -1299,6 +1299,162 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manager._cross_signing.persist_calls, 1)
         self.assertEqual(manager.calls, [("@bot:example.org", "BOT123")])
 
+    async def test_handle_mac_sends_done_only_after_successful_verification(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+
+        class DummyEstablishedSas:
+            def calculate_mac(self, message, info):
+                return f"mac::{message}::{info}"
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self.auto_verify_mode = "auto_accept"
+                self._sessions = {
+                    "txn123": {
+                        "from_device": "DEV456",
+                        "their_device": "DEV456",
+                        "fingerprint": "fingerprint-ed25519",
+                        "established_sas": DummyEstablishedSas(),
+                    }
+                }
+                self.done_calls = []
+                self.cancel_calls = []
+
+            async def _send_done(self, sender, device_id, transaction_id):
+                self.done_calls.append((sender, device_id, transaction_id))
+
+            async def _send_cancel(self, sender, device_id, transaction_id, code, reason):
+                self.cancel_calls.append((sender, device_id, transaction_id, code, reason))
+
+        verifier = DummyVerifier()
+        key_id = "ed25519:DEV456"
+        base_info = "MATRIX_KEY_VERIFICATION_MAC@alice:example.orgDEV456@bot:example.orgBOT123txn123"
+        await verifier._handle_mac(
+            "@alice:example.org",
+            {
+                "mac": {
+                    key_id: f"mac::fingerprint-ed25519::{base_info}{key_id}"
+                },
+                "keys": f"mac::{key_id}::{base_info}KEY_IDS",
+            },
+            "txn123",
+        )
+
+        self.assertEqual(
+            verifier.done_calls,
+            [("@alice:example.org", "DEV456", "txn123")],
+        )
+        self.assertEqual(verifier.cancel_calls, [])
+        self.assertTrue(verifier._sessions["txn123"].get("mac_verified"))
+
+    async def test_handle_mac_cancels_on_mismatched_mac(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+
+        class DummyEstablishedSas:
+            def calculate_mac(self, message, info):
+                return f"mac::{message}::{info}"
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self.auto_verify_mode = "auto_accept"
+                self._sessions = {
+                    "txn123": {
+                        "from_device": "DEV456",
+                        "their_device": "DEV456",
+                        "fingerprint": "fingerprint-ed25519",
+                        "established_sas": DummyEstablishedSas(),
+                    }
+                }
+                self.done_calls = []
+                self.cancel_calls = []
+
+            async def _send_done(self, sender, device_id, transaction_id):
+                self.done_calls.append((sender, device_id, transaction_id))
+
+            async def _send_cancel(self, sender, device_id, transaction_id, code, reason):
+                self.cancel_calls.append((sender, device_id, transaction_id, code, reason))
+
+        verifier = DummyVerifier()
+        await verifier._handle_mac(
+            "@alice:example.org",
+            {
+                "mac": {"ed25519:DEV456": "wrong-mac"},
+                "keys": "wrong-keys",
+            },
+            "txn123",
+        )
+
+        self.assertEqual(verifier.done_calls, [])
+        self.assertEqual(
+            verifier.cancel_calls,
+            [
+                (
+                    "@alice:example.org",
+                    "DEV456",
+                    "txn123",
+                    "m.key_mismatch",
+                    "MAC verification failed",
+                )
+            ],
+        )
+        self.assertFalse(verifier._sessions["txn123"].get("done_sent", False))
+
+    async def test_handle_mac_cancels_when_fingerprint_missing(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+
+        class DummyClient:
+            async def query_keys(self, device_keys, timeout=10000):
+                return {"device_keys": {"@alice:example.org": {"DEV456": {"keys": {}}}}}
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.client = DummyClient()
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self.auto_verify_mode = "auto_accept"
+                self._sessions = {
+                    "txn123": {
+                        "from_device": "DEV456",
+                        "their_device": "DEV456",
+                    }
+                }
+                self.done_calls = []
+                self.cancel_calls = []
+
+            async def _send_done(self, sender, device_id, transaction_id):
+                self.done_calls.append((sender, device_id, transaction_id))
+
+            async def _send_cancel(self, sender, device_id, transaction_id, code, reason):
+                self.cancel_calls.append((sender, device_id, transaction_id, code, reason))
+
+        verifier = DummyVerifier()
+        await verifier._handle_mac(
+            "@alice:example.org",
+            {
+                "mac": {"ed25519:DEV456": "whatever"},
+                "keys": "whatever",
+            },
+            "txn123",
+        )
+
+        self.assertEqual(verifier.done_calls, [])
+        self.assertEqual(
+            verifier.cancel_calls,
+            [
+                (
+                    "@alice:example.org",
+                    "DEV456",
+                    "txn123",
+                    "m.key_mismatch",
+                    "MAC verification failed",
+                )
+            ],
+        )
+
 
 class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
     def test_verify_recovery_key_rejects_non_32_byte_key(self):

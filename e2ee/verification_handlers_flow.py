@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import hmac
 import json
 
 from astrbot.api import logger
@@ -17,6 +18,7 @@ from .verification_constants import (
     Curve25519PublicKey,
     Sas,
 )
+from .verification_utils import _compute_hkdf
 
 
 class SASVerificationFlowMixin:
@@ -428,29 +430,112 @@ class SASVerificationFlowMixin:
         session["their_mac"] = their_mac
         session["state"] = "mac_received"
 
-        # 验证 MAC
         established_sas = session.get("established_sas")
         their_device = session.get("from_device", session.get("their_device", ""))
+        is_in_room = session.get("is_in_room", False)
+        room_id = session.get("room_id")
+        sas_bytes = session.get("sas_bytes", b"\x00" * 32)
 
-        if established_sas and VODOZEMAC_SAS_AVAILABLE:
+        async def _cancel_mac_verification(reason: str):
+            logger.warning(f"[E2EE-Verify] MAC 校验失败：{reason}")
+            session["state"] = "cancelled"
+            session["cancel_code"] = "m.key_mismatch"
+            session["cancel_reason"] = reason
+            if is_in_room and room_id:
+                await self._send_in_room_cancel(
+                    room_id,
+                    transaction_id,
+                    "m.key_mismatch",
+                    reason,
+                )
+            else:
+                await self._send_cancel(
+                    sender,
+                    their_device,
+                    transaction_id,
+                    "m.key_mismatch",
+                    reason,
+                )
+
+        if not isinstance(their_mac, dict) or not their_mac:
+            await _cancel_mac_verification("MAC verification failed")
+            return
+
+        fingerprint = session.get("fingerprint")
+        if not fingerprint and their_device:
             try:
-                # 构建 MAC 验证的 base_info
-                _base_info = f"{INFO_PREFIX_MAC}{sender}{their_device}{self.user_id}{self.device_id}{transaction_id}"
-
-                # 验证对方发送的每个密钥的 MAC
-                for key_id, mac_value in their_mac.items():
-                    # 记录接收到的 MAC（在 auto_accept 模式下信任对方）
-                    logger.debug(f"[E2EE-Verify] MAC 已接收：key_id={key_id}")
-
+                resp = await self.client.query_keys({sender: []})
+                devices = resp.get("device_keys") or {}
+                user_devices = devices.get(sender) or {}
+                device_info = user_devices.get(their_device) or {}
+                keys = device_info.get("keys") or {}
+                fingerprint = keys.get(f"{PREFIX_ED25519}{their_device}")
+                if fingerprint:
+                    session["fingerprint"] = fingerprint
             except Exception as e:
-                logger.error(f"[E2EE-Verify] MAC 验证失败：{e}")
+                logger.warning(f"[E2EE-Verify] 查询 MAC 校验指纹失败：{e}")
+
+        if not fingerprint:
+            await _cancel_mac_verification("MAC verification failed")
+            return
+
+        if not their_device:
+            await _cancel_mac_verification("MAC verification failed")
+            return
+
+        key_ids = list(their_mac.keys())
+        if len(key_ids) != 1:
+            await _cancel_mac_verification("MAC verification failed")
+            return
+
+        key_id = key_ids[0]
+        if key_id != f"{PREFIX_ED25519}{their_device}":
+            await _cancel_mac_verification("MAC verification failed")
+            return
+
+        base_info = f"{INFO_PREFIX_MAC}{sender}{their_device}{self.user_id}{self.device_id}{transaction_id}"
+
+        try:
+            if established_sas:
+                expected_mac = established_sas.calculate_mac(
+                    fingerprint, (base_info + key_id)
+                )
+                expected_keys_mac = established_sas.calculate_mac(
+                    key_id, (base_info + "KEY_IDS")
+                )
+            else:
+                expected_mac = base64.b64encode(
+                    _compute_hkdf(sas_bytes, b"", key_id.encode())
+                ).decode()
+                expected_keys_mac = base64.b64encode(
+                    hashlib.sha256(key_id.encode()).digest()
+                ).decode()
+        except Exception as e:
+            logger.error(f"[E2EE-Verify] MAC 计算失败：{e}")
+            await _cancel_mac_verification("MAC verification failed")
+            return
+
+        actual_mac = their_mac.get(key_id)
+        if not isinstance(actual_mac, str) or not isinstance(their_keys, str):
+            await _cancel_mac_verification("MAC verification failed")
+            return
+
+        if not hmac.compare_digest(actual_mac, expected_mac):
+            await _cancel_mac_verification("MAC verification failed")
+            return
+
+        if not hmac.compare_digest(their_keys, expected_keys_mac):
+            await _cancel_mac_verification("MAC verification failed")
+            return
+
+        session["mac_verified"] = True
+        logger.info(
+            "[E2EE-Verify] ✅ MAC 校验通过："
+            f"device={self._mask_identifier(their_device)}"
+        )
 
         if self.auto_verify_mode == "auto_accept" and not session.get("done_sent"):
             session["done_sent"] = True
-            # Check if this is an in-room verification
-            is_in_room = session.get("is_in_room", False)
-            room_id = session.get("room_id")
-
             if is_in_room and room_id:
                 await self._send_in_room_done(room_id, transaction_id)
             else:
