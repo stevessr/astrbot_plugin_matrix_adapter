@@ -579,10 +579,79 @@ class CrossSigning:
                 "usage": list(usage),
                 "keys": {master_key_id: master_key_value},
             }
-            signature = self.olm._account.sign(
-                self._canonical(signable_master_key).encode("utf-8")
-            ).to_base64()
+            canonical_json = self._canonical(signable_master_key)
+            canonical_bytes = canonical_json.encode("utf-8")
+            signature = self.olm._account.sign(canonical_bytes).to_base64()
             signing_key_id = self.device_key_id
+            device_ed25519_pub = self.olm._account.ed25519_key.to_base64()
+
+            # 诊断日志：记录签名的详细信息
+            logger.warning(
+                "[E2EE-CrossSign] 签名诊断信息：\n"
+                f"  canonical_json={canonical_json}\n"
+                f"  device_ed25519_pub={device_ed25519_pub}\n"
+                f"  signing_key_id={signing_key_id}\n"
+                f"  device_id(olm)={self.olm.device_id}\n"
+                f"  device_id(self)={self.device_id}\n"
+                f"  signature={signature}"
+            )
+
+            # 本地验证签名
+            try:
+                from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+                    Ed25519PublicKey,
+                )
+
+                pub_b64 = device_ed25519_pub
+                padding = 4 - len(pub_b64) % 4
+                if padding != 4:
+                    pub_b64 += "=" * padding
+                pub_bytes = base64.b64decode(pub_b64)
+                pub_key = Ed25519PublicKey.from_public_bytes(pub_bytes)
+
+                sig_b64 = signature
+                sig_padding = 4 - len(sig_b64) % 4
+                if sig_padding != 4:
+                    sig_b64 += "=" * sig_padding
+                sig_bytes = base64.b64decode(sig_b64)
+
+                pub_key.verify(sig_bytes, canonical_bytes)
+                logger.warning("[E2EE-CrossSign] ✅ 本地签名验证成功")
+            except Exception as verify_err:
+                logger.warning(
+                    f"[E2EE-CrossSign] ❌ 本地签名验证失败：{verify_err}"
+                )
+
+            # 查询服务器上的设备密钥，对比 ed25519 公钥
+            try:
+                dev_response = await self.client.query_keys(
+                    {target_user_id: [self.device_id]}
+                )
+                server_device_keys = (
+                    (dev_response.get("device_keys") or {})
+                    .get(target_user_id, {})
+                    .get(self.device_id)
+                )
+                if server_device_keys:
+                    server_ed25519 = (
+                        server_device_keys.get("keys", {})
+                        .get(f"ed25519:{self.device_id}")
+                    )
+                    logger.warning(
+                        "[E2EE-CrossSign] 服务器设备 ed25519 对比：\n"
+                        f"  server={server_ed25519}\n"
+                        f"  local ={device_ed25519_pub}\n"
+                        f"  match ={server_ed25519 == device_ed25519_pub}"
+                    )
+                else:
+                    logger.warning(
+                        f"[E2EE-CrossSign] 服务器上未找到设备 {self.device_id} 的密钥！"
+                    )
+            except Exception as query_err:
+                logger.warning(
+                    f"[E2EE-CrossSign] 查询设备密钥失败：{query_err}"
+                )
+
             upload_master_key = {
                 "user_id": target_user_id,
                 "usage": list(usage),
