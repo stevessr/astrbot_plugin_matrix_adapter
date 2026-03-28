@@ -504,15 +504,27 @@ class CrossSigning:
                 logger.debug("[E2EE-CrossSign] 未找到 master key，无法添加设备签名")
                 return False
 
-            payload_to_sign = dict(master_key)
-            payload_to_sign.pop("signatures", None)
-            payload_to_sign.pop("unsigned", None)
+            usage = master_key.get("usage")
+            keys = master_key.get("keys")
+            if not isinstance(usage, list) or not isinstance(keys, dict) or not keys:
+                logger.debug("[E2EE-CrossSign] master key 结构无效，无法添加设备签名")
+                return False
+            master_key_id, master_key_value = next(iter(keys.items()))
+
+            signable_master_key = {
+                "user_id": target_user_id,
+                "usage": list(usage),
+                "keys": {master_key_id: master_key_value},
+            }
             signature = self.olm._account.sign(
-                self._canonical(payload_to_sign).encode("utf-8")
+                self._canonical(signable_master_key).encode("utf-8")
             ).to_base64()
             signing_key_id = self.device_key_id
-            master_key["signatures"] = {
-                target_user_id: {signing_key_id: signature}
+            upload_master_key = {
+                "user_id": target_user_id,
+                "usage": list(usage),
+                "keys": {master_key_id: master_key_value},
+                "signatures": {target_user_id: {signing_key_id: signature}},
             }
 
             async def _verify_uploaded_master_signature() -> bool:
@@ -527,10 +539,10 @@ class CrossSigning:
 
             logger.debug(
                 "[E2EE-CrossSign] 上传 master key 设备签名："
-                f"master={self._master_key} signer={signing_key_id}"
+                f"master={master_key_id} signer={signing_key_id}"
             )
             ok = await self._upload_signature_and_confirm(
-                {target_user_id: {self._master_key: master_key}},
+                {target_user_id: {master_key_id: upload_master_key}},
                 _verify_uploaded_master_signature,
                 "master key 设备签名 ",
             )

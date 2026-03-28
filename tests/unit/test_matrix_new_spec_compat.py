@@ -1690,6 +1690,23 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
         ok = await cross_signing.sign_master_key_with_device("@bot:example.org")
         self.assertTrue(ok)
         self.assertEqual(len(cross_signing.client.upload_payloads), 1)
+        self.assertEqual(
+            cross_signing.client.upload_payloads[0],
+            {
+                "@bot:example.org": {
+                    "ed25519:MASTERKEY": {
+                        "user_id": "@bot:example.org",
+                        "usage": ["master"],
+                        "keys": {"ed25519:MASTERKEY": "MASTERKEY"},
+                        "signatures": {
+                            "@bot:example.org": {
+                                "ed25519:BOT123": "device-signature"
+                            }
+                        },
+                    }
+                }
+            },
+        )
 
     async def test_sign_device_returns_false_when_server_reports_failures(self):
         cross_signing_module = self._load_cross_signing_module()
