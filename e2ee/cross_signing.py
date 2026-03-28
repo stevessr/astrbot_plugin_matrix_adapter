@@ -30,6 +30,10 @@ class CrossSigning:
         return self._self_signing_key
 
     @property
+    def device_key_id(self) -> str:
+        return f"ed25519:{self.device_id}"
+
+    @property
     def master_private_key(self) -> bytes | None:
         return self._master_priv
 
@@ -419,8 +423,6 @@ class CrossSigning:
                 logger.debug("[E2EE-CrossSign] 未找到设备密钥，无法签名")
                 return False
 
-            # Matrix 要求 signatures 的 key 使用 signing key 的 key_id。
-            # 当前实现中 self-signing key id 即 ed25519:<self_signing_pubkey>。
             signing_key_id = f"ed25519:{self._self_signing_key}"
             sig = self._sign(self._self_signing_priv, device_keys)
             existing_signatures = device_keys.get("signatures")
@@ -433,10 +435,29 @@ class CrossSigning:
             existing_signatures[self.user_id] = user_signatures
             device_keys["signatures"] = existing_signatures
 
-            # /keys/signatures/upload body 为 {user_id: {device_id: signed_object}}
-            await self.client.upload_signatures(
+            upload_response = await self.client.upload_signatures(
                 signatures={self.user_id: {device_id: device_keys}}
             )
+            failures = upload_response.get("failures") if isinstance(upload_response, dict) else None
+            if isinstance(failures, dict) and failures:
+                logger.warning(
+                    f"[E2EE-CrossSign] 设备签名上传被服务器拒绝：device={device_id} failures={failures}"
+                )
+                return False
+
+            refreshed = await self.client.query_keys({self.user_id: [device_id]})
+            refreshed_device_keys = (
+                (refreshed.get("device_keys") or {}).get(self.user_id, {}).get(device_id) or {}
+            )
+            refreshed_signatures = (
+                (refreshed_device_keys.get("signatures") or {}).get(self.user_id, {})
+            )
+            if signing_key_id not in refreshed_signatures:
+                logger.warning(
+                    f"[E2EE-CrossSign] 设备签名未在服务器状态中出现：device={device_id}"
+                )
+                return False
+
             logger.debug(f"[E2EE-CrossSign] 已签名设备：{device_id}")
             return True
         except MatrixAPIError as e:
@@ -444,6 +465,64 @@ class CrossSigning:
             return False
         except Exception as e:
             logger.warning(f"[E2EE-CrossSign] 设备签名异常：{e}")
+            return False
+
+    async def sign_master_key_with_device(self, user_id: str | None = None) -> bool:
+        target_user_id = user_id or self.user_id
+        if target_user_id != self.user_id:
+            logger.debug("[E2EE-CrossSign] 仅支持为当前账号的 master key 添加设备签名")
+            return False
+        if not self.olm or not self._master_key:
+            logger.debug("[E2EE-CrossSign] master key 或 olm 账户不可用，跳过设备签名 master key")
+            return False
+
+        try:
+            response = await self.client.query_keys({target_user_id: []})
+            master_key = (response.get("master_keys") or {}).get(target_user_id)
+            if not master_key:
+                logger.debug("[E2EE-CrossSign] 未找到 master key，无法添加设备签名")
+                return False
+
+            signature = self.olm._account.sign(
+                self._canonical({k: v for k, v in master_key.items() if k not in ("signatures", "unsigned")}).encode("utf-8")
+            ).to_base64()
+            signing_key_id = self.device_key_id
+            existing_signatures = master_key.get("signatures")
+            if not isinstance(existing_signatures, dict):
+                existing_signatures = {}
+            user_signatures = existing_signatures.get(target_user_id)
+            if not isinstance(user_signatures, dict):
+                user_signatures = {}
+            user_signatures[signing_key_id] = signature
+            existing_signatures[target_user_id] = user_signatures
+            master_key["signatures"] = existing_signatures
+
+            upload_response = await self.client.upload_signatures(
+                signatures={target_user_id: {self._master_key: master_key}}
+            )
+            failures = upload_response.get("failures") if isinstance(upload_response, dict) else None
+            if isinstance(failures, dict) and failures:
+                logger.warning(
+                    f"[E2EE-CrossSign] master key 设备签名上传被服务器拒绝：failures={failures}"
+                )
+                return False
+
+            refreshed = await self.client.query_keys({target_user_id: []})
+            refreshed_master_key = (refreshed.get("master_keys") or {}).get(target_user_id) or {}
+            refreshed_signatures = (
+                (refreshed_master_key.get("signatures") or {}).get(target_user_id, {})
+            )
+            if signing_key_id not in refreshed_signatures:
+                logger.warning("[E2EE-CrossSign] master key 设备签名未在服务器状态中出现")
+                return False
+
+            logger.debug("[E2EE-CrossSign] 已为 master key 添加设备签名")
+            return True
+        except MatrixAPIError as e:
+            logger.warning(f"[E2EE-CrossSign] master key 设备签名失败：{e}")
+            return False
+        except Exception as e:
+            logger.warning(f"[E2EE-CrossSign] master key 设备签名异常：{e}")
             return False
 
     async def verify_user(self, target_user_id: str):

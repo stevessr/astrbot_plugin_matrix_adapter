@@ -25,12 +25,18 @@ class E2EEManagerVerificationMixin:
             )
             return False
 
-        ok = await self._cross_signing.sign_device(device_id)
-        if ok:
-            logger.info(f"已发布设备信任：{device_id}")
-        else:
+        device_ok = await self._cross_signing.sign_device(device_id)
+        if not device_ok:
             logger.warning(f"发布设备信任失败：{device_id}")
-        return ok
+            return False
+
+        master_ok = await self._cross_signing.sign_master_key_with_device(self.user_id)
+        if not master_ok:
+            logger.warning(f"发布 master key 设备签名失败：{device_id}")
+            return False
+
+        logger.info(f"已发布设备信任：{device_id}")
+        return True
 
     async def handle_verification_event(
         self, event_type: str, sender: str, content: dict
