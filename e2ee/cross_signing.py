@@ -204,6 +204,30 @@ class CrossSigning:
                     )
                     # 继续执行，不返回
 
+            # 验证本地私钥与服务器公钥是否匹配
+            if (
+                server_master
+                and self._master_priv
+                and not self._local_keys_match_server(
+                    server_master, server_self_signing, server_user_signing
+                )
+            ):
+                logger.debug(
+                    "[E2EE-CrossSign] 本地私钥与服务器公钥不匹配"
+                    "（可能在其他客户端重置），正在重新生成..."
+                )
+                try:
+                    await self._generate_and_upload_keys(force_regen=True)
+                    return
+                except Exception as e:
+                    logger.debug(
+                        f"[E2EE-CrossSign] 重新生成交叉签名密钥失败：{e}"
+                    )
+                    logger.debug(
+                        "[E2EE-CrossSign] 将继续使用服务器现有的密钥"
+                        "（交叉签名可能无法正常工作）"
+                    )
+
             # 如缺少密钥则生成并上传
             if not server_master:
                 try:
@@ -236,7 +260,7 @@ class CrossSigning:
         return self._b64(data)
 
     def _canonical(self, obj: dict) -> str:
-        return json.dumps(obj, sort_keys=True, separators=(",", ":"))
+        return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
     def _load_local_keys(self):
         if not self._storage_store:
@@ -315,6 +339,45 @@ class CrossSigning:
             format=serialization.PublicFormat.Raw,
         )
         return priv_raw, self._b64(pub_raw)
+
+    def _derive_public_key(self, priv_raw: bytes) -> str | None:
+        """从私钥推导出公钥（unpadded base64）"""
+        try:
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+                Ed25519PrivateKey,
+            )
+
+            priv = Ed25519PrivateKey.from_private_bytes(priv_raw)
+            pub_raw = priv.public_key().public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
+            )
+            return self._b64(pub_raw)
+        except Exception:
+            return None
+
+    def _local_keys_match_server(
+        self,
+        server_master: str | None,
+        server_self_signing: str | None,
+        server_user_signing: str | None,
+    ) -> bool:
+        """检查本地私钥推导出的公钥是否与服务器公钥一致"""
+        pairs = [
+            (self._master_priv, server_master, "master"),
+            (self._self_signing_priv, server_self_signing, "self_signing"),
+            (self._user_signing_priv, server_user_signing, "user_signing"),
+        ]
+        for priv, server_pub, name in pairs:
+            if priv and server_pub:
+                derived = self._derive_public_key(priv)
+                if derived and derived != server_pub:
+                    logger.debug(
+                        f"[E2EE-CrossSign] 本地 {name} 私钥与服务器公钥不匹配"
+                    )
+                    return False
+        return True
 
     def _sign(self, priv_raw: bytes, payload: dict) -> str:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import (
