@@ -91,6 +91,13 @@ class SASVerificationFlowMixin:
                     f"sender={self._mask_identifier(sender)} "
                     f"device={self._mask_identifier(from_device)}"
                 )
+
+            master_key_obj = (resp.get("master_keys") or {}).get(sender) or {}
+            master_keys = master_key_obj.get("keys") or {}
+            if master_keys:
+                master_key_id, master_key = next(iter(master_keys.items()))
+                session["master_key_id"] = master_key_id
+                session["master_key"] = master_key
         except Exception as e:
             logger.warning(
                 "[E2EE-Verify] 查询验证设备指纹失败："
@@ -461,8 +468,19 @@ class SASVerificationFlowMixin:
             await _cancel_mac_verification("MAC verification failed")
             return
 
+        available_keys: dict[str, str] = {}
         fingerprint = session.get("fingerprint")
-        if not fingerprint and their_device:
+        if fingerprint and their_device:
+            available_keys[f"{PREFIX_ED25519}{their_device}"] = fingerprint
+
+        master_key = session.get("master_key")
+        master_key_id = session.get("master_key_id")
+        if master_key_id and master_key:
+            available_keys[master_key_id] = master_key
+
+        if their_device and (
+            f"{PREFIX_ED25519}{their_device}" not in available_keys or not master_key_id
+        ):
             try:
                 resp = await self.client.query_keys({sender: []})
                 devices = resp.get("device_keys") or {}
@@ -472,57 +490,73 @@ class SASVerificationFlowMixin:
                 fingerprint = keys.get(f"{PREFIX_ED25519}{their_device}")
                 if fingerprint:
                     session["fingerprint"] = fingerprint
+                    available_keys[f"{PREFIX_ED25519}{their_device}"] = fingerprint
+
+                master_key_obj = (resp.get("master_keys") or {}).get(sender) or {}
+                master_keys = master_key_obj.get("keys") or {}
+                if master_keys:
+                    fetched_master_key_id, fetched_master_key = next(iter(master_keys.items()))
+                    session["master_key_id"] = fetched_master_key_id
+                    session["master_key"] = fetched_master_key
+                    available_keys[fetched_master_key_id] = fetched_master_key
             except Exception as e:
-                logger.warning(f"[E2EE-Verify] 查询 MAC 校验指纹失败：{e}")
+                logger.warning(f"[E2EE-Verify] 查询 MAC 校验密钥失败：{e}")
 
-        if not fingerprint:
+        if not their_device or not available_keys:
             await _cancel_mac_verification("MAC verification failed")
             return
 
-        if not their_device:
+        key_ids = sorted(their_mac.keys())
+        if not key_ids:
             await _cancel_mac_verification("MAC verification failed")
             return
 
-        key_ids = list(their_mac.keys())
-        if len(key_ids) != 1:
-            await _cancel_mac_verification("MAC verification failed")
-            return
-
-        key_id = key_ids[0]
-        if key_id != f"{PREFIX_ED25519}{their_device}":
-            await _cancel_mac_verification("MAC verification failed")
-            return
+        for key_id in key_ids:
+            if key_id not in available_keys:
+                await _cancel_mac_verification("MAC verification failed")
+                return
+            if not isinstance(their_mac.get(key_id), str):
+                await _cancel_mac_verification("MAC verification failed")
+                return
 
         base_info = f"{INFO_PREFIX_MAC}{sender}{their_device}{self.user_id}{self.device_id}{transaction_id}"
+        key_ids_csv = ",".join(key_ids)
 
         try:
             if established_sas:
-                expected_mac = established_sas.calculate_mac(
-                    fingerprint, (base_info + key_id)
-                )
+                expected_mac_map = {
+                    key_id: established_sas.calculate_mac(
+                        available_keys[key_id], (base_info + key_id)
+                    )
+                    for key_id in key_ids
+                }
                 expected_keys_mac = established_sas.calculate_mac(
-                    key_id, (base_info + "KEY_IDS")
+                    key_ids_csv, (base_info + "KEY_IDS")
                 )
             else:
-                expected_mac = base64.b64encode(
-                    _compute_hkdf(sas_bytes, b"", key_id.encode())
-                ).decode()
+                expected_mac_map = {
+                    key_id: base64.b64encode(
+                        _compute_hkdf(sas_bytes, b"", available_keys[key_id].encode())
+                    ).decode()
+                    for key_id in key_ids
+                }
                 expected_keys_mac = base64.b64encode(
-                    hashlib.sha256(key_id.encode()).digest()
+                    hashlib.sha256(key_ids_csv.encode()).digest()
                 ).decode()
         except Exception as e:
             logger.error(f"[E2EE-Verify] MAC 计算失败：{e}")
             await _cancel_mac_verification("MAC verification failed")
             return
 
-        actual_mac = their_mac.get(key_id)
-        if not isinstance(actual_mac, str) or not isinstance(their_keys, str):
+        if not isinstance(their_keys, str):
             await _cancel_mac_verification("MAC verification failed")
             return
 
-        if not hmac.compare_digest(actual_mac, expected_mac):
-            await _cancel_mac_verification("MAC verification failed")
-            return
+        for key_id in key_ids:
+            actual_mac = their_mac.get(key_id)
+            if not hmac.compare_digest(actual_mac, expected_mac_map[key_id]):
+                await _cancel_mac_verification("MAC verification failed")
+                return
 
         if not hmac.compare_digest(their_keys, expected_keys_mac):
             await _cancel_mac_verification("MAC verification failed")
@@ -554,6 +588,11 @@ class SASVerificationFlowMixin:
         )
 
         session = self._sessions.get(transaction_id, {})
+        if session.get("state") == "cancelled" or not session.get("mac_verified"):
+            logger.warning(
+                "[E2EE-Verify] 忽略 done：会话已取消或 MAC 尚未验证通过"
+            )
+            return
         session["state"] = "done"
 
         # 将设备标记为已验证

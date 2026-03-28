@@ -1165,6 +1165,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                     "txn123": {
                         "from_device": "DEV456",
                         "fingerprint": "fp456",
+                        "mac_verified": True,
                     }
                 }
                 self.device_store = DummyDeviceStore()
@@ -1211,6 +1212,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                     "txn123": {
                         "from_device": "ALICE1",
                         "fingerprint": "alice-fp",
+                        "mac_verified": True,
                     }
                 }
                 self.device_store = DummyDeviceStore()
@@ -1316,6 +1318,8 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                         "from_device": "DEV456",
                         "their_device": "DEV456",
                         "fingerprint": "fingerprint-ed25519",
+                        "master_key_id": "ed25519:MASTERKEY",
+                        "master_key": "master-key-base64",
                         "established_sas": DummyEstablishedSas(),
                     }
                 }
@@ -1329,15 +1333,18 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.cancel_calls.append((sender, device_id, transaction_id, code, reason))
 
         verifier = DummyVerifier()
-        key_id = "ed25519:DEV456"
+        device_key_id = "ed25519:DEV456"
+        master_key_id = "ed25519:MASTERKEY"
         base_info = "MATRIX_KEY_VERIFICATION_MAC@alice:example.orgDEV456@bot:example.orgBOT123txn123"
+        key_ids_csv = ",".join(sorted([device_key_id, master_key_id]))
         await verifier._handle_mac(
             "@alice:example.org",
             {
                 "mac": {
-                    key_id: f"mac::fingerprint-ed25519::{base_info}{key_id}"
+                    device_key_id: f"mac::fingerprint-ed25519::{base_info}{device_key_id}",
+                    master_key_id: f"mac::master-key-base64::{base_info}{master_key_id}",
                 },
-                "keys": f"mac::{key_id}::{base_info}KEY_IDS",
+                "keys": f"mac::{key_ids_csv}::{base_info}KEY_IDS",
             },
             "txn123",
         )
@@ -1366,6 +1373,8 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                         "from_device": "DEV456",
                         "their_device": "DEV456",
                         "fingerprint": "fingerprint-ed25519",
+                        "master_key_id": "ed25519:MASTERKEY",
+                        "master_key": "master-key-base64",
                         "established_sas": DummyEstablishedSas(),
                     }
                 }
@@ -1382,7 +1391,10 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         await verifier._handle_mac(
             "@alice:example.org",
             {
-                "mac": {"ed25519:DEV456": "wrong-mac"},
+                "mac": {
+                    "ed25519:DEV456": "wrong-mac",
+                    "ed25519:MASTERKEY": "wrong-master-mac",
+                },
                 "keys": "wrong-keys",
             },
             "txn123",
@@ -1408,7 +1420,10 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
 
         class DummyClient:
             async def query_keys(self, device_keys, timeout=10000):
-                return {"device_keys": {"@alice:example.org": {"DEV456": {"keys": {}}}}}
+                return {
+                    "device_keys": {"@alice:example.org": {"DEV456": {"keys": {}}}},
+                    "master_keys": {},
+                }
 
         class DummyVerifier(flow_module.SASVerificationFlowMixin):
             def __init__(self):
@@ -1454,6 +1469,33 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                 )
             ],
         )
+
+    async def test_handle_done_ignores_cancelled_or_unverified_session(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+
+        class DummyDeviceStore:
+            def __init__(self):
+                self.calls = []
+
+            def add_device(self, user_id, device_id, fingerprint):
+                self.calls.append((user_id, device_id, fingerprint))
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self._sessions = {
+                    "txn123": {
+                        "from_device": "DEV456",
+                        "fingerprint": "fp456",
+                        "state": "cancelled",
+                    }
+                }
+                self.device_store = DummyDeviceStore()
+
+        verifier = DummyVerifier()
+        await verifier._handle_done("@bot:example.org", {}, "txn123")
+        self.assertEqual(verifier.device_store.calls, [])
 
 
 class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):

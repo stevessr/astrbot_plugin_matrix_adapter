@@ -22,6 +22,10 @@ class CrossSigning:
         return bool(self._master_key)
 
     @property
+    def master_key(self) -> str | None:
+        return self._master_key
+
+    @property
     def self_signing_key(self) -> str | None:
         return self._self_signing_key
 

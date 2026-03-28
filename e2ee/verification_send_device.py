@@ -263,9 +263,10 @@ class SASVerificationSendDeviceMixin:
                     key_mac = established_sas.calculate_mac(
                         device_key, (base_info + our_device_key_id)
                     )
-                    # MAC for the key ID list
+                    # MAC for the sorted key ID list
+                    key_ids = ",".join(sorted([our_device_key_id]))
                     keys_mac = established_sas.calculate_mac(
-                        our_device_key_id, (base_info + "KEY_IDS")
+                        key_ids, (base_info + "KEY_IDS")
                     )
                 else:
                     key_mac = base64.b64encode(
