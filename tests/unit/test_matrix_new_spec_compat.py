@@ -1576,7 +1576,7 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
 
             async def query_keys(self, device_keys, timeout=10000):
                 self.query_count += 1
-                if self.query_count == 1:
+                if self.query_count <= 2:
                     return {
                         "device_keys": {
                             "@bot:example.org": {
@@ -1637,14 +1637,18 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
 
             async def query_keys(self, device_keys, timeout=10000):
                 self.query_count += 1
-                if self.query_count == 1:
+                if self.query_count <= 2:
                     return {
                         "master_keys": {
                             "@bot:example.org": {
                                 "user_id": "@bot:example.org",
                                 "usage": ["master"],
                                 "keys": {"ed25519:MASTERKEY": "MASTERKEY"},
-                                "signatures": {},
+                                "signatures": {
+                                    "@bot:example.org": {
+                                        "ed25519:OLD": "old-signature"
+                                    }
+                                },
                             }
                         }
                     }

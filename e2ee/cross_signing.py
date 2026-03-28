@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 from pathlib import Path
@@ -329,6 +330,28 @@ class CrossSigning:
         sig = priv.sign(canonical.encode("utf-8"))
         return self._b64(sig)
 
+    async def _upload_signature_and_confirm(
+        self,
+        upload_payload: dict,
+        verify,
+        failure_context: str,
+    ) -> bool:
+        upload_response = await self.client.upload_signatures(signatures=upload_payload)
+        failures = upload_response.get("failures") if isinstance(upload_response, dict) else None
+        if isinstance(failures, dict) and failures:
+            logger.warning(
+                f"[E2EE-CrossSign] {failure_context}上传被服务器拒绝：failures={failures}"
+            )
+            return False
+
+        for _ in range(3):
+            if await verify():
+                return True
+            await asyncio.sleep(0.5)
+
+        logger.warning(f"[E2EE-CrossSign] {failure_context}未在服务器状态中出现")
+        return False
+
     async def _generate_and_upload_keys(
         self, force_regen: bool = False, reuse_master: bool = False
     ):
@@ -435,27 +458,24 @@ class CrossSigning:
             existing_signatures[self.user_id] = user_signatures
             device_keys["signatures"] = existing_signatures
 
-            upload_response = await self.client.upload_signatures(
-                signatures={self.user_id: {device_id: device_keys}}
-            )
-            failures = upload_response.get("failures") if isinstance(upload_response, dict) else None
-            if isinstance(failures, dict) and failures:
-                logger.warning(
-                    f"[E2EE-CrossSign] 设备签名上传被服务器拒绝：device={device_id} failures={failures}"
+            async def _verify_uploaded_device_signature() -> bool:
+                refreshed = await self.client.query_keys({self.user_id: [device_id]})
+                refreshed_device_keys = (
+                    (refreshed.get("device_keys") or {}).get(self.user_id, {}).get(device_id)
+                    or {}
                 )
-                return False
+                refreshed_signatures = (
+                    (refreshed_device_keys.get("signatures") or {}).get(self.user_id, {})
+                )
+                return signing_key_id in refreshed_signatures
 
-            refreshed = await self.client.query_keys({self.user_id: [device_id]})
-            refreshed_device_keys = (
-                (refreshed.get("device_keys") or {}).get(self.user_id, {}).get(device_id) or {}
+            upload_payload = {self.user_id: {device_id: device_keys}}
+            ok = await self._upload_signature_and_confirm(
+                upload_payload,
+                _verify_uploaded_device_signature,
+                f"设备签名 device={device_id} ",
             )
-            refreshed_signatures = (
-                (refreshed_device_keys.get("signatures") or {}).get(self.user_id, {})
-            )
-            if signing_key_id not in refreshed_signatures:
-                logger.warning(
-                    f"[E2EE-CrossSign] 设备签名未在服务器状态中出现：device={device_id}"
-                )
+            if not ok:
                 return False
 
             logger.debug(f"[E2EE-CrossSign] 已签名设备：{device_id}")
@@ -483,37 +503,33 @@ class CrossSigning:
                 logger.debug("[E2EE-CrossSign] 未找到 master key，无法添加设备签名")
                 return False
 
+            payload_to_sign = dict(master_key)
+            payload_to_sign.pop("signatures", None)
+            payload_to_sign.pop("unsigned", None)
             signature = self.olm._account.sign(
-                self._canonical({k: v for k, v in master_key.items() if k not in ("signatures", "unsigned")}).encode("utf-8")
+                self._canonical(payload_to_sign).encode("utf-8")
             ).to_base64()
             signing_key_id = self.device_key_id
-            existing_signatures = master_key.get("signatures")
-            if not isinstance(existing_signatures, dict):
-                existing_signatures = {}
-            user_signatures = existing_signatures.get(target_user_id)
-            if not isinstance(user_signatures, dict):
-                user_signatures = {}
-            user_signatures[signing_key_id] = signature
-            existing_signatures[target_user_id] = user_signatures
-            master_key["signatures"] = existing_signatures
+            master_key["signatures"] = {
+                target_user_id: {signing_key_id: signature}
+            }
 
-            upload_response = await self.client.upload_signatures(
-                signatures={target_user_id: {self._master_key: master_key}}
-            )
-            failures = upload_response.get("failures") if isinstance(upload_response, dict) else None
-            if isinstance(failures, dict) and failures:
-                logger.warning(
-                    f"[E2EE-CrossSign] master key 设备签名上传被服务器拒绝：failures={failures}"
+            async def _verify_uploaded_master_signature() -> bool:
+                refreshed = await self.client.query_keys({target_user_id: []})
+                refreshed_master_key = (
+                    (refreshed.get("master_keys") or {}).get(target_user_id) or {}
                 )
-                return False
+                refreshed_signatures = (
+                    (refreshed_master_key.get("signatures") or {}).get(target_user_id, {})
+                )
+                return signing_key_id in refreshed_signatures
 
-            refreshed = await self.client.query_keys({target_user_id: []})
-            refreshed_master_key = (refreshed.get("master_keys") or {}).get(target_user_id) or {}
-            refreshed_signatures = (
-                (refreshed_master_key.get("signatures") or {}).get(target_user_id, {})
+            ok = await self._upload_signature_and_confirm(
+                {target_user_id: {self._master_key: master_key}},
+                _verify_uploaded_master_signature,
+                "master key 设备签名 ",
             )
-            if signing_key_id not in refreshed_signatures:
-                logger.warning("[E2EE-CrossSign] master key 设备签名未在服务器状态中出现")
+            if not ok:
                 return False
 
             logger.debug("[E2EE-CrossSign] 已为 master key 添加设备签名")

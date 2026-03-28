@@ -351,17 +351,35 @@ class E2EEManager(
 
             # 自动签名自己的设备（使设备变为"已验证"状态）
             if self._cross_signing.has_master_key:
-                await self._cross_signing.sign_device(self.device_id)
-                logger.info(f"已自动签名设备：{self._mask_device_id(self.device_id)}")
+                device_signed = await self._cross_signing.sign_device(self.device_id)
+                master_signed = await self._cross_signing.sign_master_key_with_device(
+                    self.user_id
+                )
+                if device_signed and master_signed:
+                    logger.info(f"已自动签名设备：{self._mask_device_id(self.device_id)}")
+                else:
+                    logger.warning(
+                        "自动签名设备未完全生效："
+                        f"device_signed={device_signed} master_signed={master_signed}"
+                    )
             else:
                 # 如果没有交叉签名密钥，尝试上传
                 try:
                     await self._cross_signing.upload_cross_signing_keys()
-                    await self._cross_signing.sign_device(self.device_id)
-                    logger.info(
-                        "已上传交叉签名密钥并签名设备："
-                        f"{self._mask_device_id(self.device_id)}"
+                    device_signed = await self._cross_signing.sign_device(self.device_id)
+                    master_signed = await self._cross_signing.sign_master_key_with_device(
+                        self.user_id
                     )
+                    if device_signed and master_signed:
+                        logger.info(
+                            "已上传交叉签名密钥并签名设备："
+                            f"{self._mask_device_id(self.device_id)}"
+                        )
+                    else:
+                        logger.warning(
+                            "上传交叉签名密钥后，设备签名未完全生效："
+                            f"device_signed={device_signed} master_signed={master_signed}"
+                        )
                 except Exception as e:
                     logger.warning(f"上传交叉签名密钥失败（可能需要 UIA）：{e}")
 
