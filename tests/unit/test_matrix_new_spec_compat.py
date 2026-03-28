@@ -25,6 +25,17 @@ def _install_astrbot_stubs() -> None:
 
     api_module.logger = _Logger()
 
+    star_module = sys.modules.setdefault(
+        "astrbot.api.star", types.ModuleType("astrbot.api.star")
+    )
+
+    class StarTools:
+        @staticmethod
+        def get_data_dir(_name: str):
+            return Path(tempfile.gettempdir()) / "astrbot_plugin_matrix_adapter"
+
+    star_module.StarTools = StarTools
+
     message_components = sys.modules.setdefault(
         "astrbot.api.message_components",
         types.ModuleType("astrbot.api.message_components"),
@@ -776,6 +787,248 @@ class MatrixDehydratedDeviceCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class MatrixAuthCompatTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _load_auth_module():
+        _install_astrbot_stubs()
+        _install_aiohttp_stub()
+        _install_package_stubs()
+
+        def _make_module(name: str, **attrs):
+            module = types.ModuleType(name)
+            for key, value in attrs.items():
+                setattr(module, key, value)
+            return module
+
+        stubs = {
+            f"{PACKAGE_NAME}.plugin_config": _make_module(
+                f"{PACKAGE_NAME}.plugin_config",
+                get_plugin_config=lambda: types.SimpleNamespace(
+                    storage_backend_config=types.SimpleNamespace(
+                        backend="json",
+                        pgsql_dsn="",
+                        pgsql_schema="public",
+                        pgsql_table_prefix="matrix_store",
+                    )
+                ),
+            ),
+            f"{PACKAGE_NAME}.utils": _make_module(
+                f"{PACKAGE_NAME}.utils",
+                parse_bool=lambda value, default=False: default,
+            ),
+        }
+
+        with mock.patch.dict(sys.modules, stubs):
+            return importlib.import_module(f"{PACKAGE_NAME}.auth.auth")
+
+    async def test_qr_mode_reuses_persisted_token_before_reprompting(self):
+        auth_module = self._load_auth_module()
+
+        config = types.SimpleNamespace(
+            user_id="@alice:example.org",
+            password="",
+            access_token="",
+            auth_method="qr",
+            device_name="AstrBot",
+            refresh_token="",
+            device_id="DEV123",
+            homeserver="https://matrix.example.org",
+            store_path=tempfile.gettempdir(),
+        )
+        auth = auth_module.MatrixAuth(client=object(), config=config)
+
+        events = []
+
+        def fake_load_token():
+            auth.access_token = "persisted-token"
+            events.append("load")
+            return True
+
+        async def fake_login_via_token():
+            events.append("token")
+
+        async def fake_login_via_qr():
+            events.append("qr")
+
+        auth._load_token = fake_load_token
+        auth._login_via_token = fake_login_via_token
+        auth._login_via_qr = fake_login_via_qr
+
+        await auth.login()
+
+        self.assertEqual(events, ["load", "token"])
+
+    async def test_qr_mode_falls_back_to_qr_when_persisted_token_is_invalid(self):
+        auth_module = self._load_auth_module()
+
+        config = types.SimpleNamespace(
+            user_id="@alice:example.org",
+            password="",
+            access_token="",
+            auth_method="qr",
+            device_name="AstrBot",
+            refresh_token="",
+            device_id="DEV123",
+            homeserver="https://matrix.example.org",
+            store_path=tempfile.gettempdir(),
+        )
+        auth = auth_module.MatrixAuth(client=object(), config=config)
+
+        events = []
+
+        def fake_load_token():
+            auth.access_token = "persisted-token"
+            events.append("load")
+            return True
+
+        async def fake_login_via_token():
+            events.append("token")
+            raise RuntimeError("expired")
+
+        async def fake_login_via_qr():
+            events.append("qr")
+
+        auth._load_token = fake_load_token
+        auth._login_via_token = fake_login_via_token
+        auth._login_via_qr = fake_login_via_qr
+
+        await auth.login()
+
+        self.assertEqual(events, ["load", "token", "qr"])
+
+
+class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_restored_account_reuploads_device_keys_when_server_missing_device(self):
+        keys_module = load_module("e2ee.e2ee_manager_keys")
+
+        class DummyClient:
+            def __init__(self):
+                self.upload_calls = []
+                self.query_calls = []
+
+            async def upload_keys(self, device_keys=None, one_time_keys=None, fallback_keys=None):
+                self.upload_calls.append(
+                    {
+                        "device_keys": device_keys,
+                        "one_time_keys": one_time_keys,
+                        "fallback_keys": fallback_keys,
+                    }
+                )
+                return {"one_time_key_counts": {"signed_curve25519": 50}}
+
+            async def query_keys(self, device_keys, timeout=10000):
+                self.query_calls.append(device_keys)
+                return {"device_keys": {"@alice:example.org": {}}}
+
+        class DummyOlm:
+            is_new_account = False
+
+            def __init__(self):
+                self.marked = False
+
+            def get_device_keys(self):
+                return {
+                    "user_id": "@alice:example.org",
+                    "device_id": "DEV123",
+                    "algorithms": ["m.olm.v1.curve25519-aes-sha2", "m.megolm.v1.aes-sha2"],
+                    "keys": {
+                        "curve25519:DEV123": "curve",
+                        "ed25519:DEV123": "ed",
+                    },
+                    "signatures": {"@alice:example.org": {"ed25519:DEV123": "sig"}},
+                }
+
+            def generate_one_time_keys(self, count):
+                return {}
+
+            def get_unpublished_fallback_key_count(self):
+                return 1
+
+            def mark_keys_as_published(self):
+                self.marked = True
+
+        class DummyManager(keys_module.E2EEManagerKeysMixin):
+            def __init__(self):
+                self._olm = DummyOlm()
+                self.client = DummyClient()
+                self.user_id = "@alice:example.org"
+                self.device_id = "DEV123"
+
+            async def _get_server_key_counts(self):
+                return {"signed_curve25519": 50}
+
+        manager = DummyManager()
+        await manager._upload_device_keys()
+
+        self.assertEqual(manager.client.query_calls, [{"@alice:example.org": []}, {"@alice:example.org": []}])
+        self.assertEqual(len(manager.client.upload_calls), 1)
+        self.assertIsNotNone(manager.client.upload_calls[0]["device_keys"])
+        self.assertTrue(manager._olm.marked)
+
+    async def test_restored_account_skips_device_key_upload_when_server_has_device(self):
+        keys_module = load_module("e2ee.e2ee_manager_keys")
+
+        class DummyClient:
+            def __init__(self):
+                self.upload_calls = []
+                self.query_calls = []
+
+            async def upload_keys(self, device_keys=None, one_time_keys=None, fallback_keys=None):
+                self.upload_calls.append(
+                    {
+                        "device_keys": device_keys,
+                        "one_time_keys": one_time_keys,
+                        "fallback_keys": fallback_keys,
+                    }
+                )
+                return {"one_time_key_counts": {"signed_curve25519": 50}}
+
+            async def query_keys(self, device_keys, timeout=10000):
+                self.query_calls.append(device_keys)
+                return {
+                    "device_keys": {
+                        "@alice:example.org": {
+                            "DEV123": {"keys": {"curve25519:DEV123": "curve"}}
+                        }
+                    }
+                }
+
+        class DummyOlm:
+            is_new_account = False
+
+            def __init__(self):
+                self.marked = False
+
+            def get_device_keys(self):
+                raise AssertionError("should not build device keys when already present")
+
+            def generate_one_time_keys(self, count):
+                return {}
+
+            def get_unpublished_fallback_key_count(self):
+                return 1
+
+            def mark_keys_as_published(self):
+                self.marked = True
+
+        class DummyManager(keys_module.E2EEManagerKeysMixin):
+            def __init__(self):
+                self._olm = DummyOlm()
+                self.client = DummyClient()
+                self.user_id = "@alice:example.org"
+                self.device_id = "DEV123"
+
+            async def _get_server_key_counts(self):
+                return {"signed_curve25519": 50}
+
+        manager = DummyManager()
+        await manager._upload_device_keys()
+
+        self.assertEqual(manager.client.query_calls, [{"@alice:example.org": []}])
+        self.assertEqual(manager.client.upload_calls, [])
+        self.assertFalse(manager._olm.marked)
+
+
 class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
     def test_verify_recovery_key_rejects_non_32_byte_key(self):
         backup_module = load_module("e2ee.key_backup_backup")
@@ -789,7 +1042,12 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_upload_single_key_falls_back_to_bulk_endpoint_on_unrecognized(self):
         backup_module = load_module("e2ee.key_backup_backup")
-        base_module = load_module("client.base")
+
+        class DummyMatrixError(Exception):
+            def __init__(self, status, data, message):
+                self.status = status
+                self.data = data
+                super().__init__(message)
 
         class DummyClient:
             def __init__(self):
@@ -798,7 +1056,7 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
             async def _request(self, method, endpoint, data=None, **kwargs):
                 self.calls.append((method, endpoint, data))
                 if endpoint.startswith("/_matrix/client/v3/room_keys/keys/!"):
-                    raise base_module.MatrixAPIError(
+                    raise DummyMatrixError(
                         404,
                         {"errcode": "M_UNRECOGNIZED", "error": "Unrecognized request"},
                         "Matrix API error: M_UNRECOGNIZED - Unrecognized request (status: 404)",
@@ -825,13 +1083,18 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
             "/_matrix/client/v3/room_keys/keys?version=1",
         )
         self.assertEqual(
-            backup.client.calls[1][2]["rooms"]["!room:example.org"]["sessions"].keys(),
-            {"sess1"}.keys(),
+            set(backup.client.calls[1][2]["rooms"]["!room:example.org"]["sessions"].keys()),
+            {"sess1"},
         )
 
     async def test_upload_single_key_does_not_fall_back_for_other_errors(self):
         backup_module = load_module("e2ee.key_backup_backup")
-        base_module = load_module("client.base")
+
+        class DummyMatrixError(Exception):
+            def __init__(self, status, data, message):
+                self.status = status
+                self.data = data
+                super().__init__(message)
 
         class DummyClient:
             def __init__(self):
@@ -839,7 +1102,7 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
 
             async def _request(self, method, endpoint, data=None, **kwargs):
                 self.calls.append((method, endpoint, data))
-                raise base_module.MatrixAPIError(
+                raise DummyMatrixError(
                     403,
                     {"errcode": "M_FORBIDDEN", "error": "Forbidden"},
                     "Matrix API error: M_FORBIDDEN - Forbidden (status: 403)",

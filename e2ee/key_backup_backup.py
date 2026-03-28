@@ -7,7 +7,6 @@ import time
 
 from astrbot.api import logger
 
-from ..client.base import MatrixAPIError
 from ..constants import (
     CRYPTO_KEY_SIZE_32,
     MEGOLM_BACKUP_ALGO,
@@ -494,9 +493,11 @@ class KeyBackupBackupMixin:
                     data=session_data,
                 )
                 return True
-            except MatrixAPIError as e:
-                errcode = e.data.get("errcode") if isinstance(e.data, dict) else None
-                if e.status != 404 or errcode != "M_UNRECOGNIZED":
+            except Exception as e:
+                errcode = None
+                if isinstance(getattr(e, "data", None), dict):
+                    errcode = e.data.get("errcode")
+                if getattr(e, "status", None) != 404 or errcode != "M_UNRECOGNIZED":
                     raise
 
                 logger.info(

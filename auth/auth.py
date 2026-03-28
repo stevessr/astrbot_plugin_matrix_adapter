@@ -61,6 +61,16 @@ class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
                 return
             await self._login_via_oauth2()
         elif self.auth_method == "qr":
+            if self.access_token:
+                try:
+                    await self._login_via_token()
+                    return
+                except RuntimeError:
+                    self._log(
+                        "info",
+                        "Stored token expired or invalid, falling back to QR login",
+                    )
+
             await self._login_via_qr()
         elif self.auth_method == "token":
             await self._login_via_token()

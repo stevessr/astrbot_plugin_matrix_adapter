@@ -25,6 +25,28 @@ class E2EEManagerKeysMixin:
                 logger.debug(
                     f"新账户，准备上传设备密钥：device_id={device_keys.get('device_id')}"
                 )
+            else:
+                try:
+                    verify_response = await self.client.query_keys({self.user_id: []})
+                    my_devices = (verify_response.get("device_keys") or {}).get(
+                        self.user_id
+                    ) or {}
+                    if self.device_id not in my_devices:
+                        device_keys = self._olm.get_device_keys()
+                        logger.info(
+                            f"服务器缺少设备 {self.device_id} 的身份密钥，准备重新上传"
+                        )
+                    else:
+                        logger.debug(
+                            f"服务器已存在设备 {self.device_id} 的身份密钥，跳过重复上传"
+                        )
+                except Exception as verify_e:
+                    device_keys = self._olm.get_device_keys()
+                    logger.warning(
+                        f"检查设备密钥是否已存在失败，将重新上传：{verify_e}"
+                    )
+
+            if device_keys:
                 algorithms = device_keys.get("algorithms", [])
                 logger.debug(f"支持的加密算法：{algorithms}")
                 keys_info = list(device_keys.get("keys", {}).keys())
@@ -41,8 +63,6 @@ class E2EEManagerKeysMixin:
                     logger.error(f"缺少必要的加密算法：{missing_algos}")
                 else:
                     logger.debug("设备密钥包含所有必要的加密算法")
-            else:
-                logger.debug("账户已从存储恢复，跳过设备密钥上传（只补充一次性密钥）")
 
             from ..constants import DEFAULT_ONE_TIME_KEYS_COUNT
 
