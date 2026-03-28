@@ -23,7 +23,7 @@ async def send_plain(
     text = segment.text or ""
     content = {"msgtype": msg_type, "body": text}
 
-    if original_message_info and reply_to:
+    if original_message_info and reply_to and not use_thread:
         orig_sender = original_message_info.get("sender", "")
         orig_body = original_message_info.get("body", "")
         if len(orig_body) > TEXT_TRUNCATE_LENGTH_50:
@@ -47,7 +47,7 @@ async def send_plain(
         content["format"] = "org.matrix.custom.html"
 
     if formatted_body:
-        if original_message_info and reply_to:
+        if original_message_info and reply_to and not use_thread:
             fallback_html = MatrixUtils.create_reply_fallback(
                 original_body=original_message_info.get("body", ""),
                 original_sender=original_message_info.get("sender", ""),

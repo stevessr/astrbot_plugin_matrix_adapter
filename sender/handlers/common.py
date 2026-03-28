@@ -13,16 +13,12 @@ async def send_content(
     msg_type: str = "m.room.message",
 ) -> dict | None:
     if use_thread and thread_root:
-        relates_to = {
+        content["m.relates_to"] = {
             "rel_type": "m.thread",
             "event_id": thread_root,
+            "is_falling_back": True,
+            "m.in_reply_to": {"event_id": reply_to or thread_root},
         }
-        # 根据 Matrix 规范，为不支持线程的客户端提供回退
-        fallback_event_id = reply_to or thread_root
-        if fallback_event_id:
-            relates_to["m.in_reply_to"] = {"event_id": fallback_event_id}
-            relates_to["is_falling_back"] = True
-        content["m.relates_to"] = relates_to
     elif reply_to:
         content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
 

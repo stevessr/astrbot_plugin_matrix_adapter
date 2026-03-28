@@ -581,7 +581,7 @@ class MatrixVoiceCompatTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
-    async def test_send_content_adds_thread_reply_fallback_to_root(self):
+    async def test_send_content_marks_thread_messages_as_fallback(self):
         common_sender = load_module("sender.handlers.common")
 
         class FakeClient:
@@ -609,7 +609,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-    async def test_send_content_prefers_explicit_reply_for_thread_fallback(self):
+    async def test_send_content_prefers_explicit_reply_for_thread_context(self):
         common_sender = load_module("sender.handlers.common")
 
         class FakeClient:
@@ -636,6 +636,74 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
                 "is_falling_back": True,
             },
         )
+
+    async def test_send_plain_skips_legacy_reply_fallback_for_thread_messages(self):
+        module_name = f"{PACKAGE_NAME}.sender.handlers.plain"
+        markdown_utils_name = f"{PACKAGE_NAME}.utils.markdown_utils"
+        sys.modules.pop(module_name, None)
+        sys.modules.pop(markdown_utils_name, None)
+
+        bleach_stub = types.ModuleType("bleach")
+        bleach_stub.clean = lambda html, **kwargs: html
+
+        markdown_it_stub = types.ModuleType("markdown_it")
+
+        class _MarkdownIt:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def render(self, text):
+                return text
+
+        markdown_it_stub.MarkdownIt = _MarkdownIt
+
+        with mock.patch.dict(
+            sys.modules,
+            {"bleach": bleach_stub, "markdown_it": markdown_it_stub},
+        ):
+            plain_sender = load_module("sender.handlers.plain")
+        plain_cls = sys.modules["astrbot.api.message_components"].Plain
+        captured = {}
+
+        async def fake_send_content(
+            client,
+            content,
+            room_id,
+            reply_to,
+            thread_root,
+            use_thread,
+            is_encrypted_room,
+            e2ee_manager,
+            msg_type="m.room.message",
+        ):
+            captured["content"] = content
+            captured["reply_to"] = reply_to
+            captured["thread_root"] = thread_root
+            captured["use_thread"] = use_thread
+            return {"event_id": "$thread"}
+
+        with mock.patch.object(plain_sender, "send_content", new=fake_send_content):
+            await plain_sender.send_plain(
+                client=object(),
+                segment=plain_cls("thread"),
+                room_id="!room:example.org",
+                reply_to="$root:example.org",
+                thread_root="$root:example.org",
+                use_thread=True,
+                original_message_info={
+                    "sender": "@alice:example.org",
+                    "body": "quoted text",
+                },
+                is_encrypted_room=False,
+                e2ee_manager=None,
+                use_notice=False,
+            )
+
+        self.assertEqual(captured["content"]["body"], "thread")
+        self.assertEqual(captured["content"]["format"], "org.matrix.custom.html")
+        self.assertEqual(captured["content"]["formatted_body"], "thread")
+        self.assertNotIn("> <@alice:example.org>", captured["content"]["body"])
+        self.assertNotIn("mx-reply", captured["content"]["formatted_body"])
 
 
 class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
