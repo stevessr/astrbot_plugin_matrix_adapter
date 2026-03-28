@@ -8,6 +8,7 @@ from ..constants import (
     INFO_PREFIX_MAC,
     INFO_PREFIX_SAS,
     M_SAS_V1_METHOD,
+    PREFIX_ED25519,
     SAS_BYTES_LENGTH_6,
 )
 from .verification_constants import (
@@ -67,6 +68,33 @@ class SASVerificationFlowMixin:
             "state": "requested",
             "sas": sas,
         }
+
+        session = self._sessions[transaction_id]
+        try:
+            resp = await self.client.query_keys({sender: []})
+            devices = resp.get("device_keys") or {}
+            user_devices = devices.get(sender) or {}
+            device_info = user_devices.get(from_device) or {}
+            keys = device_info.get("keys") or {}
+            fingerprint = keys.get(f"{PREFIX_ED25519}{from_device}")
+            if fingerprint:
+                session["fingerprint"] = fingerprint
+                logger.debug(
+                    "[E2EE-Verify] 已获取设备指纹："
+                    f"device={self._mask_identifier(from_device)}"
+                )
+            else:
+                logger.warning(
+                    "[E2EE-Verify] 未找到设备指纹："
+                    f"sender={self._mask_identifier(sender)} "
+                    f"device={self._mask_identifier(from_device)}"
+                )
+        except Exception as e:
+            logger.warning(
+                "[E2EE-Verify] 查询验证设备指纹失败："
+                f"sender={self._mask_identifier(sender)} "
+                f"device={self._mask_identifier(from_device)} err={e}"
+            )
 
         if self.auto_verify_mode == "auto_reject":
             logger.info("[E2EE-Verify] 自动拒绝验证请求 (mode=auto_reject)")

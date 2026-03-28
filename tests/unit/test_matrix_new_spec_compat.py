@@ -1029,6 +1029,49 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(manager._olm.marked)
 
 
+class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_verification_request_caches_fingerprint_for_done_stage(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+
+        class DummyClient:
+            async def query_keys(self, device_keys, timeout=10000):
+                return {
+                    "device_keys": {
+                        "@alice:example.org": {
+                            "DEV123": {
+                                "keys": {"ed25519:DEV123": "fingerprint-ed25519"}
+                            }
+                        }
+                    }
+                }
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.client = DummyClient()
+                self._sessions = {}
+                self.auto_verify_mode = "auto_reject"
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+
+            async def _send_cancel(self, *args, **kwargs):
+                return None
+
+        verifier = DummyVerifier()
+        await verifier._handle_request(
+            "@alice:example.org",
+            {
+                "from_device": "DEV123",
+                "methods": ["m.sas.v1"],
+            },
+            "txn123",
+        )
+
+        self.assertEqual(
+            verifier._sessions["txn123"].get("fingerprint"),
+            "fingerprint-ed25519",
+        )
+
+
 class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
     def test_verify_recovery_key_rejects_non_32_byte_key(self):
         backup_module = load_module("e2ee.key_backup_backup")
