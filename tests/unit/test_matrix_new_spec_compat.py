@@ -1056,7 +1056,12 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
                 return {
                     "device_keys": {
                         "@alice:example.org": {
-                            "DEV123": {"keys": {"curve25519:DEV123": "curve"}}
+                            "DEV123": {
+                                "keys": {
+                                    "curve25519:DEV123": "curve",
+                                    "ed25519:DEV123": "ed",
+                                }
+                            }
                         }
                     }
                 }
@@ -1069,6 +1074,12 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
 
             def get_device_keys(self):
                 raise AssertionError("should not build device keys when already present")
+
+            def get_identity_keys(self):
+                return {
+                    "curve25519:DEV123": "curve",
+                    "ed25519:DEV123": "ed",
+                }
 
             def generate_one_time_keys(self, count):
                 return {}
@@ -1095,6 +1106,103 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manager.client.query_calls, [{"@alice:example.org": []}])
         self.assertEqual(manager.client.upload_calls, [])
         self.assertFalse(manager._olm.marked)
+
+    async def test_restored_account_reuploads_device_keys_when_server_keys_mismatch(self):
+        keys_module = load_module("e2ee.e2ee_manager_keys")
+
+        class DummyClient:
+            def __init__(self):
+                self.upload_calls = []
+                self.query_calls = []
+
+            async def upload_keys(self, device_keys=None, one_time_keys=None, fallback_keys=None):
+                self.upload_calls.append(
+                    {
+                        "device_keys": device_keys,
+                        "one_time_keys": one_time_keys,
+                        "fallback_keys": fallback_keys,
+                    }
+                )
+                return {"one_time_key_counts": {"signed_curve25519": 50}}
+
+            async def query_keys(self, device_keys, timeout=10000):
+                self.query_calls.append(device_keys)
+                if len(self.query_calls) == 1:
+                    return {
+                        "device_keys": {
+                            "@alice:example.org": {
+                                "DEV123": {
+                                    "keys": {
+                                        "curve25519:DEV123": "server-curve",
+                                        "ed25519:DEV123": "server-ed",
+                                    }
+                                }
+                            }
+                        }
+                    }
+                return {
+                    "device_keys": {
+                        "@alice:example.org": {
+                            "DEV123": {
+                                "keys": {
+                                    "curve25519:DEV123": "local-curve",
+                                    "ed25519:DEV123": "local-ed",
+                                }
+                            }
+                        }
+                    }
+                }
+
+        class DummyOlm:
+            is_new_account = False
+
+            def __init__(self):
+                self.marked = False
+
+            def get_device_keys(self):
+                return {
+                    "user_id": "@alice:example.org",
+                    "device_id": "DEV123",
+                    "algorithms": ["m.olm.v1.curve25519-aes-sha2", "m.megolm.v1.aes-sha2"],
+                    "keys": {
+                        "curve25519:DEV123": "local-curve",
+                        "ed25519:DEV123": "local-ed",
+                    },
+                    "signatures": {"@alice:example.org": {"ed25519:DEV123": "sig"}},
+                }
+
+            def get_identity_keys(self):
+                return {
+                    "curve25519:DEV123": "local-curve",
+                    "ed25519:DEV123": "local-ed",
+                }
+
+            def generate_one_time_keys(self, count):
+                return {}
+
+            def get_unpublished_fallback_key_count(self):
+                return 1
+
+            def mark_keys_as_published(self):
+                self.marked = True
+
+        class DummyManager(keys_module.E2EEManagerKeysMixin):
+            def __init__(self):
+                self._olm = DummyOlm()
+                self.client = DummyClient()
+                self.user_id = "@alice:example.org"
+                self.device_id = "DEV123"
+
+            async def _get_server_key_counts(self):
+                return {"signed_curve25519": 50}
+
+        manager = DummyManager()
+        await manager._upload_device_keys()
+
+        self.assertEqual(manager.client.query_calls, [{"@alice:example.org": []}, {"@alice:example.org": []}])
+        self.assertEqual(len(manager.client.upload_calls), 1)
+        self.assertIsNotNone(manager.client.upload_calls[0]["device_keys"])
+        self.assertTrue(manager._olm.marked)
 
 
 class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
@@ -1581,7 +1689,10 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                         "device_keys": {
                             "@bot:example.org": {
                                 "BOT123": {
-                                    "keys": {"ed25519:BOT123": "device-ed25519"},
+                                    "keys": {
+                                        "ed25519:BOT123": "device-ed25519",
+                                        "curve25519:BOT123": "device-curve25519",
+                                    },
                                     "signatures": {},
                                 }
                             }
@@ -1591,7 +1702,10 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                     "device_keys": {
                         "@bot:example.org": {
                             "BOT123": {
-                                "keys": {"ed25519:BOT123": "device-ed25519"},
+                                "keys": {
+                                    "ed25519:BOT123": "device-ed25519",
+                                    "curve25519:BOT123": "device-curve25519",
+                                },
                                 "signatures": {
                                     "@bot:example.org": {
                                         "ed25519:SELFKEY": "sig",
@@ -1613,6 +1727,12 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
 
             def __init__(self):
                 self._account = self._Account()
+
+            def get_identity_keys(self):
+                return {
+                    "ed25519:BOT123": "device-ed25519",
+                    "curve25519:BOT123": "device-curve25519",
+                }
 
         cross_signing = cross_signing_module.CrossSigning(
             client=DummyClient(),
@@ -1639,6 +1759,16 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.query_count += 1
                 if self.query_count <= 2:
                     return {
+                        "device_keys": {
+                            "@bot:example.org": {
+                                "BOT123": {
+                                    "keys": {
+                                        "ed25519:BOT123": "device-ed25519",
+                                        "curve25519:BOT123": "device-curve25519",
+                                    }
+                                }
+                            }
+                        },
                         "master_keys": {
                             "@bot:example.org": {
                                 "user_id": "@bot:example.org",
@@ -1653,6 +1783,16 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                         }
                     }
                 return {
+                    "device_keys": {
+                        "@bot:example.org": {
+                            "BOT123": {
+                                "keys": {
+                                    "ed25519:BOT123": "device-ed25519",
+                                    "curve25519:BOT123": "device-curve25519",
+                                }
+                            }
+                        }
+                    },
                     "master_keys": {
                         "@bot:example.org": {
                             "user_id": "@bot:example.org",
@@ -1660,6 +1800,7 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                             "keys": {"ed25519:MASTERKEY": "MASTERKEY"},
                             "signatures": {
                                 "@bot:example.org": {
+                                    "ed25519:OLD": "old-signature",
                                     "ed25519:BOT123": "device-signature"
                                 }
                             },
@@ -1678,6 +1819,13 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
 
             def __init__(self):
                 self._account = self._Account()
+                self.device_id = "BOT123"
+
+            def get_identity_keys(self):
+                return {
+                    "ed25519:BOT123": "device-ed25519",
+                    "curve25519:BOT123": "device-curve25519",
+                }
 
         cross_signing = cross_signing_module.CrossSigning(
             client=DummyClient(),
@@ -1700,6 +1848,7 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                         "keys": {"ed25519:MASTERKEY": "MASTERKEY"},
                         "signatures": {
                             "@bot:example.org": {
+                                "ed25519:OLD": "old-signature",
                                 "ed25519:BOT123": "device-signature"
                             }
                         },
@@ -1717,7 +1866,10 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                     "device_keys": {
                         "@bot:example.org": {
                             "BOT123": {
-                                "keys": {"ed25519:BOT123": "device-ed25519"},
+                                "keys": {
+                                    "ed25519:BOT123": "device-ed25519",
+                                    "curve25519:BOT123": "device-curve25519",
+                                },
                                 "signatures": {},
                             }
                         }
@@ -1744,6 +1896,12 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
             def __init__(self):
                 self._account = self._Account()
 
+            def get_identity_keys(self):
+                return {
+                    "ed25519:BOT123": "device-ed25519",
+                    "curve25519:BOT123": "device-curve25519",
+                }
+
         cross_signing = cross_signing_module.CrossSigning(
             client=DummyClient(),
             user_id="@bot:example.org",
@@ -1755,6 +1913,70 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
 
         ok = await cross_signing.sign_device("BOT123")
         self.assertFalse(ok)
+
+    async def test_sign_master_key_with_device_returns_false_when_current_device_keys_mismatch(self):
+        cross_signing_module = self._load_cross_signing_module()
+
+        class DummyClient:
+            def __init__(self):
+                self.upload_payloads = []
+
+            async def query_keys(self, device_keys, timeout=10000):
+                return {
+                    "device_keys": {
+                        "@bot:example.org": {
+                            "BOT123": {
+                                "keys": {
+                                    "ed25519:BOT123": "server-ed25519",
+                                    "curve25519:BOT123": "server-curve25519",
+                                }
+                            }
+                        }
+                    },
+                    "master_keys": {
+                        "@bot:example.org": {
+                            "user_id": "@bot:example.org",
+                            "usage": ["master"],
+                            "keys": {"ed25519:MASTERKEY": "MASTERKEY"},
+                            "signatures": {
+                                "@bot:example.org": {
+                                    "ed25519:OLD": "old-signature"
+                                }
+                            },
+                        }
+                    },
+                }
+
+            async def upload_signatures(self, signatures):
+                self.upload_payloads.append(signatures)
+                return {"failures": {}}
+
+        class DummyOlm:
+            class _Account:
+                def sign(self, payload):
+                    return types.SimpleNamespace(to_base64=lambda: "device-signature")
+
+            def __init__(self):
+                self._account = self._Account()
+                self.device_id = "BOT123"
+
+            def get_identity_keys(self):
+                return {
+                    "ed25519:BOT123": "local-ed25519",
+                    "curve25519:BOT123": "local-curve25519",
+                }
+
+        cross_signing = cross_signing_module.CrossSigning(
+            client=DummyClient(),
+            user_id="@bot:example.org",
+            device_id="BOT123",
+            olm_machine=DummyOlm(),
+        )
+        cross_signing._master_key = "MASTERKEY"
+
+        ok = await cross_signing.sign_master_key_with_device("@bot:example.org")
+        self.assertFalse(ok)
+        self.assertEqual(cross_signing.client.upload_payloads, [])
 
 
 class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):

@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import copy
 import json
 from pathlib import Path
 
@@ -379,6 +380,58 @@ class CrossSigning:
                     return False
         return True
 
+    def _get_local_device_identity_keys(self) -> dict[str, str]:
+        if not self.olm:
+            return {}
+        try:
+            if hasattr(self.olm, "get_identity_keys"):
+                keys = self.olm.get_identity_keys()
+                return keys if isinstance(keys, dict) else {}
+
+            keys: dict[str, str] = {}
+            ed25519 = getattr(self.olm, "ed25519_key", None)
+            curve25519 = getattr(self.olm, "curve25519_key", None)
+            if isinstance(ed25519, str) and ed25519:
+                keys[f"ed25519:{self.device_id}"] = ed25519
+            if isinstance(curve25519, str) and curve25519:
+                keys[f"curve25519:{self.device_id}"] = curve25519
+            return keys
+        except Exception as e:
+            logger.warning(f"[E2EE-CrossSign] 读取本地设备身份密钥失败：{e}")
+            return {}
+
+    @staticmethod
+    def _extract_device_identity(
+        device_keys: dict | None, device_id: str
+    ) -> tuple[str | None, str | None]:
+        keys = (device_keys or {}).get("keys")
+        if not isinstance(keys, dict):
+            return None, None
+        return keys.get(f"ed25519:{device_id}"), keys.get(f"curve25519:{device_id}")
+
+    def _current_device_matches_server(
+        self, device_keys: dict | None
+    ) -> tuple[bool, str | None, str | None, str | None, str | None]:
+        local_keys = self._get_local_device_identity_keys()
+        local_ed25519 = local_keys.get(f"ed25519:{self.device_id}")
+        local_curve25519 = local_keys.get(f"curve25519:{self.device_id}")
+        server_ed25519, server_curve25519 = self._extract_device_identity(
+            device_keys, self.device_id
+        )
+        matches = (
+            bool(local_ed25519)
+            and bool(local_curve25519)
+            and local_ed25519 == server_ed25519
+            and local_curve25519 == server_curve25519
+        )
+        return (
+            matches,
+            local_ed25519,
+            local_curve25519,
+            server_ed25519,
+            server_curve25519,
+        )
+
     def _sign(self, priv_raw: bytes, payload: dict) -> str:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import (
             Ed25519PrivateKey,
@@ -509,18 +562,43 @@ class CrossSigning:
                 logger.debug("[E2EE-CrossSign] 未找到设备密钥，无法签名")
                 return False
 
-            device_keys.pop("unsigned", None)
+            if device_id == self.device_id:
+                (
+                    matches,
+                    local_ed25519,
+                    local_curve25519,
+                    server_ed25519,
+                    server_curve25519,
+                ) = self._current_device_matches_server(device_keys)
+                if not matches:
+                    logger.warning(
+                        "[E2EE-CrossSign] 当前设备身份密钥与服务器不一致，跳过设备签名："
+                        f"device_id={device_id} "
+                        f"local_ed25519={local_ed25519} server_ed25519={server_ed25519} "
+                        f"local_curve25519={local_curve25519} server_curve25519={server_curve25519}"
+                    )
+                    return False
+
+            device_keys_to_upload = copy.deepcopy(device_keys)
+            device_keys_to_upload.pop("unsigned", None)
             signing_key_id = f"ed25519:{self._self_signing_key}"
-            sig = self._sign(self._self_signing_priv, device_keys)
-            existing_signatures = device_keys.get("signatures")
+            sig = self._sign(self._self_signing_priv, device_keys_to_upload)
+            existing_signatures = device_keys_to_upload.get("signatures")
             if not isinstance(existing_signatures, dict):
                 existing_signatures = {}
+            else:
+                existing_signatures = {
+                    signer: dict(signer_sigs) if isinstance(signer_sigs, dict) else signer_sigs
+                    for signer, signer_sigs in existing_signatures.items()
+                }
             user_signatures = existing_signatures.get(self.user_id)
             if not isinstance(user_signatures, dict):
                 user_signatures = {}
+            else:
+                user_signatures = dict(user_signatures)
             user_signatures[signing_key_id] = sig
             existing_signatures[self.user_id] = user_signatures
-            device_keys["signatures"] = existing_signatures
+            device_keys_to_upload["signatures"] = existing_signatures
 
             async def _verify_uploaded_device_signature() -> bool:
                 refreshed = await self.client.query_keys({self.user_id: [device_id]})
@@ -533,7 +611,7 @@ class CrossSigning:
                 )
                 return signing_key_id in refreshed_signatures
 
-            upload_payload = {self.user_id: {device_id: device_keys}}
+            upload_payload = {self.user_id: {device_id: device_keys_to_upload}}
             ok = await self._upload_signature_and_confirm(
                 upload_payload,
                 _verify_uploaded_device_signature,
@@ -563,6 +641,9 @@ class CrossSigning:
         try:
             response = await self.client.query_keys({target_user_id: []})
             master_key = (response.get("master_keys") or {}).get(target_user_id)
+            device_keys = (
+                (response.get("device_keys") or {}).get(target_user_id, {}).get(self.device_id)
+            )
             if not master_key:
                 logger.debug("[E2EE-CrossSign] 未找到 master key，无法添加设备签名")
                 return False
@@ -572,48 +653,55 @@ class CrossSigning:
             if not isinstance(usage, list) or not isinstance(keys, dict) or not keys:
                 logger.debug("[E2EE-CrossSign] master key 结构无效，无法添加设备签名")
                 return False
-            master_key_id, master_key_value = next(iter(keys.items()))
-            
-            # Debug: log the complete master_key structure from server
-            logger.warning(
-                f"[E2EE-CrossSign] 完整 master_key 结构：{json.dumps(master_key, indent=2, ensure_ascii=False)}"
-            )
+            master_key_id, _master_key_value = next(iter(keys.items()))
 
-            # Follow the same pattern as sign_device: use complete object from server
-            master_key.pop("unsigned", None)
+            (
+                matches,
+                local_ed25519,
+                local_curve25519,
+                server_ed25519,
+                server_curve25519,
+            ) = self._current_device_matches_server(device_keys)
+            if not matches:
+                logger.warning(
+                    "[E2EE-CrossSign] 当前设备身份密钥与服务器不一致，跳过 master key 设备签名："
+                    f"device_id={self.device_id} "
+                    f"local_ed25519={local_ed25519} server_ed25519={server_ed25519} "
+                    f"local_curve25519={local_curve25519} server_curve25519={server_curve25519}"
+                )
+                return False
+
             signing_key_id = self.device_key_id
-            device_ed25519_pub = self.olm._account.ed25519_key.to_base64()
-            
-            # Sign the complete master_key (remove signatures before signing)
-            signable_master_key = dict(master_key)
-            signable_master_key.pop("signatures", None)
-            canonical_json = self._canonical(signable_master_key)
-            canonical_bytes = canonical_json.encode("utf-8")
-            signature = self.olm._account.sign(canonical_bytes).to_base64()
-
-            # 诊断日志：记录签名的详细信息
-            logger.warning(
+            signature = self._sign_device_object(master_key)
+            logger.debug(
                 "[E2EE-CrossSign] 签名诊断信息：\n"
-                f"  canonical_json={canonical_json}\n"
-                f"  device_ed25519_pub={device_ed25519_pub}\n"
+                f"  local_device_ed25519={local_ed25519}\n"
+                f"  server_device_ed25519={server_ed25519}\n"
                 f"  signing_key_id={signing_key_id}\n"
                 f"  device_id(olm)={self.olm.device_id}\n"
                 f"  device_id(self)={self.device_id}\n"
+                f"  master_key_id={master_key_id}\n"
                 f"  signature={signature}"
             )
 
-            # Add signature to existing signatures (like sign_device does)
-            existing_signatures = master_key.get("signatures")
+            master_key_to_upload = copy.deepcopy(master_key)
+            master_key_to_upload.pop("unsigned", None)
+            existing_signatures = master_key_to_upload.get("signatures")
             if not isinstance(existing_signatures, dict):
                 existing_signatures = {}
+            else:
+                existing_signatures = {
+                    signer: dict(signer_sigs) if isinstance(signer_sigs, dict) else signer_sigs
+                    for signer, signer_sigs in existing_signatures.items()
+                }
             user_signatures = existing_signatures.get(target_user_id)
             if not isinstance(user_signatures, dict):
                 user_signatures = {}
+            else:
+                user_signatures = dict(user_signatures)
             user_signatures[signing_key_id] = signature
             existing_signatures[target_user_id] = user_signatures
-            master_key["signatures"] = existing_signatures
-            
-            upload_master_key = master_key
+            master_key_to_upload["signatures"] = existing_signatures
 
             async def _verify_uploaded_master_signature() -> bool:
                 refreshed = await self.client.query_keys({target_user_id: []})
@@ -629,8 +717,9 @@ class CrossSigning:
                 "[E2EE-CrossSign] 上传 master key 设备签名："
                 f"master={master_key_id} signer={signing_key_id}"
             )
+
             ok = await self._upload_signature_and_confirm(
-                {target_user_id: {master_key_id: upload_master_key}},
+                {target_user_id: {master_key_id: master_key_to_upload}},
                 _verify_uploaded_master_signature,
                 "master key 设备签名 ",
             )
@@ -645,6 +734,14 @@ class CrossSigning:
         except Exception as e:
             logger.warning(f"[E2EE-CrossSign] master key 设备签名异常：{e}")
             return False
+
+    def _sign_device_object(self, payload: dict) -> str:
+        payload_to_sign = copy.deepcopy(payload)
+        payload_to_sign.pop("signatures", None)
+        payload_to_sign.pop("unsigned", None)
+        canonical = self._canonical(payload_to_sign)
+        signature = self.olm._account.sign(canonical.encode("utf-8")).to_base64()
+        return signature
 
     async def verify_user(self, target_user_id: str):
         if not self._user_signing_priv or not self._user_signing_key:
