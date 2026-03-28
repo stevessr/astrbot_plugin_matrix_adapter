@@ -99,8 +99,6 @@ class E2EEMixin:
             Response with failures
         """
         endpoint = "/_matrix/client/v3/keys/signatures/upload"
-        # Matrix spec requires request body to be user_id-keyed object map directly,
-        # not wrapped in an additional "signatures" field.
         return await self._request("POST", endpoint, data=signatures)
 
     async def upload_signing_keys(

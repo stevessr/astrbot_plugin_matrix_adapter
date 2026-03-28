@@ -37,9 +37,23 @@ class E2EEManagerKeysMixin:
                             f"服务器缺少设备 {self.device_id} 的身份密钥，准备重新上传"
                         )
                     else:
-                        logger.debug(
-                            f"服务器已存在设备 {self.device_id} 的身份密钥，跳过重复上传"
-                        )
+                        server_device = my_devices[self.device_id]
+                        server_keys = server_device.get("keys", {})
+                        local_keys = self._olm.get_identity_keys()
+                        if (
+                            server_keys.get(f"ed25519:{self.device_id}")
+                            != local_keys.get(f"ed25519:{self.device_id}")
+                            or server_keys.get(f"curve25519:{self.device_id}")
+                            != local_keys.get(f"curve25519:{self.device_id}")
+                        ):
+                            device_keys = self._olm.get_device_keys()
+                            logger.warning(
+                                f"服务器上的设备 {self.device_id} 身份密钥与本地不一致，准备重新上传"
+                            )
+                        else:
+                            logger.debug(
+                                f"服务器已存在设备 {self.device_id} 的身份密钥，跳过重复上传"
+                            )
                 except Exception as verify_e:
                     device_keys = self._olm.get_device_keys()
                     logger.warning(
