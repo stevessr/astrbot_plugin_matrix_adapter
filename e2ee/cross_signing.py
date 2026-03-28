@@ -344,10 +344,10 @@ class CrossSigning:
             )
             return False
 
-        for _ in range(3):
+        for _ in range(5):
             if await verify():
                 return True
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1.0)
 
         logger.warning(f"[E2EE-CrossSign] {failure_context}未在服务器状态中出现")
         return False
@@ -446,6 +446,7 @@ class CrossSigning:
                 logger.debug("[E2EE-CrossSign] 未找到设备密钥，无法签名")
                 return False
 
+            device_keys.pop("unsigned", None)
             signing_key_id = f"ed25519:{self._self_signing_key}"
             sig = self._sign(self._self_signing_priv, device_keys)
             existing_signatures = device_keys.get("signatures")
@@ -524,6 +525,10 @@ class CrossSigning:
                 )
                 return signing_key_id in refreshed_signatures
 
+            logger.debug(
+                "[E2EE-CrossSign] 上传 master key 设备签名："
+                f"master={self._master_key} signer={signing_key_id}"
+            )
             ok = await self._upload_signature_and_confirm(
                 {target_user_id: {self._master_key: master_key}},
                 _verify_uploaded_master_signature,
