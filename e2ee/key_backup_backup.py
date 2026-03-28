@@ -7,6 +7,7 @@ import time
 
 from astrbot.api import logger
 
+from ..client.base import MatrixAPIError
 from ..constants import (
     CRYPTO_KEY_SIZE_32,
     MEGOLM_BACKUP_ALGO,
@@ -468,7 +469,6 @@ class KeyBackupBackupMixin:
             return False
 
         try:
-            # 加密会话数据
             plaintext = session_key.encode()
             nonce, ciphertext = _aes_encrypt(self._encryption_key, plaintext)
 
@@ -487,12 +487,35 @@ class KeyBackupBackupMixin:
                 },
             }
 
-            await self.client._request(
-                "PUT",
-                f"/_matrix/client/v3/room_keys/keys/{room_id}/{session_id}?version={self._backup_version}",
-                data=session_data,
-            )
-            return True
+            try:
+                await self.client._request(
+                    "PUT",
+                    f"/_matrix/client/v3/room_keys/keys/{room_id}/{session_id}?version={self._backup_version}",
+                    data=session_data,
+                )
+                return True
+            except MatrixAPIError as e:
+                errcode = e.data.get("errcode") if isinstance(e.data, dict) else None
+                if e.status != 404 or errcode != "M_UNRECOGNIZED":
+                    raise
+
+                logger.info(
+                    "[KeyBackup] 单会话备份接口未识别，回退到批量 room_keys 接口"
+                )
+                await self.client._request(
+                    "PUT",
+                    f"/_matrix/client/v3/room_keys/keys?version={self._backup_version}",
+                    data={
+                        "rooms": {
+                            room_id: {
+                                "sessions": {
+                                    session_id: session_data,
+                                }
+                            }
+                        }
+                    },
+                )
+                return True
 
         except Exception as e:
             logger.warning(f"[KeyBackup] 备份单个密钥失败：{e}")

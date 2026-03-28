@@ -776,7 +776,7 @@ class MatrixDehydratedDeviceCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
-class MatrixKeyBackupCompatTests(unittest.TestCase):
+class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
     def test_verify_recovery_key_rejects_non_32_byte_key(self):
         backup_module = load_module("e2ee.key_backup_backup")
 
@@ -786,6 +786,76 @@ class MatrixKeyBackupCompatTests(unittest.TestCase):
 
         backup = DummyBackup()
         self.assertFalse(backup._verify_recovery_key(b"short", log_mismatch=False))
+
+    async def test_upload_single_key_falls_back_to_bulk_endpoint_on_unrecognized(self):
+        backup_module = load_module("e2ee.key_backup_backup")
+        base_module = load_module("client.base")
+
+        class DummyClient:
+            def __init__(self):
+                self.calls = []
+
+            async def _request(self, method, endpoint, data=None, **kwargs):
+                self.calls.append((method, endpoint, data))
+                if endpoint.startswith("/_matrix/client/v3/room_keys/keys/!"):
+                    raise base_module.MatrixAPIError(
+                        404,
+                        {"errcode": "M_UNRECOGNIZED", "error": "Unrecognized request"},
+                        "Matrix API error: M_UNRECOGNIZED - Unrecognized request (status: 404)",
+                    )
+                return {}
+
+        class DummyBackup(backup_module.KeyBackupBackupMixin):
+            def __init__(self):
+                self.client = DummyClient()
+                self._backup_version = "1"
+                self._encryption_key = b"1" * 32
+
+        backup = DummyBackup()
+        ok = await backup.upload_single_key("!room:example.org", "sess1", "secret")
+
+        self.assertTrue(ok)
+        self.assertEqual(len(backup.client.calls), 2)
+        self.assertEqual(
+            backup.client.calls[0][1],
+            "/_matrix/client/v3/room_keys/keys/!room:example.org/sess1?version=1",
+        )
+        self.assertEqual(
+            backup.client.calls[1][1],
+            "/_matrix/client/v3/room_keys/keys?version=1",
+        )
+        self.assertEqual(
+            backup.client.calls[1][2]["rooms"]["!room:example.org"]["sessions"].keys(),
+            {"sess1"}.keys(),
+        )
+
+    async def test_upload_single_key_does_not_fall_back_for_other_errors(self):
+        backup_module = load_module("e2ee.key_backup_backup")
+        base_module = load_module("client.base")
+
+        class DummyClient:
+            def __init__(self):
+                self.calls = []
+
+            async def _request(self, method, endpoint, data=None, **kwargs):
+                self.calls.append((method, endpoint, data))
+                raise base_module.MatrixAPIError(
+                    403,
+                    {"errcode": "M_FORBIDDEN", "error": "Forbidden"},
+                    "Matrix API error: M_FORBIDDEN - Forbidden (status: 403)",
+                )
+
+        class DummyBackup(backup_module.KeyBackupBackupMixin):
+            def __init__(self):
+                self.client = DummyClient()
+                self._backup_version = "1"
+                self._encryption_key = b"1" * 32
+
+        backup = DummyBackup()
+        ok = await backup.upload_single_key("!room:example.org", "sess1", "secret")
+
+        self.assertFalse(ok)
+        self.assertEqual(len(backup.client.calls), 1)
 
 
 if __name__ == "__main__":
