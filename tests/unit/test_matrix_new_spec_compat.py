@@ -1139,6 +1139,166 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             "fingerprint-ed25519",
         )
 
+    async def test_handle_done_publishes_cross_signing_for_same_user_devices(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+
+        class DummyDeviceStore:
+            def __init__(self):
+                self.calls = []
+
+            def add_device(self, user_id, device_id, fingerprint):
+                self.calls.append((user_id, device_id, fingerprint))
+
+        class DummyManager:
+            def __init__(self):
+                self.calls = []
+
+            async def publish_trusted_device(self, user_id, device_id):
+                self.calls.append((user_id, device_id))
+                return True
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self._sessions = {
+                    "txn123": {
+                        "from_device": "DEV456",
+                        "fingerprint": "fp456",
+                    }
+                }
+                self.device_store = DummyDeviceStore()
+                self.e2ee_manager = DummyManager()
+
+        verifier = DummyVerifier()
+        await verifier._handle_done("@bot:example.org", {}, "txn123")
+
+        self.assertEqual(
+            verifier.device_store.calls,
+            [("@bot:example.org", "DEV456", "fp456")],
+        )
+        self.assertEqual(
+            verifier.e2ee_manager.calls,
+            [
+                ("@bot:example.org", "DEV456"),
+                ("@bot:example.org", "BOT123"),
+            ],
+        )
+
+    async def test_handle_done_does_not_publish_cross_signing_for_other_users(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+
+        class DummyDeviceStore:
+            def __init__(self):
+                self.calls = []
+
+            def add_device(self, user_id, device_id, fingerprint):
+                self.calls.append((user_id, device_id, fingerprint))
+
+        class DummyManager:
+            def __init__(self):
+                self.calls = []
+
+            async def publish_trusted_device(self, user_id, device_id):
+                self.calls.append((user_id, device_id))
+                return True
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self._sessions = {
+                    "txn123": {
+                        "from_device": "ALICE1",
+                        "fingerprint": "alice-fp",
+                    }
+                }
+                self.device_store = DummyDeviceStore()
+                self.e2ee_manager = DummyManager()
+
+        verifier = DummyVerifier()
+        await verifier._handle_done("@alice:example.org", {}, "txn123")
+
+        self.assertEqual(
+            verifier.device_store.calls,
+            [("@alice:example.org", "ALICE1", "alice-fp")],
+        )
+        self.assertEqual(verifier.e2ee_manager.calls, [])
+
+    async def test_publish_trusted_device_requires_same_user_and_self_signing_key(self):
+        verification_module = load_module("e2ee.e2ee_manager_verification")
+
+        class DummyCrossSigning:
+            def __init__(self, has_key=True):
+                self.self_signing_private_key = b"key" if has_key else None
+                self.calls = []
+
+            async def sign_device(self, device_id):
+                self.calls.append(device_id)
+                return True
+
+        class DummyManager(verification_module.E2EEManagerVerificationMixin):
+            def __init__(self, cross_signing):
+                self.user_id = "@bot:example.org"
+                self._cross_signing = cross_signing
+
+        manager = DummyManager(DummyCrossSigning())
+        ok = await manager.publish_trusted_device("@bot:example.org", "BOT123")
+        self.assertTrue(ok)
+        self.assertEqual(manager._cross_signing.calls, ["BOT123"])
+
+        other_user_ok = await manager.publish_trusted_device(
+            "@alice:example.org", "ALICE1"
+        )
+        self.assertFalse(other_user_ok)
+        self.assertEqual(manager._cross_signing.calls, ["BOT123"])
+
+        no_key_manager = DummyManager(DummyCrossSigning(has_key=False))
+        no_key_ok = await no_key_manager.publish_trusted_device(
+            "@bot:example.org", "BOT123"
+        )
+        self.assertFalse(no_key_ok)
+        self.assertEqual(no_key_manager._cross_signing.calls, [])
+
+    async def test_self_signing_secret_persists_and_retries_signing_own_device(self):
+        secrets_module = load_module("e2ee.e2ee_manager_secrets")
+        constants = load_module("constants")
+
+        class DummyCrossSigning:
+            def __init__(self):
+                self.self_signing_private_key = None
+                self.persist_calls = 0
+
+            def persist_local_keys(self):
+                self.persist_calls += 1
+
+        class DummyManager(secrets_module.E2EEManagerSecretsMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self._cross_signing = DummyCrossSigning()
+                self.calls = []
+                self._key_backup = None
+
+            async def publish_trusted_device(self, user_id, device_id):
+                self.calls.append((user_id, device_id))
+                return True
+
+        manager = DummyManager()
+        encoded = base64.b64encode(b"self-signing-secret").decode("utf-8")
+
+        await manager._process_received_secret(
+            constants.SECRET_CROSS_SIGNING_SELF_SIGNING,
+            encoded,
+        )
+
+        self.assertEqual(
+            manager._cross_signing.self_signing_private_key,
+            b"self-signing-secret",
+        )
+        self.assertEqual(manager._cross_signing.persist_calls, 1)
+        self.assertEqual(manager.calls, [("@bot:example.org", "BOT123")])
+
 
 class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
     def test_verify_recovery_key_rejects_non_32_byte_key(self):

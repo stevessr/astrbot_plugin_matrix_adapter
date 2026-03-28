@@ -221,6 +221,11 @@ class CrossSigning:
     def _b64(self, data: bytes) -> str:
         return base64.b64encode(data).decode().rstrip("=")
 
+    def _b64_optional(self, data: bytes | None) -> str | None:
+        if data is None:
+            return None
+        return self._b64(data)
+
     def _canonical(self, obj: dict) -> str:
         return json.dumps(obj, sort_keys=True, separators=(",", ":"))
 
@@ -262,15 +267,15 @@ class CrossSigning:
         try:
             data = {
                 "master": {
-                    "priv": self._b64(self._master_priv),
+                    "priv": self._b64_optional(self._master_priv),
                     "pub": self._master_key,
                 },
                 "self_signing": {
-                    "priv": self._b64(self._self_signing_priv),
+                    "priv": self._b64_optional(self._self_signing_priv),
                     "pub": self._self_signing_key,
                 },
                 "user_signing": {
-                    "priv": self._b64(self._user_signing_priv),
+                    "priv": self._b64_optional(self._user_signing_priv),
                     "pub": self._user_signing_key,
                 },
             }
@@ -280,6 +285,9 @@ class CrossSigning:
             )
         except Exception as e:
             logger.debug(f"[E2EE-CrossSign] 保存本地交叉签名密钥失败：{e}")
+
+    def persist_local_keys(self):
+        self._save_local_keys()
 
     def _gen_keypair(self) -> tuple[bytes, str]:
         from cryptography.hazmat.primitives import serialization
@@ -394,10 +402,10 @@ class CrossSigning:
             return
         await self._generate_and_upload_keys(force_regen=False, reuse_master=True)
 
-    async def sign_device(self, device_id: str):
+    async def sign_device(self, device_id: str) -> bool:
         if not self._self_signing_priv or not self._self_signing_key:
             logger.debug("[E2EE-CrossSign] self-signing key 不可用，跳过设备签名")
-            return
+            return False
         try:
             response = await self.client.query_keys({self.user_id: [device_id]})
             device_keys = (
@@ -405,7 +413,7 @@ class CrossSigning:
             )
             if not device_keys:
                 logger.debug("[E2EE-CrossSign] 未找到设备密钥，无法签名")
-                return
+                return False
 
             # Matrix 要求 signatures 的 key 使用 signing key 的 key_id。
             # 当前实现中 self-signing key id 即 ed25519:<self_signing_pubkey>。
@@ -426,10 +434,13 @@ class CrossSigning:
                 signatures={self.user_id: {device_id: device_keys}}
             )
             logger.debug(f"[E2EE-CrossSign] 已签名设备：{device_id}")
+            return True
         except MatrixAPIError as e:
             logger.warning(f"[E2EE-CrossSign] 设备签名失败：{e}")
+            return False
         except Exception as e:
             logger.warning(f"[E2EE-CrossSign] 设备签名异常：{e}")
+            return False
 
     async def verify_user(self, target_user_id: str):
         if not self._user_signing_priv or not self._user_signing_key:

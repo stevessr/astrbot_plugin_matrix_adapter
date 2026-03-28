@@ -8,6 +8,30 @@ from ..constants import M_KEY_VERIFICATION_REQUEST, M_SAS_V1_METHOD, PREFIX_ED25
 
 
 class E2EEManagerVerificationMixin:
+    async def publish_trusted_device(self, user_id: str, device_id: str) -> bool:
+        """Publish cross-signing trust for a same-account device."""
+        if user_id != self.user_id:
+            logger.debug("跳过发布设备信任：不是同账号设备")
+            return False
+        if not device_id:
+            logger.debug("跳过发布设备信任：缺少 device_id")
+            return False
+        if not self._cross_signing:
+            logger.debug("跳过发布设备信任：cross-signing 未初始化")
+            return False
+        if not self._cross_signing.self_signing_private_key:
+            logger.debug(
+                f"跳过发布设备信任：self-signing 私钥不可用 device={device_id}"
+            )
+            return False
+
+        ok = await self._cross_signing.sign_device(device_id)
+        if ok:
+            logger.info(f"已发布设备信任：{device_id}")
+        else:
+            logger.warning(f"发布设备信任失败：{device_id}")
+        return ok
+
     async def handle_verification_event(
         self, event_type: str, sender: str, content: dict
     ) -> bool:

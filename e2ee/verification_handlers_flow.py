@@ -497,6 +497,19 @@ class SASVerificationFlowMixin:
                 f"has_fingerprint={bool(fingerprint)})"
             )
 
+        e2ee_manager = getattr(self, "e2ee_manager", None)
+        if e2ee_manager and sender == self.user_id:
+            for device_id in (from_device, self.device_id):
+                if not device_id:
+                    continue
+                try:
+                    await e2ee_manager.publish_trusted_device(sender, device_id)
+                except Exception as e:
+                    logger.warning(
+                        "[E2EE-Verify] 发布设备信任失败："
+                        f"device={self._mask_identifier(device_id)} err={e}"
+                    )
+
     async def _handle_cancel(self, sender: str, content: dict, transaction_id: str):
         """处理验证取消"""
         code = content.get("code")

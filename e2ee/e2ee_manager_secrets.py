@@ -429,16 +429,20 @@ class E2EEManagerSecretsMixin:
             elif secret_name == SECRET_CROSS_SIGNING_MASTER:
                 if self._cross_signing:
                     self._cross_signing.master_private_key = secret_bytes
+                    self._cross_signing.persist_local_keys()
                     logger.info("[E2EE-Secrets] 已保存接收到的主签名密钥")
 
             elif secret_name == SECRET_CROSS_SIGNING_SELF_SIGNING:
                 if self._cross_signing:
                     self._cross_signing.self_signing_private_key = secret_bytes
+                    self._cross_signing.persist_local_keys()
                     logger.info("[E2EE-Secrets] 已保存接收到的自签名密钥")
+                    await self.publish_trusted_device(self.user_id, self.device_id)
 
             elif secret_name == SECRET_CROSS_SIGNING_USER_SIGNING:
                 if self._cross_signing:
                     self._cross_signing.user_signing_private_key = secret_bytes
+                    self._cross_signing.persist_local_keys()
                     logger.info("[E2EE-Secrets] 已保存接收到的用户签名密钥")
 
             else:
