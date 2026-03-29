@@ -532,15 +532,16 @@ class SASVerificationFlowMixin:
             # Check if this is an in-room verification
             is_in_room = session.get("is_in_room", False)
             room_id = session.get("room_id")
+            target_device = (
+                content.get("from_device")
+                or session.get("their_device")
+                or session.get("from_device", "")
+            )
 
             if is_in_room and room_id:
                 await self._send_in_room_key(room_id, transaction_id)
             else:
-                await self._send_key(
-                    sender,
-                    content.get("from_device", session.get("from_device", "")),
-                    transaction_id,
-                )
+                await self._send_key(sender, target_device, transaction_id)
 
     async def _handle_key(self, sender: str, content: dict, transaction_id: str):
         """处理密钥交换 - 使用真正的 X25519"""

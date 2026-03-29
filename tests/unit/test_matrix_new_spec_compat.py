@@ -1480,6 +1480,78 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             "fingerprint-ed25519",
         )
 
+    async def test_same_user_auto_accept_request_does_not_proactively_start_sas(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+        constants = load_module("constants")
+
+        class DummyClient:
+            async def query_keys(self, device_keys, timeout=10000):
+                return {
+                    "device_keys": {
+                        "@bot:example.org": {
+                            "WEB456": {
+                                "keys": {"ed25519:WEB456": "fingerprint-web"}
+                            }
+                        }
+                    },
+                    "master_keys": {
+                        "@bot:example.org": {
+                            "keys": {"ed25519:MASTER": "MASTER"}
+                        }
+                    },
+                }
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.client = DummyClient()
+                self._sessions = {}
+                self.auto_verify_mode = "auto_accept"
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self.ready_calls = []
+                self.start_calls = []
+                self.notify_calls = []
+
+            async def _send_ready(self, sender, device_id, transaction_id):
+                self.ready_calls.append((sender, device_id, transaction_id))
+
+            async def _send_start(self, sender, device_id, transaction_id):
+                self.start_calls.append((sender, device_id, transaction_id))
+
+            async def _send_cancel(self, *args, **kwargs):
+                return None
+
+            async def _maybe_prepare_self_verification_qr(
+                self, sender, peer_device, methods, transaction_id
+            ):
+                return False
+
+            async def _notify_admin_to_scan_peer_qr(self, session, transaction_id):
+                self.notify_calls.append((session, transaction_id))
+
+        verifier = DummyVerifier()
+        await verifier._handle_request(
+            "@bot:example.org",
+            {
+                "from_device": "WEB456",
+                "methods": [
+                    constants.M_SAS_V1_METHOD,
+                    constants.M_QR_CODE_SHOW_V1_METHOD,
+                    constants.M_RECIPROCATE_V1_METHOD,
+                ],
+            },
+            "txn123",
+        )
+
+        self.assertEqual(
+            verifier.ready_calls,
+            [("@bot:example.org", "WEB456", "txn123")],
+        )
+        self.assertEqual(verifier.start_calls, [])
+        self.assertEqual(len(verifier.notify_calls), 1)
+        self.assertIsNone(verifier._sessions["txn123"].get("their_device"))
+        self.assertIsNone(verifier._sessions["txn123"].get("we_are_initiator"))
+
     async def test_handle_ready_prefers_self_verification_qr_when_peer_can_scan(self):
         flow_module = load_module("e2ee.verification_handlers_flow")
         constants = load_module("constants")
@@ -1534,6 +1606,39 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(verifier.start_calls, [])
         self.assertEqual(verifier.cancel_calls, [])
+
+    async def test_handle_accept_uses_cached_target_device_for_initiator(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.auto_verify_mode = "auto_accept"
+                self._sessions = {"txn123": {"their_device": "DEV456"}}
+                self.key_calls = []
+
+            async def _send_in_room_key(self, room_id, transaction_id):
+                raise AssertionError("unexpected in-room flow")
+
+            async def _send_key(self, sender, device_id, transaction_id):
+                self.key_calls.append((sender, device_id, transaction_id))
+
+        verifier = DummyVerifier()
+        await verifier._handle_accept(
+            "@alice:example.org",
+            {
+                "commitment": "abc",
+                "key_agreement_protocol": "curve25519-hkdf-sha256",
+                "hash": "sha256",
+                "message_authentication_code": "hkdf-hmac-sha256.v2",
+                "short_authentication_string": ["decimal", "emoji"],
+            },
+            "txn123",
+        )
+
+        self.assertEqual(
+            verifier.key_calls,
+            [("@alice:example.org", "DEV456", "txn123")],
+        )
 
     async def test_prepare_self_verification_qr_builds_trusted_master_payload(self):
         flow_module = load_module("e2ee.verification_handlers_flow")
