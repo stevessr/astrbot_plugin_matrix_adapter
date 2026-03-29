@@ -6,6 +6,7 @@ from astrbot.api import logger
 
 from ..constants import (
     M_KEY_VERIFICATION_REQUEST,
+    M_QR_CODE_SCAN_V1_METHOD,
     M_QR_CODE_SHOW_V1_METHOD,
     M_RECIPROCATE_V1_METHOD,
     M_SAS_V1_METHOD,
@@ -203,19 +204,27 @@ class E2EEManagerVerificationMixin:
                 elif not state.get("master_signed"):
                     owner_signed_but_not_master_verified.append(device_id)
 
-            if not untrusted_devices:
-                if owner_signed_but_not_master_verified:
-                    logger.info(
-                        "发现同账号设备已 owner-signed，但尚未完成本机主密钥验证："
-                        f"{self._format_masked_device_ids(owner_signed_but_not_master_verified)}"
-                    )
-                else:
-                    logger.info("所有其他设备已验证")
+            devices_requiring_verification = list(untrusted_devices)
+            if owner_signed_but_not_master_verified:
+                logger.info(
+                    "发现同账号设备已 owner-signed，但尚未完成本机主密钥验证："
+                    f"{self._format_masked_device_ids(owner_signed_but_not_master_verified)}"
+                )
+                devices_requiring_verification.extend(
+                    device_id
+                    for device_id in owner_signed_but_not_master_verified
+                    if device_id not in devices_requiring_verification
+                )
+
+            if not devices_requiring_verification:
+                logger.info("所有其他设备已验证")
                 return
 
-            logger.info(f"发现 {len(untrusted_devices)} 个未验证设备，尝试发起验证...")
+            logger.info(
+                f"发现 {len(devices_requiring_verification)} 个同账号设备需要完成验证，尝试发起验证..."
+            )
 
-            for device_id in untrusted_devices:
+            for device_id in devices_requiring_verification:
                 try:
                     await self._initiate_verification_for_device(device_id)
                 except Exception as e:
@@ -237,6 +246,7 @@ class E2EEManagerVerificationMixin:
             "from_device": self.device_id,
             "methods": [
                 M_SAS_V1_METHOD,
+                M_QR_CODE_SCAN_V1_METHOD,
                 M_QR_CODE_SHOW_V1_METHOD,
                 M_RECIPROCATE_V1_METHOD,
             ],

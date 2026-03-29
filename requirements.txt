@@ -18,6 +18,9 @@ bleach>=6.0.0
 # 图片处理（用于图片压缩）
 Pillow>=10.0.0
 
+# 二维码解码（用于 Matrix 验证扫码）
+pyzbar>=0.1.9
+
 # PostgreSQL 存储后端（matrix_data_storage_backend=pgsql 时需要）
 psycopg[binary]>=3.1.18
 

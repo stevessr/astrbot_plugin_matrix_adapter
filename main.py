@@ -214,3 +214,80 @@ class MatrixPlugin(Star):
         except Exception as e:
             logger.error(f"批准设备失败：{e}")
             yield event.plain_result(f"❌ 批准设备失败：{e}")
+
+    @filter.command("scan_device_qr")
+    @filter.permission_type(PermissionType.ADMIN)
+    async def scan_device_qr(
+        self,
+        event: AstrMessageEvent,
+        user_id: str,
+        device_id: str,
+        qr_input: str,
+        matrix_platform_id: str = "",
+    ):
+        """扫描 Matrix 设备验证二维码。
+
+        用法：
+            /scan_device_qr <用户 ID> <设备 ID> <二维码图片路径或 base64 载荷> [matrix_platform_id]
+        """
+        e2ee_manager = None
+        try:
+            message_obj = getattr(event, "message_obj", None)
+            if message_obj:
+                raw_message = getattr(message_obj, "raw_message", None)
+                if raw_message:
+                    adapter = getattr(raw_message, "_adapter", None)
+                    if adapter:
+                        e2ee_manager = getattr(adapter, "e2ee_manager", None)
+        except Exception as e:
+            logger.debug(f"获取 e2ee_manager 失败：{e}")
+
+        if not e2ee_manager:
+            current_platform_name = str(event.get_platform_name() or "").strip().lower()
+            current_platform_id = str(event.get_platform_id() or "")
+            requested_platform_id = str(matrix_platform_id or "").strip()
+
+            target_platform_id = requested_platform_id
+            if not target_platform_id and current_platform_name == "matrix":
+                target_platform_id = current_platform_id
+
+            if not target_platform_id and current_platform_name != "matrix":
+                matrix_platform_ids = MatrixUtils.list_matrix_platform_ids(self.context)
+                if not matrix_platform_ids:
+                    yield event.plain_result("未检测到可用的 Matrix 适配器")
+                    return
+                if len(matrix_platform_ids) > 1:
+                    yield event.plain_result(
+                        "检测到多个 Matrix 适配器，请在命令末尾指定 matrix_platform_id：\n"
+                        + "\n".join(f"- {platform_id}" for platform_id in matrix_platform_ids)
+                    )
+                    return
+                target_platform_id = matrix_platform_ids[0]
+
+            e2ee_manager = MatrixUtils.get_matrix_e2ee_manager(
+                self.context,
+                target_platform_id,
+                fallback_to_first=not bool(target_platform_id),
+            )
+
+        if not e2ee_manager:
+            yield event.plain_result("端到端加密未启用、不可用，或指定的 Matrix 适配器不存在")
+            return
+
+        verification = getattr(e2ee_manager, "_verification", None)
+        if not verification:
+            yield event.plain_result("验证模块未初始化")
+            return
+
+        scan_method = getattr(verification, "scan_qr", None)
+        if not callable(scan_method):
+            yield event.plain_result("当前验证模块不支持扫码验证")
+            return
+
+        try:
+            ok, message = await scan_method(user_id, device_id, qr_input)
+            prefix = "✅" if ok else "❌"
+            yield event.plain_result(f"{prefix} {message}")
+        except Exception as e:
+            logger.error(f"扫码验证失败：{e}")
+            yield event.plain_result(f"❌ 扫码验证失败：{e}")

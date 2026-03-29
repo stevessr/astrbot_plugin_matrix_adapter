@@ -1717,6 +1717,54 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(verifier.e2ee_manager.secret_requests, ["@bot:example.org"])
 
+    async def test_handle_done_for_qr_scan_sends_done_back_before_marking_verified(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+
+        class DummyDeviceStore:
+            def __init__(self):
+                self.calls = []
+
+            def add_device(self, user_id, device_id, fingerprint):
+                self.calls.append((user_id, device_id, fingerprint))
+
+        class DummyManager:
+            async def publish_trusted_device(self, user_id, device_id):
+                return True
+
+            async def request_missing_secrets_after_verification(self, user_id):
+                return None
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self._sessions = {
+                    "txn123": {
+                        "from_device": "DEV456",
+                        "fingerprint": "fp456",
+                        "qr_confirmed": True,
+                        "qr_scanned_by_us": True,
+                    }
+                }
+                self.device_store = DummyDeviceStore()
+                self.e2ee_manager = DummyManager()
+                self.done_calls = []
+
+            async def _send_done(self, sender, device_id, transaction_id):
+                self.done_calls.append((sender, device_id, transaction_id))
+
+        verifier = DummyVerifier()
+        await verifier._handle_done("@bot:example.org", {}, "txn123")
+
+        self.assertEqual(
+            verifier.done_calls,
+            [("@bot:example.org", "DEV456", "txn123")],
+        )
+        self.assertEqual(
+            verifier.device_store.calls,
+            [("@bot:example.org", "DEV456", "fp456")],
+        )
+
     async def test_handle_done_publishes_cross_signing_for_same_user_devices(self):
         flow_module = load_module("e2ee.verification_handlers_flow")
 
@@ -1916,7 +1964,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         await manager._verify_untrusted_own_devices()
         self.assertEqual(manager.calls, ["DEV456"])
 
-    async def test_verify_untrusted_own_devices_skips_owner_signed_device_without_master_signature(self):
+    async def test_verify_untrusted_own_devices_retries_owner_signed_device_without_master_signature(self):
         verification_module = load_module("e2ee.e2ee_manager_verification")
 
         class DummyClient:
@@ -1970,7 +2018,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
 
         manager = DummyManager()
         await manager._verify_untrusted_own_devices()
-        self.assertEqual(manager.calls, [])
+        self.assertEqual(manager.calls, ["DEV456"])
 
     async def test_request_missing_secrets_after_verification_requests_cross_signing_and_backup(self):
         verification_module = load_module("e2ee.e2ee_manager_verification")
@@ -2091,6 +2139,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             content["methods"],
             [
                 constants.M_SAS_V1_METHOD,
+                constants.M_QR_CODE_SCAN_V1_METHOD,
                 constants.M_QR_CODE_SHOW_V1_METHOD,
                 constants.M_RECIPROCATE_V1_METHOD,
             ],
@@ -2101,6 +2150,107 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             manager._verification.calls,
             [(txn_id, "@bot:example.org", "DEV456")],
         )
+
+    async def test_scan_qr_sends_reciprocate_start(self):
+        module_name = f"{PACKAGE_NAME}.e2ee.verification"
+        sys.modules.pop(module_name, None)
+        plugin_config_stub = types.ModuleType(f"{PACKAGE_NAME}.plugin_config")
+        plugin_config_stub.get_plugin_config = lambda: types.SimpleNamespace(
+            storage_backend_config=types.SimpleNamespace(backend="json")
+        )
+        with mock.patch.dict(sys.modules, {f"{PACKAGE_NAME}.plugin_config": plugin_config_stub}):
+            verification_module = importlib.import_module(module_name)
+        constants = load_module("constants")
+
+        master_key_bytes = b"M" * 32
+        local_device_bytes = b"L" * 32
+        peer_device_bytes = b"P" * 32
+        master_key = base64.b64encode(master_key_bytes).decode("ascii").rstrip("=")
+        local_device_key = (
+            base64.b64encode(local_device_bytes).decode("ascii").rstrip("=")
+        )
+        peer_device_key = (
+            base64.b64encode(peer_device_bytes).decode("ascii").rstrip("=")
+        )
+        secret = b"qr-secret-123456"
+        txn_id = "txn123"
+        payload = b"".join(
+            [
+                constants.QR_CODE_HEADER,
+                bytes(
+                    [
+                        constants.QR_CODE_VERSION,
+                        constants.QR_CODE_MODE_SELF_VERIFICATION_TRUSTED_MASTER,
+                    ]
+                ),
+                len(txn_id).to_bytes(2, "big"),
+                txn_id.encode("ascii"),
+                master_key_bytes,
+                local_device_bytes,
+                secret,
+            ]
+        )
+        payload_b64 = base64.b64encode(payload).decode("ascii")
+
+        class DummyClient:
+            async def query_keys(self, device_keys, timeout=10000):
+                return {
+                    "device_keys": {
+                        "@bot:example.org": {
+                            "DEV456": {
+                                "keys": {
+                                    "ed25519:DEV456": peer_device_key,
+                                }
+                            }
+                        }
+                    },
+                    "master_keys": {
+                        "@bot:example.org": {
+                            "keys": {"ed25519:MASTER": master_key},
+                        }
+                    },
+                }
+
+        class DummyVerifier(verification_module.SASVerification):
+            def __init__(self):
+                self.client = DummyClient()
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self.olm = types.SimpleNamespace(ed25519_key=local_device_key)
+                self._sessions = {
+                    txn_id: {
+                        "sender": "@bot:example.org",
+                        "from_device": "DEV456",
+                        "state": "ready_for_qr_scan",
+                    }
+                }
+                self.sent = []
+
+            async def _send_to_device(self, event_type, to_user, to_device, content):
+                self.sent.append((event_type, to_user, to_device, content))
+
+        verifier = DummyVerifier()
+        ok, message = await verifier.scan_qr(
+            "@bot:example.org",
+            "DEV456",
+            payload_b64,
+        )
+
+        self.assertTrue(ok)
+        self.assertIn("等待对端 done", message)
+        self.assertEqual(len(verifier.sent), 1)
+        event_type, to_user, to_device, content = verifier.sent[0]
+        self.assertEqual(event_type, constants.M_KEY_VERIFICATION_START)
+        self.assertEqual((to_user, to_device), ("@bot:example.org", "DEV456"))
+        self.assertEqual(content["from_device"], "BOT123")
+        self.assertEqual(content["method"], constants.M_RECIPROCATE_V1_METHOD)
+        self.assertEqual(content["transaction_id"], txn_id)
+        self.assertEqual(
+            content["secret"],
+            base64.b64encode(secret).decode("ascii").rstrip("="),
+        )
+        self.assertTrue(verifier._sessions[txn_id]["qr_scanned_by_us"])
+        self.assertTrue(verifier._sessions[txn_id]["qr_confirmed"])
 
     async def test_self_signing_secret_persists_and_retries_signing_own_device(self):
         secrets_module = load_module("e2ee.e2ee_manager_secrets")

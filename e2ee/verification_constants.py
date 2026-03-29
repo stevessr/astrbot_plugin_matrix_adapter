@@ -1,6 +1,7 @@
 from astrbot.api import logger
 
 from ..constants import (
+    M_QR_CODE_SCAN_V1_METHOD,
     M_QR_CODE_SHOW_V1_METHOD,
     M_RECIPROCATE_V1_METHOD,
     M_SAS_V1_METHOD,
@@ -20,7 +21,11 @@ except ImportError:
 
 # SAS 验证相关常量
 SAS_METHODS = [M_SAS_V1_METHOD]
-SAME_USER_QR_METHODS = [M_QR_CODE_SHOW_V1_METHOD, M_RECIPROCATE_V1_METHOD]
+SAME_USER_QR_METHODS = [
+    M_QR_CODE_SCAN_V1_METHOD,
+    M_QR_CODE_SHOW_V1_METHOD,
+    M_RECIPROCATE_V1_METHOD,
+]
 HASHES = ["sha256"]
 MESSAGE_AUTHENTICATION_CODES = ["hkdf-hmac-sha256.v2", "hkdf-hmac-sha256"]
 SHORT_AUTHENTICATION_STRING = ["decimal", "emoji"]

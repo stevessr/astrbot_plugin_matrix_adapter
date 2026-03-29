@@ -204,6 +204,22 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 /approve_device @alice:matrix.org DEVICEID123 matrix-main
 ```
 
+### `/scan_device_qr`
+
+扫描同账号设备验证二维码，并发送 `m.reciprocate.v1`。
+此命令需要管理员权限。
+
+用法：
+```
+/scan_device_qr <user_id> <device_id> <二维码图片路径或base64载荷> [matrix_platform_id]
+```
+
+示例：
+```
+/scan_device_qr @alice:matrix.org DEVICEID123 /tmp/element-verify-qr.png
+/scan_device_qr @alice:matrix.org DEVICEID123 TUFUUklY...
+```
+
 ## 开发接口
 
 ### 发送视频

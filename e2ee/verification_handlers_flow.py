@@ -10,6 +10,7 @@ from ..constants import (
     INFO_PREFIX_MAC,
     INFO_PREFIX_SAS,
     M_QR_CODE_SCAN_V1_METHOD,
+    M_QR_CODE_SHOW_V1_METHOD,
     M_RECIPROCATE_V1_METHOD,
     M_SAS_V1_METHOD,
     PREFIX_ED25519,
@@ -86,6 +87,15 @@ class SASVerificationFlowMixin:
         master_key = (response.get("master_keys") or {}).get(user_id) or {}
         signatures = (master_key.get("signatures") or {}).get(user_id) or {}
         return f"{PREFIX_ED25519}{device_id}" in signatures
+
+    def _can_continue_with_qr(self, sender: str, methods: object) -> bool:
+        if sender != self.user_id:
+            return False
+        can_show_to_peer = self._supports_method(methods, M_QR_CODE_SCAN_V1_METHOD)
+        can_scan_peer = self._supports_method(
+            methods, M_QR_CODE_SHOW_V1_METHOD
+        ) and self._supports_method(methods, M_RECIPROCATE_V1_METHOD)
+        return can_show_to_peer or can_scan_peer
 
     def _build_self_verification_qr_payload(
         self,
@@ -350,13 +360,21 @@ class SASVerificationFlowMixin:
             logger.info(
                 "[E2EE-Verify] 手动模式，发送 ready 并等待管理员确认 (mode=manual)"
             )
-            if self._supports_method(methods, M_SAS_V1_METHOD) or self._supports_method(
-                methods, M_QR_CODE_SCAN_V1_METHOD
+            if self._supports_method(methods, M_SAS_V1_METHOD) or self._can_continue_with_qr(
+                sender, methods
             ):
                 await self._send_ready(sender, from_device, transaction_id)
                 await self._maybe_prepare_self_verification_qr(
                     sender, from_device, methods, transaction_id
                 )
+                if (
+                    sender == self.user_id
+                    and self._supports_method(methods, M_QR_CODE_SHOW_V1_METHOD)
+                    and self._supports_method(methods, M_RECIPROCATE_V1_METHOD)
+                ):
+                    notify_scan = getattr(self, "_notify_admin_to_scan_peer_qr", None)
+                    if callable(notify_scan):
+                        await notify_scan(self._sessions[transaction_id], transaction_id)
             else:
                 await self._send_cancel(
                     sender,
@@ -368,14 +386,22 @@ class SASVerificationFlowMixin:
             return
 
         # auto_accept: 发送 ready
-        if self._supports_method(methods, M_SAS_V1_METHOD) or self._supports_method(
-            methods, M_QR_CODE_SCAN_V1_METHOD
+        if self._supports_method(methods, M_SAS_V1_METHOD) or self._can_continue_with_qr(
+            sender, methods
         ):
             logger.info("[E2EE-Verify] 自动接受验证请求 (mode=auto_accept)")
             await self._send_ready(sender, from_device, transaction_id)
             await self._maybe_prepare_self_verification_qr(
                 sender, from_device, methods, transaction_id
             )
+            if (
+                sender == self.user_id
+                and self._supports_method(methods, M_QR_CODE_SHOW_V1_METHOD)
+                and self._supports_method(methods, M_RECIPROCATE_V1_METHOD)
+            ):
+                notify_scan = getattr(self, "_notify_admin_to_scan_peer_qr", None)
+                if callable(notify_scan):
+                    await notify_scan(self._sessions[transaction_id], transaction_id)
         else:
             logger.warning(f"[E2EE-Verify] 不支持的验证方法：{methods}")
             await self._send_cancel(
@@ -407,6 +433,20 @@ class SASVerificationFlowMixin:
             )
             if qr_prepared:
                 logger.info("[E2EE-Verify] 作为发起者，优先展示 QR 自验证码")
+                return
+
+            if (
+                sender == self.user_id
+                and self._supports_method(methods, M_QR_CODE_SHOW_V1_METHOD)
+                and self._supports_method(methods, M_RECIPROCATE_V1_METHOD)
+            ):
+                session["state"] = "ready_for_qr_scan"
+                logger.info(
+                    "[E2EE-Verify] 对端支持展示 QR，等待扫码命令而不自动回退到 SAS"
+                )
+                notify_scan = getattr(self, "_notify_admin_to_scan_peer_qr", None)
+                if callable(notify_scan):
+                    await notify_scan(session, transaction_id)
                 return
 
             logger.info("[E2EE-Verify] 作为发起者，开始 SAS 验证流程")
@@ -857,10 +897,20 @@ class SASVerificationFlowMixin:
                 "[E2EE-Verify] 忽略 done：会话已取消或 MAC 尚未验证通过"
             )
             return
+
+        target_device = session.get("from_device") or session.get("their_device")
+        if session.get("qr_scanned_by_us") and target_device and not session.get("done_sent"):
+            session["done_sent"] = True
+            is_in_room = session.get("is_in_room", False)
+            room_id = session.get("room_id")
+            if is_in_room and room_id:
+                await self._send_in_room_done(room_id, transaction_id)
+            else:
+                await self._send_done(sender, target_device, transaction_id)
         session["state"] = "done"
 
         # 将设备标记为已验证
-        from_device = session.get("from_device") or session.get("their_device")
+        from_device = target_device
         fingerprint = session.get("fingerprint")
 
         # If we didn't get fingerprint earlier, try to get it from the key exchange if possible,

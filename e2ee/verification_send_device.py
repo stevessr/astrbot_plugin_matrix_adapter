@@ -14,6 +14,7 @@ from ..constants import (
     M_KEY_VERIFICATION_MAC,
     M_KEY_VERIFICATION_READY,
     M_KEY_VERIFICATION_START,
+    M_QR_CODE_SCAN_V1_METHOD,
     M_QR_CODE_SHOW_V1_METHOD,
     M_RECIPROCATE_V1_METHOD,
     M_SAS_V1_METHOD,
@@ -33,7 +34,11 @@ class SASVerificationSendDeviceMixin:
     def _get_supported_verification_methods(self, other_user: str | None = None) -> list[str]:
         methods = list(SAS_METHODS)
         if other_user == self.user_id:
-            for method in (M_QR_CODE_SHOW_V1_METHOD, M_RECIPROCATE_V1_METHOD):
+            for method in (
+                M_QR_CODE_SCAN_V1_METHOD,
+                M_QR_CODE_SHOW_V1_METHOD,
+                M_RECIPROCATE_V1_METHOD,
+            ):
                 if method not in methods:
                     methods.append(method)
         return methods
