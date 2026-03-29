@@ -2,6 +2,8 @@
 E2EE Manager verification helpers.
 """
 
+import time
+
 from astrbot.api import logger
 
 from ..constants import (
@@ -78,6 +80,40 @@ class E2EEManagerVerificationMixin:
         except Exception as e:
             logger.debug(f"查询同账号设备主密钥验证状态失败：{e}")
 
+    async def _maybe_republish_current_device_keys_after_verification(
+        self, verified_device_id: str
+    ) -> None:
+        current_device_id = getattr(self, "device_id", "")
+        if (
+            not verified_device_id
+            or not current_device_id
+            or verified_device_id == current_device_id
+        ):
+            return
+
+        cross_signing = getattr(self, "_cross_signing", None)
+        republish = getattr(cross_signing, "_republish_current_device_keys", None)
+        if not callable(republish):
+            return
+
+        now = time.monotonic()
+        last_ts = float(
+            getattr(
+                self,
+                "_last_current_device_key_refresh_after_verification_ts",
+                0.0,
+            )
+        )
+        cooldown_sec = 60.0
+        if now - last_ts < cooldown_sec:
+            return
+
+        self._last_current_device_key_refresh_after_verification_ts = now
+        try:
+            await republish()
+        except Exception as e:
+            logger.debug(f"验证后重发布当前设备 device_keys 失败：{e}")
+
     async def publish_trusted_device(self, user_id: str, device_id: str) -> bool:
         """Publish cross-signing trust for a same-account device."""
         if user_id != self.user_id:
@@ -111,6 +147,7 @@ class E2EEManagerVerificationMixin:
                 )
 
         logger.info(f"已发布设备信任：{device_id}")
+        await self._maybe_republish_current_device_keys_after_verification(device_id)
         if not master_ok:
             await self._log_same_user_verification_gap(device_id)
         return True

@@ -1959,6 +1959,41 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             ["@bot:example.org"],
         )
 
+    async def test_publish_trusted_device_republishes_current_device_keys_for_peer_verification(self):
+        verification_module = load_module("e2ee.e2ee_manager_verification")
+
+        class DummyCrossSigning:
+            def __init__(self):
+                self.self_signing_private_key = b"key"
+                self.device_calls = []
+                self.master_calls = []
+                self.republish_calls = 0
+
+            async def sign_device(self, device_id):
+                self.device_calls.append(device_id)
+                return True
+
+            async def sign_master_key_with_device(self, user_id):
+                self.master_calls.append(user_id)
+                return True
+
+            async def _republish_current_device_keys(self):
+                self.republish_calls += 1
+
+        class DummyManager(verification_module.E2EEManagerVerificationMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self._cross_signing = DummyCrossSigning()
+
+        manager = DummyManager()
+        ok = await manager.publish_trusted_device("@bot:example.org", "DEV456")
+
+        self.assertTrue(ok)
+        self.assertEqual(manager._cross_signing.device_calls, ["DEV456"])
+        self.assertEqual(manager._cross_signing.master_calls, ["@bot:example.org"])
+        self.assertEqual(manager._cross_signing.republish_calls, 1)
+
     async def test_verify_untrusted_own_devices_does_not_treat_device_self_signature_as_owner_signed(self):
         verification_module = load_module("e2ee.e2ee_manager_verification")
 
