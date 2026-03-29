@@ -210,11 +210,17 @@ class E2EEManagerVerificationMixin:
                 elif not state.get("master_signed"):
                     owner_signed_but_not_master_verified.append(device_id)
 
-            devices_requiring_verification = list(untrusted_devices)
+            devices_requiring_verification = [
+                (device_id, None) for device_id in untrusted_devices
+            ]
             if owner_signed_but_not_master_verified:
-                logger.debug(
-                    "同账号设备已 owner-signed；device->master 签名缺失不会触发额外 device verification："
+                logger.info(
+                    "同账号设备已 owner-signed，但对端会话尚未完成本机主密钥验证："
                     f"{self._format_masked_device_ids(owner_signed_but_not_master_verified)}"
+                )
+                devices_requiring_verification.extend(
+                    (device_id, [M_SAS_V1_METHOD])
+                    for device_id in owner_signed_but_not_master_verified
                 )
 
             if not devices_requiring_verification:
@@ -225,16 +231,18 @@ class E2EEManagerVerificationMixin:
                 f"发现 {len(devices_requiring_verification)} 个同账号设备需要完成验证，尝试发起验证..."
             )
 
-            for device_id in devices_requiring_verification:
+            for device_id, methods in devices_requiring_verification:
                 try:
-                    await self._initiate_verification_for_device(device_id)
+                    await self._initiate_verification_for_device(device_id, methods)
                 except Exception as e:
                     logger.warning(f"无法为设备 {device_id} 发起验证：{e}")
 
         except Exception as e:
             logger.warning(f"查询设备验证状态失败：{e}")
 
-    async def _initiate_verification_for_device(self, target_device_id: str):
+    async def _initiate_verification_for_device(
+        self, target_device_id: str, methods: list[str] | None = None
+    ):
         """Initiate SAS verification for device."""
         if not self._verification:
             return
@@ -242,15 +250,16 @@ class E2EEManagerVerificationMixin:
         import secrets
 
         txn_id = secrets.token_hex(16)
+        request_methods = methods or [
+            M_SAS_V1_METHOD,
+            M_QR_CODE_SCAN_V1_METHOD,
+            M_QR_CODE_SHOW_V1_METHOD,
+            M_RECIPROCATE_V1_METHOD,
+        ]
 
         request_content = {
             "from_device": self.device_id,
-            "methods": [
-                M_SAS_V1_METHOD,
-                M_QR_CODE_SCAN_V1_METHOD,
-                M_QR_CODE_SHOW_V1_METHOD,
-                M_RECIPROCATE_V1_METHOD,
-            ],
+            "methods": request_methods,
             "timestamp": int(__import__("time").time() * 1000),
             "transaction_id": txn_id,
         }

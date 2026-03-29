@@ -2002,15 +2002,16 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                 self._cross_signing = types.SimpleNamespace(has_master_key=True)
                 self.calls = []
 
-            async def _initiate_verification_for_device(self, target_device_id):
+            async def _initiate_verification_for_device(self, target_device_id, methods=None):
                 self.calls.append(target_device_id)
 
         manager = DummyManager()
         await manager._verify_untrusted_own_devices()
         self.assertEqual(manager.calls, ["DEV456"])
 
-    async def test_verify_untrusted_own_devices_skips_owner_signed_device_without_master_signature(self):
+    async def test_verify_untrusted_own_devices_retries_owner_signed_device_without_master_signature(self):
         verification_module = load_module("e2ee.e2ee_manager_verification")
+        constants = load_module("constants")
 
         class DummyClient:
             async def _request(self, method, path, body):
@@ -2058,12 +2059,15 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                 self._cross_signing = types.SimpleNamespace(has_master_key=True)
                 self.calls = []
 
-            async def _initiate_verification_for_device(self, target_device_id):
-                self.calls.append(target_device_id)
+            async def _initiate_verification_for_device(self, target_device_id, methods=None):
+                self.calls.append((target_device_id, methods))
 
         manager = DummyManager()
         await manager._verify_untrusted_own_devices()
-        self.assertEqual(manager.calls, [])
+        self.assertEqual(
+            manager.calls,
+            [("DEV456", [constants.M_SAS_V1_METHOD])],
+        )
 
     async def test_request_missing_secrets_after_verification_requests_cross_signing_and_backup(self):
         verification_module = load_module("e2ee.e2ee_manager_verification")
@@ -2189,6 +2193,49 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                 constants.M_RECIPROCATE_V1_METHOD,
             ],
         )
+        self.assertEqual(content["from_device"], "BOT123")
+        self.assertEqual(content["transaction_id"], txn_id)
+        self.assertEqual(
+            manager._verification.calls,
+            [(txn_id, "@bot:example.org", "DEV456")],
+        )
+
+    async def test_initiate_verification_for_device_allows_sas_only_methods(self):
+        verification_module = load_module("e2ee.e2ee_manager_verification")
+        constants = load_module("constants")
+
+        class DummyClient:
+            def __init__(self):
+                self.calls = []
+
+            async def send_to_device(self, event_type, messages, txn_id):
+                self.calls.append((event_type, messages, txn_id))
+
+        class DummyVerification:
+            def __init__(self):
+                self.calls = []
+
+            def initiate_verification(self, txn_id, user_id, device_id):
+                self.calls.append((txn_id, user_id, device_id))
+
+        class DummyManager(verification_module.E2EEManagerVerificationMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self.client = DummyClient()
+                self._verification = DummyVerification()
+
+        manager = DummyManager()
+        await manager._initiate_verification_for_device(
+            "DEV456",
+            [constants.M_SAS_V1_METHOD],
+        )
+
+        self.assertEqual(len(manager.client.calls), 1)
+        event_type, messages, txn_id = manager.client.calls[0]
+        self.assertEqual(event_type, constants.M_KEY_VERIFICATION_REQUEST)
+        content = messages["@bot:example.org"]["DEV456"]
+        self.assertEqual(content["methods"], [constants.M_SAS_V1_METHOD])
         self.assertEqual(content["from_device"], "BOT123")
         self.assertEqual(content["transaction_id"], txn_id)
         self.assertEqual(
