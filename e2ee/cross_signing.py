@@ -11,6 +11,13 @@ from ..plugin_config import get_plugin_config
 from .key_backup_crypto import CRYPTO_AVAILABLE
 from .storage import build_e2ee_data_store
 
+# 是否尝试在本地密钥与服务器不一致时强行覆盖服务器的交叉签名密钥。
+# 设置为 True 将在以下情况下重新生成并上传新密钥：
+#   1. 服务器已有交叉签名密钥，但本地缺少私钥
+#   2. 本地私钥推导的公钥与服务器公钥不匹配
+# 设置为 False 则仅记录警告，不覆盖服务器密钥。
+FORCE_OVERWRITE_SERVER_KEYS = True
+
 
 class CrossSigning:
     """
@@ -185,25 +192,31 @@ class CrossSigning:
                     await self._generate_and_upload_keys(force_regen=True)
                     return
                 except Exception as e:
-                    logger.debug(f"[E2EE-CrossSign] 重新生成交叉签名密钥失败：{e}")
-                    logger.debug(
+                    logger.warning(f"[E2EE-CrossSign] 重新生成交叉签名密钥失败：{e}")
+                    logger.warning(
                         "[E2EE-CrossSign] 将继续使用现有密钥（交叉签名可能无法正常工作）"
                     )
 
             # 如果服务器已有密钥但本地缺少私钥，尝试重新生成并覆盖
             if server_master and not self._master_priv:
-                logger.debug(
-                    "[E2EE-CrossSign] 服务器已有交叉签名密钥，但本地缺少私钥，正在尝试重新生成..."
-                )
-                try:
-                    await self._generate_and_upload_keys(force_regen=True)
-                    return
-                except Exception as e:
-                    logger.debug(f"[E2EE-CrossSign] 重新生成交叉签名密钥失败：{e}")
+                if FORCE_OVERWRITE_SERVER_KEYS:
                     logger.debug(
-                        "[E2EE-CrossSign] 将继续使用服务器现有的密钥（但无法签名新设备）"
+                        "[E2EE-CrossSign] 服务器已有交叉签名密钥，但本地缺少私钥，正在尝试重新生成..."
                     )
-                    # 继续执行，不返回
+                    try:
+                        await self._generate_and_upload_keys(force_regen=True)
+                        return
+                    except Exception as e:
+                        logger.warning(f"[E2EE-CrossSign] 重新生成交叉签名密钥失败：{e}")
+                        logger.warning(
+                            "[E2EE-CrossSign] 将继续使用服务器现有的密钥（但无法签名新设备）"
+                        )
+                        # 继续执行，不返回
+                else:
+                    logger.warning(
+                        "[E2EE-CrossSign] 服务器已有交叉签名密钥，但本地缺少私钥。"
+                        "如需强行覆盖服务器密钥，请将 FORCE_OVERWRITE_SERVER_KEYS 设置为 True"
+                    )
 
             # 验证本地私钥与服务器公钥是否匹配
             if (
@@ -213,20 +226,26 @@ class CrossSigning:
                     server_master, server_self_signing, server_user_signing
                 )
             ):
-                logger.debug(
-                    "[E2EE-CrossSign] 本地私钥与服务器公钥不匹配"
-                    "（可能在其他客户端重置），正在重新生成..."
-                )
-                try:
-                    await self._generate_and_upload_keys(force_regen=True)
-                    return
-                except Exception as e:
+                if FORCE_OVERWRITE_SERVER_KEYS:
                     logger.debug(
-                        f"[E2EE-CrossSign] 重新生成交叉签名密钥失败：{e}"
+                        "[E2EE-CrossSign] 本地私钥与服务器公钥不匹配"
+                        "（可能在其他客户端重置），正在重新生成..."
                     )
-                    logger.debug(
-                        "[E2EE-CrossSign] 将继续使用服务器现有的密钥"
-                        "（交叉签名可能无法正常工作）"
+                    try:
+                        await self._generate_and_upload_keys(force_regen=True)
+                        return
+                    except Exception as e:
+                        logger.warning(
+                            f"[E2EE-CrossSign] 重新生成交叉签名密钥失败：{e}"
+                        )
+                        logger.warning(
+                            "[E2EE-CrossSign] 将继续使用服务器现有的密钥"
+                            "（交叉签名可能无法正常工作）"
+                        )
+                else:
+                    logger.warning(
+                        "[E2EE-CrossSign] 本地私钥与服务器公钥不匹配（可能在其他客户端重置）。"
+                        "如需强行覆盖服务器密钥，请将 FORCE_OVERWRITE_SERVER_KEYS 设置为 True"
                     )
 
             # 如缺少密钥则生成并上传
@@ -234,8 +253,8 @@ class CrossSigning:
                 try:
                     await self._generate_and_upload_keys()
                 except Exception as e:
-                    logger.debug(f"[E2EE-CrossSign] 生成交叉签名密钥失败：{e}")
-                    logger.debug("[E2EE-CrossSign] 交叉签名功能将不可用")
+                    logger.warning(f"[E2EE-CrossSign] 生成交叉签名密钥失败：{e}")
+                    logger.warning("[E2EE-CrossSign] 交叉签名功能将不可用")
             elif server_master and server_self_signing and server_user_signing:
                 logger.debug("[E2EE-CrossSign] 交叉签名密钥已就绪")
                 return
@@ -246,11 +265,11 @@ class CrossSigning:
                         force_regen=False, reuse_master=True
                     )
                 except Exception as e:
-                    logger.debug(f"[E2EE-CrossSign] 补全交叉签名密钥失败：{e}")
-                    logger.debug("[E2EE-CrossSign] 部分交叉签名功能可能不可用")
+                    logger.warning(f"[E2EE-CrossSign] 补全交叉签名密钥失败：{e}")
+                    logger.warning("[E2EE-CrossSign] 部分交叉签名功能可能不可用")
 
         except Exception as e:
-            logger.debug(f"[E2EE-CrossSign] 初始化失败：{e}")
+            logger.warning(f"[E2EE-CrossSign] 初始化失败：{e}")
 
     def _b64(self, data: bytes) -> str:
         return base64.b64encode(data).decode().rstrip("=")
@@ -474,6 +493,14 @@ class CrossSigning:
         if not CRYPTO_AVAILABLE:
             return
 
+        # 保存旧密钥，以便上传失败时恢复
+        old_master_priv = self._master_priv
+        old_master_key = self._master_key
+        old_self_signing_priv = self._self_signing_priv
+        old_self_signing_key = self._self_signing_key
+        old_user_signing_priv = self._user_signing_priv
+        old_user_signing_key = self._user_signing_key
+
         if not self._master_priv or force_regen or not reuse_master:
             self._master_priv, self._master_key = self._gen_keypair()
         if not self._self_signing_priv or force_regen:
@@ -527,17 +554,49 @@ class CrossSigning:
                     "password": self.password,
                     "session": auth_data.get("session"),
                 }
-                await self.client.upload_signing_keys(
-                    master_key=master_key,
-                    self_signing_key=self_signing_key,
-                    user_signing_key=user_signing_key,
-                    auth=auth_payload,
-                )
+                try:
+                    await self.client.upload_signing_keys(
+                        master_key=master_key,
+                        self_signing_key=self_signing_key,
+                        user_signing_key=user_signing_key,
+                        auth=auth_payload,
+                    )
+                except Exception as e2:
+                    # UIA 重试也失败，恢复旧密钥
+                    self._restore_keys(
+                        old_master_priv, old_master_key,
+                        old_self_signing_priv, old_self_signing_key,
+                        old_user_signing_priv, old_user_signing_key,
+                    )
+                    raise e2
             else:
+                # 上传失败且无法 UIA，恢复旧密钥
+                self._restore_keys(
+                    old_master_priv, old_master_key,
+                    old_self_signing_priv, old_self_signing_key,
+                    old_user_signing_priv, old_user_signing_key,
+                )
+                logger.warning(
+                    f"[E2EE-CrossSign] 上传交叉签名密钥失败（可能需要密码 UIA）：{e}"
+                )
                 raise
 
         self._save_local_keys()
-        logger.debug("[E2EE-CrossSign] 已生成并上传交叉签名密钥")
+        logger.info("[E2EE-CrossSign] 已生成并上传交叉签名密钥")
+
+    def _restore_keys(
+        self,
+        master_priv, master_key,
+        self_signing_priv, self_signing_key,
+        user_signing_priv, user_signing_key,
+    ):
+        """上传失败时恢复旧的密钥状态"""
+        self._master_priv = master_priv
+        self._master_key = master_key
+        self._self_signing_priv = self_signing_priv
+        self._self_signing_key = self_signing_key
+        self._user_signing_priv = user_signing_priv
+        self._user_signing_key = user_signing_key
 
     async def upload_cross_signing_keys(self):
         if (
@@ -583,22 +642,11 @@ class CrossSigning:
             device_keys_to_upload.pop("unsigned", None)
             signing_key_id = f"ed25519:{self._self_signing_key}"
             sig = self._sign(self._self_signing_priv, device_keys_to_upload)
-            existing_signatures = device_keys_to_upload.get("signatures")
-            if not isinstance(existing_signatures, dict):
-                existing_signatures = {}
-            else:
-                existing_signatures = {
-                    signer: dict(signer_sigs) if isinstance(signer_sigs, dict) else signer_sigs
-                    for signer, signer_sigs in existing_signatures.items()
-                }
-            user_signatures = existing_signatures.get(self.user_id)
-            if not isinstance(user_signatures, dict):
-                user_signatures = {}
-            else:
-                user_signatures = dict(user_signatures)
-            user_signatures[signing_key_id] = sig
-            existing_signatures[self.user_id] = user_signatures
-            device_keys_to_upload["signatures"] = existing_signatures
+            # 仅包含本次自签名密钥的签名，不携带旧的签名，
+            # 避免服务器重新验证旧签名导致 M_INVALID_SIGNATURE。
+            device_keys_to_upload["signatures"] = {
+                self.user_id: {signing_key_id: sig}
+            }
 
             async def _verify_uploaded_device_signature() -> bool:
                 refreshed = await self.client.query_keys({self.user_id: [device_id]})
@@ -686,22 +734,12 @@ class CrossSigning:
 
             master_key_to_upload = copy.deepcopy(master_key)
             master_key_to_upload.pop("unsigned", None)
-            existing_signatures = master_key_to_upload.get("signatures")
-            if not isinstance(existing_signatures, dict):
-                existing_signatures = {}
-            else:
-                existing_signatures = {
-                    signer: dict(signer_sigs) if isinstance(signer_sigs, dict) else signer_sigs
-                    for signer, signer_sigs in existing_signatures.items()
-                }
-            user_signatures = existing_signatures.get(target_user_id)
-            if not isinstance(user_signatures, dict):
-                user_signatures = {}
-            else:
-                user_signatures = dict(user_signatures)
-            user_signatures[signing_key_id] = signature
-            existing_signatures[target_user_id] = user_signatures
-            master_key_to_upload["signatures"] = existing_signatures
+            # 仅包含本次设备签名，不携带旧的签名。
+            # 服务器会重新验证上传载荷中的所有签名，
+            # 如果携带了旧的（已失效的）签名会导致 M_INVALID_SIGNATURE。
+            master_key_to_upload["signatures"] = {
+                target_user_id: {signing_key_id: signature}
+            }
 
             async def _verify_uploaded_master_signature() -> bool:
                 refreshed = await self.client.query_keys({target_user_id: []})
