@@ -633,6 +633,10 @@ class SASVerificationFlowMixin:
                         "[E2EE-Verify] 发布设备信任失败："
                         f"device={self._mask_identifier(device_id)} err={e}"
                     )
+            try:
+                await e2ee_manager.request_missing_secrets_after_verification(sender)
+            except Exception as e:
+                logger.warning(f"[E2EE-Verify] 验证后请求缺失秘密失败：{e}")
 
     async def _handle_cancel(self, sender: str, content: dict, transaction_id: str):
         """处理验证取消"""

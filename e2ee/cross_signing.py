@@ -509,6 +509,8 @@ class CrossSigning:
 
         request_ids = []
         for secret_name in missing:
+            if secret_name in self._pending_secret_requests:
+                continue
             try:
                 request_id = await self.request_secret_from_devices(secret_name)
             except Exception as e:

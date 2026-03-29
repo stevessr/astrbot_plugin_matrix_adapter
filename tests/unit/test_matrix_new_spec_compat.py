@@ -477,6 +477,105 @@ class MatrixLocationCompatTests(unittest.IsolatedAsyncioTestCase):
                         "[位置标记] Big Ben, London, UK geo:51.5008,0.1247",
                     )
 
+    async def test_event_processor_handles_encrypted_secret_request(self):
+        module_name = f"{PACKAGE_NAME}.processors.event_processor"
+        sys.modules.pop(module_name, None)
+
+        def _make_module(name: str, **attrs):
+            module = types.ModuleType(name)
+            for key, value in attrs.items():
+                setattr(module, key, value)
+            return module
+
+        class _MatrixEventProcessorMembers:
+            pass
+
+        class _MatrixEventProcessorStreams:
+            pass
+
+        stubs = {
+            f"{PACKAGE_NAME}.constants": _make_module(
+                f"{PACKAGE_NAME}.constants",
+                MAX_PROCESSED_MESSAGES_1000=1000,
+                TIMESTAMP_BUFFER_MS_1000=1000,
+                GROUP_CHAT_MIN_MEMBERS_2=2,
+            ),
+            f"{PACKAGE_NAME}.plugin_config": _make_module(
+                f"{PACKAGE_NAME}.plugin_config",
+                get_plugin_config=lambda: types.SimpleNamespace(
+                    storage_backend_config=None
+                ),
+            ),
+            f"{PACKAGE_NAME}.processors.event_processor_members": _make_module(
+                f"{PACKAGE_NAME}.processors.event_processor_members",
+                MatrixEventProcessorMembers=_MatrixEventProcessorMembers,
+            ),
+            f"{PACKAGE_NAME}.processors.event_processor_streams": _make_module(
+                f"{PACKAGE_NAME}.processors.event_processor_streams",
+                MatrixEventProcessorStreams=_MatrixEventProcessorStreams,
+            ),
+            f"{PACKAGE_NAME}.utils": _make_module(
+                f"{PACKAGE_NAME}.utils",
+                parse_bool=lambda value, default=False: default,
+            ),
+        }
+
+        with mock.patch.dict(sys.modules, stubs):
+            event_processor = importlib.import_module(module_name)
+
+            calls = []
+
+            class DummyE2EEManager:
+                async def decrypt_event(self, content, sender, room_id):
+                    return {
+                        "type": "m.secret.request",
+                        "content": {
+                            "action": "request",
+                            "name": "m.cross_signing.master",
+                            "request_id": "req-1",
+                            "requesting_device_id": "DEV456",
+                        },
+                    }
+
+                async def handle_secret_request(self, sender, content, sender_device):
+                    calls.append((sender, content, sender_device))
+
+            processor = event_processor.MatrixEventProcessor.__new__(
+                event_processor.MatrixEventProcessor
+            )
+            processor.e2ee_manager = DummyE2EEManager()
+
+            await event_processor.MatrixEventProcessor.process_to_device_events(
+                processor,
+                [
+                    {
+                        "type": "m.room.encrypted",
+                        "sender": "@bot:example.org",
+                        "content": {
+                            "algorithm": "m.olm.v1.curve25519-aes-sha2",
+                            "sender_key": "curve25519-key",
+                            "ciphertext": {"curve25519-key": {"body": "abc"}},
+                        },
+                    }
+                ],
+            )
+
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "@bot:example.org",
+                    {
+                        "action": "request",
+                        "name": "m.cross_signing.master",
+                        "request_id": "req-1",
+                        "requesting_device_id": "DEV456",
+                    },
+                    "DEV456",
+                )
+            ],
+        )
+
 
 class MatrixVoiceCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_audio_sender_emits_voice_indicator_and_unstable_audio_duration(self):
@@ -1394,10 +1493,14 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         class DummyManager:
             def __init__(self):
                 self.calls = []
+                self.secret_requests = []
 
             async def publish_trusted_device(self, user_id, device_id):
                 self.calls.append((user_id, device_id))
                 return True
+
+            async def request_missing_secrets_after_verification(self, user_id):
+                self.secret_requests.append(user_id)
 
         class DummyVerifier(flow_module.SASVerificationFlowMixin):
             def __init__(self):
@@ -1426,6 +1529,10 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                 ("@bot:example.org", "DEV456"),
                 ("@bot:example.org", "BOT123"),
             ],
+        )
+        self.assertEqual(
+            verifier.e2ee_manager.secret_requests,
+            ["@bot:example.org"],
         )
 
     async def test_handle_done_does_not_publish_cross_signing_for_other_users(self):
@@ -1521,6 +1628,89 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             master_fail_manager._cross_signing.master_calls,
             ["@bot:example.org"],
         )
+
+    async def test_request_missing_secrets_after_verification_requests_cross_signing_and_backup(self):
+        verification_module = load_module("e2ee.e2ee_manager_verification")
+        constants = load_module("constants")
+
+        class DummyCrossSigning:
+            def __init__(self):
+                self.query_calls = 0
+                self.request_calls = []
+
+            async def _query_server_cross_signing_state(self):
+                self.query_calls += 1
+                return ("MASTER", "SELF", "USER", False)
+
+            async def _request_missing_private_keys_from_devices(
+                self, server_master, server_self_signing, server_user_signing
+            ):
+                self.request_calls.append(
+                    (server_master, server_self_signing, server_user_signing)
+                )
+                return "pending"
+
+        class DummyKeyBackup:
+            backup_version = "1"
+            recovery_key_bytes = None
+
+            def load_extracted_key(self):
+                return None
+
+        class DummyManager(verification_module.E2EEManagerVerificationMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self._cross_signing = DummyCrossSigning()
+                self._key_backup = DummyKeyBackup()
+                self.secret_names = []
+
+            async def request_secret_from_devices(self, secret_name):
+                self.secret_names.append(secret_name)
+                return f"req-{secret_name}"
+
+        manager = DummyManager()
+        await manager.request_missing_secrets_after_verification("@bot:example.org")
+
+        self.assertEqual(manager._cross_signing.query_calls, 1)
+        self.assertEqual(
+            manager._cross_signing.request_calls,
+            [("MASTER", "SELF", "USER")],
+        )
+        self.assertEqual(
+            manager.secret_names,
+            [constants.SECRET_MEGOLM_BACKUP_V1],
+        )
+
+    async def test_request_missing_secrets_after_verification_skips_when_backup_key_exists(self):
+        verification_module = load_module("e2ee.e2ee_manager_verification")
+
+        class DummyCrossSigning:
+            async def _query_server_cross_signing_state(self):
+                return (None, None, None, False)
+
+            async def _request_missing_private_keys_from_devices(
+                self, server_master, server_self_signing, server_user_signing
+            ):
+                return "not-needed"
+
+        class DummyKeyBackup:
+            backup_version = "1"
+            recovery_key_bytes = b"backup-key"
+
+        class DummyManager(verification_module.E2EEManagerVerificationMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self._cross_signing = DummyCrossSigning()
+                self._key_backup = DummyKeyBackup()
+                self.secret_names = []
+
+            async def request_secret_from_devices(self, secret_name):
+                self.secret_names.append(secret_name)
+                return "req"
+
+        manager = DummyManager()
+        await manager.request_missing_secrets_after_verification("@bot:example.org")
+        self.assertEqual(manager.secret_names, [])
 
     async def test_self_signing_secret_persists_and_retries_signing_own_device(self):
         secrets_module = load_module("e2ee.e2ee_manager_secrets")
@@ -2343,6 +2533,40 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         cross_signing._generate_and_upload_keys.assert_not_awaited()
+
+    async def test_request_missing_private_keys_from_devices_skips_pending_names(self):
+        cross_signing_module = self._load_cross_signing_module()
+        constants = load_module("constants")
+
+        request_mock = mock.AsyncMock(return_value="req-user")
+
+        class DummyOlm:
+            def get_identity_keys(self):
+                return {}
+
+        cross_signing = cross_signing_module.CrossSigning(
+            client=types.SimpleNamespace(),
+            user_id="@bot:example.org",
+            device_id="BOT123",
+            olm_machine=DummyOlm(),
+            request_secret_from_devices=request_mock,
+        )
+        cross_signing._pending_secret_requests = {
+            constants.SECRET_CROSS_SIGNING_MASTER,
+            constants.SECRET_CROSS_SIGNING_SELF_SIGNING,
+        }
+
+        result = await cross_signing._request_missing_private_keys_from_devices(
+            "M" * 43,
+            "S" * 43,
+            "U" * 43,
+        )
+
+        self.assertEqual(result, cross_signing_module.DEVICE_SECRET_REQUEST_PENDING)
+        self.assertEqual(
+            request_mock.await_args_list,
+            [mock.call(constants.SECRET_CROSS_SIGNING_USER_SIGNING)],
+        )
 
     async def test_generate_and_upload_keys_stores_private_keys_in_ssss_after_public_upload(self):
         cross_signing_module = self._load_cross_signing_module()

@@ -765,6 +765,16 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                                 await self.e2ee_manager.handle_secret_send(
                                     sender, inner_content
                                 )
+                            elif inner_type == "m.secret.request":
+                                logger.debug("收到加密的 m.secret.request 事件")
+                                sender_device = inner_content.get(
+                                    "requesting_device_id", ""
+                                )
+                                await self.e2ee_manager.handle_secret_request(
+                                    sender=sender,
+                                    content=inner_content,
+                                    sender_device=sender_device,
+                                )
                             elif inner_type == "m.dummy":
                                 logger.debug("收到 m.dummy 事件，忽略")
                             else:
