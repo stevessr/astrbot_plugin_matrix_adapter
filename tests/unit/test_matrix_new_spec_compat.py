@@ -1708,13 +1708,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             verifier.device_store.calls,
             [("@bot:example.org", "DEV456", "fp456")],
         )
-        self.assertEqual(
-            verifier.e2ee_manager.calls,
-            [
-                ("@bot:example.org", "DEV456"),
-                ("@bot:example.org", "BOT123"),
-            ],
-        )
+        self.assertEqual(verifier.e2ee_manager.calls, [])
         self.assertEqual(verifier.e2ee_manager.secret_requests, ["@bot:example.org"])
 
     async def test_handle_done_for_qr_scan_sends_done_back_before_marking_verified(self):
@@ -1765,7 +1759,57 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             [("@bot:example.org", "DEV456", "fp456")],
         )
 
-    async def test_handle_done_publishes_cross_signing_for_same_user_devices(self):
+    async def test_handle_done_for_qr_scan_publishes_trust_for_same_user_device(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+
+        class DummyDeviceStore:
+            def __init__(self):
+                self.calls = []
+
+            def add_device(self, user_id, device_id, fingerprint):
+                self.calls.append((user_id, device_id, fingerprint))
+
+        class DummyManager:
+            def __init__(self):
+                self.calls = []
+                self.secret_requests = []
+
+            async def publish_trusted_device(self, user_id, device_id):
+                self.calls.append((user_id, device_id))
+                return True
+
+            async def request_missing_secrets_after_verification(self, user_id):
+                self.secret_requests.append(user_id)
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self._sessions = {
+                    "txn123": {
+                        "from_device": "DEV456",
+                        "fingerprint": "fp456",
+                        "qr_confirmed": True,
+                        "qr_scanned_by_us": True,
+                    }
+                }
+                self.device_store = DummyDeviceStore()
+                self.e2ee_manager = DummyManager()
+                self.done_calls = []
+
+            async def _send_done(self, sender, device_id, transaction_id):
+                self.done_calls.append((sender, device_id, transaction_id))
+
+        verifier = DummyVerifier()
+        await verifier._handle_done("@bot:example.org", {}, "txn123")
+
+        self.assertEqual(
+            verifier.e2ee_manager.calls,
+            [("@bot:example.org", "DEV456")],
+        )
+        self.assertEqual(verifier.e2ee_manager.secret_requests, ["@bot:example.org"])
+
+    async def test_handle_done_publishes_cross_signing_for_same_user_devices_we_started(self):
         flow_module = load_module("e2ee.verification_handlers_flow")
 
         class DummyDeviceStore:
@@ -1796,6 +1840,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                         "from_device": "DEV456",
                         "fingerprint": "fp456",
                         "mac_verified": True,
+                        "we_started_it": True,
                     }
                 }
                 self.device_store = DummyDeviceStore()
@@ -1810,10 +1855,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             verifier.e2ee_manager.calls,
-            [
-                ("@bot:example.org", "DEV456"),
-                ("@bot:example.org", "BOT123"),
-            ],
+            [("@bot:example.org", "DEV456")],
         )
         self.assertEqual(
             verifier.e2ee_manager.secret_requests,
@@ -1907,7 +1949,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         master_fail_ok = await master_fail_manager.publish_trusted_device(
             "@bot:example.org", "BOT123"
         )
-        self.assertFalse(master_fail_ok)
+        self.assertTrue(master_fail_ok)
         self.assertEqual(master_fail_manager._cross_signing.device_calls, ["BOT123"])
         self.assertEqual(
             master_fail_manager._cross_signing.master_calls,
@@ -1964,7 +2006,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         await manager._verify_untrusted_own_devices()
         self.assertEqual(manager.calls, ["DEV456"])
 
-    async def test_verify_untrusted_own_devices_retries_owner_signed_device_without_master_signature(self):
+    async def test_verify_untrusted_own_devices_skips_owner_signed_device_without_master_signature(self):
         verification_module = load_module("e2ee.e2ee_manager_verification")
 
         class DummyClient:
@@ -2018,7 +2060,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
 
         manager = DummyManager()
         await manager._verify_untrusted_own_devices()
-        self.assertEqual(manager.calls, ["DEV456"])
+        self.assertEqual(manager.calls, [])
 
     async def test_request_missing_secrets_after_verification_requests_cross_signing_and_backup(self):
         verification_module = load_module("e2ee.e2ee_manager_verification")

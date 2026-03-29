@@ -937,16 +937,24 @@ class SASVerificationFlowMixin:
 
         e2ee_manager = getattr(self, "e2ee_manager", None)
         if e2ee_manager and sender == self.user_id:
-            for device_id in (from_device, self.device_id):
-                if not device_id:
-                    continue
+            publish_target = None
+            if session.get("qr_scanned_by_us"):
+                publish_target = from_device
+            elif session.get("we_started_it"):
+                publish_target = from_device or session.get("their_device")
+
+            if publish_target:
                 try:
-                    await e2ee_manager.publish_trusted_device(sender, device_id)
+                    await e2ee_manager.publish_trusted_device(sender, publish_target)
                 except Exception as e:
                     logger.warning(
                         "[E2EE-Verify] 发布设备信任失败："
-                        f"device={self._mask_identifier(device_id)} err={e}"
+                        f"device={self._mask_identifier(publish_target)} err={e}"
                     )
+            else:
+                logger.debug(
+                    "[E2EE-Verify] 同账号验证由对端发起，保留对端客户端处理 owner-sign 收尾"
+                )
             try:
                 await e2ee_manager.request_missing_secrets_after_verification(sender)
             except Exception as e:

@@ -71,8 +71,8 @@ class E2EEManagerVerificationMixin:
                 device_id, {}
             )
             if state.get("owner_signed") and not state.get("master_signed"):
-                logger.info(
-                    "目标设备已被 owner-signed，但对端客户端尚未完成本机主密钥验证："
+                logger.debug(
+                    "目标设备已被 owner-signed，但服务器上暂无对应 device->master 签名："
                     f"{self._format_masked_device_ids([device_id])}"
                 )
         except Exception as e:
@@ -100,13 +100,19 @@ class E2EEManagerVerificationMixin:
             logger.warning(f"发布设备信任失败：{device_id}")
             return False
 
-        master_ok = await self._cross_signing.sign_master_key_with_device(self.user_id)
-        if not master_ok:
-            logger.warning(f"发布 master key 设备签名失败：{device_id}")
-            return False
+        master_ok = True
+        sign_master = getattr(self._cross_signing, "sign_master_key_with_device", None)
+        if callable(sign_master):
+            master_ok = await sign_master(self.user_id)
+            if not master_ok:
+                logger.debug(
+                    "发布 master key 设备签名未生效，但不影响同账号设备 owner-sign 状态："
+                    f"{device_id}"
+                )
 
         logger.info(f"已发布设备信任：{device_id}")
-        await self._log_same_user_verification_gap(device_id)
+        if not master_ok:
+            await self._log_same_user_verification_gap(device_id)
         return True
 
     async def handle_verification_event(
@@ -206,14 +212,9 @@ class E2EEManagerVerificationMixin:
 
             devices_requiring_verification = list(untrusted_devices)
             if owner_signed_but_not_master_verified:
-                logger.info(
-                    "发现同账号设备已 owner-signed，但尚未完成本机主密钥验证："
+                logger.debug(
+                    "同账号设备已 owner-signed；device->master 签名缺失不会触发额外 device verification："
                     f"{self._format_masked_device_ids(owner_signed_but_not_master_verified)}"
-                )
-                devices_requiring_verification.extend(
-                    device_id
-                    for device_id in owner_signed_but_not_master_verified
-                    if device_id not in devices_requiring_verification
                 )
 
             if not devices_requiring_verification:
