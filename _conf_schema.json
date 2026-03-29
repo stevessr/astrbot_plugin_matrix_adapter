@@ -4,16 +4,16 @@
     "type": "object",
     "items": {
       "callback_port": {
-        "description": "OAuth2 回调服务器端口",
+        "description": "OAuth2 回调端口（已弃用）",
         "type": "int",
-        "hint": "OAuth2 认证回调服务器监听端口，用于接收认证重定向",
+        "hint": "已不再使用。Matrix OAuth2 / QR 登录回调固定复用 AstrBot 的 /api/platform/webhook/{webhook_uuid}。",
         "min": 1,
         "default": 8765
       },
       "callback_host": {
-        "description": "OAuth2 回调服务器主机地址",
+        "description": "OAuth2 回调主机（已弃用）",
         "type": "string",
-        "hint": "OAuth2 认证回调服务器监听主机地址，默认 127.0.0.1 仅限本地访问，0.0.0.0 允许所有地址访问（适用于远程服务器部署）",
+        "hint": "已不再使用。请改为配置 AstrBot 的 callback_api_base，让统一 Webhook 地址可被浏览器或移动设备访问。",
         "default": "127.0.0.1"
       }
     }

@@ -53,13 +53,15 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 - OAuth2 discovery 会优先请求 `/_matrix/client/v1/auth_metadata`；若服务器暂未提供，再回退到 `/.well-known/matrix/client` 与 issuer 的 OIDC 配置。
 - 默认 scopes 使用稳定版 `openid`、`urn:matrix:client:api:*`，并自动补齐 `urn:matrix:client:device:<device_id>`。
 - `device_id` 由适配器自动生成和归一，无需在 OAuth2 登录前手动配置。
+- OAuth2 回调固定复用 AstrBot 平台统一 Webhook：`/api/platform/webhook/{webhook_uuid}`。
+- 若 AstrBot 部署在公网后面，请配置系统级 `callback_api_base`，确保浏览器或手机能访问该回调地址。
 
 #### 扫码登录（QR）说明
 
 - 将 `matrix_auth_method` 设置为 `qr` 后，插件会输出 SSO 登录 URL 和终端二维码。
 - 使用手机或另一台设备扫码后完成 SSO，即可通过 `m.login.token` 完成登录。
 - 若终端未显示二维码，请确认已安装依赖：`qrcode`（已包含在 `requirements.txt`）。
-- 若使用手机扫码，请确保回调地址可被手机访问（例如将 `matrix_oauth2.callback_host` 配置为可访问的服务器 IP/域名，而不是 `127.0.0.1`）。
+- 若使用手机扫码，请确保 AstrBot 的统一 Webhook 地址可被手机访问；推荐配置 `callback_api_base` 指向公网域名。
 
 ### 功能配置
 

@@ -39,8 +39,6 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
         redirect_uri: str | None = None,
         scopes: list | None = None,
         device_id: str | None = None,
-        callback_port: int = 8765,
-        callback_host: str = "127.0.0.1",
     ):
         """
         Initialize OAuth2 handler
@@ -53,8 +51,6 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
             redirect_uri: OAuth2 redirect URI (required, provided by AstrBot unified webhook)
             scopes: OAuth2 scopes (default: stable Matrix API scope + device scope)
             device_id: Preferred Matrix device ID for stable device scope
-            callback_port: Deprecated, kept for backward compatibility
-            callback_host: Deprecated, kept for backward compatibility
         """
         self.client = client
         self.homeserver = homeserver.rstrip("/")
@@ -63,8 +59,6 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
         self.redirect_uri = redirect_uri
         self.device_id = self._normalize_device_id(device_id)
         self.scopes = self._normalize_scopes(scopes)
-        self.callback_port = callback_port
-        self.callback_host = callback_host
 
         self.callback_server: OAuth2CallbackServer | None = None
         self.access_token: str | None = None

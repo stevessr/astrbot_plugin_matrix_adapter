@@ -139,14 +139,10 @@ class MatrixSSO:
         client,
         homeserver: str,
         redirect_uri: str | None = None,
-        callback_port: int = 8765,
-        callback_host: str = "127.0.0.1",
     ):
         self.client = client
         self.homeserver = homeserver.rstrip("/")
         self.redirect_uri = redirect_uri
-        self.callback_port = callback_port
-        self.callback_host = callback_host
         self.callback_server: SSOCallbackServer | None = None
 
     async def login(

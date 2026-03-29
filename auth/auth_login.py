@@ -30,8 +30,6 @@ class MatrixAuthLogin:
                 client_id=self.client_id,
                 client_secret=self.client_secret,
                 redirect_uri=self.config.auth_callback_url,
-                callback_port=self.config.oauth2_callback_port,
-                callback_host=self.config.oauth2_callback_host,
             )
 
         try:
@@ -211,8 +209,6 @@ class MatrixAuthLogin:
                 client_id=self.client_id,
                 client_secret=self.client_secret,
                 redirect_uri=self.config.auth_callback_url,
-                callback_port=self.config.oauth2_callback_port,
-                callback_host=self.config.oauth2_callback_host,
             )
             self._active_auth_webhook_handler = self.oauth2_handler
             try:
@@ -275,8 +271,6 @@ class MatrixAuthLogin:
             client=self.client,
             homeserver=self.config.homeserver,
             redirect_uri=self.config.auth_callback_url,
-            callback_port=self.config.oauth2_callback_port,
-            callback_host=self.config.oauth2_callback_host,
         )
 
         def url_callback(sso_url: str):
