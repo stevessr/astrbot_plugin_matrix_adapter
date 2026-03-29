@@ -131,15 +131,16 @@ class KeyBackupBackupMixin:
             ):
                 if log_mismatch:
                     logger.warning("恢复密钥不匹配当前备份版本公钥")
-                    logger.warning(f"备份版本要求公钥：{expected_public_key}")
-                    logger.warning(
+                    logger.debug(f"备份版本要求公钥：{expected_public_key}")
+                    logger.debug(
                         f"当前密钥生成公钥：{public_key_std} (或 {public_key})"
                     )
                 else:
                     logger.debug("恢复密钥与备份公钥不匹配（静默模式）")
                 return False
 
-            logger.info(f"✅ 恢复密钥与备份版本公钥匹配 ({expected_public_key})")
+            logger.info("✅ 恢复密钥与备份版本公钥匹配")
+            logger.debug(f"备份版本公钥：{expected_public_key}")
             return True
 
         except Exception as e:

@@ -914,7 +914,10 @@ class CrossSigning:
                     continue
 
                 logger.warning(
-                    "[E2EE-CrossSign] 当前设备身份密钥与服务器不一致，跳过设备签名："
+                    "[E2EE-CrossSign] 当前设备身份密钥与服务器不一致，跳过设备签名"
+                )
+                logger.debug(
+                    "[E2EE-CrossSign] 设备签名失败细节："
                     f"device_id={device_id} "
                     f"local_ed25519={local_ed25519} server_ed25519={server_ed25519} "
                     f"local_curve25519={local_curve25519} server_curve25519={server_curve25519}"
@@ -1011,7 +1014,10 @@ class CrossSigning:
                     continue
 
                 logger.warning(
-                    "[E2EE-CrossSign] 当前设备身份密钥与服务器不一致，跳过 master key 设备签名："
+                    "[E2EE-CrossSign] 当前设备身份密钥与服务器不一致，跳过 master key 设备签名"
+                )
+                logger.debug(
+                    "[E2EE-CrossSign] master key 设备签名失败细节："
                     f"device_id={self.device_id} "
                     f"local_ed25519={local_ed25519} server_ed25519={server_ed25519} "
                     f"local_curve25519={local_curve25519} server_curve25519={server_curve25519}"
@@ -1023,7 +1029,7 @@ class CrossSigning:
 
             signing_key_id = self.device_key_id
             signature = self._sign_device_object(master_key)
-            logger.info(
+            logger.debug(
                 "[E2EE-CrossSign] 签名诊断信息：\n"
                 f"  local_device_ed25519={local_ed25519}\n"
                 f"  server_device_ed25519={server_ed25519}\n"
@@ -1050,7 +1056,7 @@ class CrossSigning:
             verify_payload.pop("signatures", None)
             verify_payload.pop("unsigned", None)
             verify_canonical = self._canonical(verify_payload)
-            logger.info(
+            logger.debug(
                 f"[E2EE-CrossSign] 上传载荷验证 canonical JSON：{verify_canonical}"
             )
 
@@ -1064,7 +1070,7 @@ class CrossSigning:
                 )
                 return signing_key_id in refreshed_signatures
 
-            logger.info(
+            logger.debug(
                 "[E2EE-CrossSign] 上传 master key 设备签名："
                 f"master={master_key_id} signer={signing_key_id}"
             )
@@ -1091,11 +1097,11 @@ class CrossSigning:
         payload_to_sign.pop("signatures", None)
         payload_to_sign.pop("unsigned", None)
         canonical = self._canonical(payload_to_sign)
-        logger.info(
+        logger.debug(
             f"[E2EE-CrossSign] _sign_device_object 规范化 JSON：{canonical}"
         )
         signature = self.olm._account.sign(canonical.encode("utf-8")).to_base64()
-        logger.info(
+        logger.debug(
             f"[E2EE-CrossSign] _sign_device_object 签名：{signature}"
         )
 
@@ -1107,11 +1113,11 @@ class CrossSigning:
             sig_bytes = base64.b64decode(signature + "=" * (3 - (len(signature) + 3) % 4))
             verify_key = nacl.signing.VerifyKey(pub_bytes)
             verify_key.verify(canonical.encode("utf-8"), sig_bytes)
-            logger.info(
+            logger.debug(
                 f"[E2EE-CrossSign] 本地签名验证通过 ✅ (ed25519_key={ed25519_pub_b64})"
             )
         except Exception as e:
-            logger.warning(
+            logger.debug(
                 "[E2EE-CrossSign] 本地签名验证失败 ❌："
                 f"{e} (ed25519_key={getattr(self.olm, 'ed25519_key', '')})"
             )
