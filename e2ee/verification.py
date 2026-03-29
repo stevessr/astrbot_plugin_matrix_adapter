@@ -81,7 +81,7 @@ class SASVerification(
         self.admin_notify_room_id = normalized_room or None
 
     async def approve_device(self, device_id: str) -> tuple[bool, str]:
-        """手动确认某个设备的 SAS 验证（发送 MAC 与 DONE）。"""
+        """手动确认某个设备的验证（SAS 或 QR）。"""
         candidates: list[tuple[str, dict[str, Any]]] = []
         for txn_id, session in self._sessions.items():
             if (
@@ -93,10 +93,10 @@ class SASVerification(
         if not candidates:
             return False, f"未找到设备 {device_id} 的待验证会话"
 
-        # 优先选择已完成密钥交换的会话
+        # 优先选择已收到 QR reciprocate 或已完成 SAS 密钥交换的会话
         txn_id, session = candidates[0]
         for tid, s in candidates:
-            if s.get("sas_emojis") or s.get("sas_decimals"):
+            if s.get("qr_reciprocated") or s.get("sas_emojis") or s.get("sas_decimals"):
                 txn_id, session = tid, s
                 break
 
@@ -110,11 +110,15 @@ class SASVerification(
         is_in_room = session.get("is_in_room", False)
         room_id = session.get("room_id")
 
-        if not session.get("sas_emojis") and not session.get("sas_decimals"):
+        qr_pending_confirm = bool(session.get("qr_reciprocated") and not session.get("qr_confirmed"))
+
+        if not qr_pending_confirm and not session.get("sas_emojis") and not session.get("sas_decimals"):
             return False, "SAS 尚未就绪，请稍后再试"
 
         try:
-            if not session.get("mac_sent"):
+            if qr_pending_confirm:
+                session["qr_confirmed"] = True
+            elif not session.get("mac_sent"):
                 session["mac_sent"] = True
                 if is_in_room and room_id:
                     await self._send_in_room_mac(room_id, txn_id, session)
@@ -126,8 +130,9 @@ class SASVerification(
                     await self._send_in_room_done(room_id, txn_id)
                 else:
                     await self._send_done(sender, target_device, txn_id)
-            session["state"] = "done"
+            session["state"] = "qr_confirmed" if qr_pending_confirm else "done"
         except Exception as e:
             return False, f"发送验证消息失败：{e}"
 
-        return True, f"已发送验证确认（device_id={device_id}）"
+        flow_name = "QR" if qr_pending_confirm else "SAS"
+        return True, f"已发送 {flow_name} 验证确认（device_id={device_id}）"

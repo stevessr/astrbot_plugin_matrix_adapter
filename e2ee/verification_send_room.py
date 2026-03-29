@@ -105,9 +105,10 @@ class SASVerificationSendRoomMixin:
 
     async def _send_in_room_ready(self, room_id: str, transaction_id: str):
         """发送房间内 ready 响应"""
+        session = self._sessions.get(transaction_id, {})
         content = {
             "from_device": self.device_id,
-            "methods": SAS_METHODS,
+            "methods": self._get_supported_verification_methods(session.get("sender")),
         }
         await self._send_in_room_event(
             room_id, M_KEY_VERIFICATION_READY, content, transaction_id

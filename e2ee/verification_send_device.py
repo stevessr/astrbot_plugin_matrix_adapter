@@ -14,6 +14,8 @@ from ..constants import (
     M_KEY_VERIFICATION_MAC,
     M_KEY_VERIFICATION_READY,
     M_KEY_VERIFICATION_START,
+    M_QR_CODE_SHOW_V1_METHOD,
+    M_RECIPROCATE_V1_METHOD,
     M_SAS_V1_METHOD,
 )
 from .verification_constants import (
@@ -28,6 +30,14 @@ from .verification_utils import _canonical_json, _compute_hkdf
 
 
 class SASVerificationSendDeviceMixin:
+    def _get_supported_verification_methods(self, other_user: str | None = None) -> list[str]:
+        methods = list(SAS_METHODS)
+        if other_user == self.user_id:
+            for method in (M_QR_CODE_SHOW_V1_METHOD, M_RECIPROCATE_V1_METHOD):
+                if method not in methods:
+                    methods.append(method)
+        return methods
+
     def _get_verification_keys_to_mac(self) -> dict[str, str]:
         keys_to_mac: dict[str, str] = {}
 
@@ -76,7 +86,7 @@ class SASVerificationSendDeviceMixin:
         """发送 ready 响应"""
         content = {
             "from_device": self.device_id,
-            "methods": SAS_METHODS,
+            "methods": self._get_supported_verification_methods(to_user),
             "transaction_id": transaction_id,
         }
         await self._send_to_device(

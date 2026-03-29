@@ -2,14 +2,21 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets
 
 from astrbot.api import logger
 
 from ..constants import (
     INFO_PREFIX_MAC,
     INFO_PREFIX_SAS,
+    M_QR_CODE_SCAN_V1_METHOD,
+    M_RECIPROCATE_V1_METHOD,
     M_SAS_V1_METHOD,
     PREFIX_ED25519,
+    QR_CODE_HEADER,
+    QR_CODE_MODE_SELF_VERIFICATION_TRUSTED_MASTER,
+    QR_CODE_MODE_SELF_VERIFICATION_UNTRUSTED_MASTER,
+    QR_CODE_VERSION,
     SAS_BYTES_LENGTH_6,
 )
 from .verification_constants import (
@@ -39,6 +46,233 @@ class SASVerificationFlowMixin:
         if len(normalized) <= 8:
             return "***"
         return f"{normalized[:8]}..."
+
+    @staticmethod
+    def _supports_method(methods: object, method: str) -> bool:
+        if not isinstance(methods, (list, tuple, set)):
+            return False
+        return method in methods
+
+    @staticmethod
+    def _encode_unpadded_base64(data: bytes) -> str:
+        return base64.b64encode(data).decode("ascii").rstrip("=")
+
+    @staticmethod
+    def _decode_unpadded_base64(data: str) -> bytes:
+        normalized = str(data or "").strip()
+        if not normalized:
+            return b""
+        padding = "=" * (-len(normalized) % 4)
+        return base64.b64decode(normalized + padding)
+
+    def _get_local_device_ed25519_key(self) -> str | None:
+        olm = getattr(self, "olm", None)
+        device_key = getattr(olm, "ed25519_key", None)
+        if isinstance(device_key, str) and device_key:
+            return device_key
+        if olm and hasattr(olm, "get_identity_keys"):
+            try:
+                keys = olm.get_identity_keys() or {}
+                key_id = f"{PREFIX_ED25519}{self.device_id}"
+                candidate = keys.get(key_id)
+                if isinstance(candidate, str) and candidate:
+                    return candidate
+            except Exception:
+                return None
+        return None
+
+    @staticmethod
+    def _device_trusts_master_key(response: dict, user_id: str, device_id: str) -> bool:
+        master_key = (response.get("master_keys") or {}).get(user_id) or {}
+        signatures = (master_key.get("signatures") or {}).get(user_id) or {}
+        return f"{PREFIX_ED25519}{device_id}" in signatures
+
+    def _build_self_verification_qr_payload(
+        self,
+        transaction_id: str,
+        key1: str,
+        key2: str,
+        shared_secret: bytes,
+        mode: int,
+    ) -> bytes:
+        return b"".join(
+            [
+                QR_CODE_HEADER,
+                bytes([QR_CODE_VERSION, mode]),
+                len(transaction_id).to_bytes(2, "big"),
+                transaction_id.encode("ascii"),
+                self._decode_unpadded_base64(key1),
+                self._decode_unpadded_base64(key2),
+                shared_secret,
+            ]
+        )
+
+    async def _maybe_prepare_self_verification_qr(
+        self,
+        sender: str,
+        peer_device: str | None,
+        methods: object,
+        transaction_id: str,
+    ) -> bool:
+        if sender != self.user_id or not peer_device:
+            return False
+        if not self._supports_method(methods, M_QR_CODE_SCAN_V1_METHOD):
+            return False
+
+        session = self._sessions.setdefault(transaction_id, {})
+        if session.get("qr_payload"):
+            return True
+
+        try:
+            response = await self.client.query_keys({sender: []})
+            device_keys = (response.get("device_keys") or {}).get(sender) or {}
+            peer_device_info = device_keys.get(peer_device) or {}
+            peer_keys = peer_device_info.get("keys") or {}
+            peer_device_key = peer_keys.get(f"{PREFIX_ED25519}{peer_device}")
+            if peer_device_key:
+                session["fingerprint"] = peer_device_key
+
+            master_key_obj = (response.get("master_keys") or {}).get(sender) or {}
+            master_keys = master_key_obj.get("keys") or {}
+            if master_keys:
+                master_key_id, master_key = next(iter(master_keys.items()))
+                session["master_key_id"] = master_key_id
+                session["master_key"] = master_key
+            else:
+                master_key = None
+
+            current_device_key = self._get_local_device_ed25519_key()
+            if not current_device_key or not peer_device_key or not master_key:
+                logger.warning(
+                    "[E2EE-Verify] QR 自验证准备失败：缺少必要密钥 "
+                    f"(current={bool(current_device_key)} peer={bool(peer_device_key)} master={bool(master_key)})"
+                )
+                return False
+
+            if self._device_trusts_master_key(response, sender, self.device_id):
+                mode = QR_CODE_MODE_SELF_VERIFICATION_TRUSTED_MASTER
+                key1, key2 = master_key, peer_device_key
+            else:
+                mode = QR_CODE_MODE_SELF_VERIFICATION_UNTRUSTED_MASTER
+                key1, key2 = current_device_key, master_key
+
+            shared_secret = secrets.token_bytes(16)
+            payload = self._build_self_verification_qr_payload(
+                transaction_id,
+                key1,
+                key2,
+                shared_secret,
+                mode,
+            )
+            session["qr_mode"] = mode
+            session["qr_payload"] = payload
+            session["qr_shared_secret"] = shared_secret
+            session["qr_shared_secret_b64"] = self._encode_unpadded_base64(
+                shared_secret
+            )
+
+            build_terminal_qr = getattr(self, "_build_terminal_qr", None)
+            if callable(build_terminal_qr):
+                session["qr_ascii"] = build_terminal_qr(payload)
+
+            logger.info(
+                "[E2EE-Verify] 已生成同账号 QR 自验证码："
+                f"device={self._mask_identifier(peer_device)} "
+                f"mode=0x{mode:02x} txn={self._mask_txn_id(transaction_id)}"
+            )
+            qr_ascii = str(session.get("qr_ascii") or "").rstrip()
+            if qr_ascii:
+                logger.info(
+                    "[E2EE-Verify] 请在另一台设备上扫描以下二维码完成验证：\n"
+                    f"{qr_ascii}"
+                )
+
+            notify_qr = getattr(self, "_notify_admin_for_qr_code", None)
+            if callable(notify_qr):
+                await notify_qr(session, transaction_id)
+            return True
+        except Exception as e:
+            logger.warning(f"[E2EE-Verify] 准备同账号 QR 自验证失败：{e}")
+            return False
+
+    async def _handle_reciprocate_start(
+        self,
+        sender: str,
+        from_device: str | None,
+        content: dict,
+        transaction_id: str,
+        session: dict,
+    ) -> bool:
+        expected_secret = session.get("qr_shared_secret_b64")
+        received_secret = content.get("secret")
+        if not isinstance(expected_secret, str) or not expected_secret:
+            logger.warning("[E2EE-Verify] 收到 reciprocate，但当前会话没有待确认的 QR")
+            if from_device:
+                await self._send_cancel(
+                    sender,
+                    from_device,
+                    transaction_id,
+                    "m.unexpected_message",
+                    "No QR code is pending for this verification",
+                )
+            return True
+        if not isinstance(received_secret, str) or not received_secret:
+            logger.warning("[E2EE-Verify] 收到 reciprocate，但缺少 secret")
+            if from_device:
+                await self._send_cancel(
+                    sender,
+                    from_device,
+                    transaction_id,
+                    "m.bad_message_format",
+                    "Missing reciprocate secret",
+                )
+            return True
+        if not hmac.compare_digest(received_secret, expected_secret):
+            logger.warning("[E2EE-Verify] QR reciprocate secret 不匹配")
+            if from_device:
+                await self._send_cancel(
+                    sender,
+                    from_device,
+                    transaction_id,
+                    "m.key_mismatch",
+                    "QR shared secret mismatch",
+                )
+            return True
+
+        session["qr_reciprocated"] = True
+        session["qr_confirmed"] = self.auto_verify_mode == "auto_accept"
+        session["state"] = "qr_scanned"
+        logger.info(
+            "[E2EE-Verify] 对端已扫描 QR："
+            f"device={self._mask_identifier(from_device)} "
+            f"txn={self._mask_txn_id(transaction_id)}"
+        )
+
+        if self.auto_verify_mode == "auto_reject":
+            if from_device:
+                await self._send_cancel(
+                    sender, from_device, transaction_id, "m.user", "自动拒绝"
+                )
+            return True
+
+        if self.auto_verify_mode == "manual":
+            notify = getattr(self, "_notify_admin_for_qr_reciprocation", None)
+            if callable(notify):
+                await notify(session, transaction_id)
+            return True
+
+        if not from_device:
+            return True
+
+        is_in_room = session.get("is_in_room", False)
+        room_id = session.get("room_id")
+        if not session.get("done_sent"):
+            session["done_sent"] = True
+            if is_in_room and room_id:
+                await self._send_in_room_done(room_id, transaction_id)
+            else:
+                await self._send_done(sender, from_device, transaction_id)
+        return True
 
     async def _handle_request(self, sender: str, content: dict, transaction_id: str):
         """处理验证请求"""
@@ -116,8 +350,13 @@ class SASVerificationFlowMixin:
             logger.info(
                 "[E2EE-Verify] 手动模式，发送 ready 并等待管理员确认 (mode=manual)"
             )
-            if "m.sas.v1" in methods:
+            if self._supports_method(methods, M_SAS_V1_METHOD) or self._supports_method(
+                methods, M_QR_CODE_SCAN_V1_METHOD
+            ):
                 await self._send_ready(sender, from_device, transaction_id)
+                await self._maybe_prepare_self_verification_qr(
+                    sender, from_device, methods, transaction_id
+                )
             else:
                 await self._send_cancel(
                     sender,
@@ -129,9 +368,14 @@ class SASVerificationFlowMixin:
             return
 
         # auto_accept: 发送 ready
-        if "m.sas.v1" in methods:
+        if self._supports_method(methods, M_SAS_V1_METHOD) or self._supports_method(
+            methods, M_QR_CODE_SCAN_V1_METHOD
+        ):
             logger.info("[E2EE-Verify] 自动接受验证请求 (mode=auto_accept)")
             await self._send_ready(sender, from_device, transaction_id)
+            await self._maybe_prepare_self_verification_qr(
+                sender, from_device, methods, transaction_id
+            )
         else:
             logger.warning(f"[E2EE-Verify] 不支持的验证方法：{methods}")
             await self._send_cancel(
@@ -158,9 +402,15 @@ class SASVerificationFlowMixin:
 
         # 如果是我们发起的验证（即我们在等待 ready），我们需要发送 start
         if session.get("we_started_it"):
-            logger.info("[E2EE-Verify] 作为发起者，开始验证流程 (sending start)")
-            # 选择一个共同的验证方法
-            if M_SAS_V1_METHOD in methods:
+            qr_prepared = await self._maybe_prepare_self_verification_qr(
+                sender, from_device, methods, transaction_id
+            )
+            if qr_prepared:
+                logger.info("[E2EE-Verify] 作为发起者，优先展示 QR 自验证码")
+                return
+
+            logger.info("[E2EE-Verify] 作为发起者，开始 SAS 验证流程")
+            if self._supports_method(methods, M_SAS_V1_METHOD):
                 await self._send_start(sender, from_device, transaction_id)
             else:
                 logger.warning(f"[E2EE-Verify] 无共同验证方法：{methods}")
@@ -192,6 +442,17 @@ class SASVerificationFlowMixin:
         session["their_commitment"] = their_commitment
         session["start_content"] = content
         session["we_are_initiator"] = False  # 收到 start，说明对方是 Initiator
+
+        if method == M_RECIPROCATE_V1_METHOD:
+            handled = await self._handle_reciprocate_start(
+                sender,
+                from_device,
+                content,
+                transaction_id,
+                session,
+            )
+            if handled:
+                return
 
         # Check if this is an in-room verification
         is_in_room = session.get("is_in_room", False)
@@ -588,7 +849,10 @@ class SASVerificationFlowMixin:
         )
 
         session = self._sessions.get(transaction_id, {})
-        if session.get("state") == "cancelled" or not session.get("mac_verified"):
+        qr_verified = bool(session.get("qr_confirmed"))
+        if session.get("state") == "cancelled" or (
+            not session.get("mac_verified") and not qr_verified
+        ):
             logger.warning(
                 "[E2EE-Verify] 忽略 done：会话已取消或 MAC 尚未验证通过"
             )

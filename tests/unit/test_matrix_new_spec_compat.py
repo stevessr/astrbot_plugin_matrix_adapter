@@ -1480,6 +1480,243 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             "fingerprint-ed25519",
         )
 
+    async def test_handle_ready_prefers_self_verification_qr_when_peer_can_scan(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+        constants = load_module("constants")
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self._sessions = {"txn123": {"we_started_it": True}}
+                self.qr_calls = []
+                self.start_calls = []
+                self.cancel_calls = []
+
+            async def _maybe_prepare_self_verification_qr(
+                self, sender, peer_device, methods, transaction_id
+            ):
+                self.qr_calls.append((sender, peer_device, tuple(methods), transaction_id))
+                return True
+
+            async def _send_start(self, sender, device_id, transaction_id):
+                self.start_calls.append((sender, device_id, transaction_id))
+
+            async def _send_cancel(self, sender, device_id, transaction_id, code, reason):
+                self.cancel_calls.append((sender, device_id, transaction_id, code, reason))
+
+        verifier = DummyVerifier()
+        await verifier._handle_ready(
+            "@bot:example.org",
+            {
+                "from_device": "DEV456",
+                "methods": [
+                    constants.M_QR_CODE_SCAN_V1_METHOD,
+                    constants.M_SAS_V1_METHOD,
+                ],
+            },
+            "txn123",
+        )
+
+        self.assertEqual(
+            verifier.qr_calls,
+            [
+                (
+                    "@bot:example.org",
+                    "DEV456",
+                    (
+                        constants.M_QR_CODE_SCAN_V1_METHOD,
+                        constants.M_SAS_V1_METHOD,
+                    ),
+                    "txn123",
+                )
+            ],
+        )
+        self.assertEqual(verifier.start_calls, [])
+        self.assertEqual(verifier.cancel_calls, [])
+
+    async def test_prepare_self_verification_qr_builds_trusted_master_payload(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+        constants = load_module("constants")
+
+        master_key = base64.b64encode(b"M" * 32).decode("ascii").rstrip("=")
+        peer_device_key = base64.b64encode(b"P" * 32).decode("ascii").rstrip("=")
+
+        class DummyClient:
+            async def query_keys(self, device_keys, timeout=10000):
+                return {
+                    "device_keys": {
+                        "@bot:example.org": {
+                            "DEV456": {
+                                "keys": {
+                                    "ed25519:DEV456": peer_device_key,
+                                }
+                            }
+                        }
+                    },
+                    "master_keys": {
+                        "@bot:example.org": {
+                            "keys": {"ed25519:MASTER": master_key},
+                            "signatures": {
+                                "@bot:example.org": {"ed25519:BOT123": "sig"}
+                            },
+                        }
+                    },
+                }
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.client = DummyClient()
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self.olm = types.SimpleNamespace(ed25519_key="LOCALDEVICEKEY")
+                self._sessions = {"txn123": {}}
+                self.qr_notifications = []
+
+            def _build_terminal_qr(self, payload):
+                self.last_qr_payload = payload
+                return "ASCII-QR"
+
+            async def _notify_admin_for_qr_code(self, session, transaction_id):
+                self.qr_notifications.append((transaction_id, session.get("qr_mode")))
+
+        verifier = DummyVerifier()
+        prepared = await verifier._maybe_prepare_self_verification_qr(
+            "@bot:example.org",
+            "DEV456",
+            [constants.M_QR_CODE_SCAN_V1_METHOD],
+            "txn123",
+        )
+
+        self.assertTrue(prepared)
+        session = verifier._sessions["txn123"]
+        self.assertEqual(
+            session["qr_mode"],
+            constants.QR_CODE_MODE_SELF_VERIFICATION_TRUSTED_MASTER,
+        )
+        self.assertEqual(session["fingerprint"], peer_device_key)
+        self.assertEqual(session["master_key"], master_key)
+        self.assertEqual(session["qr_ascii"], "ASCII-QR")
+        self.assertEqual(verifier.qr_notifications, [("txn123", session["qr_mode"])])
+
+        payload = session["qr_payload"]
+        self.assertTrue(payload.startswith(constants.QR_CODE_HEADER))
+        self.assertEqual(payload[6], constants.QR_CODE_VERSION)
+        self.assertEqual(
+            payload[7],
+            constants.QR_CODE_MODE_SELF_VERIFICATION_TRUSTED_MASTER,
+        )
+        txn_len = int.from_bytes(payload[8:10], "big")
+        self.assertEqual(payload[10 : 10 + txn_len], b"txn123")
+        key1_start = 10 + txn_len
+        self.assertEqual(
+            payload[key1_start : key1_start + 32],
+            base64.b64decode(master_key + "=="),
+        )
+        self.assertEqual(
+            payload[key1_start + 32 : key1_start + 64],
+            base64.b64decode(peer_device_key + "=="),
+        )
+        self.assertEqual(len(session["qr_shared_secret"]), 16)
+
+    async def test_handle_reciprocate_start_sends_done_after_matching_secret(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+        constants = load_module("constants")
+
+        shared_secret = base64.b64encode(b"secret-qr-123456").decode("ascii").rstrip("=")
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self.auto_verify_mode = "auto_accept"
+                self._sessions = {
+                    "txn123": {
+                        "sender": "@bot:example.org",
+                        "from_device": "DEV456",
+                        "qr_shared_secret_b64": shared_secret,
+                    }
+                }
+                self.done_calls = []
+                self.cancel_calls = []
+
+            async def _send_done(self, sender, device_id, transaction_id):
+                self.done_calls.append((sender, device_id, transaction_id))
+
+            async def _send_cancel(self, sender, device_id, transaction_id, code, reason):
+                self.cancel_calls.append((sender, device_id, transaction_id, code, reason))
+
+        verifier = DummyVerifier()
+        await verifier._handle_start(
+            "@bot:example.org",
+            {
+                "from_device": "DEV456",
+                "method": constants.M_RECIPROCATE_V1_METHOD,
+                "secret": shared_secret,
+            },
+            "txn123",
+        )
+
+        self.assertEqual(
+            verifier.done_calls,
+            [("@bot:example.org", "DEV456", "txn123")],
+        )
+        self.assertEqual(verifier.cancel_calls, [])
+        self.assertTrue(verifier._sessions["txn123"].get("qr_reciprocated"))
+        self.assertTrue(verifier._sessions["txn123"].get("qr_confirmed"))
+
+    async def test_handle_done_accepts_confirmed_qr_session(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+
+        class DummyDeviceStore:
+            def __init__(self):
+                self.calls = []
+
+            def add_device(self, user_id, device_id, fingerprint):
+                self.calls.append((user_id, device_id, fingerprint))
+
+        class DummyManager:
+            def __init__(self):
+                self.calls = []
+                self.secret_requests = []
+
+            async def publish_trusted_device(self, user_id, device_id):
+                self.calls.append((user_id, device_id))
+                return True
+
+            async def request_missing_secrets_after_verification(self, user_id):
+                self.secret_requests.append(user_id)
+
+        class DummyVerifier(flow_module.SASVerificationFlowMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self._sessions = {
+                    "txn123": {
+                        "from_device": "DEV456",
+                        "fingerprint": "fp456",
+                        "qr_confirmed": True,
+                    }
+                }
+                self.device_store = DummyDeviceStore()
+                self.e2ee_manager = DummyManager()
+
+        verifier = DummyVerifier()
+        await verifier._handle_done("@bot:example.org", {}, "txn123")
+
+        self.assertEqual(
+            verifier.device_store.calls,
+            [("@bot:example.org", "DEV456", "fp456")],
+        )
+        self.assertEqual(
+            verifier.e2ee_manager.calls,
+            [
+                ("@bot:example.org", "DEV456"),
+                ("@bot:example.org", "BOT123"),
+            ],
+        )
+        self.assertEqual(verifier.e2ee_manager.secret_requests, ["@bot:example.org"])
+
     async def test_handle_done_publishes_cross_signing_for_same_user_devices(self):
         flow_module = load_module("e2ee.verification_handlers_flow")
 
@@ -1817,6 +2054,53 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         manager = DummyManager()
         await manager.request_missing_secrets_after_verification("@bot:example.org")
         self.assertEqual(manager.secret_names, [])
+
+    async def test_initiate_verification_for_device_includes_qr_show_and_reciprocate(self):
+        verification_module = load_module("e2ee.e2ee_manager_verification")
+        constants = load_module("constants")
+
+        class DummyClient:
+            def __init__(self):
+                self.calls = []
+
+            async def send_to_device(self, event_type, messages, txn_id):
+                self.calls.append((event_type, messages, txn_id))
+
+        class DummyVerification:
+            def __init__(self):
+                self.calls = []
+
+            def initiate_verification(self, txn_id, user_id, device_id):
+                self.calls.append((txn_id, user_id, device_id))
+
+        class DummyManager(verification_module.E2EEManagerVerificationMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self.client = DummyClient()
+                self._verification = DummyVerification()
+
+        manager = DummyManager()
+        await manager._initiate_verification_for_device("DEV456")
+
+        self.assertEqual(len(manager.client.calls), 1)
+        event_type, messages, txn_id = manager.client.calls[0]
+        self.assertEqual(event_type, constants.M_KEY_VERIFICATION_REQUEST)
+        content = messages["@bot:example.org"]["DEV456"]
+        self.assertEqual(
+            content["methods"],
+            [
+                constants.M_SAS_V1_METHOD,
+                constants.M_QR_CODE_SHOW_V1_METHOD,
+                constants.M_RECIPROCATE_V1_METHOD,
+            ],
+        )
+        self.assertEqual(content["from_device"], "BOT123")
+        self.assertEqual(content["transaction_id"], txn_id)
+        self.assertEqual(
+            manager._verification.calls,
+            [(txn_id, "@bot:example.org", "DEV456")],
+        )
 
     async def test_self_signing_secret_persists_and_retries_signing_own_device(self):
         secrets_module = load_module("e2ee.e2ee_manager_secrets")

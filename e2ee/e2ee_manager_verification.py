@@ -6,6 +6,8 @@ from astrbot.api import logger
 
 from ..constants import (
     M_KEY_VERIFICATION_REQUEST,
+    M_QR_CODE_SHOW_V1_METHOD,
+    M_RECIPROCATE_V1_METHOD,
     M_SAS_V1_METHOD,
     PREFIX_ED25519,
     SECRET_MEGOLM_BACKUP_V1,
@@ -233,7 +235,11 @@ class E2EEManagerVerificationMixin:
 
         request_content = {
             "from_device": self.device_id,
-            "methods": [M_SAS_V1_METHOD],
+            "methods": [
+                M_SAS_V1_METHOD,
+                M_QR_CODE_SHOW_V1_METHOD,
+                M_RECIPROCATE_V1_METHOD,
+            ],
             "timestamp": int(__import__("time").time() * 1000),
             "transaction_id": txn_id,
         }
