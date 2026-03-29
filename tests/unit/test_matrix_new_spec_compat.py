@@ -1089,6 +1089,41 @@ class MatrixDehydratedDeviceCompatTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MatrixAuthCompatTests(unittest.IsolatedAsyncioTestCase):
+    class _ConfigStub:
+        def __init__(
+            self,
+            *,
+            auth_method: str = "password",
+            access_token: str = "",
+            password: str = "",
+            refresh_token: str = "",
+            device_id: str = "DEV123",
+        ):
+            self.user_id = "@alice:example.org"
+            self.password = password
+            self.access_token = access_token
+            self.auth_method = auth_method
+            self.device_name = "AstrBot"
+            self.refresh_token = refresh_token
+            self.homeserver = "https://matrix.example.org"
+            self.store_path = tempfile.gettempdir()
+            self._device_id = device_id
+            self.reset_calls = 0
+            self.set_device_id_calls = []
+
+        @property
+        def device_id(self):
+            return self._device_id
+
+        def set_device_id(self, device_id: str):
+            self._device_id = device_id
+            self.set_device_id_calls.append(device_id)
+
+        def reset_device_id(self) -> str:
+            self.reset_calls += 1
+            self._device_id = f"NEWDEV{self.reset_calls}"
+            return self._device_id
+
     @staticmethod
     def _load_auth_module():
         _install_astrbot_stubs()
@@ -1125,17 +1160,7 @@ class MatrixAuthCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_qr_mode_reuses_persisted_token_before_reprompting(self):
         auth_module = self._load_auth_module()
 
-        config = types.SimpleNamespace(
-            user_id="@alice:example.org",
-            password="",
-            access_token="",
-            auth_method="qr",
-            device_name="AstrBot",
-            refresh_token="",
-            device_id="DEV123",
-            homeserver="https://matrix.example.org",
-            store_path=tempfile.gettempdir(),
-        )
+        config = self._ConfigStub(auth_method="qr")
         auth = auth_module.MatrixAuth(client=object(), config=config)
 
         events = []
@@ -1162,17 +1187,7 @@ class MatrixAuthCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_qr_mode_falls_back_to_qr_when_persisted_token_is_invalid(self):
         auth_module = self._load_auth_module()
 
-        config = types.SimpleNamespace(
-            user_id="@alice:example.org",
-            password="",
-            access_token="",
-            auth_method="qr",
-            device_name="AstrBot",
-            refresh_token="",
-            device_id="DEV123",
-            homeserver="https://matrix.example.org",
-            store_path=tempfile.gettempdir(),
-        )
+        config = self._ConfigStub(auth_method="qr")
         auth = auth_module.MatrixAuth(client=object(), config=config)
 
         events = []
@@ -1196,6 +1211,158 @@ class MatrixAuthCompatTests(unittest.IsolatedAsyncioTestCase):
         await auth.login()
 
         self.assertEqual(events, ["load", "token", "qr"])
+
+    async def test_qr_mode_regenerates_device_id_before_new_login(self):
+        auth_module = self._load_auth_module()
+
+        config = self._ConfigStub(auth_method="qr")
+        auth = auth_module.MatrixAuth(client=types.SimpleNamespace(), config=config)
+
+        observed_device_ids = []
+
+        def fake_load_token():
+            auth.access_token = "persisted-token"
+            return True
+
+        async def fake_login_via_token():
+            observed_device_ids.append(("token", auth.device_id))
+            raise RuntimeError("expired")
+
+        async def fake_login_via_qr():
+            observed_device_ids.append(("qr", auth.device_id))
+
+        auth._load_token = fake_load_token
+        auth._login_via_token = fake_login_via_token
+        auth._login_via_qr = fake_login_via_qr
+
+        await auth.login()
+
+        self.assertEqual(observed_device_ids, [("token", "DEV123"), ("qr", "NEWDEV1")])
+        self.assertEqual(config.reset_calls, 1)
+
+    async def test_invalid_token_password_relogin_regenerates_device_id(self):
+        auth_module = self._load_auth_module()
+
+        config = self._ConfigStub(
+            auth_method="password",
+            access_token="expired-token",
+            password="hunter2",
+        )
+
+        class DummyClient:
+            def __init__(self):
+                self.restore_calls = []
+                self.login_password_calls = []
+                self.device_id = None
+
+            def restore_login(self, user_id, device_id, access_token):
+                self.restore_calls.append((user_id, device_id, access_token))
+                self.device_id = device_id
+
+            async def sync(self, timeout=0, full_state=False):
+                return {
+                    "errcode": "M_UNKNOWN_TOKEN",
+                    "error": "Unknown access token",
+                }
+
+            async def login_password(
+                self,
+                user_id,
+                password,
+                device_name="AstrBot",
+                device_id=None,
+            ):
+                self.login_password_calls.append(
+                    (user_id, password, device_name, device_id)
+                )
+                self.device_id = device_id
+                return {
+                    "user_id": user_id,
+                    "device_id": device_id,
+                    "access_token": "fresh-token",
+                }
+
+        client = DummyClient()
+        auth = auth_module.MatrixAuth(client=client, config=config)
+        auth._save_token = lambda: None
+
+        await auth._login_via_token()
+
+        self.assertEqual(config.reset_calls, 1)
+        self.assertEqual(
+            client.login_password_calls,
+            [("@alice:example.org", "hunter2", "AstrBot", "NEWDEV1")],
+        )
+        self.assertEqual(auth.access_token, "fresh-token")
+        self.assertEqual(config.device_id, "NEWDEV1")
+
+    async def test_refresh_token_success_keeps_existing_device_id(self):
+        auth_module = self._load_auth_module()
+
+        config = self._ConfigStub(
+            auth_method="password",
+            access_token="expired-token",
+            password="hunter2",
+            refresh_token="refresh-token",
+        )
+
+        class DummyClient:
+            def __init__(self):
+                self.restore_calls = []
+                self.refresh_calls = []
+                self.login_password_calls = []
+                self.sync_calls = 0
+                self.device_id = None
+
+            def restore_login(self, user_id, device_id, access_token):
+                self.restore_calls.append((user_id, device_id, access_token))
+                self.device_id = device_id
+
+            async def sync(self, timeout=0, full_state=False):
+                self.sync_calls += 1
+                if self.sync_calls == 1:
+                    return {
+                        "errcode": "M_UNKNOWN_TOKEN",
+                        "error": "Unknown access token",
+                    }
+                return {"next_batch": "s123"}
+
+            async def refresh_access_token(self, refresh_token):
+                self.refresh_calls.append(refresh_token)
+                return {
+                    "access_token": "refreshed-token",
+                    "refresh_token": "refreshed-refresh-token",
+                }
+
+            async def whoami(self):
+                return {
+                    "user_id": "@alice:example.org",
+                    "device_id": "DEV123",
+                }
+
+            async def login_password(
+                self,
+                user_id,
+                password,
+                device_name="AstrBot",
+                device_id=None,
+            ):
+                self.login_password_calls.append(
+                    (user_id, password, device_name, device_id)
+                )
+                raise AssertionError("password re-login should not be used")
+
+        client = DummyClient()
+        auth = auth_module.MatrixAuth(client=client, config=config)
+        auth._save_token = lambda: None
+
+        await auth._login_via_token()
+
+        self.assertEqual(config.reset_calls, 0)
+        self.assertEqual(client.refresh_calls, ["refresh-token"])
+        self.assertEqual(client.login_password_calls, [])
+        self.assertEqual(auth.access_token, "refreshed-token")
+        self.assertEqual(config.device_id, "DEV123")
 
 
 class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):

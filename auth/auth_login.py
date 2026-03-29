@@ -174,6 +174,9 @@ class MatrixAuthLogin:
                 self._log("error", f"Token refresh failed: {refresh_error}")
 
         if self.password:
+            self._reset_device_id_for_reauth(
+                "Stored token invalid; password re-login requires a new device"
+            )
             self._log("info", "Attempting password re-login...")
             try:
                 await self._login_via_password()

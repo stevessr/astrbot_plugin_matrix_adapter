@@ -33,6 +33,7 @@ class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
         self.client_secret: str | None = None
         self.oauth2_handler = None
         self._active_auth_webhook_handler = None
+        self._device_id_rotated_for_reauth = False
 
     def _log(self, level, msg):
         extra = {"plugin_tag": "matrix", "short_levelname": level[:4].upper()}
@@ -53,6 +54,43 @@ class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
         """
         return self._login_wrapper()
 
+    def _current_device_id_for_logging(self) -> str | None:
+        try:
+            return self.device_id
+        except Exception:
+            return getattr(self.config, "device_id", None)
+
+    def _reset_device_id_for_reauth(self, reason: str) -> str | None:
+        if self._device_id_rotated_for_reauth:
+            return self._current_device_id_for_logging()
+
+        reset_device_id = getattr(self.config, "reset_device_id", None)
+        if not callable(reset_device_id):
+            current_device_id = self._current_device_id_for_logging()
+            self._log(
+                "info",
+                "Stored token invalid but config does not support regenerating "
+                f"device_id, reusing {current_device_id!r} ({reason})",
+            )
+            self._device_id_rotated_for_reauth = True
+            return current_device_id
+
+        previous_device_id = self._current_device_id_for_logging()
+        new_device_id = reset_device_id()
+        if hasattr(self.client, "device_id"):
+            try:
+                self.client.device_id = new_device_id
+            except Exception:
+                pass
+
+        self._log(
+            "info",
+            "Stored token invalid, regenerated Matrix device_id for re-auth: "
+            f"{previous_device_id} -> {new_device_id} ({reason})",
+        )
+        self._device_id_rotated_for_reauth = True
+        return new_device_id
+
     async def handle_webhook_callback(self, request):
         handler = self._active_auth_webhook_handler
         if handler and hasattr(handler, "handle_webhook_callback"):
@@ -61,12 +99,15 @@ class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
         return "Matrix authentication flow is not ready, please retry.", 503
 
     async def _login_wrapper(self):
+        self._device_id_rotated_for_reauth = False
         # Always try to load token first for potential restoration
         self._load_token()
 
         if self.auth_method == "oauth2":
             if await self._restore_oauth2_session():
                 return
+            if self.access_token:
+                self._reset_device_id_for_reauth("OAuth2 session restore failed")
             await self._login_via_oauth2()
         elif self.auth_method == "qr":
             if self.access_token:
@@ -77,6 +118,9 @@ class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
                     self._log(
                         "info",
                         "Stored token expired or invalid, falling back to QR login",
+                    )
+                    self._reset_device_id_for_reauth(
+                        "Stored token invalid before QR login"
                     )
 
             await self._login_via_qr()
@@ -92,6 +136,9 @@ class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
                     self._log(
                         "info",
                         "Stored token expired or invalid, falling back to password login",
+                    )
+                    self._reset_device_id_for_reauth(
+                        "Stored token invalid before password login"
                     )
 
             await self._login_via_password()
@@ -110,6 +157,9 @@ class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
                         self._log(
                             "info",
                             "Stored token expired or invalid, falling back to password login",
+                        )
+                        self._reset_device_id_for_reauth(
+                            "Stored token invalid before password login"
                         )
 
                 await self._login_via_password()
