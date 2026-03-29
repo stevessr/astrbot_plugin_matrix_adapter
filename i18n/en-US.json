@@ -57,7 +57,7 @@
   },
   "matrix_e2ee_recovery_key": {
     "description": "Recovery Key",
-    "hint": "E2EE recovery key (Base58 or Base64 format), leave empty to auto-generate"
+    "hint": "E2EE recovery key (typically the Matrix Base58/Base64 32-byte key used for dehydrated/backup recovery; also accepted as a Secret Storage Key fallback). Leave empty to auto-generate"
   },
   "matrix_e2ee_proactive_key_exchange": {
     "description": "Proactive Key Exchange",

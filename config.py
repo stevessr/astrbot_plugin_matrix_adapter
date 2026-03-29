@@ -142,8 +142,9 @@ class MatrixConfig:
             self.config.get("matrix_e2ee_key_backup"),
             False,
         )
-        # 用户手动配置的恢复密钥（推荐 Matrix Base58 恢复密钥，兼容 Base64 32 字节密钥）
-        # 如果为空，将自动生成新密钥并在日志中输出
+        # 用户手动配置的恢复密钥。
+        # 该字段通常填入用于脱水/备份恢复的 Matrix Base58 恢复密钥，
+        # 也兼容 Base64 32 字节密钥，并会在必要时兼容作为 Secret Storage Key 尝试。
         self.e2ee_recovery_key = str(
             self.config.get("matrix_e2ee_recovery_key", "") or ""
         ).strip()

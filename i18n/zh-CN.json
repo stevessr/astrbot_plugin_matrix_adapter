@@ -57,7 +57,7 @@
   },
   "matrix_e2ee_recovery_key": {
     "description": "恢复密钥",
-    "hint": "E2EE 恢复密钥（Base58 或 Base64 格式），留空则自动生成"
+    "hint": "E2EE 恢复密钥（通常填入用于脱水/备份恢复的 Matrix Base58 或 Base64 32 字节密钥；兼容 Secret Storage Key），留空则自动生成"
   },
   "matrix_e2ee_proactive_key_exchange": {
     "description": "主动密钥交换",

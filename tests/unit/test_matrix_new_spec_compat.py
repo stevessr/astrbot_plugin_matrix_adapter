@@ -2642,6 +2642,60 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_initialize_prefers_configured_key_for_dehydrated_restore_before_ssss(self):
+        backup_module = load_module("e2ee.key_backup_backup")
+
+        expected_key = b"D" * 32
+
+        class DummyBackup(backup_module.KeyBackupBackupMixin):
+            def __init__(self):
+                self._provided_recovery_material_bytes = b"P" * 32
+                self._provided_secret_storage_key_bytes = b"P" * 32
+                self._backup_auth_data = {}
+                self._backup_version = None
+                self.used_keys = []
+                self.calls = []
+
+            async def _get_current_backup_version(self):
+                return "1"
+
+            def _get_valid_local_recovery_key_bytes(self):
+                return None
+
+            async def _try_restore_from_dehydrated_device_key(self, key_bytes):
+                self.calls.append(("dehydrated", key_bytes))
+                return expected_key
+
+            async def _try_restore_from_secret_storage(
+                self,
+                key_bytes,
+                *,
+                include_dehydrated=True,
+                allow_local_short_circuit=True,
+            ):
+                self.calls.append(
+                    (
+                        "ssss",
+                        key_bytes,
+                        include_dehydrated,
+                        allow_local_short_circuit,
+                    )
+                )
+                return b"S" * 32
+
+            def _verify_recovery_key(self, key_bytes, log_mismatch=True):
+                return key_bytes == expected_key
+
+            def use_recovery_key_bytes(self, key_bytes, persist=False):
+                self.used_keys.append((key_bytes, persist))
+                return True
+
+        backup = DummyBackup()
+        await backup.initialize()
+
+        self.assertEqual(backup.used_keys, [(expected_key, True)])
+        self.assertEqual(backup.calls, [("dehydrated", b"P" * 32)])
+
     def test_verify_recovery_key_rejects_non_32_byte_key(self):
         backup_module = load_module("e2ee.key_backup_backup")
 

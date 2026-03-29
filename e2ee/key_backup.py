@@ -63,7 +63,7 @@ class KeyBackup(KeyBackupSSSSMixin, KeyBackupBackupMixin):
             client: MatrixHTTPClient
             crypto_store: CryptoStore
             olm_machine: OlmMachine
-            recovery_key: 用户配置密钥（默认按 Secret Storage Key 处理）
+            recovery_key: 用户配置密钥（优先作为脱水/备份恢复材料，兼容 Secret Storage Key）
             store_path: 存储路径（用于持久化提取的备份密钥）
         """
         self.client = client
@@ -76,6 +76,7 @@ class KeyBackup(KeyBackupSSSSMixin, KeyBackupBackupMixin):
         self._recovery_key_bytes: bytes | None = None
         self._encryption_key: bytes | None = None
         self._original_recovery_key_str: str = recovery_key  # 保存原始输入
+        self._provided_recovery_material_bytes: bytes | None = None
         self._provided_secret_storage_key_bytes: bytes | None = None
         self._last_restore_attempt_ts: float = 0.0
         self._restore_cooldown_sec: float = 60.0
@@ -83,12 +84,13 @@ class KeyBackup(KeyBackupSSSSMixin, KeyBackupBackupMixin):
         # 处理用户提供的恢复密钥
         if recovery_key:
             try:
-                # Treat configured key as Secret Storage key by default.
-                # It can still be used as a direct backup key as fallback.
-                self._provided_secret_storage_key_bytes = _decode_recovery_key(
-                    recovery_key
+                decoded_key = _decode_recovery_key(recovery_key)
+                self._provided_recovery_material_bytes = decoded_key
+                # Keep exposing the same key bytes to SSSS helpers as a compatibility fallback.
+                self._provided_secret_storage_key_bytes = decoded_key
+                logger.info(
+                    "已加载用户配置密钥（优先用于脱水/备份恢复，兼容 Secret Storage Key）"
                 )
-                logger.info("已加载用户配置密钥（默认按 Secret Storage Key 处理）")
             except Exception as e:
                 logger.error(f"解析恢复密钥失败：{e}")
 

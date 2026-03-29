@@ -57,7 +57,7 @@
   },
   "matrix_e2ee_recovery_key": {
     "description": "Ключ восстановления",
-    "hint": "Ключ восстановления E2EE (формат Base58 или Base64), оставьте пустым для автогенерации"
+    "hint": "Ключ восстановления E2EE (обычно Matrix Base58/Base64 ключ длиной 32 байта для dehydrated/backup recovery; также совместим как резервный Secret Storage Key). Оставьте пустым для автогенерации"
   },
   "matrix_e2ee_proactive_key_exchange": {
     "description": "Проактивный обмен ключами",

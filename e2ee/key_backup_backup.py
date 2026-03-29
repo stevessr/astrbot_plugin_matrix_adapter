@@ -38,16 +38,23 @@ class KeyBackupBackupMixin:
                         logger.info("✅ 使用本地保存的提取密钥成功验证！")
                         return
 
-                # 2) Treat configured key as Secret Storage Key by default.
-                provided_key = self._provided_secret_storage_key_bytes
+                # 2) Treat configured key as dehydrated/backup recovery material first,
+                # then fall back to Secret Storage compatibility.
+                provided_key = getattr(
+                    self,
+                    "_provided_recovery_material_bytes",
+                    self._provided_secret_storage_key_bytes,
+                )
                 if provided_key:
-                    real_key = await self._try_restore_from_secret_storage(provided_key)
+                    real_key = await self._try_restore_from_dehydrated_device_key(
+                        provided_key
+                    )
                     if real_key and self._verify_recovery_key(
                         real_key, log_mismatch=False
                     ):
                         if self.use_recovery_key_bytes(real_key, persist=True):
                             logger.info(
-                                "✅ 已通过 Secret Storage Key 获取并验证备份密钥"
+                                "✅ 已通过配置密钥解出 dehydrated device 中的备份密钥"
                             )
                             return
 
@@ -55,6 +62,21 @@ class KeyBackupBackupMixin:
                     if self._verify_recovery_key(provided_key, log_mismatch=False):
                         if self.use_recovery_key_bytes(provided_key):
                             logger.info("✅ 提供密钥可直接作为备份恢复密钥")
+                            return
+
+                    # 4) Compatibility fallback: configured key may still be a Secret Storage key.
+                    real_key = await self._try_restore_from_secret_storage(
+                        provided_key,
+                        include_dehydrated=False,
+                        allow_local_short_circuit=False,
+                    )
+                    if real_key and self._verify_recovery_key(
+                        real_key, log_mismatch=False
+                    ):
+                        if self.use_recovery_key_bytes(real_key, persist=True):
+                            logger.info(
+                                "✅ 已通过配置密钥兼容解出 Secret Storage 中的备份密钥"
+                            )
                             return
 
                     logger.warning(

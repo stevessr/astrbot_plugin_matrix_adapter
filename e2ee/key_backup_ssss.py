@@ -86,6 +86,18 @@ class KeyBackupSSSSMixin:
 
         return dehydrated_device
 
+    async def _try_restore_from_dehydrated_device_key(
+        self, provided_key_bytes: bytes
+    ) -> bytes | None:
+        if not provided_key_bytes:
+            return None
+
+        dehydrated_device = await self._get_dehydrated_device()
+        return self._extract_backup_key_from_dehydrated_device(
+            provided_key_bytes,
+            dehydrated_device,
+        )
+
     def _extract_backup_key_from_dehydrated_device(
         self, provided_key_bytes: bytes, dehydrated_device: dict | None
     ) -> bytes | None:
@@ -460,7 +472,11 @@ class KeyBackupSSSSMixin:
             return False
 
     async def _try_restore_from_secret_storage(
-        self, provided_key_bytes: bytes
+        self,
+        provided_key_bytes: bytes,
+        *,
+        include_dehydrated: bool = True,
+        allow_local_short_circuit: bool = True,
     ) -> bytes | None:
         """
         尝试从 Secret Storage 解密真正的备份密钥
@@ -468,17 +484,21 @@ class KeyBackupSSSSMixin:
         """
         logger.info("尝试从 Secret Storage 恢复密钥...")
         try:
-            local_recovery_key = self._get_valid_local_recovery_key_bytes()
+            local_recovery_key = (
+                self._get_valid_local_recovery_key_bytes()
+                if allow_local_short_circuit
+                else None
+            )
             if local_recovery_key:
                 logger.info("本地恢复密钥已存在且验证通过，跳过 dehydrated device 恢复")
                 return local_recovery_key
 
-            dehydrated_device = await self._get_dehydrated_device()
-            dehydrated_key = self._extract_backup_key_from_dehydrated_device(
-                provided_key_bytes, dehydrated_device
-            )
-            if dehydrated_key:
-                return dehydrated_key
+            if include_dehydrated:
+                dehydrated_key = await self._try_restore_from_dehydrated_device_key(
+                    provided_key_bytes
+                )
+                if dehydrated_key:
+                    return dehydrated_key
 
             decrypted_secret = await self.read_secret_from_secret_storage(
                 SSSS_BACKUP_SECRET,
