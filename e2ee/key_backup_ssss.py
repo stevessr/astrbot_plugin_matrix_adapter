@@ -1,5 +1,6 @@
 import base64
 import json
+import secrets
 
 from astrbot.api import logger
 
@@ -19,7 +20,20 @@ from .key_backup_crypto import (
 )
 
 
+def _encode_unpadded_base64(data: bytes) -> str:
+    return base64.b64encode(data).decode("utf-8").rstrip("=")
+
+
+def _decode_base64(value: str) -> bytes:
+    normalized = value.strip()
+    padding = "=" * (-len(normalized) % 4)
+    return base64.b64decode(normalized + padding)
+
+
 class KeyBackupSSSSMixin:
+    _SSSS_ALGORITHM = "m.secret_storage.v1.aes-hmac-sha2"
+    _SSSS_BOOTSTRAP_KEY_NAME = "AstrBot Secret Storage"
+
     async def _get_dehydrated_device(self) -> dict | None:
         dehydrated_device = await self.client.get_global_account_data(
             DEHYDRATED_DEVICE_EVENT
@@ -135,6 +149,280 @@ class KeyBackupSSSSMixin:
 
         return None
 
+    def _get_configured_secret_storage_key_bytes(self) -> bytes | None:
+        key_bytes = getattr(self, "_provided_secret_storage_key_bytes", None)
+        if isinstance(key_bytes, (bytes, bytearray)) and len(key_bytes) == CRYPTO_KEY_SIZE_32:
+            return bytes(key_bytes)
+        return None
+
+    def _get_ssss_key_cache(self) -> dict[str, bytes]:
+        cache = getattr(self, "_ssss_key_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._ssss_key_cache = cache
+        return cache
+
+    def _get_ssss_key_info_cache(self) -> dict[str, dict]:
+        cache = getattr(self, "_ssss_key_info_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._ssss_key_info_cache = cache
+        return cache
+
+    def _cache_secret_storage_key(self, key_id: str, key_bytes: bytes) -> None:
+        if not key_id or not key_bytes:
+            return
+        self._get_ssss_key_cache()[key_id] = key_bytes
+
+    def get_secret_storage_key_bytes(self) -> bytes | None:
+        default_key_id = getattr(self, "_ssss_default_key_id", None)
+        if isinstance(default_key_id, str) and default_key_id:
+            cached = self._get_ssss_key_cache().get(default_key_id)
+            if cached:
+                return cached
+        return self._get_configured_secret_storage_key_bytes()
+
+    async def get_default_secret_storage_key_id(
+        self, refresh: bool = False
+    ) -> str | None:
+        cached_key_id = getattr(self, "_ssss_default_key_id", None)
+        if not refresh and isinstance(cached_key_id, str) and cached_key_id:
+            return cached_key_id
+
+        default_key_data = await self.client.get_global_account_data(SSSS_DEFAULT_KEY)
+        key_id = (default_key_data or {}).get("key")
+        self._ssss_default_key_id = key_id if isinstance(key_id, str) and key_id else None
+        return self._ssss_default_key_id
+
+    async def get_secret_storage_key_data(
+        self, key_id: str, refresh: bool = False
+    ) -> dict | None:
+        if not isinstance(key_id, str) or not key_id:
+            return None
+
+        cache = self._get_ssss_key_info_cache()
+        if not refresh and key_id in cache:
+            return cache[key_id]
+
+        key_data = await self.client.get_global_account_data(f"{SSSS_KEY_PREFIX}{key_id}")
+        if isinstance(key_data, dict):
+            cache[key_id] = key_data
+            return key_data
+        return None
+
+    def _decode_secret_storage_key_payload(self, payload: bytes) -> bytes | None:
+        if not payload:
+            return None
+
+        if len(payload) == CRYPTO_KEY_SIZE_32:
+            return payload
+
+        try:
+            secret_str = payload.decode("utf-8").strip()
+        except Exception:
+            return None
+
+        if not secret_str:
+            return None
+
+        try:
+            decoded = _decode_base64(secret_str)
+        except Exception:
+            return None
+
+        if len(decoded) == CRYPTO_KEY_SIZE_32:
+            return decoded
+        return None
+
+    def _secret_storage_key_matches(self, key: bytes, key_data: dict | None) -> bool:
+        if not key or len(key) != CRYPTO_KEY_SIZE_32:
+            return False
+        if not isinstance(key_data, dict) or not key_data:
+            return True
+
+        algorithm = key_data.get("algorithm")
+        if algorithm and algorithm != self._SSSS_ALGORITHM:
+            logger.warning(f"不支持的 Secret Storage 算法：{algorithm}")
+            return False
+
+        iv_b64 = key_data.get("iv")
+        mac_b64 = key_data.get("mac")
+        if not iv_b64 or not mac_b64:
+            return True
+
+        try:
+            encrypted = self._encrypt_ssss_data(
+                key,
+                b"\x00" * CRYPTO_KEY_SIZE_32,
+                secret_name="",
+                iv=_decode_base64(iv_b64),
+            )
+            expected_mac = _decode_base64(mac_b64)
+            actual_mac = _decode_base64(encrypted["mac"])
+            return actual_mac == expected_mac
+        except Exception as e:
+            logger.warning(f"验证 Secret Storage Key 失败：{e}")
+            return False
+
+    async def _resolve_secret_storage_key(
+        self, key_id: str, provided_key_bytes: bytes | None = None
+    ) -> bytes | None:
+        cached = self._get_ssss_key_cache().get(key_id)
+        if cached:
+            return cached
+
+        key_data = await self.get_secret_storage_key_data(key_id)
+        configured_key = provided_key_bytes or self._get_configured_secret_storage_key_bytes()
+        if not configured_key:
+            return None
+
+        encrypted_map = (key_data or {}).get("encrypted")
+        if isinstance(encrypted_map, dict):
+            for encrypted_data in encrypted_map.values():
+                decrypted_key = self._decrypt_ssss_data(
+                    configured_key,
+                    encrypted_data,
+                    secret_name="",
+                )
+                candidate = self._decode_secret_storage_key_payload(decrypted_key or b"")
+                if candidate and self._secret_storage_key_matches(candidate, key_data):
+                    self._cache_secret_storage_key(key_id, candidate)
+                    return candidate
+
+        if self._secret_storage_key_matches(configured_key, key_data):
+            self._cache_secret_storage_key(key_id, configured_key)
+            return configured_key
+
+        return None
+
+    async def _resolve_secret_storage_context(
+        self,
+        key_bytes: bytes | None = None,
+        *,
+        create_if_missing: bool = False,
+    ) -> tuple[str, bytes] | None:
+        key_id = await self.get_default_secret_storage_key_id()
+        if key_id:
+            resolved_key = await self._resolve_secret_storage_key(key_id, key_bytes)
+            if resolved_key:
+                return key_id, resolved_key
+            logger.warning(f"无法解析默认 Secret Storage Key：{key_id}")
+            return None
+
+        if not create_if_missing:
+            return None
+
+        bootstrap_key = key_bytes or self._get_configured_secret_storage_key_bytes()
+        if not bootstrap_key:
+            logger.warning("Secret Storage 尚未初始化，且未配置可用的 recovery key")
+            return None
+
+        new_key_id = f"ssss_{secrets.token_hex(8)}"
+        key_data = self._build_secret_storage_key_account_data(bootstrap_key)
+
+        await self.client.set_global_account_data(
+            f"{SSSS_KEY_PREFIX}{new_key_id}",
+            key_data,
+        )
+        await self.client.set_global_account_data(SSSS_DEFAULT_KEY, {"key": new_key_id})
+
+        self._ssss_default_key_id = new_key_id
+        self._get_ssss_key_info_cache()[new_key_id] = key_data
+        self._cache_secret_storage_key(new_key_id, bootstrap_key)
+
+        logger.info(f"已创建最小可用 Secret Storage：default_key={new_key_id}")
+        return new_key_id, bootstrap_key
+
+    def _build_secret_storage_key_account_data(self, key_bytes: bytes) -> dict:
+        validation_data = self._encrypt_ssss_data(
+            key_bytes,
+            b"\x00" * CRYPTO_KEY_SIZE_32,
+            secret_name="",
+        )
+        return {
+            "algorithm": self._SSSS_ALGORITHM,
+            "name": self._SSSS_BOOTSTRAP_KEY_NAME,
+            "iv": validation_data["iv"],
+            "mac": validation_data["mac"],
+        }
+
+    async def read_secret_from_secret_storage(
+        self,
+        secret_name: str,
+        key_bytes: bytes | None = None,
+    ) -> bytes | None:
+        try:
+            context = await self._resolve_secret_storage_context(
+                key_bytes=key_bytes,
+                create_if_missing=False,
+            )
+            if not context:
+                return None
+
+            key_id, ssss_key = context
+            secret_data = await self.client.get_global_account_data(secret_name) or {}
+            encrypted_map = secret_data.get("encrypted")
+            if not isinstance(encrypted_map, dict):
+                return None
+
+            encrypted_data = encrypted_map.get(key_id)
+            if not isinstance(encrypted_data, dict):
+                logger.warning(
+                    f"Account Data '{secret_name}' 中未找到 Key ID {key_id} 的加密数据"
+                )
+                return None
+
+            return self._decrypt_ssss_data(
+                ssss_key,
+                encrypted_data,
+                secret_name=secret_name,
+            )
+        except Exception as e:
+            logger.error(f"读取 Secret Storage 中的 secret 失败：{secret_name} error={e}")
+            return None
+
+    async def write_secret_to_secret_storage(
+        self,
+        secret_name: str,
+        secret_value: bytes | str,
+        key_bytes: bytes | None = None,
+    ) -> bool:
+        try:
+            context = await self._resolve_secret_storage_context(
+                key_bytes=key_bytes,
+                create_if_missing=True,
+            )
+            if not context:
+                return False
+
+            key_id, ssss_key = context
+            plaintext = (
+                secret_value.encode("utf-8")
+                if isinstance(secret_value, str)
+                else bytes(secret_value)
+            )
+
+            existing = await self.client.get_global_account_data(secret_name) or {}
+            if not isinstance(existing, dict):
+                existing = {}
+
+            encrypted_map = existing.get("encrypted")
+            if not isinstance(encrypted_map, dict):
+                encrypted_map = {}
+
+            encrypted_map[key_id] = self._encrypt_ssss_data(
+                ssss_key,
+                plaintext,
+                secret_name=secret_name,
+            )
+            existing["encrypted"] = encrypted_map
+
+            await self.client.set_global_account_data(secret_name, existing)
+            return True
+        except Exception as e:
+            logger.warning(f"写入 Secret Storage 失败：secret={secret_name} error={e}")
+            return False
+
     async def _try_restore_from_secret_storage(
         self, provided_key_bytes: bytes
     ) -> bytes | None:
@@ -151,91 +439,10 @@ class KeyBackupSSSSMixin:
             if dehydrated_key:
                 return dehydrated_key
 
-            # 1. Get default key ID
-            default_key_data = await self.client.get_global_account_data(
-                SSSS_DEFAULT_KEY
+            decrypted_secret = await self.read_secret_from_secret_storage(
+                SSSS_BACKUP_SECRET,
+                key_bytes=provided_key_bytes,
             )
-            key_id = (default_key_data or {}).get("key")
-            if not key_id:
-                logger.warning(
-                    "SSSS Account Data 'm.secret_storage.default_key' 未找到或无 'key'"
-                )
-                return None
-
-            logger.info(f"SSSS Default Key ID: {key_id}")
-
-            # 2. Try to decrypt the SSSS Key itself (if it's encrypted by the provided key)
-            # Fetch key definition
-            key_data = await self.client.get_global_account_data(
-                f"{SSSS_KEY_PREFIX}{key_id}"
-            )
-            # DEBUG LOGGING
-            if key_data:
-                logger.info(f"Key Data for {key_id}: keys={list(key_data.keys())}")
-                if "encrypted" in key_data:
-                    logger.info(
-                        f"Key {key_id} has encrypted data: {list(key_data['encrypted'].keys())}"
-                    )
-                else:
-                    logger.warning(
-                        f"Key data for {key_id} does not contain 'encrypted' section"
-                    )
-            else:
-                logger.warning(f"Could not fetch data for key {key_id}")
-
-            ssss_key = provided_key_bytes
-            # If the key definition contains 'encrypted', it means the actual SSSS key is encrypted
-            # (usually by the Recovery Key or Passphrase)
-            if key_data and "encrypted" in key_data:
-                logger.info(f"检测到 SSSS Key {key_id} 是加密存储的，尝试解密...")
-                encrypted_map = key_data["encrypted"]
-                decrypted_ssss_key = None
-
-                # Try all entries in the encrypted map
-                for kid, enc_data in encrypted_map.items():
-                    # The SSSS key itself uses empty string as secret name
-                    decrypted = self._decrypt_ssss_data(
-                        provided_key_bytes, enc_data, secret_name=""
-                    )
-                    if decrypted:
-                        logger.info(f"成功使用提供的密钥解密了 SSSS Key (ID: {kid})")
-                        decrypted_ssss_key = decrypted
-                        break
-
-                if decrypted_ssss_key:
-                    # Check if the decrypted key is base64 encoded (it usually is in SSSS)
-                    try:
-                        # SSSS keys are often stored as base64 string in the payload
-                        secret_str = decrypted_ssss_key.decode("utf-8")
-                        if len(secret_str.strip()) >= 43:
-                            ssss_key = base64.b64decode(secret_str)
-                        else:
-                            ssss_key = decrypted_ssss_key
-                    except Exception:
-                        ssss_key = decrypted_ssss_key
-                else:
-                    logger.warning(
-                        "无法解密 SSSS Key，尝试直接使用提供的密钥作为 SSSS Key..."
-                    )
-
-            # 3. Get Backup Secret (m.megolm_backup.v1)
-            backup_secret_data = (
-                await self.client.get_global_account_data(SSSS_BACKUP_SECRET) or {}
-            )
-            encrypted_data = backup_secret_data.get("encrypted", {}).get(key_id)
-
-            if not encrypted_data:
-                logger.warning(
-                    f"Account Data 'm.megolm_backup.v1' 中未找到 Key ID {key_id} 的加密数据"
-                )
-                return None
-
-            # 4. Decrypt Backup Key using SSSS Key
-            # Use the backup secret name (m.megolm_backup.v1) as info for HKDF
-            decrypted_secret = self._decrypt_ssss_data(
-                ssss_key, encrypted_data, secret_name=SSSS_BACKUP_SECRET
-            )
-
             if decrypted_secret:
                 logger.info("SSSS MAC 验证成功，解密备份密钥成功")
                 try:
@@ -248,11 +455,9 @@ class KeyBackupSSSSMixin:
                     return decrypted_secret
                 except Exception:
                     return decrypted_secret
-            else:
-                logger.error(
-                    "SSSS MAC 验证失败！提供的密钥（或解密出的 SSSS Key）不正确"
-                )
-                return None
+
+            logger.error("SSSS MAC 验证失败！提供的密钥（或解密出的 SSSS Key）不正确")
+            return None
 
         except Exception as e:
             logger.error(f"SSSS 恢复失败：{e}")
@@ -260,6 +465,54 @@ class KeyBackupSSSSMixin:
 
             logger.error(traceback.format_exc())
             return None
+
+    def _encrypt_ssss_data(
+        self,
+        key: bytes,
+        plaintext: bytes,
+        secret_name: str = "",
+        iv: bytes | None = None,
+    ) -> dict[str, str]:
+        if not CRYPTO_AVAILABLE:
+            raise RuntimeError("缺少 cryptography 库，无法进行 SSSS 加密")
+
+        try:
+            from cryptography.hazmat.backends import default_backend
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives import hmac as crypto_hmac
+            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        except Exception as e:
+            raise RuntimeError(f"cryptography 不可用，无法执行 SSSS 加密：{e}") from e
+
+        if not key or len(key) != CRYPTO_KEY_SIZE_32:
+            raise ValueError("SSSS key 必须是 32 字节")
+
+        if iv is None:
+            iv_bytes = bytearray(secrets.token_bytes(16))
+            iv_bytes[8] &= 0x7F
+            iv = bytes(iv_bytes)
+        elif len(iv) != 16:
+            raise ValueError("SSSS IV 必须是 16 字节")
+
+        info = secret_name.encode("utf-8") if secret_name else b""
+        salt = b"\x00" * CRYPTO_KEY_SIZE_32
+        derived = _compute_hkdf(key, salt, info, length=64)
+        aes_key = derived[:CRYPTO_KEY_SIZE_32]
+        hmac_key = derived[CRYPTO_KEY_SIZE_32:64]
+
+        cipher = Cipher(algorithms.AES(aes_key), modes.CTR(iv), backend=default_backend())
+        encryptor = cipher.encryptor()
+        ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+
+        h = crypto_hmac.HMAC(hmac_key, hashes.SHA256(), backend=default_backend())
+        h.update(ciphertext)
+        mac = h.finalize()
+
+        return {
+            "ciphertext": _encode_unpadded_base64(ciphertext),
+            "iv": _encode_unpadded_base64(iv),
+            "mac": _encode_unpadded_base64(mac),
+        }
 
     def _decrypt_ssss_data(
         self, key: bytes, encrypted_data: dict, secret_name: str = ""
@@ -281,9 +534,9 @@ class KeyBackupSSSSMixin:
             return None
 
         try:
-            ciphertext = base64.b64decode(ciphertext_b64)
-            iv = base64.b64decode(iv_b64)
-            mac = base64.b64decode(mac_b64)
+            ciphertext = _decode_base64(ciphertext_b64)
+            iv = _decode_base64(iv_b64)
+            mac = _decode_base64(mac_b64)
         except Exception:
             return None
 

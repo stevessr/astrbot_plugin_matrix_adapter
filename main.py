@@ -1,3 +1,11 @@
+if __package__ in (None, ""):
+    import sys
+    from pathlib import Path
+
+    package_root = Path(__file__).resolve().parent
+    sys.path.insert(0, str(package_root.parent))
+    __package__ = package_root.name
+
 import bleach  # noqa: F401
 import markdown_it  # noqa: F401
 

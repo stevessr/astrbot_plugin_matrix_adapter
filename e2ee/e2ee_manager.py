@@ -279,6 +279,23 @@ class E2EEManager(
             except Exception as e:
                 logger.warning(f"主动密钥分发检查失败：{e}")
 
+    async def _finalize_own_device_trust(self, log_prefix: str) -> None:
+        if not self._cross_signing or not self._cross_signing.has_master_key:
+            return
+
+        device_signed = await self._cross_signing.sign_device(self.device_id)
+        master_signed = await self._cross_signing.sign_master_key_with_device(
+            self.user_id
+        )
+        if device_signed and master_signed:
+            logger.info(f"{log_prefix}：{self._mask_device_id(self.device_id)}")
+            return
+
+        logger.warning(
+            "自动签名设备未完全生效："
+            f"device_signed={device_signed} master_signed={master_signed}"
+        )
+
     async def initialize(self):
         """初始化 E2EE 组件"""
         if not VODOZEMAC_AVAILABLE:
@@ -333,6 +350,9 @@ class E2EEManager(
                 self.device_id,
                 self._olm,
                 self.password,
+                secret_storage=self._key_backup,
+                request_secret_from_devices=self.request_secret_from_devices,
+                repair_current_device_keys=self._upload_device_keys,
                 namespace_key=self._store_namespace,
             )
 
@@ -351,35 +371,14 @@ class E2EEManager(
 
             # 自动签名自己的设备（使设备变为"已验证"状态）
             if self._cross_signing.has_master_key:
-                device_signed = await self._cross_signing.sign_device(self.device_id)
-                master_signed = await self._cross_signing.sign_master_key_with_device(
-                    self.user_id
-                )
-                if device_signed and master_signed:
-                    logger.info(f"已自动签名设备：{self._mask_device_id(self.device_id)}")
-                else:
-                    logger.warning(
-                        "自动签名设备未完全生效："
-                        f"device_signed={device_signed} master_signed={master_signed}"
-                    )
+                await self._finalize_own_device_trust("已自动签名设备")
             else:
                 # 如果没有交叉签名密钥，尝试上传
                 try:
                     await self._cross_signing.upload_cross_signing_keys()
-                    device_signed = await self._cross_signing.sign_device(self.device_id)
-                    master_signed = await self._cross_signing.sign_master_key_with_device(
-                        self.user_id
+                    await self._finalize_own_device_trust(
+                        "已上传交叉签名密钥并签名设备"
                     )
-                    if device_signed and master_signed:
-                        logger.info(
-                            "已上传交叉签名密钥并签名设备："
-                            f"{self._mask_device_id(self.device_id)}"
-                        )
-                    else:
-                        logger.warning(
-                            "上传交叉签名密钥后，设备签名未完全生效："
-                            f"device_signed={device_signed} master_signed={master_signed}"
-                        )
                 except Exception as e:
                     logger.warning(f"上传交叉签名密钥失败（可能需要 UIA）：{e}")
 

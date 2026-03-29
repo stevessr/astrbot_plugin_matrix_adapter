@@ -3,10 +3,16 @@ import base64
 import copy
 import json
 from pathlib import Path
+from typing import Awaitable, Callable
 
 from astrbot.api import logger
 
 from ..client.http_client import MatrixAPIError
+from ..constants import (
+    SECRET_CROSS_SIGNING_MASTER,
+    SECRET_CROSS_SIGNING_SELF_SIGNING,
+    SECRET_CROSS_SIGNING_USER_SIGNING,
+)
 from ..plugin_config import get_plugin_config
 from .key_backup_crypto import CRYPTO_AVAILABLE
 from .storage import build_e2ee_data_store
@@ -17,6 +23,10 @@ from .storage import build_e2ee_data_store
 #   2. 本地私钥推导的公钥与服务器公钥不匹配
 # 设置为 False 则仅记录警告，不覆盖服务器密钥。
 FORCE_OVERWRITE_SERVER_KEYS = True
+DEVICE_SECRET_REQUEST_PENDING = "pending"
+DEVICE_SECRET_REQUEST_FAILED = "failed"
+DEVICE_SECRET_REQUEST_NOT_NEEDED = "not_needed"
+DEVICE_SECRET_REQUEST_UNAVAILABLE = "unavailable"
 
 
 class CrossSigning:
@@ -76,6 +86,9 @@ class CrossSigning:
         olm_machine,
         password: str | None = None,
         *,
+        secret_storage=None,
+        request_secret_from_devices: Callable[[str], Awaitable[str | None]] | None = None,
+        repair_current_device_keys: Callable[[], Awaitable[None]] | None = None,
         namespace_key: str | None = None,
     ):
         self.client = client
@@ -87,6 +100,9 @@ class CrossSigning:
         self.device_id = device_id
         self.olm = olm_machine
         self.password = password
+        self.secret_storage = secret_storage
+        self.request_secret_from_devices = request_secret_from_devices
+        self.repair_current_device_keys = repair_current_device_keys
 
         self._master_key: str | None = None
         self._self_signing_key: str | None = None
@@ -96,6 +112,7 @@ class CrossSigning:
         self._master_priv = None
         self._self_signing_priv = None
         self._user_signing_priv = None
+        self._pending_secret_requests: set[str] = set()
 
         self.storage_backend_config = get_plugin_config().storage_backend_config
 
@@ -126,147 +143,101 @@ class CrossSigning:
 
         try:
             self._load_local_keys()
+            (
+                server_master,
+                server_self_signing,
+                server_user_signing,
+                keys_need_regen,
+            ) = await self._query_server_cross_signing_state()
 
-            response = await self.client.query_keys({self.user_id: []})
-            master_keys = response.get("master_keys", {}).get(self.user_id)
-            self_keys = response.get("self_signing_keys", {}).get(self.user_id)
-            user_keys = response.get("user_signing_keys", {}).get(self.user_id)
-
-            server_master = None
-            server_self_signing = None
-            server_user_signing = None
-            keys_need_regen = False
-
-            if master_keys:
-                keys = master_keys.get("keys", {})
-                if keys:
-                    # 获取 key ID 和公钥值
-                    key_id, server_master = next(iter(keys.items()))
-                    self._master_key = server_master
-                    logger.debug("[E2EE-CrossSign] 发现服务器主密钥")
-
-                    # 检测是否使用了错误的截断格式
-                    # 正确格式：ed25519:<43 字符 base64 公钥>
-                    # 错误格式：ed25519:<8 字符截断>
-                    key_part = key_id.split(":", 1)[-1] if ":" in key_id else key_id
-                    if len(key_part) < 20:  # 截断的 key ID 只有 8 个字符
-                        logger.debug(
-                            f"[E2EE-CrossSign] 检测到旧格式的 key ID (长度={len(key_part)})，需要重新生成"
-                        )
-                        keys_need_regen = True
-
-            if self_keys:
-                keys = self_keys.get("keys", {})
-                if keys:
-                    key_id, server_self_signing = next(iter(keys.items()))
-                    self._self_signing_key = server_self_signing
-                    logger.debug("[E2EE-CrossSign] 发现服务器自签名密钥")
-
-                    key_part = key_id.split(":", 1)[-1] if ":" in key_id else key_id
-                    if len(key_part) < 20:
-                        logger.debug(
-                            "[E2EE-CrossSign] 检测到旧格式的 self-signing key ID，需要重新生成"
-                        )
-                        keys_need_regen = True
-
-            if user_keys:
-                keys = user_keys.get("keys", {})
-                if keys:
-                    key_id, server_user_signing = next(iter(keys.items()))
-                    self._user_signing_key = server_user_signing
-                    logger.debug("[E2EE-CrossSign] 发现服务器用户签名密钥")
-
-                    key_part = key_id.split(":", 1)[-1] if ":" in key_id else key_id
-                    if len(key_part) < 20:
-                        logger.debug(
-                            "[E2EE-CrossSign] 检测到旧格式的 user-signing key ID，需要重新生成"
-                        )
-                        keys_need_regen = True
-
-            # 如果检测到旧格式的 key ID，强制重新生成
             if keys_need_regen:
                 logger.debug(
-                    "[E2EE-CrossSign] 正在重新生成交叉签名密钥以修复格式问题..."
+                    "[E2EE-CrossSign] 检测到旧格式交叉签名 key ID，准备重新生成"
                 )
-                try:
-                    await self._generate_and_upload_keys(force_regen=True)
-                    return
-                except Exception as e:
-                    logger.warning(f"[E2EE-CrossSign] 重新生成交叉签名密钥失败：{e}")
-                    logger.warning(
-                        "[E2EE-CrossSign] 将继续使用现有密钥（交叉签名可能无法正常工作）"
-                    )
-
-            # 如果服务器已有密钥但本地缺少私钥，尝试重新生成并覆盖
-            if server_master and not self._master_priv:
-                if FORCE_OVERWRITE_SERVER_KEYS:
-                    logger.debug(
-                        "[E2EE-CrossSign] 服务器已有交叉签名密钥，但本地缺少私钥，正在尝试重新生成..."
-                    )
-                    try:
-                        await self._generate_and_upload_keys(force_regen=True)
-                        return
-                    except Exception as e:
-                        logger.warning(f"[E2EE-CrossSign] 重新生成交叉签名密钥失败：{e}")
-                        logger.warning(
-                            "[E2EE-CrossSign] 将继续使用服务器现有的密钥（但无法签名新设备）"
-                        )
-                        # 继续执行，不返回
-                else:
-                    logger.warning(
-                        "[E2EE-CrossSign] 服务器已有交叉签名密钥，但本地缺少私钥。"
-                        "如需强行覆盖服务器密钥，请将 FORCE_OVERWRITE_SERVER_KEYS 设置为 True"
-                    )
-
-            # 验证本地私钥与服务器公钥是否匹配
-            if (
-                server_master
-                and self._master_priv
-                and not self._local_keys_match_server(
-                    server_master, server_self_signing, server_user_signing
-                )
-            ):
-                if FORCE_OVERWRITE_SERVER_KEYS:
-                    logger.debug(
-                        "[E2EE-CrossSign] 本地私钥与服务器公钥不匹配"
-                        "（可能在其他客户端重置），正在重新生成..."
-                    )
-                    try:
-                        await self._generate_and_upload_keys(force_regen=True)
-                        return
-                    except Exception as e:
-                        logger.warning(
-                            f"[E2EE-CrossSign] 重新生成交叉签名密钥失败：{e}"
-                        )
-                        logger.warning(
-                            "[E2EE-CrossSign] 将继续使用服务器现有的密钥"
-                            "（交叉签名可能无法正常工作）"
-                        )
-                else:
-                    logger.warning(
-                        "[E2EE-CrossSign] 本地私钥与服务器公钥不匹配（可能在其他客户端重置）。"
-                        "如需强行覆盖服务器密钥，请将 FORCE_OVERWRITE_SERVER_KEYS 设置为 True"
-                    )
-
-            # 如缺少密钥则生成并上传
-            if not server_master:
-                try:
-                    await self._generate_and_upload_keys()
-                except Exception as e:
-                    logger.warning(f"[E2EE-CrossSign] 生成交叉签名密钥失败：{e}")
-                    logger.warning("[E2EE-CrossSign] 交叉签名功能将不可用")
-            elif server_master and server_self_signing and server_user_signing:
-                logger.debug("[E2EE-CrossSign] 交叉签名密钥已就绪")
+                await self._generate_and_upload_keys(force_regen=True)
                 return
-            elif server_master and self._master_priv:
-                # 补全缺失的 self/user keys
-                try:
-                    await self._generate_and_upload_keys(
-                        force_regen=False, reuse_master=True
+
+            if server_master:
+                local_ready = self._has_private_keys_for_server_state(
+                    server_self_signing,
+                    server_user_signing,
+                )
+                local_matches = local_ready and self._local_keys_match_server(
+                    server_master,
+                    server_self_signing,
+                    server_user_signing,
+                )
+
+                if not local_matches:
+                    restored = await self._restore_private_keys_from_secret_storage(
+                        server_master,
+                        server_self_signing,
+                        server_user_signing,
                     )
-                except Exception as e:
-                    logger.warning(f"[E2EE-CrossSign] 补全交叉签名密钥失败：{e}")
-                    logger.warning("[E2EE-CrossSign] 部分交叉签名功能可能不可用")
+                    local_ready = self._has_private_keys_for_server_state(
+                        server_self_signing,
+                        server_user_signing,
+                    )
+                    local_matches = local_ready and self._local_keys_match_server(
+                        server_master,
+                        server_self_signing,
+                        server_user_signing,
+                    )
+
+                    if not local_matches:
+                        request_status = await self._request_missing_private_keys_from_devices(
+                            server_master,
+                            server_self_signing,
+                            server_user_signing,
+                        )
+                        if request_status == DEVICE_SECRET_REQUEST_PENDING:
+                            logger.info(
+                                "[E2EE-CrossSign] 已向其他设备请求 cross-signing 私钥，"
+                                "等待设备间恢复后再继续"
+                            )
+                            return
+
+                        overwrite_reason = (
+                            "服务器已有交叉签名密钥，但本地缺少对应私钥"
+                            if not local_ready
+                            else "本地私钥与服务器公钥不匹配（可能已被其他客户端重置）"
+                        )
+                        if FORCE_OVERWRITE_SERVER_KEYS:
+                            logger.warning(
+                                f"[E2EE-CrossSign] {overwrite_reason}，恢复路径失败后将重新生成"
+                            )
+                            await self._generate_and_upload_keys(force_regen=True)
+                            return
+
+                        logger.warning(
+                            f"[E2EE-CrossSign] {overwrite_reason}."
+                            "如需强行覆盖服务器密钥，请将 FORCE_OVERWRITE_SERVER_KEYS 设置为 True"
+                        )
+                        return
+
+                if server_self_signing and server_user_signing:
+                    logger.debug("[E2EE-CrossSign] 交叉签名密钥已就绪")
+                    return
+
+                if self._master_priv:
+                    try:
+                        await self._generate_and_upload_keys(
+                            force_regen=False,
+                            reuse_master=True,
+                        )
+                    except Exception as e:
+                        logger.warning(f"[E2EE-CrossSign] 补全交叉签名密钥失败：{e}")
+                        logger.warning("[E2EE-CrossSign] 部分交叉签名功能可能不可用")
+                return
+
+            try:
+                await self._generate_and_upload_keys(
+                    force_regen=not bool(self._master_priv),
+                    reuse_master=bool(self._master_priv),
+                )
+            except Exception as e:
+                logger.warning(f"[E2EE-CrossSign] 生成交叉签名密钥失败：{e}")
+                logger.warning("[E2EE-CrossSign] 交叉签名功能将不可用")
 
         except Exception as e:
             logger.warning(f"[E2EE-CrossSign] 初始化失败：{e}")
@@ -341,6 +312,316 @@ class CrossSigning:
 
     def persist_local_keys(self):
         self._save_local_keys()
+
+    async def _query_server_cross_signing_state(
+        self,
+    ) -> tuple[str | None, str | None, str | None, bool]:
+        response = await self.client.query_keys({self.user_id: []})
+        master_keys = response.get("master_keys", {}).get(self.user_id)
+        self_keys = response.get("self_signing_keys", {}).get(self.user_id)
+        user_keys = response.get("user_signing_keys", {}).get(self.user_id)
+
+        server_master = None
+        server_self_signing = None
+        server_user_signing = None
+        keys_need_regen = False
+
+        if master_keys:
+            keys = master_keys.get("keys", {})
+            if keys:
+                key_id, server_master = next(iter(keys.items()))
+                self._master_key = server_master
+                key_part = key_id.split(":", 1)[-1] if ":" in key_id else key_id
+                if len(key_part) < 20:
+                    keys_need_regen = True
+                logger.debug("[E2EE-CrossSign] 发现服务器主密钥")
+
+        if self_keys:
+            keys = self_keys.get("keys", {})
+            if keys:
+                key_id, server_self_signing = next(iter(keys.items()))
+                self._self_signing_key = server_self_signing
+                key_part = key_id.split(":", 1)[-1] if ":" in key_id else key_id
+                if len(key_part) < 20:
+                    keys_need_regen = True
+                logger.debug("[E2EE-CrossSign] 发现服务器自签名密钥")
+
+        if user_keys:
+            keys = user_keys.get("keys", {})
+            if keys:
+                key_id, server_user_signing = next(iter(keys.items()))
+                self._user_signing_key = server_user_signing
+                key_part = key_id.split(":", 1)[-1] if ":" in key_id else key_id
+                if len(key_part) < 20:
+                    keys_need_regen = True
+                logger.debug("[E2EE-CrossSign] 发现服务器用户签名密钥")
+
+        return (
+            server_master,
+            server_self_signing,
+            server_user_signing,
+            keys_need_regen,
+        )
+
+    def _has_private_keys_for_server_state(
+        self,
+        server_self_signing: str | None,
+        server_user_signing: str | None,
+    ) -> bool:
+        if not self._master_priv:
+            return False
+        if server_self_signing and not self._self_signing_priv:
+            return False
+        if server_user_signing and not self._user_signing_priv:
+            return False
+        return True
+
+    def _decode_secret_bytes(self, secret_bytes: bytes) -> bytes | None:
+        if not secret_bytes:
+            return None
+        if len(secret_bytes) == 32:
+            return secret_bytes
+        try:
+            secret_str = secret_bytes.decode("utf-8").strip()
+        except Exception:
+            return None
+        if not secret_str:
+            return None
+        padding = "=" * (-len(secret_str) % 4)
+        try:
+            decoded = base64.b64decode(secret_str + padding)
+        except Exception:
+            return None
+        if len(decoded) == 32:
+            return decoded
+        return None
+
+    async def _restore_private_keys_from_secret_storage(
+        self,
+        server_master: str | None,
+        server_self_signing: str | None,
+        server_user_signing: str | None,
+    ) -> bool:
+        if not self.secret_storage:
+            return False
+
+        secret_map = {
+            SECRET_CROSS_SIGNING_MASTER: ("_master_priv", "_master_key", server_master),
+            SECRET_CROSS_SIGNING_SELF_SIGNING: (
+                "_self_signing_priv",
+                "_self_signing_key",
+                server_self_signing,
+            ),
+            SECRET_CROSS_SIGNING_USER_SIGNING: (
+                "_user_signing_priv",
+                "_user_signing_key",
+                server_user_signing,
+            ),
+        }
+
+        restored_any = False
+        for secret_name, (priv_attr, pub_attr, server_pub) in secret_map.items():
+            current_priv = getattr(self, priv_attr)
+            if current_priv:
+                derived_current = self._derive_public_key(current_priv)
+                if not server_pub or derived_current == server_pub:
+                    continue
+
+            try:
+                secret_bytes = await self.secret_storage.read_ssss_secret(secret_name)
+            except AttributeError:
+                secret_bytes = await self.secret_storage.read_secret_from_secret_storage(
+                    secret_name
+                )
+
+            decoded = self._decode_secret_bytes(secret_bytes or b"")
+            if not decoded:
+                continue
+
+            derived_pub = self._derive_public_key(decoded)
+            expected_pub = server_pub or derived_pub
+            if expected_pub and derived_pub and derived_pub != expected_pub:
+                logger.warning(
+                    f"[E2EE-CrossSign] 从 SSSS 恢复的 {secret_name} 与服务器公钥不匹配，忽略"
+                )
+                continue
+
+            setattr(self, priv_attr, decoded)
+            if expected_pub:
+                setattr(self, pub_attr, expected_pub)
+            restored_any = True
+
+        if restored_any:
+            self._save_local_keys()
+            logger.info("[E2EE-CrossSign] 已从 Secret Storage 恢复 cross-signing 私钥")
+
+        return restored_any
+
+    def _missing_cross_signing_secret_names(
+        self,
+        server_master: str | None,
+        server_self_signing: str | None,
+        server_user_signing: str | None,
+    ) -> list[str]:
+        missing = []
+        if (
+            server_master
+            and (
+                not self._master_priv
+                or self._derive_public_key(self._master_priv) != server_master
+            )
+        ):
+            missing.append(SECRET_CROSS_SIGNING_MASTER)
+        if (
+            server_self_signing
+            and (
+                not self._self_signing_priv
+                or self._derive_public_key(self._self_signing_priv) != server_self_signing
+            )
+        ):
+            missing.append(SECRET_CROSS_SIGNING_SELF_SIGNING)
+        if (
+            server_user_signing
+            and (
+                not self._user_signing_priv
+                or self._derive_public_key(self._user_signing_priv) != server_user_signing
+            )
+        ):
+            missing.append(SECRET_CROSS_SIGNING_USER_SIGNING)
+        return missing
+
+    async def _request_missing_private_keys_from_devices(
+        self,
+        server_master: str | None,
+        server_self_signing: str | None,
+        server_user_signing: str | None,
+    ) -> str:
+        if not self.request_secret_from_devices:
+            return DEVICE_SECRET_REQUEST_UNAVAILABLE
+
+        missing = self._missing_cross_signing_secret_names(
+            server_master,
+            server_self_signing,
+            server_user_signing,
+        )
+        if not missing:
+            return DEVICE_SECRET_REQUEST_NOT_NEEDED
+
+        request_ids = []
+        for secret_name in missing:
+            try:
+                request_id = await self.request_secret_from_devices(secret_name)
+            except Exception as e:
+                logger.warning(
+                    f"[E2EE-CrossSign] 向其他设备请求 secret 失败：name={secret_name} error={e}"
+                )
+                continue
+
+            if request_id:
+                self._pending_secret_requests.add(secret_name)
+                request_ids.append(request_id)
+
+        return (
+            DEVICE_SECRET_REQUEST_PENDING
+            if request_ids
+            else DEVICE_SECRET_REQUEST_FAILED
+        )
+
+    async def _write_private_keys_to_secret_storage(self) -> bool | None:
+        if not self.secret_storage:
+            return None
+
+        secrets_to_write = {
+            SECRET_CROSS_SIGNING_MASTER: self._master_priv,
+            SECRET_CROSS_SIGNING_SELF_SIGNING: self._self_signing_priv,
+            SECRET_CROSS_SIGNING_USER_SIGNING: self._user_signing_priv,
+        }
+
+        wrote_any = False
+        for secret_name, secret_bytes in secrets_to_write.items():
+            if not secret_bytes:
+                continue
+            payload = base64.b64encode(secret_bytes).decode("utf-8")
+            try:
+                write_ok = await self.secret_storage.write_ssss_secret(secret_name, payload)
+            except AttributeError:
+                write_ok = await self.secret_storage.write_secret_to_secret_storage(
+                    secret_name,
+                    payload,
+                )
+            if not write_ok:
+                return False
+            wrote_any = True
+
+        return True if wrote_any else None
+
+    def _build_password_auth(self, session_id: str) -> dict:
+        return {
+            "type": "m.login.password",
+            "identifier": {"type": "m.id.user", "user": self.user_id},
+            "password": self.password,
+            "session": session_id,
+        }
+
+    @staticmethod
+    def _extract_uia_session(error: MatrixAPIError) -> str | None:
+        data = getattr(error, "data", None)
+        if isinstance(data, dict):
+            session = data.get("session")
+            return session if isinstance(session, str) and session else None
+        return None
+
+    async def _upload_signing_keys_with_uia(
+        self,
+        *,
+        master_key: dict,
+        self_signing_key: dict,
+        user_signing_key: dict,
+    ) -> None:
+        try:
+            await self.client.upload_signing_keys(
+                master_key=master_key,
+                self_signing_key=self_signing_key,
+                user_signing_key=user_signing_key,
+            )
+            return
+        except MatrixAPIError as first_error:
+            session_id = self._extract_uia_session(first_error)
+            if not session_id:
+                raise
+
+            try:
+                await self.client.upload_signing_keys(
+                    master_key=master_key,
+                    self_signing_key=self_signing_key,
+                    user_signing_key=user_signing_key,
+                    auth={"type": "m.login.dummy", "session": session_id},
+                )
+                return
+            except MatrixAPIError as dummy_error:
+                session_id = self._extract_uia_session(dummy_error) or session_id
+                if not self.password:
+                    logger.warning(
+                        "[E2EE-CrossSign] 上传交叉签名密钥失败（未配置 matrix_password）"
+                    )
+                    raise
+
+                await self.client.upload_signing_keys(
+                    master_key=master_key,
+                    self_signing_key=self_signing_key,
+                    user_signing_key=user_signing_key,
+                    auth=self._build_password_auth(session_id),
+                )
+
+    async def _repair_current_device_keys_once(self) -> bool:
+        if not self.repair_current_device_keys:
+            return False
+        try:
+            await self.repair_current_device_keys()
+            return True
+        except Exception as e:
+            logger.warning(f"[E2EE-CrossSign] 重新上传当前设备密钥失败：{e}")
+            return False
 
     def _gen_keypair(self) -> tuple[bytes, str]:
         from cryptography.hazmat.primitives import serialization
@@ -540,62 +821,32 @@ class CrossSigning:
         }
 
         try:
-            await self.client.upload_signing_keys(
+            await self._upload_signing_keys_with_uia(
                 master_key=master_key,
                 self_signing_key=self_signing_key,
                 user_signing_key=user_signing_key,
             )
-        except MatrixAPIError as e:
-            auth_data = getattr(e, "data", {}) if isinstance(e.data, dict) else {}
-            has_password = bool(self.password)
-            session_id = auth_data.get("session")
-            logger.info(
-                f"[E2EE-CrossSign] UIA 调试: status={e.status}, "
-                f"has_password={has_password}, "
-                f"session={session_id!r}, "
-                f"auth_data_keys={list(auth_data.keys()) if isinstance(auth_data, dict) else 'NOT_DICT'}"
+        except Exception:
+            self._restore_keys(
+                old_master_priv,
+                old_master_key,
+                old_self_signing_priv,
+                old_self_signing_key,
+                old_user_signing_priv,
+                old_user_signing_key,
             )
-            if has_password and session_id:
-                auth_payload = {
-                    "type": "m.login.password",
-                    "user": self.user_id,
-                    "password": self.password,
-                    "session": session_id,
-                }
-                try:
-                    await self.client.upload_signing_keys(
-                        master_key=master_key,
-                        self_signing_key=self_signing_key,
-                        user_signing_key=user_signing_key,
-                        auth=auth_payload,
-                    )
-                except Exception as e2:
-                    # UIA 重试也失败，恢复旧密钥
-                    self._restore_keys(
-                        old_master_priv, old_master_key,
-                        old_self_signing_priv, old_self_signing_key,
-                        old_user_signing_priv, old_user_signing_key,
-                    )
-                    raise e2
-            else:
-                # 上传失败且无法 UIA，恢复旧密钥
-                self._restore_keys(
-                    old_master_priv, old_master_key,
-                    old_self_signing_priv, old_self_signing_key,
-                    old_user_signing_priv, old_user_signing_key,
-                )
-                reason = []
-                if not has_password:
-                    reason.append("未配置 matrix_password")
-                if not session_id:
-                    reason.append("服务器 UIA 响应中缺少 session 字段")
-                logger.warning(
-                    f"[E2EE-CrossSign] 上传交叉签名密钥失败（{', '.join(reason)}）：{e}"
-                )
-                raise
+            raise
 
         self._save_local_keys()
+        ssss_status = await self._write_private_keys_to_secret_storage()
         logger.info("[E2EE-CrossSign] 已生成并上传交叉签名密钥")
+        if ssss_status is False:
+            logger.warning(
+                "[E2EE-CrossSign] public cross-signing keys 上传成功，但写入 Secret Storage 失败；"
+                "已保留新的本地私钥，不回滚服务器状态"
+            )
+        elif ssss_status is True:
+            logger.info("[E2EE-CrossSign] 已将 cross-signing 私钥写入 Secret Storage")
 
     def _restore_keys(
         self,
@@ -626,15 +877,28 @@ class CrossSigning:
             logger.debug("[E2EE-CrossSign] self-signing key 不可用，跳过设备签名")
             return False
         try:
-            response = await self.client.query_keys({self.user_id: [device_id]})
-            device_keys = (
-                (response.get("device_keys") or {}).get(self.user_id, {}).get(device_id)
-            )
-            if not device_keys:
-                logger.debug("[E2EE-CrossSign] 未找到设备密钥，无法签名")
-                return False
+            repaired_current_device = False
+            while True:
+                response = await self.client.query_keys({self.user_id: [device_id]})
+                device_keys = (
+                    (response.get("device_keys") or {})
+                    .get(self.user_id, {})
+                    .get(device_id)
+                )
+                if not device_keys:
+                    if (
+                        device_id == self.device_id
+                        and not repaired_current_device
+                        and await self._repair_current_device_keys_once()
+                    ):
+                        repaired_current_device = True
+                        continue
+                    logger.debug("[E2EE-CrossSign] 未找到设备密钥，无法签名")
+                    return False
 
-            if device_id == self.device_id:
+                if device_id != self.device_id:
+                    break
+
                 (
                     matches,
                     local_ed25519,
@@ -642,14 +906,20 @@ class CrossSigning:
                     server_ed25519,
                     server_curve25519,
                 ) = self._current_device_matches_server(device_keys)
-                if not matches:
-                    logger.warning(
-                        "[E2EE-CrossSign] 当前设备身份密钥与服务器不一致，跳过设备签名："
-                        f"device_id={device_id} "
-                        f"local_ed25519={local_ed25519} server_ed25519={server_ed25519} "
-                        f"local_curve25519={local_curve25519} server_curve25519={server_curve25519}"
-                    )
-                    return False
+                if matches:
+                    break
+
+                if not repaired_current_device and await self._repair_current_device_keys_once():
+                    repaired_current_device = True
+                    continue
+
+                logger.warning(
+                    "[E2EE-CrossSign] 当前设备身份密钥与服务器不一致，跳过设备签名："
+                    f"device_id={device_id} "
+                    f"local_ed25519={local_ed25519} server_ed25519={server_ed25519} "
+                    f"local_curve25519={local_curve25519} server_curve25519={server_curve25519}"
+                )
+                return False
 
             device_keys_to_upload = copy.deepcopy(device_keys)
             device_keys_to_upload.pop("unsigned", None)
@@ -700,31 +970,46 @@ class CrossSigning:
             return False
 
         try:
-            response = await self.client.query_keys({target_user_id: []})
-            master_key = (response.get("master_keys") or {}).get(target_user_id)
-            device_keys = (
-                (response.get("device_keys") or {}).get(target_user_id, {}).get(self.device_id)
-            )
-            if not master_key:
-                logger.debug("[E2EE-CrossSign] 未找到 master key，无法添加设备签名")
-                return False
+            repaired_current_device = False
+            while True:
+                response = await self.client.query_keys({target_user_id: []})
+                master_key = (response.get("master_keys") or {}).get(target_user_id)
+                device_keys = (
+                    (response.get("device_keys") or {})
+                    .get(target_user_id, {})
+                    .get(self.device_id)
+                )
+                if not master_key:
+                    logger.debug("[E2EE-CrossSign] 未找到 master key，无法添加设备签名")
+                    return False
 
-            usage = master_key.get("usage")
-            keys = master_key.get("keys")
-            if not isinstance(usage, list) or not isinstance(keys, dict) or not keys:
-                logger.debug("[E2EE-CrossSign] master key 结构无效，无法添加设备签名")
-                return False
-            master_key_id, _master_key_value = next(iter(keys.items()))
-            master_pubkey_b64 = _master_key_value
+                usage = master_key.get("usage")
+                keys = master_key.get("keys")
+                if not isinstance(usage, list) or not isinstance(keys, dict) or not keys:
+                    logger.debug("[E2EE-CrossSign] master key 结构无效，无法添加设备签名")
+                    return False
 
-            (
-                matches,
-                local_ed25519,
-                local_curve25519,
-                server_ed25519,
-                server_curve25519,
-            ) = self._current_device_matches_server(device_keys)
-            if not matches:
+                if not device_keys:
+                    if not repaired_current_device and await self._repair_current_device_keys_once():
+                        repaired_current_device = True
+                        continue
+                    logger.warning("[E2EE-CrossSign] 未找到当前设备密钥，无法为 master key 添加设备签名")
+                    return False
+
+                (
+                    matches,
+                    local_ed25519,
+                    local_curve25519,
+                    server_ed25519,
+                    server_curve25519,
+                ) = self._current_device_matches_server(device_keys)
+                if matches:
+                    break
+
+                if not repaired_current_device and await self._repair_current_device_keys_once():
+                    repaired_current_device = True
+                    continue
+
                 logger.warning(
                     "[E2EE-CrossSign] 当前设备身份密钥与服务器不一致，跳过 master key 设备签名："
                     f"device_id={self.device_id} "
@@ -732,6 +1017,9 @@ class CrossSigning:
                     f"local_curve25519={local_curve25519} server_curve25519={server_curve25519}"
                 )
                 return False
+
+            master_key_id, _master_key_value = next(iter(keys.items()))
+            master_pubkey_b64 = _master_key_value
 
             signing_key_id = self.device_key_id
             signature = self._sign_device_object(master_key)
@@ -814,7 +1102,7 @@ class CrossSigning:
         # 本地验证签名（使用 nacl，与 Synapse 服务器相同逻辑）
         try:
             import nacl.signing
-            ed25519_pub_b64 = self.olm.ed25519_key
+            ed25519_pub_b64 = getattr(self.olm, "ed25519_key", "")
             pub_bytes = base64.b64decode(ed25519_pub_b64 + "=" * (3 - (len(ed25519_pub_b64) + 3) % 4))
             sig_bytes = base64.b64decode(signature + "=" * (3 - (len(signature) + 3) % 4))
             verify_key = nacl.signing.VerifyKey(pub_bytes)
@@ -824,7 +1112,8 @@ class CrossSigning:
             )
         except Exception as e:
             logger.warning(
-                f"[E2EE-CrossSign] 本地签名验证失败 ❌：{e} (ed25519_key={self.olm.ed25519_key})"
+                "[E2EE-CrossSign] 本地签名验证失败 ❌："
+                f"{e} (ed25519_key={getattr(self.olm, 'ed25519_key', '')})"
             )
 
         return signature
