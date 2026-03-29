@@ -56,6 +56,19 @@ class E2EEManagerVerificationMixin:
             return ", ".join(mask(device_id) for device_id in device_ids)
         return ", ".join(device_ids)
 
+    def _log_manual_same_user_verification_required(
+        self, device_ids: list[str], reason: str
+    ) -> None:
+        if not device_ids:
+            return
+        logger.info(
+            f"{reason}：{self._format_masked_device_ids(device_ids)}"
+        )
+        logger.info(
+            "这些同账号设备需要在对应客户端本地完成“验证此设备 / Use another device”，"
+            "或使用恢复密钥恢复；当前设备不再主动发起通用 device verification。"
+        )
+
     async def _log_same_user_verification_gap(self, device_id: str) -> None:
         current_device_id = getattr(self, "device_id", "")
         if not device_id or device_id == current_device_id:
@@ -219,7 +232,7 @@ class E2EEManagerVerificationMixin:
             logger.debug(f"验证后请求缺失备份密钥失败：{e}")
 
     async def _verify_untrusted_own_devices(self):
-        """Query own devices and request verification for untrusted ones."""
+        """Query own devices and report same-user sessions that still need local verification."""
         if not self._verification:
             return
 
@@ -247,32 +260,19 @@ class E2EEManagerVerificationMixin:
                 elif not state.get("master_signed"):
                     owner_signed_but_not_master_verified.append(device_id)
 
-            devices_requiring_verification = [
-                (device_id, None) for device_id in untrusted_devices
-            ]
-            if owner_signed_but_not_master_verified:
-                logger.info(
-                    "同账号设备已 owner-signed，但对端会话尚未完成本机主密钥验证："
-                    f"{self._format_masked_device_ids(owner_signed_but_not_master_verified)}"
-                )
-                devices_requiring_verification.extend(
-                    (device_id, [M_SAS_V1_METHOD])
-                    for device_id in owner_signed_but_not_master_verified
-                )
-
-            if not devices_requiring_verification:
+            if not untrusted_devices and not owner_signed_but_not_master_verified:
                 logger.info("所有其他设备已验证")
                 return
-
-            logger.info(
-                f"发现 {len(devices_requiring_verification)} 个同账号设备需要完成验证，尝试发起验证..."
-            )
-
-            for device_id, methods in devices_requiring_verification:
-                try:
-                    await self._initiate_verification_for_device(device_id, methods)
-                except Exception as e:
-                    logger.warning(f"无法为设备 {device_id} 发起验证：{e}")
+            if untrusted_devices:
+                self._log_manual_same_user_verification_required(
+                    untrusted_devices,
+                    "发现尚未被 owner-signed 的同账号设备",
+                )
+            if owner_signed_but_not_master_verified:
+                self._log_manual_same_user_verification_required(
+                    owner_signed_but_not_master_verified,
+                    "同账号设备已 owner-signed，但对端会话尚未完成本机主密钥验证",
+                )
 
         except Exception as e:
             logger.warning(f"查询设备验证状态失败：{e}")
