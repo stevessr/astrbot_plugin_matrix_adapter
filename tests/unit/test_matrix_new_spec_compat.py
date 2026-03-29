@@ -1605,6 +1605,187 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(manager._olm.marked)
 
 
+class MatrixRoomKeyShareCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_get_room_members_keeps_current_user_for_same_account_devices(self):
+        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+
+        class DummyClient:
+            async def get_room_state(self, room_id):
+                self.room_id = room_id
+                return [
+                    {
+                        "type": "m.room.member",
+                        "state_key": "@alice:example.org",
+                        "content": {"membership": "join"},
+                    },
+                    {
+                        "type": "m.room.member",
+                        "state_key": "@bob:example.org",
+                        "content": {"membership": "invite"},
+                    },
+                    {
+                        "type": "m.room.member",
+                        "state_key": "@charlie:example.org",
+                        "content": {"membership": "leave"},
+                    },
+                ]
+
+        class DummyManager(sessions_module.E2EEManagerSessionsMixin):
+            def __init__(self):
+                self.client = DummyClient()
+                self.user_id = "@alice:example.org"
+                self._room_members_cache = {}
+                self._room_members_cache_ttl_sec = 30.0
+
+        manager = DummyManager()
+        members = await manager._get_room_members("!room:example.org")
+
+        self.assertEqual(members, ["@alice:example.org", "@bob:example.org"])
+
+    async def test_room_key_share_includes_own_other_devices_but_skips_current_device(self):
+        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+
+        class DummyClient:
+            def __init__(self):
+                self.query_calls = []
+                self.claim_calls = []
+                self.send_calls = []
+
+            async def query_keys(self, device_keys_query):
+                self.query_calls.append(device_keys_query)
+                return {
+                    "device_keys": {
+                        "@alice:example.org": {
+                            "DEVSELF": {
+                                "keys": {
+                                    "curve25519:DEVSELF": "curve-self",
+                                    "ed25519:DEVSELF": "ed-self",
+                                }
+                            },
+                            "DEVOTHER": {
+                                "keys": {
+                                    "curve25519:DEVOTHER": "curve-other",
+                                    "ed25519:DEVOTHER": "ed-other",
+                                }
+                            },
+                        },
+                        "@bob:example.org": {
+                            "DEVBOB": {
+                                "keys": {
+                                    "curve25519:DEVBOB": "curve-bob",
+                                    "ed25519:DEVBOB": "ed-bob",
+                                }
+                            }
+                        },
+                    }
+                }
+
+            async def claim_keys(self, one_time_claim):
+                self.claim_calls.append(one_time_claim)
+                return {
+                    "one_time_keys": {
+                        "@alice:example.org": {
+                            "DEVOTHER": {
+                                "signed_curve25519:AAAA": {"key": "otk-other"}
+                            }
+                        },
+                        "@bob:example.org": {
+                            "DEVBOB": {
+                                "signed_curve25519:BBBB": {"key": "otk-bob"}
+                            }
+                        },
+                    }
+                }
+
+            async def send_to_device(self, event_type, messages, txn_id):
+                self.send_calls.append((event_type, messages, txn_id))
+
+        class DummyOlm:
+            def __init__(self):
+                self.sessions = {}
+                self.created = []
+                self.encrypted_for = []
+
+            def get_olm_session(self, curve_key):
+                return self.sessions.get(curve_key)
+
+            def create_outbound_session(self, curve_key, one_time_key):
+                session = types.SimpleNamespace(curve_key=curve_key, otk=one_time_key)
+                self.sessions[curve_key] = session
+                self.created.append((curve_key, one_time_key))
+                return session
+
+            def encrypt_olm(
+                self,
+                curve_key,
+                content,
+                session=None,
+                recipient_user_id="unknown",
+                recipient_ed25519_key="unknown",
+                event_type="m.room_key",
+            ):
+                self.encrypted_for.append(
+                    (curve_key, recipient_user_id, recipient_ed25519_key, event_type)
+                )
+                return {
+                    "algorithm": "m.olm.v1.curve25519-aes-sha2",
+                    "sender_key": "sender-curve",
+                    "ciphertext": {
+                        curve_key: {
+                            "type": 0,
+                            "body": f"cipher-for-{recipient_user_id}",
+                        }
+                    },
+                }
+
+        class DummyManager(sessions_module.E2EEManagerSessionsMixin):
+            def __init__(self):
+                self.client = DummyClient()
+                self._olm = DummyOlm()
+                self._initialized = True
+                self._store = None
+                self.user_id = "@alice:example.org"
+                self.device_id = "DEVSELF"
+                self._room_key_share_cache = {}
+
+        manager = DummyManager()
+        await manager.ensure_room_keys_sent(
+            room_id="!room:example.org",
+            members=["@alice:example.org", "@bob:example.org"],
+            session_id="sess1",
+            session_key="sesskey1",
+            target_users=["@alice:example.org", "@bob:example.org"],
+            reason="test",
+        )
+
+        self.assertEqual(
+            manager.client.query_calls,
+            [{"@alice:example.org": [], "@bob:example.org": []}],
+        )
+        self.assertEqual(
+            manager.client.claim_calls,
+            [
+                {
+                    "@alice:example.org": {"DEVOTHER": "signed_curve25519"},
+                    "@bob:example.org": {"DEVBOB": "signed_curve25519"},
+                }
+            ],
+        )
+        self.assertEqual(len(manager.client.send_calls), 2)
+        sent_targets = []
+        for _event_type, messages, _txn_id in manager.client.send_calls:
+            user_id, user_payload = next(iter(messages.items()))
+            device_id = next(iter(user_payload.keys()))
+            sent_targets.append((user_id, device_id))
+        self.assertCountEqual(
+            sent_targets,
+            [
+                ("@alice:example.org", "DEVOTHER"),
+                ("@bob:example.org", "DEVBOB"),
+            ],
+        )
+
+
 class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_verification_request_caches_fingerprint_for_done_stage(self):
         flow_module = load_module("e2ee.verification_handlers_flow")

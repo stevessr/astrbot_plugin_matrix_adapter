@@ -46,7 +46,7 @@ class E2EEManagerSessionsMixin:
         changed_set = {
             user_id
             for user_id in changed_users
-            if user_id and isinstance(user_id, str) and user_id != self.user_id
+            if user_id and isinstance(user_id, str)
         }
         if not changed_set:
             return
@@ -99,7 +99,7 @@ class E2EEManagerSessionsMixin:
         if target_users:
             member_set = set(members)
             for user_id in target_users:
-                if user_id and user_id != self.user_id and user_id not in member_set:
+                if user_id and user_id not in member_set:
                     members.append(user_id)
                     member_set.add(user_id)
 
@@ -207,7 +207,7 @@ class E2EEManagerSessionsMixin:
                     membership = event.get("content", {}).get("membership")
                     if membership in [MEMBERSHIP_JOIN, MEMBERSHIP_INVITE]:
                         state_key = event.get("state_key")
-                        if state_key and state_key != self.user_id:
+                        if state_key:
                             members.append(state_key)
             unique_members = list(dict.fromkeys(members))
             if isinstance(cache, dict):
@@ -241,9 +241,7 @@ class E2EEManagerSessionsMixin:
             return
 
         normalized_members = list(
-            dict.fromkeys(
-                user_id for user_id in members if user_id and user_id != self.user_id
-            )
+            dict.fromkeys(user_id for user_id in members if user_id)
         )
         if not normalized_members:
             return
@@ -252,7 +250,7 @@ class E2EEManagerSessionsMixin:
             target_set = {
                 user_id
                 for user_id in target_users
-                if user_id and isinstance(user_id, str) and user_id != self.user_id
+                if user_id and isinstance(user_id, str)
             }
             if not target_set:
                 return
@@ -284,6 +282,9 @@ class E2EEManagerSessionsMixin:
 
             for user_id, user_devices in device_keys.items():
                 for device_id, device_info in user_devices.items():
+                    if user_id == self.user_id and device_id == self.device_id:
+                        continue
+
                     keys = device_info.get("keys", {})
                     curve_key = keys.get(f"{PREFIX_CURVE25519}{device_id}")
                     ed_key = keys.get(f"{PREFIX_ED25519}{device_id}")
