@@ -2567,7 +2567,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-    async def test_send_mac_for_same_user_untrusted_device_includes_master_key(self):
+    async def test_send_mac_for_same_user_when_peer_lacks_master_trust_includes_master_key(self):
         send_module = load_module("e2ee.verification_send_device")
 
         class DummyEstablishedSas:
@@ -2603,11 +2603,14 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.sent.append((event_type, to_user, to_device, content))
 
         verifier = DummyVerifier()
-        session = {"established_sas": DummyEstablishedSas()}
+        session = {
+            "established_sas": DummyEstablishedSas(),
+            "from_device": "DEV456",
+        }
 
         await verifier._send_mac("@bot:example.org", "DEV456", "txn123", session)
 
-        self.assertTrue(session["local_device_trusts_master"] is False)
+        self.assertTrue(session["peer_device_trusts_master"] is False)
         self.assertEqual(len(verifier.sent), 1)
         event_type, to_user, to_device, content = verifier.sent[0]
         self.assertEqual(event_type, "m.key.verification.mac")
@@ -2630,7 +2633,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-    async def test_send_in_room_mac_for_same_user_trusted_device_excludes_master_key(self):
+    async def test_send_in_room_mac_for_same_user_when_peer_has_master_trust_excludes_master_key(self):
         send_module = load_module("e2ee.verification_send_device")
         room_module = load_module("e2ee.verification_send_room")
 
@@ -2645,7 +2648,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                         "@bot:example.org": {
                             "signatures": {
                                 "@bot:example.org": {
-                                    "ed25519:BOT123": "sig",
+                                    "ed25519:DEV456": "sig",
                                 }
                             }
                         }
@@ -2685,7 +2688,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(room_id, "!room:example.org")
         self.assertEqual(event_type, "m.key.verification.mac")
         self.assertEqual(transaction_id, "txn123")
-        self.assertTrue(session["local_device_trusts_master"])
+        self.assertTrue(session["peer_device_trusts_master"])
 
         device_key_id = "ed25519:BOT123"
         base_info = "MATRIX_KEY_VERIFICATION_MAC@bot:example.orgBOT123@bot:example.orgDEV456txn123"
@@ -3183,6 +3186,52 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
         ok = await cross_signing.sign_device("BOT123")
 
         self.assertTrue(ok)
+        self.assertEqual(cross_signing.client.upload_payloads, [])
+
+    async def test_republish_current_device_keys_skips_when_owner_signature_already_exists(self):
+        cross_signing_module = self._load_cross_signing_module()
+
+        class DummyClient:
+            def __init__(self):
+                self.upload_payloads = []
+
+            async def query_keys(self, device_keys, timeout=10000):
+                return {
+                    "device_keys": {
+                        "@bot:example.org": {
+                            "BOT123": {
+                                "keys": {
+                                    "ed25519:BOT123": "device-ed25519",
+                                    "curve25519:BOT123": "device-curve25519",
+                                },
+                                "signatures": {
+                                    "@bot:example.org": {
+                                        "ed25519:BOT123": "self-sig",
+                                        "ed25519:SELFKEY": "owner-sig",
+                                    }
+                                },
+                                "unsigned": {
+                                    "device_display_name": "AstrBot",
+                                },
+                            }
+                        }
+                    }
+                }
+
+            async def upload_keys(self, device_keys=None, one_time_keys=None, fallback_keys=None):
+                self.upload_payloads.append(device_keys)
+                return {"one_time_key_counts": {}}
+
+        cross_signing = cross_signing_module.CrossSigning(
+            client=DummyClient(),
+            user_id="@bot:example.org",
+            device_id="BOT123",
+            olm_machine=object(),
+        )
+        cross_signing._self_signing_key = "SELFKEY"
+
+        await cross_signing._republish_current_device_keys()
+
         self.assertEqual(cross_signing.client.upload_payloads, [])
 
     async def test_sign_master_key_with_device_skips_upload_when_signature_already_present(self):

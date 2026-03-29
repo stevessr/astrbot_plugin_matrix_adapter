@@ -43,11 +43,19 @@ class SASVerificationSendDeviceMixin:
                     methods.append(method)
         return methods
 
-    async def _local_device_trusts_own_master_key(self, session: dict | None = None) -> bool:
+    async def _peer_device_trusts_own_master_key(
+        self,
+        other_user: str | None = None,
+        other_device: str | None = None,
+        session: dict | None = None,
+    ) -> bool:
         if isinstance(session, dict):
-            cached = session.get("local_device_trusts_master")
+            cached = session.get("peer_device_trusts_master")
             if isinstance(cached, bool):
                 return cached
+
+        if other_user != self.user_id or not other_device:
+            return True
 
         client = getattr(self, "client", None)
         if not client or not hasattr(client, "query_keys"):
@@ -58,18 +66,18 @@ class SASVerificationSendDeviceMixin:
             trust_checker = getattr(self, "_device_trusts_master_key", None)
             if callable(trust_checker):
                 trusts_master = bool(
-                    trust_checker(response, self.user_id, self.device_id)
+                    trust_checker(response, self.user_id, other_device)
                 )
             else:
                 master_key = (response.get("master_keys") or {}).get(self.user_id) or {}
                 signatures = (master_key.get("signatures") or {}).get(self.user_id) or {}
-                trusts_master = f"ed25519:{self.device_id}" in signatures
+                trusts_master = f"ed25519:{other_device}" in signatures
 
             if isinstance(session, dict):
-                session["local_device_trusts_master"] = trusts_master
+                session["peer_device_trusts_master"] = trusts_master
             return trusts_master
         except Exception as e:
-            logger.debug(f"[E2EE-Verify] 查询当前设备主密钥信任状态失败：{e}")
+            logger.debug(f"[E2EE-Verify] 查询对端设备主密钥信任状态失败：{e}")
             return False
 
     async def _get_verification_keys_to_mac(
@@ -88,11 +96,13 @@ class SASVerificationSendDeviceMixin:
         master_key = getattr(cross_signing, "master_key", None)
         include_master_key = False
         if other_user == self.user_id:
-            # Match mature-client self-verification behavior:
-            # the session that still does not trust its own identity includes the
-            # master key in MAC, while the already-trusted device only MACs its device key.
             include_master_key = not (
-                await self._local_device_trusts_own_master_key(session)
+                await self._peer_device_trusts_own_master_key(
+                    other_user=other_user,
+                    other_device=(session or {}).get("from_device")
+                    or (session or {}).get("their_device"),
+                    session=session,
+                )
             )
         if include_master_key and isinstance(master_key, str) and master_key:
             keys_to_mac[f"ed25519:{master_key}"] = master_key

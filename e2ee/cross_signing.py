@@ -638,6 +638,20 @@ class CrossSigning:
             if not isinstance(device_keys, dict) or not device_keys:
                 return
 
+            signing_key_id = (
+                f"ed25519:{self._self_signing_key}"
+                if isinstance(self._self_signing_key, str) and self._self_signing_key
+                else None
+            )
+            existing_signatures = (
+                (device_keys.get("signatures") or {}).get(self.user_id, {}) or {}
+            )
+            if signing_key_id and signing_key_id in existing_signatures:
+                logger.debug(
+                    "[E2EE-CrossSign] 当前设备已存在 owner-sign，跳过重复重发布 device_keys"
+                )
+                return
+
             republish_payload = copy.deepcopy(device_keys)
             republish_payload.pop("unsigned", None)
             if republish_payload == device_keys:
