@@ -29,6 +29,7 @@ class MatrixAuthLogin:
                 homeserver=self.config.homeserver,
                 client_id=self.client_id,
                 client_secret=self.client_secret,
+                redirect_uri=self.config.auth_callback_url,
                 callback_port=self.config.oauth2_callback_port,
                 callback_host=self.config.oauth2_callback_host,
             )
@@ -209,11 +210,16 @@ class MatrixAuthLogin:
                 homeserver=self.config.homeserver,
                 client_id=self.client_id,
                 client_secret=self.client_secret,
+                redirect_uri=self.config.auth_callback_url,
                 callback_port=self.config.oauth2_callback_port,
                 callback_host=self.config.oauth2_callback_host,
             )
-
-            response = await self.oauth2_handler.login()
+            self._active_auth_webhook_handler = self.oauth2_handler
+            try:
+                response = await self.oauth2_handler.login()
+            finally:
+                if self._active_auth_webhook_handler is self.oauth2_handler:
+                    self._active_auth_webhook_handler = None
 
             self.user_id = response.get("user_id")
             if self.user_id:
@@ -268,6 +274,7 @@ class MatrixAuthLogin:
         sso = MatrixSSO(
             client=self.client,
             homeserver=self.config.homeserver,
+            redirect_uri=self.config.auth_callback_url,
             callback_port=self.config.oauth2_callback_port,
             callback_host=self.config.oauth2_callback_host,
         )
@@ -278,12 +285,17 @@ class MatrixAuthLogin:
             self.login_info["status"] = "wait"
 
         try:
-            response = await sso.login(
-                device_name=self.device_name,
-                device_id=self.device_id,
-                show_qr=show_qr,
-                url_callback=url_callback,
-            )
+            self._active_auth_webhook_handler = sso
+            try:
+                response = await sso.login(
+                    device_name=self.device_name,
+                    device_id=self.device_id,
+                    show_qr=show_qr,
+                    url_callback=url_callback,
+                )
+            finally:
+                if self._active_auth_webhook_handler is sso:
+                    self._active_auth_webhook_handler = None
             self.login_info["status"] = "confirmed"
         except Exception as e:
             self.login_info["status"] = "error"

@@ -141,6 +141,7 @@ DEFAULT_CONFIG = {
         "matrix_access_token": "",
         "matrix_auth_method": "password",
         "matrix_device_name": "AstrBot",
+        "webhook_uuid": "",
         # 功能配置
         "matrix_auto_join_rooms": True,
         "matrix_sync_timeout": 30000,

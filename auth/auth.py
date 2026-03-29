@@ -32,6 +32,7 @@ class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
         self.client_id: str | None = None
         self.client_secret: str | None = None
         self.oauth2_handler = None
+        self._active_auth_webhook_handler = None
 
     def _log(self, level, msg):
         extra = {"plugin_tag": "matrix", "short_levelname": level[:4].upper()}
@@ -51,6 +52,13 @@ class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
         Supports: password, token, oauth2
         """
         return self._login_wrapper()
+
+    async def handle_webhook_callback(self, request):
+        handler = self._active_auth_webhook_handler
+        if handler and hasattr(handler, "handle_webhook_callback"):
+            return await handler.handle_webhook_callback(request)
+        self._log("info", "收到 Matrix 认证回调，但当前没有进行中的认证流程")
+        return "Matrix authentication flow is not ready, please retry.", 503
 
     async def _login_wrapper(self):
         # Always try to load token first for potential restoration

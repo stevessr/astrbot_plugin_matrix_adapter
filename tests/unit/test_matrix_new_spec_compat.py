@@ -799,6 +799,67 @@ class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
             "https://issuer.example.org/auth",
         )
 
+    async def test_oauth2_callback_controller_handles_unified_webhook_request(self):
+        oauth2_core = load_module("auth.oauth2_core")
+
+        controller = oauth2_core.OAuth2CallbackServer(
+            "https://astrbot.example/api/platform/webhook/matrix123"
+        )
+        controller.prepare_callback("state-123")
+
+        response = await controller.handle_callback(
+            types.SimpleNamespace(
+                args={"state": "state-123", "code": "oauth-code-xyz"}
+            )
+        )
+        code = await controller.wait_for_callback()
+
+        self.assertEqual(
+            response,
+            ("Authentication successful! You can close this window.", 200),
+        )
+        self.assertEqual(code, "oauth-code-xyz")
+
+    async def test_sso_callback_controller_handles_unified_webhook_request(self):
+        sso_module = load_module("auth.sso")
+
+        controller = sso_module.SSOCallbackServer(
+            "https://astrbot.example/api/platform/webhook/matrix123"
+        )
+        controller.prepare_callback("state-456")
+
+        response = await controller.handle_callback(
+            types.SimpleNamespace(
+                args={"state": "state-456", "loginToken": "login-token-xyz"}
+            )
+        )
+        token = await controller.wait_for_callback()
+
+        self.assertEqual(
+            response,
+            ("Authentication successful! You can close this window.", 200),
+        )
+        self.assertEqual(token, "login-token-xyz")
+
+    def test_webhook_url_builder_prefers_callback_api_base(self):
+        webhook_module = load_module("webhook")
+
+        fake_webhook_utils = types.ModuleType("astrbot.core.utils.webhook_utils")
+        fake_webhook_utils._get_callback_api_base = lambda: "https://bot.example.com"
+        fake_webhook_utils._get_dashboard_port = lambda: 6185
+        fake_webhook_utils._is_dashboard_ssl_enabled = lambda: True
+
+        with mock.patch.dict(
+            sys.modules,
+            {"astrbot.core.utils.webhook_utils": fake_webhook_utils},
+        ):
+            url = webhook_module.build_unified_webhook_url("matrix123")
+
+        self.assertEqual(
+            url,
+            "https://bot.example.com/api/platform/webhook/matrix123",
+        )
+
 
 class MatrixDehydratedDeviceCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_restore_skips_dehydrated_when_local_recovery_key_is_valid(self):

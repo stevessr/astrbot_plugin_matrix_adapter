@@ -34,6 +34,12 @@
     "type": "string",
     "hint": "设备显示名称，默认 AstrBot"
   },
+  "webhook_uuid": {
+    "description": "Webhook UUID",
+    "type": "string",
+    "hint": "统一 Webhook 模式下的唯一标识符，创建平台时自动生成。",
+    "invisible": true
+  },
   "matrix_auto_join_rooms": {
     "description": "自动加入房间",
     "type": "bool",

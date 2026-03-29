@@ -10,6 +10,7 @@ from .constants import DEFAULT_TIMEOUT_MS_30000
 from .device_manager import MatrixDeviceManager
 from .plugin_config import get_plugin_config
 from .storage_backend import StorageBackendConfig
+from .webhook import build_unified_webhook_url
 
 from .utils import parse_bool
 
@@ -60,6 +61,9 @@ class MatrixConfig:
         self.device_name = (
             str(self.config.get("matrix_device_name", "AstrBot") or "AstrBot").strip()
             or "AstrBot"
+        )
+        self.webhook_uuid = (
+            str(self.config.get("webhook_uuid", "") or "").strip() or None
         )
 
         # 设备 ID 现在由 DeviceManager 管理，不再支持手动配置
@@ -226,6 +230,12 @@ class MatrixConfig:
     @property
     def oauth2_callback_host(self) -> str:
         return get_plugin_config().oauth2_callback_host
+
+    @property
+    def auth_callback_url(self) -> str:
+        if not self.webhook_uuid:
+            raise ValueError("webhook_uuid is required for Matrix auth callback")
+        return build_unified_webhook_url(self.webhook_uuid)
 
     @property
     def storage_backend_config(self) -> StorageBackendConfig:

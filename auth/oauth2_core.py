@@ -4,8 +4,6 @@ OAuth2 core helpers: logging and callback server.
 
 import asyncio
 
-from aiohttp import web
-
 from astrbot.api import logger
 
 
@@ -22,29 +20,33 @@ def _log(level: str, msg: str):
         logger.debug(msg, extra=extra)
 
 
-class OAuth2CallbackServer:
-    """HTTP server for handling OAuth2 callbacks."""
+def _get_request_query_params(request) -> object:
+    if request is None:
+        return {}
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765):
-        self.host = host
-        self.port = port
-        self.app = web.Application()
-        self.runner: web.AppRunner | None = None
-        self.site: web.TCPSite | None = None
+    params = getattr(request, "args", None)
+    if params is not None:
+        return params
+
+    params = getattr(request, "query", None)
+    if params is not None:
+        return params
+
+    return {}
+
+
+class OAuth2CallbackServer:
+    """Unified webhook callback controller for OAuth2 flows."""
+
+    def __init__(self, redirect_uri: str):
+        if not redirect_uri:
+            raise ValueError("redirect_uri is required")
+        self.redirect_uri = redirect_uri
         self.callback_future: asyncio.Future | None = None
         self.expected_state: str | None = None
         self._flow_armed = False
 
-        self.app.router.add_get("/callback", self._handle_callback)
-        self.app.router.add_get("/", self._handle_root)
-
-    async def _handle_root(self, request: web.Request) -> web.Response:
-        return web.Response(
-            text="Matrix OAuth2 Authentication Server\nWaiting for OAuth2 callback...",
-            content_type="text/plain",
-        )
-
-    async def _handle_callback(self, request: web.Request) -> web.Response:
+    async def handle_callback(self, request):
         try:
             if (
                 not self._flow_armed
@@ -52,12 +54,9 @@ class OAuth2CallbackServer:
                 or self.expected_state is None
             ):
                 _log("warning", "OAuth2 callback received before flow was armed")
-                return web.Response(
-                    text="OAuth2 flow is not ready, please retry.",
-                    status=503,
-                )
+                return "OAuth2 flow is not ready, please retry.", 503
 
-            query_params = request.query
+            query_params = _get_request_query_params(request)
 
             if "error" in query_params:
                 error = query_params.get("error")
@@ -69,10 +68,7 @@ class OAuth2CallbackServer:
                         Exception(f"OAuth2 error: {error} - {error_description}")
                     )
 
-                return web.Response(
-                    text=f"Authentication failed: {error}\n{error_description}",
-                    status=400,
-                )
+                return f"Authentication failed: {error}\n{error_description}", 400
 
             state = query_params.get("state")
             if state != self.expected_state:
@@ -81,7 +77,7 @@ class OAuth2CallbackServer:
                     self.callback_future.set_exception(
                         Exception("State mismatch in OAuth2 callback")
                     )
-                return web.Response(text="State mismatch", status=400)
+                return "State mismatch", 400
 
             code = query_params.get("code")
             if not code:
@@ -90,51 +86,33 @@ class OAuth2CallbackServer:
                     self.callback_future.set_exception(
                         Exception("No authorization code received")
                     )
-                return web.Response(text="No authorization code", status=400)
+                return "No authorization code", 400
 
             if self.callback_future and not self.callback_future.done():
                 self.callback_future.set_result(code)
 
-            return web.Response(
-                text="Authentication successful! You can close this window.",
-                content_type="text/plain",
-            )
+            return "Authentication successful! You can close this window.", 200
 
         except Exception as e:
             _log("error", f"Error handling OAuth2 callback: {e}")
             if self.callback_future and not self.callback_future.done():
                 self.callback_future.set_exception(e)
-            return web.Response(text=f"Error: {str(e)}", status=500)
+            return f"Error: {str(e)}", 500
 
     async def start(self) -> str:
-        try:
-            self.runner = web.AppRunner(self.app)
-            await self.runner.setup()
-            self.site = web.TCPSite(self.runner, self.host, self.port)
-            await self.site.start()
-
-            callback_url = f"http://{self.host}:{self.port}/callback"
-            _log("info", f"OAuth2 callback server started at {callback_url}")
-            return callback_url
-
-        except Exception as e:
-            _log("error", f"Failed to start OAuth2 callback server: {e}")
-            raise
+        _log("info", f"OAuth2 callback will use AstrBot unified webhook: {self.redirect_uri}")
+        return self.redirect_uri
 
     async def stop(self):
         try:
-            if self.site:
-                await self.site.stop()
-            if self.runner:
-                await self.runner.cleanup()
             if self.callback_future and not self.callback_future.done():
                 self.callback_future.cancel()
             self.callback_future = None
             self.expected_state = None
             self._flow_armed = False
-            _log("info", "OAuth2 callback server stopped")
+            _log("info", "OAuth2 callback handler stopped")
         except Exception as e:
-            _log("error", f"Error stopping OAuth2 callback server: {e}")
+            _log("error", f"Error stopping OAuth2 callback handler: {e}")
 
     def prepare_callback(self, expected_state: str) -> None:
         if not expected_state:

@@ -1,6 +1,6 @@
 """
 Matrix SSO Authentication Module
-Implements m.login.sso flow with local callback server
+Implements m.login.sso flow with AstrBot unified webhook callbacks
 """
 
 import asyncio
@@ -8,9 +8,7 @@ import io
 import secrets
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from aiohttp import web
-
-from .oauth2_core import _log
+from .oauth2_core import _get_request_query_params, _log
 
 
 def _build_terminal_qr(data: str) -> str | None:
@@ -33,28 +31,17 @@ def _build_terminal_qr(data: str) -> str | None:
 
 
 class SSOCallbackServer:
-    """HTTP server for handling Matrix SSO callbacks."""
+    """Unified webhook callback controller for Matrix SSO callbacks."""
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765):
-        self.host = host
-        self.port = port
-        self.app = web.Application()
-        self.runner: web.AppRunner | None = None
-        self.site: web.TCPSite | None = None
+    def __init__(self, redirect_uri: str):
+        if not redirect_uri:
+            raise ValueError("redirect_uri is required")
+        self.redirect_uri = redirect_uri
         self.callback_future: asyncio.Future | None = None
         self.expected_state: str | None = None
         self._flow_armed = False
 
-        self.app.router.add_get("/callback", self._handle_callback)
-        self.app.router.add_get("/", self._handle_root)
-
-    async def _handle_root(self, request: web.Request) -> web.Response:
-        return web.Response(
-            text="Matrix SSO Authentication Server\nWaiting for callback...",
-            content_type="text/plain",
-        )
-
-    async def _handle_callback(self, request: web.Request) -> web.Response:
+    async def handle_callback(self, request):
         try:
             if (
                 not self._flow_armed
@@ -62,12 +49,9 @@ class SSOCallbackServer:
                 or self.expected_state is None
             ):
                 _log("warning", "SSO callback received before flow was armed")
-                return web.Response(
-                    text="SSO flow is not ready, please retry.",
-                    status=503,
-                )
+                return "SSO flow is not ready, please retry.", 503
 
-            query_params = request.query
+            query_params = _get_request_query_params(request)
             if self.expected_state:
                 state = query_params.get("state")
                 if state != self.expected_state:
@@ -76,7 +60,7 @@ class SSOCallbackServer:
                         self.callback_future.set_exception(
                             Exception("SSO callback state mismatch")
                         )
-                    return web.Response(text="State mismatch", status=400)
+                    return "State mismatch", 400
 
             if "error" in query_params:
                 error = query_params.get("error")
@@ -86,10 +70,7 @@ class SSOCallbackServer:
                     self.callback_future.set_exception(
                         Exception(f"SSO error: {error} - {error_description}")
                     )
-                return web.Response(
-                    text=f"Authentication failed: {error}\n{error_description}",
-                    status=400,
-                )
+                return f"Authentication failed: {error}\n{error_description}", 400
 
             login_token = query_params.get("loginToken") or query_params.get(
                 "login_token"
@@ -100,42 +81,30 @@ class SSOCallbackServer:
                     self.callback_future.set_exception(
                         Exception("No loginToken received")
                     )
-                return web.Response(text="No loginToken in callback", status=400)
+                return "No loginToken in callback", 400
 
             if self.callback_future and not self.callback_future.done():
                 self.callback_future.set_result(login_token)
 
-            return web.Response(
-                text="Authentication successful! You can close this window.",
-                content_type="text/plain",
-            )
+            return "Authentication successful! You can close this window.", 200
 
         except Exception as e:
             _log("error", f"Error handling SSO callback: {e}")
             if self.callback_future and not self.callback_future.done():
                 self.callback_future.set_exception(e)
-            return web.Response(text=f"Error: {str(e)}", status=500)
+            return f"Error: {str(e)}", 500
 
     async def start(self) -> str:
-        self.runner = web.AppRunner(self.app)
-        await self.runner.setup()
-        self.site = web.TCPSite(self.runner, self.host, self.port)
-        await self.site.start()
-        callback_url = f"http://{self.host}:{self.port}/callback"
-        _log("info", f"SSO callback server started at {callback_url}")
-        return callback_url
+        _log("info", f"SSO callback will use AstrBot unified webhook: {self.redirect_uri}")
+        return self.redirect_uri
 
     async def stop(self):
-        if self.site:
-            await self.site.stop()
-        if self.runner:
-            await self.runner.cleanup()
         if self.callback_future and not self.callback_future.done():
             self.callback_future.cancel()
         self.callback_future = None
         self.expected_state = None
         self._flow_armed = False
-        _log("info", "SSO callback server stopped")
+        _log("info", "SSO callback handler stopped")
 
     def prepare_callback(self, expected_state: str) -> None:
         if not expected_state:
@@ -169,11 +138,13 @@ class MatrixSSO:
         self,
         client,
         homeserver: str,
+        redirect_uri: str | None = None,
         callback_port: int = 8765,
         callback_host: str = "127.0.0.1",
     ):
         self.client = client
         self.homeserver = homeserver.rstrip("/")
+        self.redirect_uri = redirect_uri
         self.callback_port = callback_port
         self.callback_host = callback_host
         self.callback_server: SSOCallbackServer | None = None
@@ -206,9 +177,12 @@ class MatrixSSO:
                 _log("info", f"SSO identity providers: {idp_names}")
 
             state = secrets.token_urlsafe(24)
-            self.callback_server = SSOCallbackServer(
-                host=self.callback_host, port=self.callback_port
-            )
+            if not self.redirect_uri:
+                raise RuntimeError(
+                    "Matrix SSO requires AstrBot unified webhook redirect_uri"
+                )
+
+            self.callback_server = SSOCallbackServer(self.redirect_uri)
             self.callback_server.prepare_callback(expected_state=state)
             redirect_uri = await self.callback_server.start()
             redirect_uri_with_state = _attach_state_param(redirect_uri, state)
@@ -251,3 +225,8 @@ class MatrixSSO:
             if self.callback_server:
                 await self.callback_server.stop()
                 self.callback_server = None
+
+    async def handle_webhook_callback(self, request):
+        if not self.callback_server:
+            return "SSO flow is not ready, please retry.", 503
+        return await self.callback_server.handle_callback(request)

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+import uuid
 from pathlib import Path
 
 from astrbot.api import logger
@@ -126,6 +127,10 @@ class MatrixPlatformAdapter(
         platform_settings: dict,  # noqa: ARG002 - required by Platform interface
         event_queue: asyncio.Queue,
     ) -> None:
+        webhook_uuid = str(platform_config.get("webhook_uuid") or "").strip()
+        if not webhook_uuid:
+            platform_config["webhook_uuid"] = uuid.uuid4().hex[:16]
+
         super().__init__(platform_config, event_queue)
         # Store MatrixConfig separately to maintain functionality
         self._matrix_config = MatrixConfig(platform_config)
@@ -291,6 +296,12 @@ class MatrixPlatformAdapter(
             support_streaming_message=False,
         )
 
+    def unified_webhook(self) -> bool:
+        webhook_uuid = str(self.config.get("webhook_uuid") or "").strip()
+        return bool(
+            webhook_uuid and self._matrix_config.auth_method in {"oauth2", "qr"}
+        )
+
     def get_stats(self) -> dict:
         stat = super().get_stats()
         login_info = getattr(self.auth, "login_info", {})
@@ -337,6 +348,7 @@ class MatrixPlatformAdapter(
                     getattr(self._matrix_config, "refresh_token", "") or ""
                 ).strip(),
                 "matrix_user_id": str(self._matrix_config.user_id or "").strip(),
+                "webhook_uuid": str(self.config.get("webhook_uuid") or "").strip(),
             }
 
             for field, value in config_updates.items():
@@ -381,3 +393,6 @@ class MatrixPlatformAdapter(
 
     def get_client(self) -> MatrixHTTPClient:
         return self.client
+
+    async def webhook_callback(self, request):
+        return await self.auth.handle_webhook_callback(request)

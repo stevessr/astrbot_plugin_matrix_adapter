@@ -1,6 +1,6 @@
 """
 Matrix OAuth2 Authentication Module
-Implements OAuth2 authentication flow with HTTP callback server
+Implements OAuth2 authentication flow with AstrBot unified webhook callbacks
 """
 
 import base64
@@ -50,11 +50,11 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
             homeserver: Matrix homeserver URL
             client_id: OAuth2 client ID (optional, will be discovered from server if not provided)
             client_secret: OAuth2 client secret (optional for PKCE)
-            redirect_uri: OAuth2 redirect URI (optional, will use callback server)
+            redirect_uri: OAuth2 redirect URI (required, provided by AstrBot unified webhook)
             scopes: OAuth2 scopes (default: stable Matrix API scope + device scope)
             device_id: Preferred Matrix device ID for stable device scope
-            callback_port: OAuth2 callback server port (default: 8765)
-            callback_host: OAuth2 callback server host (default: 127.0.0.1)
+            callback_port: Deprecated, kept for backward compatibility
+            callback_host: Deprecated, kept for backward compatibility
         """
         self.client = client
         self.homeserver = homeserver.rstrip("/")
@@ -178,7 +178,7 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
         This method:
         1. Discovers OAuth2 configuration from the homeserver
         2. Registers a client if no client_id is provided (if supported)
-        3. Starts a local callback server if needed
+        3. Arms the AstrBot unified webhook callback listener
         4. Initiates the OAuth2 authorization code flow with PKCE
         5. Exchanges the authorization code for tokens
 
@@ -195,17 +195,14 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
             auth_endpoint = endpoints["authorization_endpoint"]
             token_endpoint = endpoints["token_endpoint"]
 
-            # Step 2: Start callback server if no redirect URI provided
+            # Step 2: Arm unified webhook callback receiver
             if not self.redirect_uri:
-                _log(
-                    "info",
-                    f"Starting OAuth2 callback server on {self.callback_host}:{self.callback_port}...",
+                raise RuntimeError(
+                    "Matrix OAuth2 requires AstrBot unified webhook redirect_uri"
                 )
-                self.callback_server = OAuth2CallbackServer(
-                    host=self.callback_host, port=self.callback_port
-                )
-                self.redirect_uri = await self.callback_server.start()
-                _log("info", f"Callback server listening at {self.redirect_uri}")
+            self.callback_server = OAuth2CallbackServer(self.redirect_uri)
+            self.redirect_uri = await self.callback_server.start()
+            _log("info", f"OAuth2 callback URL: {self.redirect_uri}")
 
             # Step 3: Register client if no client_id provided
             if not self.client_id:
@@ -251,21 +248,7 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
             _log("info", "Waiting for authentication...")
             _log("info", "=" * 60)
 
-            # Wait for callback
-            if self.callback_server:
-                code = await self.callback_server.wait_for_callback()
-            else:
-                # Manual code entry (for custom redirect URIs)
-                _log("info", "Enter the authorization code:")
-                _log("info", "⚠️  Manual code entry is not supported in async context.")
-                _log(
-                    "info", "Please use the callback server or provide a redirect_uri."
-                )
-                raise RuntimeError(
-                    "Manual code entry not supported in async context. "
-                    "Either use the callback server (don't provide redirect_uri) "
-                    "or implement your own async input method."
-                )
+            code = await self.callback_server.wait_for_callback()
 
             # Exchange code for token
             token_data = {
@@ -323,10 +306,14 @@ class MatrixOAuth2(MatrixOAuth2Discovery, MatrixOAuth2PKCE):
             _log("error", f"OAuth2 login failed: {e}")
             raise
         finally:
-            # Stop callback server
             if self.callback_server:
                 await self.callback_server.stop()
                 self.callback_server = None
+
+    async def handle_webhook_callback(self, request):
+        if not self.callback_server:
+            return "OAuth2 flow is not ready, please retry.", 503
+        return await self.callback_server.handle_callback(request)
 
     async def refresh_access_token(self) -> dict[str, Any]:
         """
