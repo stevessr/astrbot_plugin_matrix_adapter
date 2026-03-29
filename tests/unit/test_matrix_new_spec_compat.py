@@ -1629,6 +1629,112 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             ["@bot:example.org"],
         )
 
+    async def test_verify_untrusted_own_devices_does_not_treat_device_self_signature_as_owner_signed(self):
+        verification_module = load_module("e2ee.e2ee_manager_verification")
+
+        class DummyClient:
+            async def _request(self, method, path, body):
+                return {
+                    "device_keys": {
+                        "@bot:example.org": {
+                            "BOT123": {
+                                "signatures": {
+                                    "@bot:example.org": {"ed25519:BOT123": "self"}
+                                }
+                            },
+                            "DEV456": {
+                                "signatures": {
+                                    "@bot:example.org": {"ed25519:DEV456": "self"}
+                                }
+                            },
+                        }
+                    },
+                    "self_signing_keys": {
+                        "@bot:example.org": {
+                            "keys": {"ed25519:SELFKEY": "SELFKEY"}
+                        }
+                    },
+                    "master_keys": {
+                        "@bot:example.org": {
+                            "signatures": {
+                                "@bot:example.org": {"ed25519:BOT123": "master-sig"}
+                            }
+                        }
+                    },
+                }
+
+        class DummyManager(verification_module.E2EEManagerVerificationMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self.client = DummyClient()
+                self._verification = object()
+                self._cross_signing = types.SimpleNamespace(has_master_key=True)
+                self.calls = []
+
+            async def _initiate_verification_for_device(self, target_device_id):
+                self.calls.append(target_device_id)
+
+        manager = DummyManager()
+        await manager._verify_untrusted_own_devices()
+        self.assertEqual(manager.calls, ["DEV456"])
+
+    async def test_verify_untrusted_own_devices_skips_owner_signed_device_without_master_signature(self):
+        verification_module = load_module("e2ee.e2ee_manager_verification")
+
+        class DummyClient:
+            async def _request(self, method, path, body):
+                return {
+                    "device_keys": {
+                        "@bot:example.org": {
+                            "BOT123": {
+                                "signatures": {
+                                    "@bot:example.org": {
+                                        "ed25519:BOT123": "self",
+                                        "ed25519:SELFKEY": "owner",
+                                    }
+                                }
+                            },
+                            "DEV456": {
+                                "signatures": {
+                                    "@bot:example.org": {
+                                        "ed25519:DEV456": "self",
+                                        "ed25519:SELFKEY": "owner",
+                                    }
+                                }
+                            },
+                        }
+                    },
+                    "self_signing_keys": {
+                        "@bot:example.org": {
+                            "keys": {"ed25519:SELFKEY": "SELFKEY"}
+                        }
+                    },
+                    "master_keys": {
+                        "@bot:example.org": {
+                            "signatures": {
+                                "@bot:example.org": {"ed25519:BOT123": "master-sig"}
+                            }
+                        }
+                    },
+                }
+
+        class DummyManager(verification_module.E2EEManagerVerificationMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self.client = DummyClient()
+                self._verification = object()
+                self._cross_signing = types.SimpleNamespace(has_master_key=True)
+                self.calls = []
+
+            async def _initiate_verification_for_device(self, target_device_id):
+                self.calls.append(target_device_id)
+
+        manager = DummyManager()
+        await manager._verify_untrusted_own_devices()
+        self.assertEqual(manager.calls, [])
+
     async def test_request_missing_secrets_after_verification_requests_cross_signing_and_backup(self):
         verification_module = load_module("e2ee.e2ee_manager_verification")
         constants = load_module("constants")

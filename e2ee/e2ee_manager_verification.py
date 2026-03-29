@@ -13,6 +13,68 @@ from ..constants import (
 
 
 class E2EEManagerVerificationMixin:
+    @staticmethod
+    def _extract_cross_signing_key_id(key_payload: dict | None) -> str | None:
+        if not isinstance(key_payload, dict):
+            return None
+        keys = key_payload.get("keys")
+        if not isinstance(keys, dict) or not keys:
+            return None
+        return next(iter(keys.keys()))
+
+    def _classify_own_device_cross_signing_state(
+        self, response: dict
+    ) -> dict[str, dict[str, bool]]:
+        device_keys = (response.get("device_keys") or {}).get(self.user_id) or {}
+        self_signing_key_id = self._extract_cross_signing_key_id(
+            (response.get("self_signing_keys") or {}).get(self.user_id)
+        )
+        master_key = (response.get("master_keys") or {}).get(self.user_id) or {}
+        master_signatures = (
+            (master_key.get("signatures") or {}).get(self.user_id, {}) or {}
+        )
+
+        states: dict[str, dict[str, bool]] = {}
+        for device_id, device_info in device_keys.items():
+            signatures = (device_info.get("signatures") or {}).get(self.user_id, {})
+            states[device_id] = {
+                "owner_signed": bool(
+                    self_signing_key_id and self_signing_key_id in signatures
+                ),
+                "master_signed": f"{PREFIX_ED25519}{device_id}" in master_signatures,
+            }
+        return states
+
+    def _format_masked_device_ids(self, device_ids: list[str]) -> str:
+        mask = getattr(self, "_mask_device_id", None)
+        if callable(mask):
+            return ", ".join(mask(device_id) for device_id in device_ids)
+        return ", ".join(device_ids)
+
+    async def _log_same_user_verification_gap(self, device_id: str) -> None:
+        current_device_id = getattr(self, "device_id", "")
+        if not device_id or device_id == current_device_id:
+            return
+        client = getattr(self, "client", None)
+        if not client or not hasattr(client, "_request"):
+            return
+        try:
+            response = await client._request(
+                "POST",
+                "/_matrix/client/v3/keys/query",
+                {"device_keys": {self.user_id: []}},
+            )
+            state = self._classify_own_device_cross_signing_state(response).get(
+                device_id, {}
+            )
+            if state.get("owner_signed") and not state.get("master_signed"):
+                logger.info(
+                    "目标设备已被 owner-signed，但对端客户端尚未完成本机主密钥验证："
+                    f"{self._format_masked_device_ids([device_id])}"
+                )
+        except Exception as e:
+            logger.debug(f"查询同账号设备主密钥验证状态失败：{e}")
+
     async def publish_trusted_device(self, user_id: str, device_id: str) -> bool:
         """Publish cross-signing trust for a same-account device."""
         if user_id != self.user_id:
@@ -41,6 +103,7 @@ class E2EEManagerVerificationMixin:
             return False
 
         logger.info(f"已发布设备信任：{device_id}")
+        await self._log_same_user_verification_gap(device_id)
         return True
 
     async def handle_verification_event(
@@ -126,24 +189,26 @@ class E2EEManagerVerificationMixin:
                 logger.debug("未找到其他设备")
                 return
 
-            verified_devices = set()
-            if self._cross_signing and self._cross_signing.has_master_key:
-                for device_id, keys in device_keys.items():
-                    signatures = keys.get("signatures", {}).get(self.user_id, {})
-                    for sig_key in signatures.keys():
-                        if sig_key.startswith(PREFIX_ED25519):
-                            verified_devices.add(device_id)
-                            break
-
             untrusted_devices = []
+            owner_signed_but_not_master_verified = []
+            device_states = self._classify_own_device_cross_signing_state(response)
             for device_id in device_keys.keys():
                 if device_id == self.device_id:
                     continue
-                if device_id not in verified_devices:
+                state = device_states.get(device_id, {})
+                if not state.get("owner_signed"):
                     untrusted_devices.append(device_id)
+                elif not state.get("master_signed"):
+                    owner_signed_but_not_master_verified.append(device_id)
 
             if not untrusted_devices:
-                logger.info("所有其他设备已验证")
+                if owner_signed_but_not_master_verified:
+                    logger.info(
+                        "发现同账号设备已 owner-signed，但尚未完成本机主密钥验证："
+                        f"{self._format_masked_device_ids(owner_signed_but_not_master_verified)}"
+                    )
+                else:
+                    logger.info("所有其他设备已验证")
                 return
 
             logger.info(f"发现 {len(untrusted_devices)} 个未验证设备，尝试发起验证...")
