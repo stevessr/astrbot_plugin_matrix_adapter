@@ -623,6 +623,32 @@ class CrossSigning:
             logger.warning(f"[E2EE-CrossSign] 重新上传当前设备密钥失败：{e}")
             return False
 
+    async def _republish_current_device_keys(self) -> None:
+        if not hasattr(self.client, "upload_keys"):
+            return
+        try:
+            response = await self.client.query_keys({self.user_id: [self.device_id]})
+            device_keys = (
+                (response.get("device_keys") or {})
+                .get(self.user_id, {})
+                .get(self.device_id)
+            )
+            if not isinstance(device_keys, dict) or not device_keys:
+                return
+
+            republish_payload = copy.deepcopy(device_keys)
+            republish_payload.pop("unsigned", None)
+            if republish_payload == device_keys:
+                logger.debug(
+                    "[E2EE-CrossSign] 当前设备 device_keys 已与服务器一致，跳过重复上传"
+                )
+                return
+
+            await self.client.upload_keys(device_keys=republish_payload)
+            logger.debug("[E2EE-CrossSign] 已重发布当前设备的 device_keys 以刷新客户端缓存")
+        except Exception as e:
+            logger.debug(f"[E2EE-CrossSign] 重发布当前设备 device_keys 失败：{e}")
+
     def _gen_keypair(self) -> tuple[bytes, str]:
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -953,6 +979,9 @@ class CrossSigning:
             )
             if not ok:
                 return False
+
+            if device_id == self.device_id:
+                await self._republish_current_device_keys()
 
             logger.debug(f"[E2EE-CrossSign] 已签名设备：{device_id}")
             return True

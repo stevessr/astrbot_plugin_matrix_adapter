@@ -801,6 +801,36 @@ class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MatrixDehydratedDeviceCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_restore_skips_dehydrated_when_local_recovery_key_is_valid(self):
+        ssss_module = load_module("e2ee.key_backup_ssss")
+
+        expected_key = b"L" * 32
+
+        class DummyBackup(ssss_module.KeyBackupSSSSMixin):
+            def __init__(self):
+                self._recovery_key_bytes = expected_key
+                self.get_dehydrated_calls = 0
+                self.read_secret_calls = 0
+
+            def _verify_recovery_key(self, key, log_mismatch=True):
+                return key == expected_key
+
+            async def _get_dehydrated_device(self):
+                self.get_dehydrated_calls += 1
+                return {"should": "not-be-read"}
+
+            async def read_secret_from_secret_storage(self, secret_name, key_bytes=None):
+                self.read_secret_calls += 1
+                return b"should-not-be-read"
+
+        backup = DummyBackup()
+
+        restored_key = await backup._try_restore_from_secret_storage(b"provided-key")
+
+        self.assertEqual(restored_key, expected_key)
+        self.assertEqual(backup.get_dehydrated_calls, 0)
+        self.assertEqual(backup.read_secret_calls, 0)
+
     async def test_restore_supports_legacy_secret_name_without_default_key(self):
         constants = load_module("constants")
         ssss_module = load_module("e2ee.key_backup_ssss")
@@ -2464,7 +2494,7 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         self.assertEqual(len(client.upload_payloads), 1)
 
-    async def test_sign_device_republishes_current_device_keys_after_self_sign(self):
+    async def test_sign_device_skips_republish_when_server_device_keys_are_unchanged(self):
         cross_signing_module = self._load_cross_signing_module()
 
         class DummyClient:
@@ -2530,11 +2560,7 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(ok)
         self.assertEqual(len(client.upload_payloads), 1)
-        self.assertEqual(len(client.republish_calls), 1)
-        self.assertEqual(
-            client.republish_calls[0]["signatures"]["@bot:example.org"].keys(),
-            {"ed25519:BOT123", "ed25519:SELFKEY"},
-        )
+        self.assertEqual(len(client.republish_calls), 0)
 
     async def test_sign_master_key_with_device_repairs_current_device_key_mismatch_once(self):
         cross_signing_module = self._load_cross_signing_module()

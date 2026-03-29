@@ -31,12 +31,10 @@ class KeyBackupBackupMixin:
             version = await self._get_current_backup_version()
             if version:
                 self._backup_version = version
-                # 1) Prefer previously extracted real backup key.
-                extracted_key = self._load_extracted_key()
-                if extracted_key and self._verify_recovery_key(
-                    extracted_key, log_mismatch=False
-                ):
-                    if self.use_recovery_key_bytes(extracted_key):
+                # 1) Prefer already-verified local backup key material.
+                local_key = self._get_valid_local_recovery_key_bytes()
+                if local_key:
+                    if self.use_recovery_key_bytes(local_key):
                         logger.info("✅ 使用本地保存的提取密钥成功验证！")
                         return
 

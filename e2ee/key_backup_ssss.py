@@ -34,6 +34,42 @@ class KeyBackupSSSSMixin:
     _SSSS_ALGORITHM = "m.secret_storage.v1.aes-hmac-sha2"
     _SSSS_BOOTSTRAP_KEY_NAME = "AstrBot Secret Storage"
 
+    def _get_valid_local_recovery_key_bytes(self) -> bytes | None:
+        verify = getattr(self, "_verify_recovery_key", None)
+
+        current_key = getattr(self, "_recovery_key_bytes", None)
+        if isinstance(current_key, (bytes, bytearray)) and len(current_key) == CRYPTO_KEY_SIZE_32:
+            key_bytes = bytes(current_key)
+            if not callable(verify):
+                return key_bytes
+            try:
+                if verify(key_bytes, log_mismatch=False):
+                    return key_bytes
+            except TypeError:
+                if verify(key_bytes):
+                    return key_bytes
+
+        load_extracted_key = getattr(self, "_load_extracted_key", None)
+        if not callable(load_extracted_key):
+            return None
+
+        extracted_key = load_extracted_key()
+        if not isinstance(extracted_key, (bytes, bytearray)):
+            return None
+        if len(extracted_key) != CRYPTO_KEY_SIZE_32:
+            return None
+
+        key_bytes = bytes(extracted_key)
+        if not callable(verify):
+            return key_bytes
+        try:
+            if verify(key_bytes, log_mismatch=False):
+                return key_bytes
+        except TypeError:
+            if verify(key_bytes):
+                return key_bytes
+        return None
+
     async def _get_dehydrated_device(self) -> dict | None:
         dehydrated_device = await self.client.get_global_account_data(
             DEHYDRATED_DEVICE_EVENT
@@ -432,6 +468,11 @@ class KeyBackupSSSSMixin:
         """
         logger.info("尝试从 Secret Storage 恢复密钥...")
         try:
+            local_recovery_key = self._get_valid_local_recovery_key_bytes()
+            if local_recovery_key:
+                logger.info("本地恢复密钥已存在且验证通过，跳过 dehydrated device 恢复")
+                return local_recovery_key
+
             dehydrated_device = await self._get_dehydrated_device()
             dehydrated_key = self._extract_backup_key_from_dehydrated_device(
                 provided_key_bytes, dehydrated_device
