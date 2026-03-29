@@ -905,6 +905,7 @@ class CrossSigning:
             logger.debug("[E2EE-CrossSign] self-signing key 不可用，跳过设备签名")
             return False
         try:
+            signing_key_id = f"ed25519:{self._self_signing_key}"
             repaired_current_device = False
             while True:
                 response = await self.client.query_keys({self.user_id: [device_id]})
@@ -952,9 +953,17 @@ class CrossSigning:
                 )
                 return False
 
+            existing_signatures = (
+                (device_keys.get("signatures") or {}).get(self.user_id, {}) or {}
+            )
+            if signing_key_id in existing_signatures:
+                logger.debug(
+                    f"[E2EE-CrossSign] 设备已存在 owner-sign，跳过重复上传：{device_id}"
+                )
+                return True
+
             device_keys_to_upload = copy.deepcopy(device_keys)
             device_keys_to_upload.pop("unsigned", None)
-            signing_key_id = f"ed25519:{self._self_signing_key}"
             sig = self._sign(self._self_signing_priv, device_keys_to_upload)
             # 仅包含本次自签名密钥的签名，不携带旧的签名，
             # 避免服务器重新验证旧签名导致 M_INVALID_SIGNATURE。
@@ -1059,6 +1068,15 @@ class CrossSigning:
             master_pubkey_b64 = _master_key_value
 
             signing_key_id = self.device_key_id
+            existing_signatures = (
+                (master_key.get("signatures") or {}).get(target_user_id, {}) or {}
+            )
+            if signing_key_id in existing_signatures:
+                logger.debug(
+                    "[E2EE-CrossSign] master key 已存在当前设备签名，跳过重复上传"
+                )
+                return True
+
             signature = self._sign_device_object(master_key)
             logger.debug(
                 "[E2EE-CrossSign] 签名诊断信息：\n"

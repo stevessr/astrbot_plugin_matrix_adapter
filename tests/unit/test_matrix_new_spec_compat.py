@@ -1708,7 +1708,10 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             verifier.device_store.calls,
             [("@bot:example.org", "DEV456", "fp456")],
         )
-        self.assertEqual(verifier.e2ee_manager.calls, [])
+        self.assertEqual(
+            verifier.e2ee_manager.calls,
+            [("@bot:example.org", "DEV456")],
+        )
         self.assertEqual(verifier.e2ee_manager.secret_requests, ["@bot:example.org"])
 
     async def test_handle_done_for_qr_scan_sends_done_back_before_marking_verified(self):
@@ -2869,6 +2872,122 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                 }
             },
         )
+
+    async def test_sign_device_skips_upload_when_device_is_already_owner_signed(self):
+        cross_signing_module = self._load_cross_signing_module()
+
+        class DummyClient:
+            def __init__(self):
+                self.upload_payloads = []
+
+            async def query_keys(self, device_keys, timeout=10000):
+                return {
+                    "device_keys": {
+                        "@bot:example.org": {
+                            "BOT123": {
+                                "keys": {
+                                    "ed25519:BOT123": "device-ed25519",
+                                    "curve25519:BOT123": "device-curve25519",
+                                },
+                                "signatures": {
+                                    "@bot:example.org": {
+                                        "ed25519:SELFKEY": "sig",
+                                    }
+                                },
+                            }
+                        }
+                    }
+                }
+
+            async def upload_signatures(self, signatures):
+                self.upload_payloads.append(signatures)
+                return {"failures": {}}
+
+        class DummyOlm:
+            def get_identity_keys(self):
+                return {
+                    "ed25519:BOT123": "device-ed25519",
+                    "curve25519:BOT123": "device-curve25519",
+                }
+
+        cross_signing = cross_signing_module.CrossSigning(
+            client=DummyClient(),
+            user_id="@bot:example.org",
+            device_id="BOT123",
+            olm_machine=DummyOlm(),
+        )
+        cross_signing._self_signing_priv = b"1" * 32
+        cross_signing._self_signing_key = "SELFKEY"
+
+        ok = await cross_signing.sign_device("BOT123")
+
+        self.assertTrue(ok)
+        self.assertEqual(cross_signing.client.upload_payloads, [])
+
+    async def test_sign_master_key_with_device_skips_upload_when_signature_already_present(self):
+        cross_signing_module = self._load_cross_signing_module()
+
+        class DummyClient:
+            def __init__(self):
+                self.upload_payloads = []
+
+            async def query_keys(self, device_keys, timeout=10000):
+                return {
+                    "device_keys": {
+                        "@bot:example.org": {
+                            "BOT123": {
+                                "keys": {
+                                    "ed25519:BOT123": "device-ed25519",
+                                    "curve25519:BOT123": "device-curve25519",
+                                }
+                            }
+                        }
+                    },
+                    "master_keys": {
+                        "@bot:example.org": {
+                            "user_id": "@bot:example.org",
+                            "usage": ["master"],
+                            "keys": {"ed25519:MASTERKEY": "MASTERKEY"},
+                            "signatures": {
+                                "@bot:example.org": {
+                                    "ed25519:BOT123": "device-signature"
+                                }
+                            },
+                        }
+                    },
+                }
+
+            async def upload_signatures(self, signatures):
+                self.upload_payloads.append(signatures)
+                return {"failures": {}}
+
+        class DummyOlm:
+            class _Account:
+                def sign(self, payload):
+                    return types.SimpleNamespace(to_base64=lambda: "device-signature")
+
+            def __init__(self):
+                self._account = self._Account()
+                self.device_id = "BOT123"
+
+            def get_identity_keys(self):
+                return {
+                    "ed25519:BOT123": "device-ed25519",
+                    "curve25519:BOT123": "device-curve25519",
+                }
+
+        cross_signing = cross_signing_module.CrossSigning(
+            client=DummyClient(),
+            user_id="@bot:example.org",
+            device_id="BOT123",
+            olm_machine=DummyOlm(),
+        )
+        cross_signing._master_key = "MASTERKEY"
+
+        ok = await cross_signing.sign_master_key_with_device("@bot:example.org")
+
+        self.assertTrue(ok)
+        self.assertEqual(cross_signing.client.upload_payloads, [])
 
     async def test_sign_device_returns_false_when_server_reports_failures(self):
         cross_signing_module = self._load_cross_signing_module()
