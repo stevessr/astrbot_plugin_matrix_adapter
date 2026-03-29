@@ -732,7 +732,35 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
                 "rel_type": "m.thread",
                 "event_id": "$root:example.org",
                 "m.in_reply_to": {"event_id": "$reply:example.org"},
-                "is_falling_back": True,
+                "is_falling_back": False,
+            },
+        )
+
+    async def test_send_content_marks_explicit_root_thread_reply_as_non_fallback(self):
+        common_sender = load_module("sender.handlers.common")
+
+        class FakeClient:
+            async def send_message(self, **kwargs):
+                return kwargs
+
+        response = await common_sender.send_content(
+            client=FakeClient(),
+            content={"msgtype": "m.text", "body": "hello"},
+            room_id="!room:example.org",
+            reply_to="$root:example.org",
+            thread_root="$root:example.org",
+            use_thread=True,
+            is_encrypted_room=False,
+            e2ee_manager=None,
+        )
+
+        self.assertEqual(
+            response["content"]["m.relates_to"],
+            {
+                "rel_type": "m.thread",
+                "event_id": "$root:example.org",
+                "m.in_reply_to": {"event_id": "$root:example.org"},
+                "is_falling_back": False,
             },
         )
 
@@ -803,6 +831,82 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(captured["content"]["formatted_body"], "thread")
         self.assertNotIn("> <@alice:example.org>", captured["content"]["body"])
         self.assertNotIn("mx-reply", captured["content"]["formatted_body"])
+        self.assertEqual(
+            captured["content"]["m.mentions"],
+            {"user_ids": ["@alice:example.org"]},
+        )
+
+    async def test_send_plain_adds_reply_sender_and_target_mentions(self):
+        module_name = f"{PACKAGE_NAME}.sender.handlers.plain"
+        markdown_utils_name = f"{PACKAGE_NAME}.utils.markdown_utils"
+        sys.modules.pop(module_name, None)
+        sys.modules.pop(markdown_utils_name, None)
+
+        bleach_stub = types.ModuleType("bleach")
+        bleach_stub.clean = lambda html, **kwargs: html
+
+        markdown_it_stub = types.ModuleType("markdown_it")
+
+        class _MarkdownIt:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def render(self, text):
+                return text
+
+        markdown_it_stub.MarkdownIt = _MarkdownIt
+
+        with mock.patch.dict(
+            sys.modules,
+            {"bleach": bleach_stub, "markdown_it": markdown_it_stub},
+        ):
+            plain_sender = load_module("sender.handlers.plain")
+
+        plain_cls = sys.modules["astrbot.api.message_components"].Plain
+        captured = {}
+
+        async def fake_send_content(
+            client,
+            content,
+            room_id,
+            reply_to,
+            thread_root,
+            use_thread,
+            is_encrypted_room,
+            e2ee_manager,
+            msg_type="m.room.message",
+        ):
+            captured["content"] = content
+            return {"event_id": "$reply"}
+
+        with mock.patch.object(plain_sender, "send_content", new=fake_send_content):
+            await plain_sender.send_plain(
+                client=types.SimpleNamespace(user_id="@bot:example.org"),
+                segment=plain_cls("reply"),
+                room_id="!room:example.org",
+                reply_to="$reply:example.org",
+                thread_root=None,
+                use_thread=False,
+                original_message_info={
+                    "sender": "@alice:example.org",
+                    "body": "quoted text",
+                    "mentions": {
+                        "user_ids": [
+                            "@alice:example.org",
+                            "@carol:example.org",
+                            "@bot:example.org",
+                        ]
+                    },
+                },
+                is_encrypted_room=False,
+                e2ee_manager=None,
+                use_notice=False,
+            )
+
+        self.assertEqual(
+            captured["content"]["m.mentions"],
+            {"user_ids": ["@alice:example.org", "@carol:example.org"]},
+        )
 
 
 class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):

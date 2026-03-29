@@ -50,6 +50,7 @@ class MatrixAdapterSendMixin:
                         original_message_info = {
                             "sender": resp.get("sender", ""),
                             "body": resp.get("content", {}).get("body", ""),
+                            "mentions": resp.get("content", {}).get("m.mentions", {}),
                         }
 
                         if "content" in resp:

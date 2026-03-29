@@ -13,10 +13,11 @@ async def send_content(
     msg_type: str = "m.room.message",
 ) -> dict | None:
     if use_thread and thread_root:
+        is_reply_within_thread = reply_to is not None
         content["m.relates_to"] = {
             "rel_type": "m.thread",
             "event_id": thread_root,
-            "is_falling_back": True,
+            "is_falling_back": not is_reply_within_thread,
             "m.in_reply_to": {"event_id": reply_to or thread_root},
         }
     elif reply_to:

@@ -156,6 +156,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                     original_message_info = {
                         "sender": resp.get("sender", ""),
                         "body": resp.get("content", {}).get("body", ""),
+                        "mentions": resp.get("content", {}).get("m.mentions", {}),
                     }
 
                     # 检查被回复消息是否已经是嘟文串的一部分
