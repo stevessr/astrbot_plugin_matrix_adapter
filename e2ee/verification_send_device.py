@@ -43,7 +43,40 @@ class SASVerificationSendDeviceMixin:
                     methods.append(method)
         return methods
 
-    def _get_verification_keys_to_mac(self) -> dict[str, str]:
+    async def _local_device_trusts_own_master_key(self, session: dict | None = None) -> bool:
+        if isinstance(session, dict):
+            cached = session.get("local_device_trusts_master")
+            if isinstance(cached, bool):
+                return cached
+
+        client = getattr(self, "client", None)
+        if not client or not hasattr(client, "query_keys"):
+            return False
+
+        try:
+            response = await client.query_keys({self.user_id: []})
+            trust_checker = getattr(self, "_device_trusts_master_key", None)
+            if callable(trust_checker):
+                trusts_master = bool(
+                    trust_checker(response, self.user_id, self.device_id)
+                )
+            else:
+                master_key = (response.get("master_keys") or {}).get(self.user_id) or {}
+                signatures = (master_key.get("signatures") or {}).get(self.user_id) or {}
+                trusts_master = f"ed25519:{self.device_id}" in signatures
+
+            if isinstance(session, dict):
+                session["local_device_trusts_master"] = trusts_master
+            return trusts_master
+        except Exception as e:
+            logger.debug(f"[E2EE-Verify] 查询当前设备主密钥信任状态失败：{e}")
+            return False
+
+    async def _get_verification_keys_to_mac(
+        self,
+        other_user: str | None = None,
+        session: dict | None = None,
+    ) -> dict[str, str]:
         keys_to_mac: dict[str, str] = {}
 
         if self.olm:
@@ -53,7 +86,15 @@ class SASVerificationSendDeviceMixin:
 
         cross_signing = getattr(getattr(self, "e2ee_manager", None), "_cross_signing", None)
         master_key = getattr(cross_signing, "master_key", None)
-        if isinstance(master_key, str) and master_key:
+        include_master_key = False
+        if other_user == self.user_id:
+            # Match mature-client self-verification behavior:
+            # the session that still does not trust its own identity includes the
+            # master key in MAC, while the already-trusted device only MACs its device key.
+            include_master_key = not (
+                await self._local_device_trusts_own_master_key(session)
+            )
+        if include_master_key and isinstance(master_key, str) and master_key:
             keys_to_mac[f"ed25519:{master_key}"] = master_key
 
         return keys_to_mac
@@ -277,7 +318,10 @@ class SASVerificationSendDeviceMixin:
         sas_bytes = session.get("sas_bytes", b"\x00" * 32)
 
         # 生成 MAC 的基础密钥
-        keys_to_mac = self._get_verification_keys_to_mac()
+        keys_to_mac = await self._get_verification_keys_to_mac(
+            other_user=to_user,
+            session=session,
+        )
 
         if not keys_to_mac:
             logger.warning("[E2EE-Verify] 缺少可用于发送 MAC 的本地身份密钥")

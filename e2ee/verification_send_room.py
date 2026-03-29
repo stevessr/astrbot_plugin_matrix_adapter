@@ -233,11 +233,14 @@ class SASVerificationSendRoomMixin:
         """发送房间内 MAC - 使用 HKDF-HMAC-SHA256.v2"""
         established_sas = session.get("established_sas")
         sas_bytes = session.get("sas_bytes", b"\x00" * 32)
-        keys_to_mac = self._get_verification_keys_to_mac()
 
         # Get their user and device info from session
         to_user = session.get("sender")
         to_device = session.get("from_device", session.get("their_device", ""))
+        keys_to_mac = await self._get_verification_keys_to_mac(
+            other_user=to_user,
+            session=session,
+        )
 
         if not keys_to_mac:
             logger.warning("[E2EE-Verify] 缺少可用于发送房间内 MAC 的本地身份密钥")

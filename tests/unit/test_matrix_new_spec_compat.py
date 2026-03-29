@@ -2523,17 +2523,22 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manager._cross_signing.persist_calls, 1)
         self.assertEqual(manager.calls, [("@bot:example.org", "BOT123")])
 
-    async def test_send_mac_includes_device_and_master_key(self):
+    async def test_send_mac_for_other_user_includes_only_device_key(self):
         send_module = load_module("e2ee.verification_send_device")
 
         class DummyEstablishedSas:
             def calculate_mac(self, message, info):
                 return f"mac::{message}::{info}"
 
+        class DummyClient:
+            async def query_keys(self, _device_keys):
+                raise AssertionError("query_keys should not be called for other-user MACs")
+
         class DummyVerifier(send_module.SASVerificationSendDeviceMixin):
             def __init__(self):
                 self.user_id = "@bot:example.org"
                 self.device_id = "BOT123"
+                self.client = DummyClient()
                 self.olm = types.SimpleNamespace(ed25519_key="device-ed25519")
                 self.e2ee_manager = types.SimpleNamespace(
                     _cross_signing=types.SimpleNamespace(master_key="MASTERKEY")
@@ -2554,8 +2559,69 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((to_user, to_device), ("@alice:example.org", "DEV456"))
 
         device_key_id = "ed25519:BOT123"
-        master_key_id = "ed25519:MASTERKEY"
         base_info = "MATRIX_KEY_VERIFICATION_MAC@bot:example.orgBOT123@alice:example.orgDEV456txn123"
+        key_ids_csv = device_key_id
+
+        self.assertEqual(
+            content,
+            {
+                "transaction_id": "txn123",
+                "mac": {
+                    device_key_id: f"mac::device-ed25519::{base_info}{device_key_id}",
+                },
+                "keys": f"mac::{key_ids_csv}::{base_info}KEY_IDS",
+            },
+        )
+
+    async def test_send_mac_for_same_user_untrusted_device_includes_master_key(self):
+        send_module = load_module("e2ee.verification_send_device")
+
+        class DummyEstablishedSas:
+            def calculate_mac(self, message, info):
+                return f"mac::{message}::{info}"
+
+        class DummyClient:
+            async def query_keys(self, _device_keys):
+                return {
+                    "master_keys": {
+                        "@bot:example.org": {
+                            "signatures": {
+                                "@bot:example.org": {
+                                    "ed25519:OTHER": "sig",
+                                }
+                            }
+                        }
+                    }
+                }
+
+        class DummyVerifier(send_module.SASVerificationSendDeviceMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT123"
+                self.client = DummyClient()
+                self.olm = types.SimpleNamespace(ed25519_key="device-ed25519")
+                self.e2ee_manager = types.SimpleNamespace(
+                    _cross_signing=types.SimpleNamespace(master_key="MASTERKEY")
+                )
+                self.sent = []
+
+            async def _send_to_device(self, event_type, to_user, to_device, content):
+                self.sent.append((event_type, to_user, to_device, content))
+
+        verifier = DummyVerifier()
+        session = {"established_sas": DummyEstablishedSas()}
+
+        await verifier._send_mac("@bot:example.org", "DEV456", "txn123", session)
+
+        self.assertTrue(session["local_device_trusts_master"] is False)
+        self.assertEqual(len(verifier.sent), 1)
+        event_type, to_user, to_device, content = verifier.sent[0]
+        self.assertEqual(event_type, "m.key.verification.mac")
+        self.assertEqual((to_user, to_device), ("@bot:example.org", "DEV456"))
+
+        device_key_id = "ed25519:BOT123"
+        master_key_id = "ed25519:MASTERKEY"
+        base_info = "MATRIX_KEY_VERIFICATION_MAC@bot:example.orgBOT123@bot:example.orgDEV456txn123"
         key_ids_csv = ",".join(sorted([device_key_id, master_key_id]))
 
         self.assertEqual(
@@ -2570,13 +2636,27 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-    async def test_send_in_room_mac_includes_device_and_master_key(self):
+    async def test_send_in_room_mac_for_same_user_trusted_device_excludes_master_key(self):
         send_module = load_module("e2ee.verification_send_device")
         room_module = load_module("e2ee.verification_send_room")
 
         class DummyEstablishedSas:
             def calculate_mac(self, message, info):
                 return f"mac::{message}::{info}"
+
+        class DummyClient:
+            async def query_keys(self, _device_keys):
+                return {
+                    "master_keys": {
+                        "@bot:example.org": {
+                            "signatures": {
+                                "@bot:example.org": {
+                                    "ed25519:BOT123": "sig",
+                                }
+                            }
+                        }
+                    }
+                }
 
         class DummyVerifier(
             send_module.SASVerificationSendDeviceMixin,
@@ -2585,6 +2665,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             def __init__(self):
                 self.user_id = "@bot:example.org"
                 self.device_id = "BOT123"
+                self.client = DummyClient()
                 self.olm = types.SimpleNamespace(ed25519_key="device-ed25519")
                 self.e2ee_manager = types.SimpleNamespace(
                     _cross_signing=types.SimpleNamespace(master_key="MASTERKEY")
@@ -2599,7 +2680,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         verifier = DummyVerifier()
         session = {
             "established_sas": DummyEstablishedSas(),
-            "sender": "@alice:example.org",
+            "sender": "@bot:example.org",
             "from_device": "DEV456",
         }
 
@@ -2610,18 +2691,17 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(room_id, "!room:example.org")
         self.assertEqual(event_type, "m.key.verification.mac")
         self.assertEqual(transaction_id, "txn123")
+        self.assertTrue(session["local_device_trusts_master"])
 
         device_key_id = "ed25519:BOT123"
-        master_key_id = "ed25519:MASTERKEY"
-        base_info = "MATRIX_KEY_VERIFICATION_MAC@bot:example.orgBOT123@alice:example.orgDEV456txn123"
-        key_ids_csv = ",".join(sorted([device_key_id, master_key_id]))
+        base_info = "MATRIX_KEY_VERIFICATION_MAC@bot:example.orgBOT123@bot:example.orgDEV456txn123"
+        key_ids_csv = device_key_id
 
         self.assertEqual(
             content,
             {
                 "mac": {
                     device_key_id: f"mac::device-ed25519::{base_info}{device_key_id}",
-                    master_key_id: f"mac::MASTERKEY::{base_info}{master_key_id}",
                 },
                 "keys": f"mac::{key_ids_csv}::{base_info}KEY_IDS",
             },
