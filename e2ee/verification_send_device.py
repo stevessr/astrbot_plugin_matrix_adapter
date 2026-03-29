@@ -28,6 +28,21 @@ from .verification_utils import _canonical_json, _compute_hkdf
 
 
 class SASVerificationSendDeviceMixin:
+    def _get_verification_keys_to_mac(self) -> dict[str, str]:
+        keys_to_mac: dict[str, str] = {}
+
+        if self.olm:
+            device_key = getattr(self.olm, "ed25519_key", None)
+            if isinstance(device_key, str) and device_key:
+                keys_to_mac[f"ed25519:{self.device_id}"] = device_key
+
+        cross_signing = getattr(getattr(self, "e2ee_manager", None), "_cross_signing", None)
+        master_key = getattr(cross_signing, "master_key", None)
+        if isinstance(master_key, str) and master_key:
+            keys_to_mac[f"ed25519:{master_key}"] = master_key
+
+        return keys_to_mac
+
     @staticmethod
     def _normalize_algorithm_values(value: object) -> list[str]:
         if isinstance(value, str):
@@ -247,7 +262,11 @@ class SASVerificationSendDeviceMixin:
         sas_bytes = session.get("sas_bytes", b"\x00" * 32)
 
         # 生成 MAC 的基础密钥
-        our_device_key_id = f"ed25519:{self.device_id}"
+        keys_to_mac = self._get_verification_keys_to_mac()
+
+        if not keys_to_mac:
+            logger.warning("[E2EE-Verify] 缺少可用于发送 MAC 的本地身份密钥")
+            return
 
         if established_sas and VODOZEMAC_SAS_AVAILABLE:
             try:
@@ -255,48 +274,40 @@ class SASVerificationSendDeviceMixin:
                 # MATRIX_KEY_VERIFICATION_MAC + user_id + device_id + other_user_id + other_device_id + transaction_id + key_id
                 base_info = f"{INFO_PREFIX_MAC}{self.user_id}{self.device_id}{to_user}{to_device}{transaction_id}"
 
-                # 计算设备密钥的 MAC
-                if self.olm:
-                    device_key = self.olm.ed25519_key
-                    # MAC for the device key
-                    # vodozemac calculate_mac 直接返回 base64 字符串
-                    key_mac = established_sas.calculate_mac(
-                        device_key, (base_info + our_device_key_id)
+                key_ids = sorted(keys_to_mac.keys())
+                mac_content = {
+                    key_id: established_sas.calculate_mac(
+                        keys_to_mac[key_id], (base_info + key_id)
                     )
-                    # MAC for the sorted key ID list
-                    key_ids = ",".join(sorted([our_device_key_id]))
-                    keys_mac = established_sas.calculate_mac(
-                        key_ids, (base_info + "KEY_IDS")
-                    )
-                else:
-                    key_mac = base64.b64encode(
-                        hashlib.sha256(our_device_key_id.encode()).digest()
-                    ).decode()
-                    keys_mac = base64.b64encode(
-                        hashlib.sha256(our_device_key_id.encode()).digest()
-                    ).decode()
-
-                mac_content = {our_device_key_id: key_mac}
+                    for key_id in key_ids
+                }
+                keys_mac = established_sas.calculate_mac(
+                    ",".join(key_ids), (base_info + "KEY_IDS")
+                )
             except Exception as e:
                 logger.warning(f"[E2EE-Verify] vodozemac MAC 计算失败，使用回退：{e}")
                 # 回退实现
+                key_ids = sorted(keys_to_mac.keys())
                 mac_content = {
-                    our_device_key_id: base64.b64encode(
-                        _compute_hkdf(sas_bytes, b"", our_device_key_id.encode())
+                    key_id: base64.b64encode(
+                        _compute_hkdf(sas_bytes, b"", keys_to_mac[key_id].encode())
                     ).decode()
+                    for key_id in key_ids
                 }
                 keys_mac = base64.b64encode(
-                    hashlib.sha256(our_device_key_id.encode()).digest()
+                    hashlib.sha256(",".join(key_ids).encode()).digest()
                 ).decode()
         else:
             # 回退实现
+            key_ids = sorted(keys_to_mac.keys())
             mac_content = {
-                our_device_key_id: base64.b64encode(
-                    _compute_hkdf(sas_bytes, b"", our_device_key_id.encode())
+                key_id: base64.b64encode(
+                    _compute_hkdf(sas_bytes, b"", keys_to_mac[key_id].encode())
                 ).decode()
+                for key_id in key_ids
             }
             keys_mac = base64.b64encode(
-                hashlib.sha256(our_device_key_id.encode()).digest()
+                hashlib.sha256(",".join(key_ids).encode()).digest()
             ).decode()
 
         content = {
