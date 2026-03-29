@@ -547,12 +547,20 @@ class CrossSigning:
             )
         except MatrixAPIError as e:
             auth_data = getattr(e, "data", {}) if isinstance(e.data, dict) else {}
-            if self.password and auth_data.get("session"):
+            has_password = bool(self.password)
+            session_id = auth_data.get("session")
+            logger.info(
+                f"[E2EE-CrossSign] UIA 调试: status={e.status}, "
+                f"has_password={has_password}, "
+                f"session={session_id!r}, "
+                f"auth_data_keys={list(auth_data.keys()) if isinstance(auth_data, dict) else 'NOT_DICT'}"
+            )
+            if has_password and session_id:
                 auth_payload = {
                     "type": "m.login.password",
                     "user": self.user_id,
                     "password": self.password,
-                    "session": auth_data.get("session"),
+                    "session": session_id,
                 }
                 try:
                     await self.client.upload_signing_keys(
@@ -576,8 +584,13 @@ class CrossSigning:
                     old_self_signing_priv, old_self_signing_key,
                     old_user_signing_priv, old_user_signing_key,
                 )
+                reason = []
+                if not has_password:
+                    reason.append("未配置 matrix_password")
+                if not session_id:
+                    reason.append("服务器 UIA 响应中缺少 session 字段")
                 logger.warning(
-                    f"[E2EE-CrossSign] 上传交叉签名密钥失败（可能需要密码 UIA）：{e}"
+                    f"[E2EE-CrossSign] 上传交叉签名密钥失败（{', '.join(reason)}）：{e}"
                 )
                 raise
 
@@ -741,6 +754,16 @@ class CrossSigning:
                 target_user_id: {signing_key_id: signature}
             }
 
+            # 验证：上传载荷剥离 signatures/unsigned 后的规范化 JSON
+            # 应该与签名时使用的规范化 JSON 完全一致
+            verify_payload = copy.deepcopy(master_key_to_upload)
+            verify_payload.pop("signatures", None)
+            verify_payload.pop("unsigned", None)
+            verify_canonical = self._canonical(verify_payload)
+            logger.info(
+                f"[E2EE-CrossSign] 上传载荷验证 canonical JSON：{verify_canonical}"
+            )
+
             async def _verify_uploaded_master_signature() -> bool:
                 refreshed = await self.client.query_keys({target_user_id: []})
                 refreshed_master_key = (
@@ -751,7 +774,7 @@ class CrossSigning:
                 )
                 return signing_key_id in refreshed_signatures
 
-            logger.debug(
+            logger.info(
                 "[E2EE-CrossSign] 上传 master key 设备签名："
                 f"master={master_key_id} signer={signing_key_id}"
             )
@@ -778,7 +801,13 @@ class CrossSigning:
         payload_to_sign.pop("signatures", None)
         payload_to_sign.pop("unsigned", None)
         canonical = self._canonical(payload_to_sign)
+        logger.info(
+            f"[E2EE-CrossSign] _sign_device_object 规范化 JSON：{canonical}"
+        )
         signature = self.olm._account.sign(canonical.encode("utf-8")).to_base64()
+        logger.info(
+            f"[E2EE-CrossSign] _sign_device_object 签名：{signature}"
+        )
         return signature
 
     async def verify_user(self, target_user_id: str):
