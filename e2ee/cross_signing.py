@@ -715,6 +715,7 @@ class CrossSigning:
                 logger.debug("[E2EE-CrossSign] master key 结构无效，无法添加设备签名")
                 return False
             master_key_id, _master_key_value = next(iter(keys.items()))
+            master_pubkey_b64 = _master_key_value
 
             (
                 matches,
@@ -734,7 +735,7 @@ class CrossSigning:
 
             signing_key_id = self.device_key_id
             signature = self._sign_device_object(master_key)
-            logger.debug(
+            logger.info(
                 "[E2EE-CrossSign] 签名诊断信息：\n"
                 f"  local_device_ed25519={local_ed25519}\n"
                 f"  server_device_ed25519={server_ed25519}\n"
@@ -742,6 +743,7 @@ class CrossSigning:
                 f"  device_id(olm)={self.olm.device_id}\n"
                 f"  device_id(self)={self.device_id}\n"
                 f"  master_key_id={master_key_id}\n"
+                f"  master_pubkey_b64={master_pubkey_b64}\n"
                 f"  signature={signature}"
             )
 
@@ -780,7 +782,7 @@ class CrossSigning:
             )
 
             ok = await self._upload_signature_and_confirm(
-                {target_user_id: {master_key_id: master_key_to_upload}},
+                {target_user_id: {master_pubkey_b64: master_key_to_upload}},
                 _verify_uploaded_master_signature,
                 "master key 设备签名 ",
             )
@@ -808,6 +810,23 @@ class CrossSigning:
         logger.info(
             f"[E2EE-CrossSign] _sign_device_object 签名：{signature}"
         )
+
+        # 本地验证签名（使用 nacl，与 Synapse 服务器相同逻辑）
+        try:
+            import nacl.signing
+            ed25519_pub_b64 = self.olm.ed25519_key
+            pub_bytes = base64.b64decode(ed25519_pub_b64 + "=" * (3 - (len(ed25519_pub_b64) + 3) % 4))
+            sig_bytes = base64.b64decode(signature + "=" * (3 - (len(signature) + 3) % 4))
+            verify_key = nacl.signing.VerifyKey(pub_bytes)
+            verify_key.verify(canonical.encode("utf-8"), sig_bytes)
+            logger.info(
+                f"[E2EE-CrossSign] 本地签名验证通过 ✅ (ed25519_key={ed25519_pub_b64})"
+            )
+        except Exception as e:
+            logger.warning(
+                f"[E2EE-CrossSign] 本地签名验证失败 ❌：{e} (ed25519_key={self.olm.ed25519_key})"
+            )
+
         return signature
 
     async def verify_user(self, target_user_id: str):
@@ -838,10 +857,11 @@ class CrossSigning:
         if not keys:
             logger.debug("[E2EE-CrossSign] 目标用户 master key 格式无效")
             return
-        key_id = next(iter(keys))
+        key_id, key_value = next(iter(keys.items()))
+        master_pubkey_b64 = key_value
 
-        # /keys/signatures/upload 请求格式：{"signatures": {user_id: {key_id: master_key}}}
+        # /keys/signatures/upload 请求格式：{"signatures": {user_id: {key_value: master_key}}}
         await self.client.upload_signatures(
-            signatures={target_user_id: {key_id: master_key}}
+            signatures={target_user_id: {master_pubkey_b64: master_key}}
         )
         logger.debug(f"[E2EE-CrossSign] 已验证用户：{target_user_id}")
