@@ -1,5 +1,10 @@
 # Changelog
 
+## unreleased
+- 现在重新登陆会更换设备 ID 了，这可能会减少很多问题
+- 迁移到统一 webhook 作为登录回调
+- 现在看起来同账号的其他设备可以信任自己了
+
 ## 0.3.5
 
 - compat: OAuth2 discovery 现在优先使用 `/_matrix/client/v1/auth_metadata`，默认请求 stable Matrix API / device scopes。
@@ -7,7 +12,7 @@
 - compat: E2EE 密钥恢复补强 `m.dehydrated_device` / `org.matrix.msc2697.dehydrated_device` 双栈 fallback。
 - refactor: centralize device ID masking, optimize message handler lookup, and extract room state persistence logic.
 - 现在提供 SSO 二维码生成支持
-- 补全俄语反应
+- 补全俄语翻译
 
 ## 0.3.4
 - 修复之前重构破坏的 E2EE 内部属性
