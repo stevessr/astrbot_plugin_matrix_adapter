@@ -89,6 +89,7 @@ def _normalize_pgsql_table_prefix(value) -> str:
     return "matrix_store"
 
 from .utils import parse_bool
+
 _normalize_bool = parse_bool
 
 

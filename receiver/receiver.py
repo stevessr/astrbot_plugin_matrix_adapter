@@ -3,10 +3,7 @@ Matrix 消息接收组件
 """
 
 import asyncio
-
-
 import mimetypes
-import string
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path

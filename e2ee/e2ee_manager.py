@@ -12,8 +12,8 @@ from astrbot.api import logger
 
 from ..plugin_config import get_plugin_config
 from ..storage_backend import build_folder_namespace
-from ..utils.utils import mask_device_id
 from ..storage_paths import MatrixStoragePaths
+from ..utils.utils import mask_device_id
 from .crypto_store import CryptoStore
 from .e2ee_manager_decrypt import E2EEManagerDecryptMixin
 from .e2ee_manager_keys import E2EEManagerKeysMixin

@@ -9,7 +9,6 @@ from astrbot.api.message_components import Record
 
 from .common import send_content
 
-
 UNSTABLE_AUDIO_KEY = "org.matrix.msc1767.audio"
 UNSTABLE_VOICE_KEY = "org.matrix.msc3245.voice"
 

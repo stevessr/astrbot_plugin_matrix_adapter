@@ -12,9 +12,9 @@ from astrbot.api import logger
 
 from ..constants import MAX_PROCESSED_MESSAGES_1000, TIMESTAMP_BUFFER_MS_1000
 from ..plugin_config import get_plugin_config
+from ..utils import parse_bool
 from .event_processor_members import MatrixEventProcessorMembers
 from .event_processor_streams import MatrixEventProcessorStreams
-from ..utils import parse_bool
 
 if TYPE_CHECKING:
     from ..e2ee import E2EEManager

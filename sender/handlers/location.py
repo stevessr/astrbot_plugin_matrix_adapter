@@ -2,7 +2,6 @@ from astrbot.api.message_components import Location
 
 from .common import send_content
 
-
 DEFAULT_ASSET_TYPE = "m.self"
 STABLE_LOCATION_KEY = "m.location"
 STABLE_ASSET_KEY = "m.asset"

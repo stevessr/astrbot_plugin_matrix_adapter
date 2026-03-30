@@ -1,6 +1,5 @@
 from astrbot.api.message_components import Plain
 
-
 DEFAULT_ASSET_TYPE = "m.self"
 PIN_ASSET_TYPE = "m.pin"
 STABLE_LOCATION_EVENT_TYPE = "m.location"

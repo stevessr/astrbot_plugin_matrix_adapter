@@ -2,8 +2,8 @@ import asyncio
 import base64
 import copy
 import json
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Awaitable, Callable
 
 from astrbot.api import logger
 
@@ -170,7 +170,7 @@ class CrossSigning:
                 )
 
                 if not local_matches:
-                    restored = await self._restore_private_keys_from_secret_storage(
+                    await self._restore_private_keys_from_secret_storage(
                         server_master,
                         server_self_signing,
                         server_user_signing,

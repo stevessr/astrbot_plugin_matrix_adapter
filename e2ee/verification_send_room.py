@@ -18,7 +18,6 @@ from ..constants import (
 from .verification_constants import (
     HASHES,
     MESSAGE_AUTHENTICATION_CODES,
-    SAS_METHODS,
     SHORT_AUTHENTICATION_STRING,
     VODOZEMAC_SAS_AVAILABLE,
     Sas,

@@ -19,21 +19,21 @@ from .client import MatrixHTTPClient
 # 组件导入 - Updated to new structure
 from .config import MatrixConfig
 from .constants import (
+    DEFAULT_CONFIG,
     DEFAULT_MAX_UPLOAD_SIZE_BYTES,
+    LOGO_PATH,
 )
+from .outbound_tracker import MatrixOutboundTracker
 from .processors.event_handler import MatrixEventHandler
 from .processors.event_processor import MatrixEventProcessor
 from .receiver.receiver import MatrixReceiver
 from .runtime_state import MatrixRuntimeState
 from .sender.sender import MatrixSender
-from .outbound_tracker import MatrixOutboundTracker
 
 # Sticker 支持
 from .sticker import StickerAvailabilityStore, StickerPackSyncer, StickerStorage
 from .sync.sync_manager import MatrixSyncManager
 from .utils.utils import MatrixUtils
-
-from .constants import DEFAULT_CONFIG,LOGO_PATH
 
 
 def _cleanup_platform_registration(adapter_name: str = "matrix") -> None:
