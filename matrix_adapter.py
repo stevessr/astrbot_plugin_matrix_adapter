@@ -24,7 +24,9 @@ from .constants import (
 from .processors.event_handler import MatrixEventHandler
 from .processors.event_processor import MatrixEventProcessor
 from .receiver.receiver import MatrixReceiver
+from .runtime_state import MatrixRuntimeState
 from .sender.sender import MatrixSender
+from .outbound_tracker import MatrixOutboundTracker
 
 # Sticker 支持
 from .sticker import StickerAvailabilityStore, StickerPackSyncer, StickerStorage
@@ -139,6 +141,8 @@ class MatrixPlatformAdapter(
 
         # 使用自定义 HTTP 客户端（不依赖 matrix-nio）
         self.client = MatrixHTTPClient(homeserver=self._matrix_config.homeserver)
+        self.runtime_state = MatrixRuntimeState()
+        self.client.runtime_state = self.runtime_state
 
         # 使用新的存储路径逻辑
         from .storage_paths import MatrixStoragePaths
@@ -158,6 +162,29 @@ class MatrixPlatformAdapter(
         MatrixStoragePaths.ensure_directory(user_storage_dir, treat_as_file=False)
 
         self.storage_dir = str(user_storage_dir)
+        self.outbound_tracker = MatrixOutboundTracker(
+            user_storage_dir=user_storage_dir,
+            store_path=self._matrix_config.store_path,
+            backend=getattr(self._matrix_config, "storage_backend_config", None).backend
+            if getattr(self._matrix_config, "storage_backend_config", None)
+            else "json",
+            pgsql_dsn=getattr(
+                self._matrix_config, "storage_backend_config", None
+            ).pgsql_dsn
+            if getattr(self._matrix_config, "storage_backend_config", None)
+            else "",
+            pgsql_schema=getattr(
+                self._matrix_config, "storage_backend_config", None
+            ).pgsql_schema
+            if getattr(self._matrix_config, "storage_backend_config", None)
+            else "public",
+            pgsql_table_prefix=getattr(
+                self._matrix_config, "storage_backend_config", None
+            ).pgsql_table_prefix
+            if getattr(self._matrix_config, "storage_backend_config", None)
+            else "matrix_store",
+        )
+        self.client.outbound_tracker = self.outbound_tracker
 
         # 初始化认证（不再需要指定 token_store_path，会自动生成）
         self.auth = MatrixAuth(
@@ -258,6 +285,16 @@ class MatrixPlatformAdapter(
         self.sync_manager.set_account_data_callback(
             self.event_processor.process_account_data_events
         )
+        self.sync_manager.set_presence_callback(
+            self.event_processor.process_presence_events
+        )
+        self.sync_manager.set_device_lists_callback(
+            self.event_processor.process_device_lists
+        )
+        self.sync_manager.set_device_one_time_keys_count_callback(
+            self.event_processor.process_device_one_time_keys_count
+        )
+        self.sync_manager.on_sync = self._on_sync_response
         self.sync_manager.set_presence_callback(
             self.event_processor.process_presence_events
         )

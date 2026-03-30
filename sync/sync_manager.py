@@ -107,6 +107,12 @@ class MatrixSyncManager:
         self._sync_consecutive_failures: int = 0
         self._sync_request_task: asyncio.Task | None = None
         self._active_callback_tasks: set[asyncio.Task] = set()
+        self._last_sync_success_at: float | None = None
+        self._last_sync_failure_at: float | None = None
+        self._last_sync_error: str | None = None
+        self._sync_success_count: int = 0
+        self._sync_failure_count: int = 0
+        self._reconnect_requested: bool = False
 
         # Load saved sync token if available
         self._load_sync_token()
@@ -239,6 +245,7 @@ class MatrixSyncManager:
 
     def _reset_sync_failures(self) -> None:
         self._sync_consecutive_failures = 0
+        self._last_sync_error = None
 
     def _compute_sync_retry_delay(self) -> float:
         self._sync_consecutive_failures += 1
@@ -425,6 +432,9 @@ class MatrixSyncManager:
                     self._next_batch = sync_response.get("next_batch")
                     self._first_sync = False
                     self._reset_sync_failures()
+                    self._last_sync_success_at = asyncio.get_running_loop().time()
+                    self._sync_success_count += 1
+                    self._reconnect_requested = False
 
                     # Save sync token for resumption (throttled)
                     await self._save_sync_token()
@@ -568,6 +578,9 @@ class MatrixSyncManager:
                             self._active_callback_tasks.clear()
 
                 except MatrixAPIError as e:
+                    self._last_sync_failure_at = asyncio.get_running_loop().time()
+                    self._last_sync_error = str(e)
+                    self._sync_failure_count += 1
                     # Handle token expiration
                     if (
                         e.status == 401 or "M_UNKNOWN_TOKEN" in str(e)
@@ -599,11 +612,18 @@ class MatrixSyncManager:
                     logger.info("Sync loop interrupted by user")
                     raise
                 except asyncio.CancelledError:
+                    if self._reconnect_requested and self._running:
+                        logger.info("Matrix sync request cancelled for reconnect")
+                        self._reconnect_requested = False
+                        continue
                     if not self._running:
                         logger.info("Matrix sync request cancelled due to stop signal")
                         break
                     raise
                 except Exception as e:
+                    self._last_sync_failure_at = asyncio.get_running_loop().time()
+                    self._last_sync_error = str(e)
+                    self._sync_failure_count += 1
                     if not self._running:
                         logger.debug("Sync loop stopped while handling generic error")
                         break
@@ -627,6 +647,7 @@ class MatrixSyncManager:
     def stop(self):
         """Stop the sync loop"""
         self._running = False
+        self._reconnect_requested = False
         sync_task = self._sync_request_task
         if sync_task and not sync_task.done():
             sync_task.cancel()
@@ -670,3 +691,27 @@ class MatrixSyncManager:
         """Set the sync batch token (for resuming sync)"""
         self._next_batch = batch
         self._first_sync = False
+
+    def request_reconnect(self) -> bool:
+        """Interrupt the current /sync request and let the loop reconnect."""
+        if not self._running:
+            return False
+        self._reconnect_requested = True
+        sync_task = self._sync_request_task
+        if sync_task and not sync_task.done():
+            sync_task.cancel()
+        return True
+
+    def status_snapshot(self) -> dict:
+        return {
+            "running": self._running,
+            "next_batch": self._next_batch,
+            "first_sync": self._first_sync,
+            "consecutive_failures": self._sync_consecutive_failures,
+            "sync_success_count": self._sync_success_count,
+            "sync_failure_count": self._sync_failure_count,
+            "last_sync_success_loop_time": self._last_sync_success_at,
+            "last_sync_failure_loop_time": self._last_sync_failure_at,
+            "last_sync_error": self._last_sync_error,
+            "reconnect_requested": self._reconnect_requested,
+        }

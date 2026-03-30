@@ -41,9 +41,31 @@ class MessageMixin:
         Returns:
             Send response with event_id
         """
-        txn_id = f"{int(time.time() * 1000)}_{id(content)}"
+        txn_id = txn_id or f"{int(time.time() * 1000)}_{id(content)}"
+        tracker = getattr(self, "outbound_tracker", None)
+        runtime_state = getattr(self, "runtime_state", None)
+        if tracker:
+            tracker.record_attempt(
+                txn_id=txn_id,
+                action="send_message",
+                room_id=room_id,
+                event_type=msg_type,
+                content=content,
+            )
         endpoint = f"/_matrix/client/v3/rooms/{room_id}/send/{msg_type}/{txn_id}"
-        return await self._request("PUT", endpoint, data=content)
+        try:
+            response = await self._request("PUT", endpoint, data=content)
+        except Exception as e:
+            if tracker:
+                tracker.mark_failure(txn_id, e)
+            if runtime_state:
+                runtime_state.mark_send_failed(str(e))
+            raise
+        if tracker:
+            tracker.mark_success(txn_id, response)
+        if runtime_state:
+            runtime_state.mark_send_ok()
+        return response
 
     async def send_room_event(
         self,
@@ -63,9 +85,31 @@ class MessageMixin:
         Returns:
             Send response with event_id
         """
-        txn_id = f"txn_{int(time.time() * 1000)}"
+        txn_id = txn_id or f"txn_{int(time.time() * 1000)}"
+        tracker = getattr(self, "outbound_tracker", None)
+        runtime_state = getattr(self, "runtime_state", None)
+        if tracker:
+            tracker.record_attempt(
+                txn_id=txn_id,
+                action="send_room_event",
+                room_id=room_id,
+                event_type=event_type,
+                content=content,
+            )
         endpoint = f"/_matrix/client/v3/rooms/{room_id}/send/{event_type}/{txn_id}"
-        return await self._request("PUT", endpoint, data=content)
+        try:
+            response = await self._request("PUT", endpoint, data=content)
+        except Exception as e:
+            if tracker:
+                tracker.mark_failure(txn_id, e)
+            if runtime_state:
+                runtime_state.mark_send_failed(str(e))
+            raise
+        if tracker:
+            tracker.mark_success(txn_id, response)
+        if runtime_state:
+            runtime_state.mark_send_ok()
+        return response
 
     async def send_room_message(self, room_id: str, message: str) -> dict[str, Any]:
         """
@@ -238,11 +282,34 @@ class MessageMixin:
         """
         if txn_id is None:
             txn_id = f"redact_{int(time.time() * 1000)}"
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/redact/{event_id}/{txn_id}"
+        tracker = getattr(self, "outbound_tracker", None)
+        runtime_state = getattr(self, "runtime_state", None)
         data: dict[str, Any] = {}
         if reason:
             data["reason"] = reason
-        return await self._request("PUT", endpoint, data=data)
+        if tracker:
+            tracker.record_attempt(
+                txn_id=txn_id,
+                action="redact_event",
+                room_id=room_id,
+                event_type="m.room.redaction",
+                content=data,
+                metadata={"event_id": event_id, "reason": reason},
+            )
+        endpoint = f"/_matrix/client/v3/rooms/{room_id}/redact/{event_id}/{txn_id}"
+        try:
+            response = await self._request("PUT", endpoint, data=data)
+        except Exception as e:
+            if tracker:
+                tracker.mark_failure(txn_id, e)
+            if runtime_state:
+                runtime_state.mark_send_failed(str(e))
+            raise
+        if tracker:
+            tracker.mark_success(txn_id, response)
+        if runtime_state:
+            runtime_state.mark_send_ok()
+        return response
 
     async def report_event(
         self, room_id: str, event_id: str, score: int = 0, reason: str | None = None
