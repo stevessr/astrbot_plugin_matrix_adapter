@@ -175,7 +175,7 @@ class CryptoStore:
         except Exception as e:
             self._persist_slots.release()
             logger.warning(
-                f"提交加密存储任务失败 {operation}/{record_key}，回退同步写入: {e}"
+                f"提交加密存储任务失败 {operation}/{record_key}，回退同步写入：{e}"
             )
             job(*job_args)
 
@@ -337,7 +337,7 @@ class CryptoStore:
                 logger.debug(f"加载了 {len(self._device_keys)} 个用户的设备密钥")
 
         except Exception as e:
-            logger.error(f"加载加密存储失败: {e}")
+            logger.error(f"加载加密存储失败：{e}")
 
     # ========== Olm 账户 ==========
 

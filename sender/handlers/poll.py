@@ -27,7 +27,9 @@ def _build_poll_fallback_msc1767(question: str, answers: list[str]) -> str:
     return "\n".join(text_lines)
 
 
-def _build_extensible_text(body: str, mimetype: str | None = None) -> list[dict[str, str]]:
+def _build_extensible_text(
+    body: str, mimetype: str | None = None
+) -> list[dict[str, str]]:
     text = {"body": body}
     if mimetype:
         text["mimetype"] = mimetype

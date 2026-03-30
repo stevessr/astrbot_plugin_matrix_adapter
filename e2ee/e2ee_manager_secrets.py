@@ -429,7 +429,9 @@ class E2EEManagerSecretsMixin:
             elif secret_name == SECRET_CROSS_SIGNING_MASTER:
                 if self._cross_signing:
                     self._cross_signing.master_private_key = secret_bytes
-                    pending = getattr(self._cross_signing, "_pending_secret_requests", None)
+                    pending = getattr(
+                        self._cross_signing, "_pending_secret_requests", None
+                    )
                     if isinstance(pending, set):
                         pending.discard(secret_name)
                     self._cross_signing.persist_local_keys()
@@ -438,7 +440,9 @@ class E2EEManagerSecretsMixin:
             elif secret_name == SECRET_CROSS_SIGNING_SELF_SIGNING:
                 if self._cross_signing:
                     self._cross_signing.self_signing_private_key = secret_bytes
-                    pending = getattr(self._cross_signing, "_pending_secret_requests", None)
+                    pending = getattr(
+                        self._cross_signing, "_pending_secret_requests", None
+                    )
                     if isinstance(pending, set):
                         pending.discard(secret_name)
                     self._cross_signing.persist_local_keys()
@@ -448,7 +452,9 @@ class E2EEManagerSecretsMixin:
             elif secret_name == SECRET_CROSS_SIGNING_USER_SIGNING:
                 if self._cross_signing:
                     self._cross_signing.user_signing_private_key = secret_bytes
-                    pending = getattr(self._cross_signing, "_pending_secret_requests", None)
+                    pending = getattr(
+                        self._cross_signing, "_pending_secret_requests", None
+                    )
                     if isinstance(pending, set):
                         pending.discard(secret_name)
                     self._cross_signing.persist_local_keys()

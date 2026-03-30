@@ -78,7 +78,9 @@ async def handle_location(receiver, chain, event, event_type: str):
         or _extract_text_repr(content.get("org.matrix.msc1767.text"))
         or _extract_location_description(content, resolved_event_type)
     )
-    prefix = "[位置标记]" if _extract_asset_type(content) == PIN_ASSET_TYPE else "[位置]"
+    prefix = (
+        "[位置标记]" if _extract_asset_type(content) == PIN_ASSET_TYPE else "[位置]"
+    )
     if body and geo_uri:
         text = f"{prefix} {body} {geo_uri}"
     elif body:

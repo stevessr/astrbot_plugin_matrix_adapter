@@ -87,7 +87,8 @@ class CrossSigning:
         password: str | None = None,
         *,
         secret_storage=None,
-        request_secret_from_devices: Callable[[str], Awaitable[str | None]] | None = None,
+        request_secret_from_devices: Callable[[str], Awaitable[str | None]]
+        | None = None,
         repair_current_device_keys: Callable[[], Awaitable[None]] | None = None,
         namespace_key: str | None = None,
     ):
@@ -185,10 +186,12 @@ class CrossSigning:
                     )
 
                     if not local_matches:
-                        request_status = await self._request_missing_private_keys_from_devices(
-                            server_master,
-                            server_self_signing,
-                            server_user_signing,
+                        request_status = (
+                            await self._request_missing_private_keys_from_devices(
+                                server_master,
+                                server_self_signing,
+                                server_user_signing,
+                            )
                         )
                         if request_status == DEVICE_SECRET_REQUEST_PENDING:
                             logger.info(
@@ -251,7 +254,9 @@ class CrossSigning:
         return self._b64(data)
 
     def _canonical(self, obj: dict) -> str:
-        return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return json.dumps(
+            obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
 
     def _load_local_keys(self):
         if not self._storage_store:
@@ -430,8 +435,10 @@ class CrossSigning:
             try:
                 secret_bytes = await self.secret_storage.read_ssss_secret(secret_name)
             except AttributeError:
-                secret_bytes = await self.secret_storage.read_secret_from_secret_storage(
-                    secret_name
+                secret_bytes = (
+                    await self.secret_storage.read_secret_from_secret_storage(
+                        secret_name
+                    )
                 )
 
             decoded = self._decode_secret_bytes(secret_bytes or b"")
@@ -464,28 +471,19 @@ class CrossSigning:
         server_user_signing: str | None,
     ) -> list[str]:
         missing = []
-        if (
-            server_master
-            and (
-                not self._master_priv
-                or self._derive_public_key(self._master_priv) != server_master
-            )
+        if server_master and (
+            not self._master_priv
+            or self._derive_public_key(self._master_priv) != server_master
         ):
             missing.append(SECRET_CROSS_SIGNING_MASTER)
-        if (
-            server_self_signing
-            and (
-                not self._self_signing_priv
-                or self._derive_public_key(self._self_signing_priv) != server_self_signing
-            )
+        if server_self_signing and (
+            not self._self_signing_priv
+            or self._derive_public_key(self._self_signing_priv) != server_self_signing
         ):
             missing.append(SECRET_CROSS_SIGNING_SELF_SIGNING)
-        if (
-            server_user_signing
-            and (
-                not self._user_signing_priv
-                or self._derive_public_key(self._user_signing_priv) != server_user_signing
-            )
+        if server_user_signing and (
+            not self._user_signing_priv
+            or self._derive_public_key(self._user_signing_priv) != server_user_signing
         ):
             missing.append(SECRET_CROSS_SIGNING_USER_SIGNING)
         return missing
@@ -545,7 +543,9 @@ class CrossSigning:
                 continue
             payload = base64.b64encode(secret_bytes).decode("utf-8")
             try:
-                write_ok = await self.secret_storage.write_ssss_secret(secret_name, payload)
+                write_ok = await self.secret_storage.write_ssss_secret(
+                    secret_name, payload
+                )
             except AttributeError:
                 write_ok = await self.secret_storage.write_secret_to_secret_storage(
                     secret_name,
@@ -643,9 +643,9 @@ class CrossSigning:
                 if isinstance(self._self_signing_key, str) and self._self_signing_key
                 else None
             )
-            existing_signatures = (
-                (device_keys.get("signatures") or {}).get(self.user_id, {}) or {}
-            )
+            existing_signatures = (device_keys.get("signatures") or {}).get(
+                self.user_id, {}
+            ) or {}
             if signing_key_id and signing_key_id in existing_signatures:
                 logger.debug(
                     "[E2EE-CrossSign] 当前设备已存在 owner-sign，跳过重复重发布 device_keys"
@@ -661,7 +661,9 @@ class CrossSigning:
                 return
 
             await self.client.upload_keys(device_keys=republish_payload)
-            logger.debug("[E2EE-CrossSign] 已重发布当前设备的 device_keys 以刷新客户端缓存")
+            logger.debug(
+                "[E2EE-CrossSign] 已重发布当前设备的 device_keys 以刷新客户端缓存"
+            )
         except Exception as e:
             logger.debug(f"[E2EE-CrossSign] 重发布当前设备 device_keys 失败：{e}")
 
@@ -716,9 +718,7 @@ class CrossSigning:
             if priv and server_pub:
                 derived = self._derive_public_key(priv)
                 if derived and derived != server_pub:
-                    logger.debug(
-                        f"[E2EE-CrossSign] 本地 {name} 私钥与服务器公钥不匹配"
-                    )
+                    logger.debug(f"[E2EE-CrossSign] 本地 {name} 私钥与服务器公钥不匹配")
                     return False
         return True
 
@@ -795,7 +795,11 @@ class CrossSigning:
         failure_context: str,
     ) -> bool:
         upload_response = await self.client.upload_signatures(signatures=upload_payload)
-        failures = upload_response.get("failures") if isinstance(upload_response, dict) else None
+        failures = (
+            upload_response.get("failures")
+            if isinstance(upload_response, dict)
+            else None
+        )
         if isinstance(failures, dict) and failures:
             logger.warning(
                 f"[E2EE-CrossSign] {failure_context}上传被服务器拒绝：failures={failures}"
@@ -892,9 +896,12 @@ class CrossSigning:
 
     def _restore_keys(
         self,
-        master_priv, master_key,
-        self_signing_priv, self_signing_key,
-        user_signing_priv, user_signing_key,
+        master_priv,
+        master_key,
+        self_signing_priv,
+        self_signing_key,
+        user_signing_priv,
+        user_signing_key,
     ):
         """上传失败时恢复旧的密钥状态"""
         self._master_priv = master_priv
@@ -952,7 +959,10 @@ class CrossSigning:
                 if matches:
                     break
 
-                if not repaired_current_device and await self._repair_current_device_keys_once():
+                if (
+                    not repaired_current_device
+                    and await self._repair_current_device_keys_once()
+                ):
                     repaired_current_device = True
                     continue
 
@@ -967,9 +977,9 @@ class CrossSigning:
                 )
                 return False
 
-            existing_signatures = (
-                (device_keys.get("signatures") or {}).get(self.user_id, {}) or {}
-            )
+            existing_signatures = (device_keys.get("signatures") or {}).get(
+                self.user_id, {}
+            ) or {}
             if signing_key_id in existing_signatures:
                 logger.debug(
                     f"[E2EE-CrossSign] 设备已存在 owner-sign，跳过重复上传：{device_id}"
@@ -981,19 +991,16 @@ class CrossSigning:
             sig = self._sign(self._self_signing_priv, device_keys_to_upload)
             # 仅包含本次自签名密钥的签名，不携带旧的签名，
             # 避免服务器重新验证旧签名导致 M_INVALID_SIGNATURE。
-            device_keys_to_upload["signatures"] = {
-                self.user_id: {signing_key_id: sig}
-            }
+            device_keys_to_upload["signatures"] = {self.user_id: {signing_key_id: sig}}
 
             async def _verify_uploaded_device_signature() -> bool:
                 refreshed = await self.client.query_keys({self.user_id: [device_id]})
-                refreshed_device_keys = (
-                    (refreshed.get("device_keys") or {}).get(self.user_id, {}).get(device_id)
-                    or {}
-                )
+                refreshed_device_keys = (refreshed.get("device_keys") or {}).get(
+                    self.user_id, {}
+                ).get(device_id) or {}
                 refreshed_signatures = (
-                    (refreshed_device_keys.get("signatures") or {}).get(self.user_id, {})
-                )
+                    refreshed_device_keys.get("signatures") or {}
+                ).get(self.user_id, {})
                 return signing_key_id in refreshed_signatures
 
             upload_payload = {self.user_id: {device_id: device_keys_to_upload}}
@@ -1023,7 +1030,9 @@ class CrossSigning:
             logger.debug("[E2EE-CrossSign] 仅支持为当前账号的 master key 添加设备签名")
             return False
         if not self.olm or not self._master_key:
-            logger.debug("[E2EE-CrossSign] master key 或 olm 账户不可用，跳过设备签名 master key")
+            logger.debug(
+                "[E2EE-CrossSign] master key 或 olm 账户不可用，跳过设备签名 master key"
+            )
             return False
 
         try:
@@ -1042,15 +1051,26 @@ class CrossSigning:
 
                 usage = master_key.get("usage")
                 keys = master_key.get("keys")
-                if not isinstance(usage, list) or not isinstance(keys, dict) or not keys:
-                    logger.debug("[E2EE-CrossSign] master key 结构无效，无法添加设备签名")
+                if (
+                    not isinstance(usage, list)
+                    or not isinstance(keys, dict)
+                    or not keys
+                ):
+                    logger.debug(
+                        "[E2EE-CrossSign] master key 结构无效，无法添加设备签名"
+                    )
                     return False
 
                 if not device_keys:
-                    if not repaired_current_device and await self._repair_current_device_keys_once():
+                    if (
+                        not repaired_current_device
+                        and await self._repair_current_device_keys_once()
+                    ):
                         repaired_current_device = True
                         continue
-                    logger.warning("[E2EE-CrossSign] 未找到当前设备密钥，无法为 master key 添加设备签名")
+                    logger.warning(
+                        "[E2EE-CrossSign] 未找到当前设备密钥，无法为 master key 添加设备签名"
+                    )
                     return False
 
                 (
@@ -1063,7 +1083,10 @@ class CrossSigning:
                 if matches:
                     break
 
-                if not repaired_current_device and await self._repair_current_device_keys_once():
+                if (
+                    not repaired_current_device
+                    and await self._repair_current_device_keys_once()
+                ):
                     repaired_current_device = True
                     continue
 
@@ -1082,9 +1105,9 @@ class CrossSigning:
             master_pubkey_b64 = _master_key_value
 
             signing_key_id = self.device_key_id
-            existing_signatures = (
-                (master_key.get("signatures") or {}).get(target_user_id, {}) or {}
-            )
+            existing_signatures = (master_key.get("signatures") or {}).get(
+                target_user_id, {}
+            ) or {}
             if signing_key_id in existing_signatures:
                 logger.debug(
                     "[E2EE-CrossSign] master key 已存在当前设备签名，跳过重复上传"
@@ -1125,12 +1148,12 @@ class CrossSigning:
 
             async def _verify_uploaded_master_signature() -> bool:
                 refreshed = await self.client.query_keys({target_user_id: []})
-                refreshed_master_key = (
-                    (refreshed.get("master_keys") or {}).get(target_user_id) or {}
-                )
+                refreshed_master_key = (refreshed.get("master_keys") or {}).get(
+                    target_user_id
+                ) or {}
                 refreshed_signatures = (
-                    (refreshed_master_key.get("signatures") or {}).get(target_user_id, {})
-                )
+                    refreshed_master_key.get("signatures") or {}
+                ).get(target_user_id, {})
                 return signing_key_id in refreshed_signatures
 
             logger.debug(
@@ -1160,20 +1183,21 @@ class CrossSigning:
         payload_to_sign.pop("signatures", None)
         payload_to_sign.pop("unsigned", None)
         canonical = self._canonical(payload_to_sign)
-        logger.debug(
-            f"[E2EE-CrossSign] _sign_device_object 规范化 JSON：{canonical}"
-        )
+        logger.debug(f"[E2EE-CrossSign] _sign_device_object 规范化 JSON：{canonical}")
         signature = self.olm._account.sign(canonical.encode("utf-8")).to_base64()
-        logger.debug(
-            f"[E2EE-CrossSign] _sign_device_object 签名：{signature}"
-        )
+        logger.debug(f"[E2EE-CrossSign] _sign_device_object 签名：{signature}")
 
         # 本地验证签名（使用 nacl，与 Synapse 服务器相同逻辑）
         try:
             import nacl.signing
+
             ed25519_pub_b64 = getattr(self.olm, "ed25519_key", "")
-            pub_bytes = base64.b64decode(ed25519_pub_b64 + "=" * (3 - (len(ed25519_pub_b64) + 3) % 4))
-            sig_bytes = base64.b64decode(signature + "=" * (3 - (len(signature) + 3) % 4))
+            pub_bytes = base64.b64decode(
+                ed25519_pub_b64 + "=" * (3 - (len(ed25519_pub_b64) + 3) % 4)
+            )
+            sig_bytes = base64.b64decode(
+                signature + "=" * (3 - (len(signature) + 3) % 4)
+            )
             verify_key = nacl.signing.VerifyKey(pub_bytes)
             verify_key.verify(canonical.encode("utf-8"), sig_bytes)
             logger.debug(

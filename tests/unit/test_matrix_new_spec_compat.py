@@ -163,7 +163,7 @@ class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
         await poll_handler.handle_poll_start(None, chain, event, "m.poll.start")
-        self.assertEqual(chain.chain[0].text, "[Poll] 喝什么？ | Options: 茶, 咖啡")
+        self.assertEqual(chain.chain[0].text, "[Poll] 喝什么？ | Options: 茶，咖啡")
 
     async def test_stable_handler_accepts_extensible_poll_fields(self):
         poll_handler = load_module("receiver.handlers.poll")
@@ -183,7 +183,7 @@ class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
         await poll_handler.handle_poll_start(None, chain, event, "m.poll.start")
-        self.assertEqual(chain.chain[0].text, "[Poll] 喝什么？ | Options: 茶, 咖啡")
+        self.assertEqual(chain.chain[0].text, "[Poll] 喝什么？ | Options: 茶，咖啡")
 
     async def test_stable_response_handler_reads_m_selections(self):
         poll_handler = load_module("receiver.handlers.poll")

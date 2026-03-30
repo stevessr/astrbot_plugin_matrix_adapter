@@ -36,7 +36,7 @@ def parse_bool(value: object, default: bool = False) -> bool:
 def mask_device_id(device_id: str | None) -> str:
     """统一的 device_id 脱敏显示函数。
 
-    将 device_id 脱敏为 ``前2 + *** + 后2`` 的格式，
+    将 device_id 脱敏为 ``前 2 + *** + 后 2`` 的格式，
     用于日志输出。短于 4 字符的 ID 返回 ``***``。
     """
     if not isinstance(device_id, str) or not device_id:

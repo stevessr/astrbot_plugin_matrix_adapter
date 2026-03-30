@@ -138,7 +138,9 @@ class SASVerificationDisplayMixin:
             "请在对端设备界面展示二维码后，使用 /scan_device_qr 扫码完成验证。",
         ]
         if sender and device_id:
-            lines.append(f"命令：/scan_device_qr {sender} {device_id} <二维码图片路径或 base64 载荷>")
+            lines.append(
+                f"命令：/scan_device_qr {sender} {device_id} <二维码图片路径或 base64 载荷>"
+            )
 
         message = "\n".join(lines)
         try:

@@ -117,7 +117,9 @@ class MatrixPlugin(Star):
                 if len(matrix_platform_ids) > 1:
                     yield event.plain_result(
                         "检测到多个 Matrix 适配器，请在命令末尾指定 matrix_platform_id：\n"
-                        + "\n".join(f"- {platform_id}" for platform_id in matrix_platform_ids)
+                        + "\n".join(
+                            f"- {platform_id}" for platform_id in matrix_platform_ids
+                        )
                     )
                     return
                 target_platform_id = matrix_platform_ids[0]
@@ -129,7 +131,9 @@ class MatrixPlugin(Star):
             )
 
         if not e2ee_manager:
-            yield event.plain_result("端到端加密未启用、不可用，或指定的 Matrix 适配器不存在")
+            yield event.plain_result(
+                "端到端加密未启用、不可用，或指定的 Matrix 适配器不存在"
+            )
             return
 
         verification = getattr(e2ee_manager, "_verification", None)

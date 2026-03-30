@@ -38,7 +38,10 @@ class KeyBackupSSSSMixin:
         verify = getattr(self, "_verify_recovery_key", None)
 
         current_key = getattr(self, "_recovery_key_bytes", None)
-        if isinstance(current_key, (bytes, bytearray)) and len(current_key) == CRYPTO_KEY_SIZE_32:
+        if (
+            isinstance(current_key, (bytes, bytearray))
+            and len(current_key) == CRYPTO_KEY_SIZE_32
+        ):
             key_bytes = bytes(current_key)
             if not callable(verify):
                 return key_bytes
@@ -108,10 +111,14 @@ class KeyBackupSSSSMixin:
         logger.info(f"Found dehydrated device event: {dehydrated_device.keys()}")
         device_data = dehydrated_device.get("device_data")
         if not isinstance(device_data, dict):
-            device_data = dehydrated_device if isinstance(dehydrated_device, dict) else {}
+            device_data = (
+                dehydrated_device if isinstance(dehydrated_device, dict) else {}
+            )
 
         if not device_data:
-            logger.warning("Dehydrated device event does not contain usable device data")
+            logger.warning(
+                "Dehydrated device event does not contain usable device data"
+            )
             return None
 
         logger.info(f"Dehydrated device data keys: {device_data.keys()}")
@@ -152,14 +159,10 @@ class KeyBackupSSSSMixin:
                     )
                 elif "backup_key" in device_info:
                     backup_key = device_info["backup_key"]
-                    logger.info(
-                        "Found backup key in dehydrated device: backup_key"
-                    )
+                    logger.info("Found backup key in dehydrated device: backup_key")
                 elif "recovery_key" in device_info:
                     backup_key = device_info["recovery_key"]
-                    logger.info(
-                        "Found backup key in dehydrated device: recovery_key"
-                    )
+                    logger.info("Found backup key in dehydrated device: recovery_key")
 
                 if backup_key:
                     if isinstance(backup_key, str):
@@ -171,9 +174,7 @@ class KeyBackupSSSSMixin:
                             )
                             return extracted_key
                         except Exception:
-                            logger.warning(
-                                "Failed to decode backup key from device"
-                            )
+                            logger.warning("Failed to decode backup key from device")
                     elif isinstance(backup_key, bytes):
                         if len(backup_key) == CRYPTO_KEY_SIZE_32:
                             logger.info(
@@ -199,7 +200,10 @@ class KeyBackupSSSSMixin:
 
     def _get_configured_secret_storage_key_bytes(self) -> bytes | None:
         key_bytes = getattr(self, "_provided_secret_storage_key_bytes", None)
-        if isinstance(key_bytes, (bytes, bytearray)) and len(key_bytes) == CRYPTO_KEY_SIZE_32:
+        if (
+            isinstance(key_bytes, (bytes, bytearray))
+            and len(key_bytes) == CRYPTO_KEY_SIZE_32
+        ):
             return bytes(key_bytes)
         return None
 
@@ -239,7 +243,9 @@ class KeyBackupSSSSMixin:
 
         default_key_data = await self.client.get_global_account_data(SSSS_DEFAULT_KEY)
         key_id = (default_key_data or {}).get("key")
-        self._ssss_default_key_id = key_id if isinstance(key_id, str) and key_id else None
+        self._ssss_default_key_id = (
+            key_id if isinstance(key_id, str) and key_id else None
+        )
         return self._ssss_default_key_id
 
     async def get_secret_storage_key_data(
@@ -252,7 +258,9 @@ class KeyBackupSSSSMixin:
         if not refresh and key_id in cache:
             return cache[key_id]
 
-        key_data = await self.client.get_global_account_data(f"{SSSS_KEY_PREFIX}{key_id}")
+        key_data = await self.client.get_global_account_data(
+            f"{SSSS_KEY_PREFIX}{key_id}"
+        )
         if isinstance(key_data, dict):
             cache[key_id] = key_data
             return key_data
@@ -320,7 +328,9 @@ class KeyBackupSSSSMixin:
             return cached
 
         key_data = await self.get_secret_storage_key_data(key_id)
-        configured_key = provided_key_bytes or self._get_configured_secret_storage_key_bytes()
+        configured_key = (
+            provided_key_bytes or self._get_configured_secret_storage_key_bytes()
+        )
         if not configured_key:
             return None
 
@@ -332,7 +342,9 @@ class KeyBackupSSSSMixin:
                     encrypted_data,
                     secret_name="",
                 )
-                candidate = self._decode_secret_storage_key_payload(decrypted_key or b"")
+                candidate = self._decode_secret_storage_key_payload(
+                    decrypted_key or b""
+                )
                 if candidate and self._secret_storage_key_matches(candidate, key_data):
                     self._cache_secret_storage_key(key_id, candidate)
                     return candidate
@@ -426,7 +438,9 @@ class KeyBackupSSSSMixin:
                 secret_name=secret_name,
             )
         except Exception as e:
-            logger.error(f"读取 Secret Storage 中的 secret 失败：{secret_name} error={e}")
+            logger.error(
+                f"读取 Secret Storage 中的 secret 失败：{secret_name} error={e}"
+            )
             return None
 
     async def write_secret_to_secret_storage(
@@ -561,7 +575,9 @@ class KeyBackupSSSSMixin:
         aes_key = derived[:CRYPTO_KEY_SIZE_32]
         hmac_key = derived[CRYPTO_KEY_SIZE_32:64]
 
-        cipher = Cipher(algorithms.AES(aes_key), modes.CTR(iv), backend=default_backend())
+        cipher = Cipher(
+            algorithms.AES(aes_key), modes.CTR(iv), backend=default_backend()
+        )
         encryptor = cipher.encryptor()
         ciphertext = encryptor.update(plaintext) + encryptor.finalize()
 

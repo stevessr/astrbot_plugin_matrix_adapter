@@ -325,7 +325,7 @@ class MatrixReceiver:
     def _extract_cache_key_from_path(path: Path) -> str | None:
         """从缓存文件路径剥离后缀还原出 cache_key。"""
         name = path.name
-        idx = name.rfind('.')
+        idx = name.rfind(".")
         # 如果存在点且后缀长度在合理范围内（如 .jpg / .heic 等），则去掉后缀
         if idx > 0 and (len(name) - idx) <= 6:
             return name[:idx]

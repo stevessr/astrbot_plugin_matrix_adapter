@@ -24,7 +24,11 @@ class MessageMixin:
     """Message-related methods for Matrix client"""
 
     async def send_message(
-        self, room_id: str, msg_type: str, content: dict[str, Any]
+        self,
+        room_id: str,
+        msg_type: str,
+        content: dict[str, Any],
+        txn_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Send a message to a room
@@ -42,7 +46,11 @@ class MessageMixin:
         return await self._request("PUT", endpoint, data=content)
 
     async def send_room_event(
-        self, room_id: str, event_type: str, content: dict[str, Any]
+        self,
+        room_id: str,
+        event_type: str,
+        content: dict[str, Any],
+        txn_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Send a custom event to a room

@@ -100,7 +100,10 @@ class OAuth2CallbackServer:
             return f"Error: {str(e)}", 500
 
     async def start(self) -> str:
-        _log("info", f"OAuth2 callback will use AstrBot unified webhook: {self.redirect_uri}")
+        _log(
+            "info",
+            f"OAuth2 callback will use AstrBot unified webhook: {self.redirect_uri}",
+        )
         return self.redirect_uri
 
     async def stop(self):

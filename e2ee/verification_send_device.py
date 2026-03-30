@@ -31,7 +31,9 @@ from .verification_utils import _canonical_json, _compute_hkdf
 
 
 class SASVerificationSendDeviceMixin:
-    def _get_supported_verification_methods(self, other_user: str | None = None) -> list[str]:
+    def _get_supported_verification_methods(
+        self, other_user: str | None = None
+    ) -> list[str]:
         methods = list(SAS_METHODS)
         if other_user == self.user_id:
             for method in (
@@ -70,7 +72,9 @@ class SASVerificationSendDeviceMixin:
                 )
             else:
                 master_key = (response.get("master_keys") or {}).get(self.user_id) or {}
-                signatures = (master_key.get("signatures") or {}).get(self.user_id) or {}
+                signatures = (master_key.get("signatures") or {}).get(
+                    self.user_id
+                ) or {}
                 trusts_master = f"ed25519:{other_device}" in signatures
 
             if isinstance(session, dict):
@@ -92,7 +96,9 @@ class SASVerificationSendDeviceMixin:
             if isinstance(device_key, str) and device_key:
                 keys_to_mac[f"ed25519:{self.device_id}"] = device_key
 
-        cross_signing = getattr(getattr(self, "e2ee_manager", None), "_cross_signing", None)
+        cross_signing = getattr(
+            getattr(self, "e2ee_manager", None), "_cross_signing", None
+        )
         master_key = getattr(cross_signing, "master_key", None)
         include_master_key = False
         if other_user == self.user_id:

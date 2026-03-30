@@ -35,9 +35,9 @@ class E2EEManagerVerificationMixin:
             (response.get("self_signing_keys") or {}).get(self.user_id)
         )
         master_key = (response.get("master_keys") or {}).get(self.user_id) or {}
-        master_signatures = (
-            (master_key.get("signatures") or {}).get(self.user_id, {}) or {}
-        )
+        master_signatures = (master_key.get("signatures") or {}).get(
+            self.user_id, {}
+        ) or {}
 
         states: dict[str, dict[str, bool]] = {}
         for device_id, device_info in device_keys.items():
@@ -61,9 +61,7 @@ class E2EEManagerVerificationMixin:
     ) -> None:
         if not device_ids:
             return
-        logger.info(
-            f"{reason}：{self._format_masked_device_ids(device_ids)}"
-        )
+        logger.info(f"{reason}：{self._format_masked_device_ids(device_ids)}")
         logger.info(
             "这些同账号设备需要在对应客户端本地完成“验证此设备 / Use another device”，"
             "或使用恢复密钥恢复；当前设备不再主动发起通用 device verification。"
@@ -196,9 +194,11 @@ class E2EEManagerVerificationMixin:
             return
 
         cross_signing = getattr(self, "_cross_signing", None)
-        if cross_signing and hasattr(
-            cross_signing, "_query_server_cross_signing_state"
-        ) and hasattr(cross_signing, "_request_missing_private_keys_from_devices"):
+        if (
+            cross_signing
+            and hasattr(cross_signing, "_query_server_cross_signing_state")
+            and hasattr(cross_signing, "_request_missing_private_keys_from_devices")
+        ):
             try:
                 (
                     server_master,

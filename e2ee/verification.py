@@ -106,9 +106,7 @@ class SASVerification(
             from PIL import Image
             from pyzbar.pyzbar import decode
         except Exception as e:
-            raise RuntimeError(
-                "二维码图片解码依赖缺失，请安装 Pillow 和 pyzbar"
-            ) from e
+            raise RuntimeError("二维码图片解码依赖缺失，请安装 Pillow 和 pyzbar") from e
 
         with Image.open(image_path) as image:
             results = decode(image)
@@ -181,7 +179,9 @@ class SASVerification(
                 return txn_id, session
         return candidates[0]
 
-    async def scan_qr(self, user_id: str, device_id: str, qr_input: str) -> tuple[bool, str]:
+    async def scan_qr(
+        self, user_id: str, device_id: str, qr_input: str
+    ) -> tuple[bool, str]:
         """扫描同账号验证二维码并发送 reciprocate。"""
         try:
             payload = self._load_qr_payload_bytes(qr_input)
@@ -252,7 +252,10 @@ class SASVerification(
                 "[E2EE-Verify] 已发送 QR reciprocate："
                 f"device={device_id} txn={resolved_txn_id[:8]}..."
             )
-            return True, f"已发送 QR 扫码确认，等待对端 done（txn={resolved_txn_id[:8]}...）"
+            return (
+                True,
+                f"已发送 QR 扫码确认，等待对端 done（txn={resolved_txn_id[:8]}...）",
+            )
         except Exception as e:
             logger.warning(f"[E2EE-Verify] 扫描验证二维码失败：{e}")
             return False, str(e)
@@ -287,9 +290,15 @@ class SASVerification(
         is_in_room = session.get("is_in_room", False)
         room_id = session.get("room_id")
 
-        qr_pending_confirm = bool(session.get("qr_reciprocated") and not session.get("qr_confirmed"))
+        qr_pending_confirm = bool(
+            session.get("qr_reciprocated") and not session.get("qr_confirmed")
+        )
 
-        if not qr_pending_confirm and not session.get("sas_emojis") and not session.get("sas_decimals"):
+        if (
+            not qr_pending_confirm
+            and not session.get("sas_emojis")
+            and not session.get("sas_decimals")
+        ):
             return False, "SAS 尚未就绪，请稍后再试"
 
         try:

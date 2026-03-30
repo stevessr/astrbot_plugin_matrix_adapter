@@ -91,7 +91,7 @@ def _load_i18n_resources() -> dict[str, dict]:
     Returns:
         包含各语言 i18n 数据的字典
     """
-    LANG = ["zh-CN", "en-US","ru-RU"]
+    LANG = ["zh-CN", "en-US", "ru-RU"]
     i18n_data = {}
     try:
         for lang in LANG:

@@ -40,12 +40,13 @@ class E2EEManagerKeysMixin:
                         server_device = my_devices[self.device_id]
                         server_keys = server_device.get("keys", {})
                         local_keys = self._olm.get_identity_keys()
-                        if (
-                            server_keys.get(f"ed25519:{self.device_id}")
-                            != local_keys.get(f"ed25519:{self.device_id}")
-                            or server_keys.get(f"curve25519:{self.device_id}")
-                            != local_keys.get(f"curve25519:{self.device_id}")
-                        ):
+                        if server_keys.get(
+                            f"ed25519:{self.device_id}"
+                        ) != local_keys.get(
+                            f"ed25519:{self.device_id}"
+                        ) or server_keys.get(
+                            f"curve25519:{self.device_id}"
+                        ) != local_keys.get(f"curve25519:{self.device_id}"):
                             device_keys = self._olm.get_device_keys()
                             logger.warning(
                                 f"服务器上的设备 {self.device_id} 身份密钥与本地不一致，准备重新上传"
@@ -125,9 +126,13 @@ class E2EEManagerKeysMixin:
                             my_keys = my_device_info.get("keys", {})
                             local_keys = self._olm.get_identity_keys()
                             server_ed25519 = my_keys.get(f"ed25519:{self.device_id}")
-                            server_curve25519 = my_keys.get(f"curve25519:{self.device_id}")
+                            server_curve25519 = my_keys.get(
+                                f"curve25519:{self.device_id}"
+                            )
                             local_ed25519 = local_keys.get(f"ed25519:{self.device_id}")
-                            local_curve25519 = local_keys.get(f"curve25519:{self.device_id}")
+                            local_curve25519 = local_keys.get(
+                                f"curve25519:{self.device_id}"
+                            )
                             if (
                                 server_ed25519 == local_ed25519
                                 and server_curve25519 == local_curve25519

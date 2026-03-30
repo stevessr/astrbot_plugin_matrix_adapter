@@ -88,7 +88,9 @@ class E2EEManagerDecryptMixin:
 
             my_ciphertext = ciphertext_data.get(my_key)
             if not isinstance(my_ciphertext, dict):
-                logger.warning(f"Olm ciphertext for this device is not a dictionary: {type(my_ciphertext)}")
+                logger.warning(
+                    f"Olm ciphertext for this device is not a dictionary: {type(my_ciphertext)}"
+                )
                 return None
             message_type = my_ciphertext.get("type")
             body = my_ciphertext.get("body")
@@ -211,7 +213,9 @@ class E2EEManagerDecryptMixin:
                     f"本地缓存中未找到 sender_key，正在查询 {sender_user_id} 的设备..."
                 )
                 response = await self.client.query_keys({sender_user_id: []})
-                user_devices = (response.get("device_keys") or {}).get(sender_user_id) or {}
+                user_devices = (response.get("device_keys") or {}).get(
+                    sender_user_id
+                ) or {}
 
                 for device_id, device_info in user_devices.items():
                     keys = device_info.get("keys", {})

@@ -44,9 +44,7 @@ class E2EEManagerSessionsMixin:
             return
 
         changed_set = {
-            user_id
-            for user_id in changed_users
-            if user_id and isinstance(user_id, str)
+            user_id for user_id in changed_users if user_id and isinstance(user_id, str)
         }
         if not changed_set:
             return
