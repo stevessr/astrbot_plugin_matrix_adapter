@@ -10,6 +10,7 @@ from astrbot.api import logger
 from astrbot.api.star import StarTools
 
 from .storage_backend import StorageBackendConfig, normalize_storage_backend
+from .utils import parse_bool
 
 _DEFAULT_MEDIA_UPLOAD_BLOCKED_EXTENSIONS = (
     ".exe",
@@ -88,7 +89,6 @@ def _normalize_pgsql_table_prefix(value) -> str:
             return normalized
     return "matrix_store"
 
-from .utils import parse_bool
 
 _normalize_bool = parse_bool
 
