@@ -1,23 +1,4 @@
 {
-  "matrix_oauth2": {
-    "description": "OAuth2 配置",
-    "type": "object",
-    "items": {
-      "callback_port": {
-        "description": "OAuth2 回调端口（已弃用）",
-        "type": "int",
-        "hint": "已不再使用。Matrix OAuth2 / QR 登录回调固定复用 AstrBot 的 /api/platform/webhook/{webhook_uuid}。",
-        "min": 1,
-        "default": 8765
-      },
-      "callback_host": {
-        "description": "OAuth2 回调主机（已弃用）",
-        "type": "string",
-        "hint": "已不再使用。请改为配置 AstrBot 的 callback_api_base，让统一 Webhook 地址可被浏览器或移动设备访问。",
-        "default": "127.0.0.1"
-      }
-    }
-  },
   "matrix_media": {
     "description": "媒体配置",
     "type": "object",

@@ -235,8 +235,6 @@ class PluginConfig:
         self._media_upload_allowed_mime_rules: tuple[str, ...] = (
             _DEFAULT_MEDIA_UPLOAD_ALLOWED_MIME_RULES
         )
-        self._oauth2_callback_port: int = 8765
-        self._oauth2_callback_host: str = "127.0.0.1"
         # 消息类型配置
         self._force_message_type: str = "auto"
         # 数据存储后端（users/rooms/auth/sync/device_info + E2EE 本地状态）
@@ -268,38 +266,10 @@ class PluginConfig:
         self._e2ee_store_path = self._data_dir / "e2ee"
         self._media_cache_dir = self._data_dir / "media"
 
-        # 其他配置仍然允许配置（新 object 配置优先，兼容旧扁平键）
-        oauth2_obj = config.get("matrix_oauth2")
+        # 其他配置仍然允许配置
         media_obj = config.get("matrix_media")
         auto_download_obj = config.get("matrix_auto_download")
         media_rules_obj = config.get("matrix_media_rules")
-
-        oauth2_callback_port = None
-        oauth2_callback_host = None
-        if isinstance(oauth2_obj, dict):
-            if isinstance(oauth2_obj.get("callback_port"), (int, float, str)):
-                oauth2_callback_port = oauth2_obj.get("callback_port")
-            if isinstance(oauth2_obj.get("callback_host"), str):
-                oauth2_callback_host = oauth2_obj.get("callback_host")
-
-        if oauth2_callback_port is None:
-            oauth2_callback_port = config.get("matrix_oauth2_callback_port")
-        if oauth2_callback_host is None:
-            oauth2_callback_host = config.get(
-                "matrix_oauth2_callback_host", "127.0.0.1"
-            )
-
-        self._oauth2_callback_port = _normalize_non_negative_int(
-            oauth2_callback_port,
-            8765,
-            min_value=1,
-            config_key="matrix_oauth2.callback_port",
-        )
-        self._oauth2_callback_host = (
-            oauth2_callback_host
-            if isinstance(oauth2_callback_host, str)
-            else "127.0.0.1"
-        )
 
         http_timeout_seconds = None
         media_cache_gc_days = None
@@ -713,16 +683,6 @@ class PluginConfig:
     def media_upload_allowed_mime_rules(self) -> tuple[str, ...]:
         """媒体上传允许的 MIME 规则"""
         return self._media_upload_allowed_mime_rules
-
-    @property
-    def oauth2_callback_port(self) -> int:
-        """获取 OAuth2 回调服务器端口"""
-        return self._oauth2_callback_port
-
-    @property
-    def oauth2_callback_host(self) -> str:
-        """获取 OAuth2 回调服务器主机地址"""
-        return self._oauth2_callback_host
 
     @property
     def force_message_type(self) -> str:

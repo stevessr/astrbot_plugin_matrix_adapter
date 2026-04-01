@@ -224,14 +224,6 @@ class MatrixConfig:
         return get_plugin_config().media_cache_dir
 
     @property
-    def oauth2_callback_port(self) -> int:
-        return get_plugin_config().oauth2_callback_port
-
-    @property
-    def oauth2_callback_host(self) -> str:
-        return get_plugin_config().oauth2_callback_host
-
-    @property
     def auth_callback_url(self) -> str:
         if not self.webhook_uuid:
             raise ValueError("webhook_uuid is required for Matrix auth callback")
