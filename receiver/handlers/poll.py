@@ -83,7 +83,7 @@ async def handle_poll_start(receiver, chain, event, _: str):
 
     text = f"[Poll] {question}" if question else "[Poll]"
     if answers:
-        text += f" | Options: {', '.join(answers)}"
+        text += f" | Options: {','.join(answers)}"
 
     chain.chain.append(Plain(text))
 

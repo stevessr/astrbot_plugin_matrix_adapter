@@ -7,7 +7,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_NAME = "astrbot_plugin_matrix_adapter"
 
@@ -4453,6 +4452,143 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
 
         backup = DummyBackup()
         self.assertFalse(backup._verify_recovery_key(b"short", log_mismatch=False))
+
+    def test_encrypt_backup_data_roundtrip(self):
+        crypto_module = load_module("e2ee.key_backup_crypto")
+
+        if not getattr(crypto_module, "CRYPTO_AVAILABLE", False):
+            self.skipTest("cryptography unavailable")
+
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import x25519
+
+        private_key = x25519.X25519PrivateKey.generate()
+        private_key_bytes = private_key.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        public_key_bytes = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        plaintext = b'{"session_key":"secret"}'
+
+        ephemeral_key, ciphertext, mac = crypto_module._encrypt_backup_data(
+            public_key_bytes, plaintext
+        )
+        restored = crypto_module._decrypt_backup_data(
+            private_key_bytes, ephemeral_key, ciphertext, mac
+        )
+
+        self.assertEqual(len(ephemeral_key), 32)
+        self.assertEqual(restored, plaintext)
+
+    async def test_restore_room_keys_supports_legacy_aes_gcm_backup_format(self):
+        backup_module = load_module("e2ee.key_backup_backup")
+        crypto_module = load_module("e2ee.key_backup_crypto")
+
+        class DummyClient:
+            async def _request(self, method, endpoint, data=None, **kwargs):
+                return {
+                    "rooms": {
+                        "!room:example.org": {
+                            "sessions": {
+                                "sess1": {
+                                    "session_data": data_payload,
+                                }
+                            }
+                        }
+                    }
+                }
+
+        class DummyStore:
+            def __init__(self):
+                self.saved = []
+
+            def save_megolm_inbound(self, session_id, plaintext):
+                self.saved.append((session_id, plaintext))
+
+        class DummyOlm:
+            def add_megolm_inbound_session(
+                self, room_id, session_id, session_key, sender_key
+            ):
+                raise AssertionError("legacy payload should use store fallback")
+
+        class DummyBackup(backup_module.KeyBackupBackupMixin):
+            def __init__(self):
+                self.client = DummyClient()
+                self.store = DummyStore()
+                self.olm = DummyOlm()
+                self._backup_version = "1"
+                self._backup_auth_data = {}
+                self._recovery_key_bytes = b"R" * 32
+                self._encryption_key = b"1" * 32
+                self.persisted = []
+                self._last_restore_attempt_ts = 0
+
+            def _verify_recovery_key(self, key_bytes, log_mismatch=True):
+                return True
+
+            def use_recovery_key_bytes(self, key_bytes, persist=False):
+                self.persisted.append((key_bytes, persist))
+                return True
+
+        nonce, ciphertext = crypto_module._aes_encrypt(b"1" * 32, b"legacy-session")
+        mac = crypto_module.hmac.new(
+            b"1" * 32, ciphertext, crypto_module.hashlib.sha256
+        ).digest()[:8]
+        data_payload = {
+            "ciphertext": base64.b64encode(ciphertext).decode(),
+            "ephemeral": base64.b64encode(nonce).decode(),
+            "mac": base64.b64encode(mac).decode(),
+        }
+
+        backup = DummyBackup()
+        ok = await backup.restore_room_keys()
+
+        self.assertTrue(ok)
+        self.assertEqual(backup.store.saved, [("sess1", "legacy-session")])
+
+    async def test_upload_single_key_uses_matrix_backup_v1_format_when_public_key_exists(self):
+        backup_module = load_module("e2ee.key_backup_backup")
+
+        if not getattr(load_module("e2ee.key_backup_crypto"), "CRYPTO_AVAILABLE", False):
+            self.skipTest("cryptography unavailable")
+
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import x25519
+
+        backup_private_key = x25519.X25519PrivateKey.generate()
+        backup_public_key = backup_private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+
+        class DummyClient:
+            def __init__(self):
+                self.calls = []
+
+            async def _request(self, method, endpoint, data=None, **kwargs):
+                self.calls.append((method, endpoint, data))
+                return {}
+
+        class DummyBackup(backup_module.KeyBackupBackupMixin):
+            def __init__(self):
+                self.client = DummyClient()
+                self._backup_version = "1"
+                self._encryption_key = b"1" * 32
+                self._backup_auth_data = {
+                    "public_key": base64.b64encode(backup_public_key).decode().rstrip("="),
+                }
+
+        backup = DummyBackup()
+        ok = await backup.upload_single_key("!room:example.org", "sess1", "secret")
+
+        self.assertTrue(ok)
+        session_data = backup.client.calls[0][2]["session_data"]
+        ephemeral = backup._decode_unpadded_base64(session_data["ephemeral"])
+        self.assertEqual(len(ephemeral), 32)
 
     async def test_upload_single_key_falls_back_to_bulk_endpoint_on_unrecognized(self):
         backup_module = load_module("e2ee.key_backup_backup")

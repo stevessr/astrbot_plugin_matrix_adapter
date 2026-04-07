@@ -784,7 +784,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                         else:
                             # 解密失败
                             ciphertext_keys = list(content.get("ciphertext", {}).keys())
-                            logger.warning(
+                            logger.debug(
                                 f"解密 to_device 消息失败，ciphertext 目标密钥：{ciphertext_keys}"
                             )
                     except Exception as e:

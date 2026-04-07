@@ -27,3 +27,5 @@ psycopg[binary]>=3.1.18
 # AstrBot 核心依赖（由主项目提供，此处仅作参考）
 # astrbot-core
 # astrbot-api
+
+cryptography 

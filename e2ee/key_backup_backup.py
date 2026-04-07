@@ -8,6 +8,7 @@ import time
 from astrbot.api import logger
 
 from ..constants import (
+    AES_GCM_NONCE_LEN,
     CRYPTO_KEY_SIZE_32,
     MEGOLM_BACKUP_ALGO,
     RECOVERY_KEY_MAC_TRUNCATED_LEN,
@@ -16,15 +17,92 @@ from .key_backup_crypto import (
     VODOZEMAC_PK_AVAILABLE,
     Curve25519SecretKey,
     PkDecryption,
+    _aes_decrypt,
     _aes_encrypt,
     _compute_hkdf,
     _decode_recovery_key,
     _decrypt_backup_data,
     _encode_recovery_key,
+    _encrypt_backup_data,
 )
 
 
 class KeyBackupBackupMixin:
+    @staticmethod
+    def _decode_unpadded_base64(data: str) -> bytes:
+        padding = (-len(data)) % 4
+        if padding:
+            data += "=" * padding
+        try:
+            return base64.b64decode(data)
+        except Exception:
+            return base64.urlsafe_b64decode(data)
+
+    def _get_backup_public_key_bytes(self) -> bytes | None:
+        backup_auth_data = getattr(self, "_backup_auth_data", None)
+        public_key = backup_auth_data.get("public_key") if backup_auth_data else None
+        if not public_key:
+            return None
+
+        try:
+            key_bytes = self._decode_unpadded_base64(public_key)
+        except Exception as e:
+            logger.warning(f"解析备份公钥失败：{e}")
+            return None
+
+        if len(key_bytes) != CRYPTO_KEY_SIZE_32:
+            logger.warning(
+                f"备份公钥长度无效：期望 {CRYPTO_KEY_SIZE_32} 字节，实际 {len(key_bytes)} 字节"
+            )
+            return None
+        return key_bytes
+
+    def _build_encrypted_session_data(self, plaintext: bytes) -> dict:
+        backup_public_key = self._get_backup_public_key_bytes()
+        if backup_public_key:
+            ephemeral_key, ciphertext, mac = _encrypt_backup_data(
+                backup_public_key, plaintext
+            )
+            return {
+                "ciphertext": base64.b64encode(ciphertext).decode(),
+                "mac": base64.b64encode(mac).decode(),
+                "ephemeral": base64.b64encode(ephemeral_key).decode().rstrip("="),
+            }
+
+        logger.warning("备份版本缺少有效 public_key，回退到旧版 AES-GCM 备份格式")
+        nonce, ciphertext = _aes_encrypt(self._encryption_key, plaintext)
+        return {
+            "ciphertext": base64.b64encode(ciphertext).decode(),
+            "mac": base64.b64encode(
+                hmac.new(self._encryption_key, ciphertext, hashlib.sha256).digest()[
+                    :RECOVERY_KEY_MAC_TRUNCATED_LEN
+                ]
+            ).decode(),
+            "ephemeral": base64.b64encode(nonce).decode(),
+        }
+
+    def _decrypt_legacy_backup_data(
+        self,
+        ciphertext: bytes,
+        ephemeral_key: bytes,
+        mac: bytes,
+    ) -> bytes | None:
+        if len(ephemeral_key) != AES_GCM_NONCE_LEN:
+            logger.warning(
+                f"未知旧版备份 nonce 长度：期望 {AES_GCM_NONCE_LEN} 字节，实际 {len(ephemeral_key)} 字节"
+            )
+            return None
+
+        expected_mac = hmac.new(self._encryption_key, ciphertext, hashlib.sha256).digest()[
+            :RECOVERY_KEY_MAC_TRUNCATED_LEN
+        ]
+        if mac != expected_mac:
+            logger.warning("旧版备份 MAC 校验失败，跳过该会话")
+            return None
+
+        logger.info("检测到旧版 AES-GCM 备份格式，使用兼容逻辑恢复会话")
+        return _aes_decrypt(self._encryption_key, ephemeral_key, ciphertext)
+
     async def initialize(self):
         """初始化密钥备份"""
         try:
@@ -272,8 +350,8 @@ class KeyBackupBackupMixin:
         Args:
             room_id: 可选，指定房间 ID
         """
-        if not self._backup_version or not self._encryption_key:
-            logger.warning("未创建备份或无加密密钥，无法上传")
+        if not self._backup_version:
+            logger.warning("未创建备份，无法上传")
             return
 
         try:
@@ -287,21 +365,12 @@ class KeyBackupBackupMixin:
             for session_id, pickle in sessions.items():
                 # 加密会话数据
                 plaintext = pickle.encode() if isinstance(pickle, str) else pickle
-                nonce, ciphertext = _aes_encrypt(self._encryption_key, plaintext)
 
                 session_data = {
                     "first_message_index": 0,
                     "forwarded_count": 0,
                     "is_verified": True,
-                    "session_data": {
-                        "ciphertext": base64.b64encode(ciphertext).decode(),
-                        "mac": base64.b64encode(
-                            hmac.new(
-                                self._encryption_key, ciphertext, hashlib.sha256
-                            ).digest()[:RECOVERY_KEY_MAC_TRUNCATED_LEN]
-                        ).decode(),
-                        "ephemeral": base64.b64encode(nonce).decode(),
-                    },
+                    "session_data": self._build_encrypted_session_data(plaintext),
                 }
 
                 target_room = room_id or "unknown"
@@ -405,26 +474,22 @@ class KeyBackupBackupMixin:
                         # 尝试使用 Matrix 标准备份解密 (m.megolm_backup.v1.curve25519-aes-sha2)
                         if ephemeral_b64 and mac_b64:
                             try:
-                                # Matrix 使用无填充的 base64url 编码
-                                def decode_unpadded_base64(s: str) -> bytes:
-                                    # 添加缺失的填充
-                                    padding = 4 - len(s) % 4
-                                    if padding != 4:
-                                        s += "=" * padding
-                                    # 尝试标准 base64，然后 urlsafe
-                                    try:
-                                        return base64.b64decode(s)
-                                    except Exception:
-                                        return base64.urlsafe_b64decode(s)
+                                ciphertext = self._decode_unpadded_base64(ciphertext_b64)
+                                ephemeral_key = self._decode_unpadded_base64(ephemeral_b64)
+                                mac = self._decode_unpadded_base64(mac_b64)
 
-                                ciphertext = decode_unpadded_base64(ciphertext_b64)
-                                ephemeral_key = decode_unpadded_base64(ephemeral_b64)
-                                mac = decode_unpadded_base64(mac_b64)
-
-                                # 使用 ECDH + HKDF + HMAC + AES-CTR 解密
-                                plaintext = _decrypt_backup_data(
-                                    key_bytes, ephemeral_key, ciphertext, mac
-                                )
+                                if len(ephemeral_key) == CRYPTO_KEY_SIZE_32:
+                                    plaintext = _decrypt_backup_data(
+                                        key_bytes, ephemeral_key, ciphertext, mac
+                                    )
+                                elif len(ephemeral_key) == AES_GCM_NONCE_LEN:
+                                    plaintext = self._decrypt_legacy_backup_data(
+                                        ciphertext, ephemeral_key, mac
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"备份会话 {(session_id or '')[:8]}... 的 ephemeral 长度无效：{len(ephemeral_key)}"
+                                    )
                             except Exception as e:
                                 logger.warning(f"备份解密失败：{e}")
 
@@ -485,26 +550,16 @@ class KeyBackupBackupMixin:
         Returns:
             bool: 是否成功
         """
-        if not self._backup_version or not self._encryption_key:
+        if not self._backup_version:
             return False
 
         try:
             plaintext = session_key.encode()
-            nonce, ciphertext = _aes_encrypt(self._encryption_key, plaintext)
-
             session_data = {
                 "first_message_index": 0,
                 "forwarded_count": 0,
                 "is_verified": True,
-                "session_data": {
-                    "ciphertext": base64.b64encode(ciphertext).decode(),
-                    "mac": base64.b64encode(
-                        hmac.new(
-                            self._encryption_key, ciphertext, hashlib.sha256
-                        ).digest()[:RECOVERY_KEY_MAC_TRUNCATED_LEN]
-                    ).decode(),
-                    "ephemeral": base64.b64encode(nonce).decode(),
-                },
+                "session_data": self._build_encrypted_session_data(plaintext),
             }
 
             try:

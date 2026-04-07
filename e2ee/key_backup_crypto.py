@@ -6,6 +6,7 @@ import secrets
 from astrbot.api import logger
 
 from ..constants import (
+    AES_BLOCK_SIZE_16,
     AES_GCM_NONCE_LEN,
     BASE58_ALPHABET,
     CRYPTO_KEY_SIZE_32,
@@ -34,16 +35,20 @@ except ImportError:
 # 尝试导入 vodozemac (用于 Matrix 兼容的 PkDecryption)
 try:
     from vodozemac import (  # noqa: F401
+        Curve25519PublicKey,
         Curve25519SecretKey,
         PkDecodeException,
         PkDecryption,
+        PkEncryption,
     )
 
     VODOZEMAC_PK_AVAILABLE = True
 except ImportError:
     VODOZEMAC_PK_AVAILABLE = False
+    Curve25519PublicKey = None
     Curve25519SecretKey = None
     PkDecryption = None
+    PkEncryption = None
     PkDecodeException = Exception  # 回退到通用异常
     logger.debug("vodozemac PkDecryption 不可用")
 
@@ -117,6 +122,70 @@ def _aes_ctr_decrypt(key: bytes, iv: bytes, ciphertext: bytes) -> bytes:
         raise RuntimeError("需要 cryptography 库来解密密钥备份")
 
 
+def _encrypt_backup_data(
+    backup_public_key: bytes,
+    plaintext: bytes,
+) -> tuple[bytes, bytes, bytes]:
+    """
+    按 Matrix Key Backup v1 规范加密备份数据。
+
+    Returns:
+        (ephemeral_public_key, ciphertext, mac)
+    """
+    if len(backup_public_key) != CRYPTO_KEY_SIZE_32:
+        raise ValueError(
+            f"备份公钥长度无效：期望 {CRYPTO_KEY_SIZE_32} 字节，实际 {len(backup_public_key)} 字节"
+        )
+
+    if VODOZEMAC_PK_AVAILABLE:
+        public_key = Curve25519PublicKey.from_base64(
+            base64.b64encode(backup_public_key).decode()
+        )
+        message = PkEncryption.from_key(public_key).encrypt(plaintext)
+        return message.ephemeral_key, message.ciphertext, message.mac
+
+    if not CRYPTO_AVAILABLE:
+        raise RuntimeError("需要 cryptography 或 vodozemac 库来加密密钥备份")
+
+    from cryptography.hazmat.primitives import hashes, padding, serialization
+    from cryptography.hazmat.primitives.asymmetric import x25519
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+    ephemeral_private_key = x25519.X25519PrivateKey.generate()
+    ephemeral_public_key = ephemeral_private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    recipient_public_key = x25519.X25519PublicKey.from_public_bytes(backup_public_key)
+    shared_secret = ephemeral_private_key.exchange(recipient_public_key)
+
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=HKDF_KEY_MATERIAL_LEN,
+        salt=b"\x00" * CRYPTO_KEY_SIZE_32,
+        info=HKDF_MEGOLM_BACKUP_INFO,
+        backend=default_backend(),
+    )
+    key_material = hkdf.derive(shared_secret)
+    encryption_key = key_material[:CRYPTO_KEY_SIZE_32]
+    mac_key = key_material[CRYPTO_KEY_SIZE_32 : CRYPTO_KEY_SIZE_32 * 2]
+
+    padder = padding.PKCS7(AES_BLOCK_SIZE_16 * 8).padder()
+    padded_plaintext = padder.update(plaintext) + padder.finalize()
+
+    cipher = Cipher(
+        algorithms.AES(encryption_key),
+        modes.CTR(b"\x00" * AES_BLOCK_SIZE_16),
+        backend=default_backend(),
+    )
+    encryptor = cipher.encryptor()
+    ciphertext = encryptor.update(padded_plaintext) + encryptor.finalize()
+    mac = hmac.new(mac_key, ciphertext, hashlib.sha256).digest()[:MAC_TRUNCATED_BYTES_8]
+
+    return ephemeral_public_key, ciphertext, mac
+
+
 def _decrypt_backup_data(
     private_key_bytes: bytes,
     ephemeral_public_key: bytes,
@@ -156,6 +225,11 @@ def _decrypt_backup_data(
             f"使用 vodozemac 解密：private_key={len(private_key_bytes)}B, "
             f"ephemeral={len(ephemeral_public_key)}B, ciphertext={len(ciphertext)}B, mac={len(mac)}B"
         )
+
+        if len(ephemeral_public_key) != CRYPTO_KEY_SIZE_32:
+            raise ValueError(
+                f"ephemeral 公钥长度无效：期望 {CRYPTO_KEY_SIZE_32} 字节，实际 {len(ephemeral_public_key)} 字节"
+            )
 
         # 创建 PkDecryption 对象
         secret_key = Curve25519SecretKey.from_bytes(private_key_bytes)
@@ -335,7 +409,7 @@ def _decode_recovery_key(key_str: str) -> bytes:
         private_key = decoded[2 : 2 + RECOVERY_KEY_PRIV_LEN]
         return private_key
     except Exception as e:
-        logger.warning(f"Base58 恢复密钥解析失败：{e}")
+        logger.debug(f"Base58 恢复密钥解析失败：{e}")
 
     # 尝试 Base64（兼容旧格式或直接私钥字符串）
     try:

@@ -80,7 +80,7 @@ class E2EEManagerDecryptMixin:
                 target_keys = list(ciphertext_data.keys())
                 masked_my_key = (my_key or "")[:16]
                 masked_target_keys = [((k or "")[:16] + "...") for k in target_keys]
-                logger.warning(
+                logger.debug(
                     f"消息不是发给本设备的：本设备密钥={masked_my_key}... "
                     f"目标密钥={masked_target_keys}"
                 )
