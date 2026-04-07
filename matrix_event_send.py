@@ -24,7 +24,6 @@ from astrbot.api.message_components import (
     Share,
     Unknown,
     Video,
-    WechatEmoji,
 )
 
 from .components import Poll
@@ -140,11 +139,6 @@ def _fallback_content_for_segment(segment) -> tuple[str, str | None]:
         body = _truncate_text(f"[json] {payload}", max_len=400)
         html_body = f"<pre><code>{html.escape(payload)}</code></pre>"
         return body, html_body
-    if isinstance(segment, WechatEmoji):
-        md5 = getattr(segment, "md5", "") or ""
-        cdnurl = getattr(segment, "cdnurl", "") or ""
-        body = " ".join(x for x in [md5, cdnurl] if x).strip()
-        return f"[wechat_emoji] {body}".strip(), None
     if isinstance(segment, Unknown):
         text = getattr(segment, "text", "") or "[unknown]"
         return text, None
@@ -496,15 +490,7 @@ async def send_with_client_impl(
                 logger.error(f"发送 poke 失败：{e}")
         elif isinstance(
             segment,
-            (
-                Face,
-                Forward,
-                Node,
-                Nodes,
-                Json,
-                Unknown,
-                WechatEmoji,
-            ),
+            (Face, Forward, Node, Nodes, Json, Unknown),
         ):
             try:
                 fallback_text, fallback_html = _fallback_content_for_segment(segment)
