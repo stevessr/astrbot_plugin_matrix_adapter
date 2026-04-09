@@ -1,5 +1,8 @@
 # Changelog
 
+## unrelesed
+- 现在在脱 html 包装会尝试合并连续的 plain 了
+
 ## 0.3.6
 - 现在重新登陆会更换设备 ID 了，这可能会减少很多问题
 - 迁移到统一 webhook 作为登录回调

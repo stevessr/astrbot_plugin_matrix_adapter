@@ -15,6 +15,7 @@ REPLY_BLOCK_RE = re.compile(r"<mx-reply>.*?</mx-reply>", re.IGNORECASE | re.DOTA
 REPLY_EVENT_RE = re.compile(
     r'href="(?:https?://)?matrix\.to/#/[^"<> ]+/(\$[^"<> ]+)"', re.IGNORECASE
 )
+PLAIN_MENTION_RE = re.compile(r"^@\[([^\]\r\n]+)\](?=\s|$)")
 
 
 def should_append_caption(content: dict, filename: str | None = None) -> bool:
@@ -48,6 +49,14 @@ def append_formatted_text(
         text = "/" + text[1:]
 
     seen_mentions: set[str] = set()
+
+    def _append_plain(value: str) -> None:
+        if not value:
+            return
+        if chain.chain and isinstance(chain.chain[-1], Plain):
+            chain.chain[-1].text += value
+        else:
+            chain.chain.append(Plain(value))
 
     def _add_mention(user_id: str, display_name: str | None = None) -> None:
         if not user_id or user_id in seen_mentions:
@@ -94,7 +103,28 @@ def append_formatted_text(
         body_text = _plain_from_html(body_fragment).strip()
         return event_id, sender_id, body_text
 
+    def _consume_leading_plain_mention(start_index: int) -> bool:
+        if start_index >= len(chain.chain):
+            return False
+        component = chain.chain[start_index]
+        if not isinstance(component, Plain) or not receiver.bot_name:
+            return False
+        plain_mention_match = PLAIN_MENTION_RE.match(component.text)
+        if not plain_mention_match:
+            return False
+        mention_name = plain_mention_match.group(1).strip()
+        if mention_name != receiver.bot_name:
+            return False
+
+        remaining_text = component.text[plain_mention_match.end() :].lstrip()
+        del chain.chain[start_index]
+        _add_mention(receiver.user_id, receiver.bot_name)
+        if remaining_text:
+            chain.chain.insert(start_index + 1, Plain(remaining_text))
+        return True
+
     inline_added = False
+    appended_from_formatted = len(chain.chain)
     if formatted_body:
         if not any(isinstance(component, Reply) for component in chain.chain):
             reply_event_id, reply_sender, reply_text = _extract_reply_info(
@@ -116,7 +146,7 @@ def append_formatted_text(
             prefix = sanitized[pos : match.start()]
             prefix_text = _plain_from_html(prefix)
             if prefix_text:
-                chain.chain.append(Plain(prefix_text))
+                _append_plain(prefix_text)
                 inline_added = True
 
             inline_tag = match.group(0)
@@ -134,7 +164,7 @@ def append_formatted_text(
                 _add_mention(user_id, anchor_text or user_id)
                 inline_added = True
             elif anchor_text:
-                chain.chain.append(Plain(anchor_text))
+                _append_plain(anchor_text)
                 inline_added = True
 
             pos = match.end()
@@ -142,7 +172,10 @@ def append_formatted_text(
         tail = sanitized[pos:]
         tail_text = _plain_from_html(tail)
         if tail_text:
-            chain.chain.append(Plain(tail_text))
+            _append_plain(tail_text)
+            inline_added = True
+
+        if _consume_leading_plain_mention(appended_from_formatted):
             inline_added = True
 
     if isinstance(mentions, dict) and mentions.get("room"):
@@ -163,8 +196,15 @@ def append_formatted_text(
             text = text[len(receiver.bot_name) + 1 :].lstrip()
             _add_mention(receiver.user_id, receiver.bot_name)
 
+        plain_mention_match = PLAIN_MENTION_RE.match(text)
+        if plain_mention_match and receiver.bot_name:
+            mention_name = plain_mention_match.group(1).strip()
+            if mention_name == receiver.bot_name:
+                _add_mention(receiver.user_id, receiver.bot_name)
+                text = text[plain_mention_match.end() :].lstrip()
+
         if text:
-            chain.chain.append(Plain(text))
+            _append_plain(text)
 
 
 async def handle_text(receiver, chain, event, _: str):

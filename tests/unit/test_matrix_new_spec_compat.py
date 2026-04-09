@@ -139,6 +139,60 @@ def load_module(relative_name: str):
     return importlib.import_module(f"{PACKAGE_NAME}.{relative_name}")
 
 
+class MatrixTextMentionCompatTests(unittest.TestCase):
+    def test_plain_bracket_mention_targets_bot(self):
+        text_handler = load_module("receiver.handlers.text")
+
+        receiver = types.SimpleNamespace(
+            user_id="@toushou.little.bot:neko.aaca.eu.org",
+            bot_name="toushou.little.bot",
+        )
+        chain = types.SimpleNamespace(chain=[])
+        content = {
+            "body": "@[toushou.little.bot] 抱抱大家喵",
+            "format": "org.matrix.custom.html",
+            "formatted_body": (
+                '<span data-mx-color="#ff00be">@</span>'
+                '<span data-mx-color="#ff008b">[</span>'
+                '<span data-mx-color="#ff0059">t</span>'
+                '<span data-mx-color="#ff3b1d">o</span>'
+                '<span data-mx-color="#ff6c00">u</span>'
+                '<span data-mx-color="#ff8d00">s</span>'
+                '<span data-mx-color="#ffa600">h</span>'
+                '<span data-mx-color="#d4b900">o</span>'
+                '<span data-mx-color="#a3c700">u</span>'
+                '<span data-mx-color="#64d200">.</span>'
+                '<span data-mx-color="#00da00">l</span>'
+                '<span data-mx-color="#00df13">i</span>'
+                '<span data-mx-color="#00e261">t</span>'
+                '<span data-mx-color="#00e59a">t</span>'
+                '<span data-mx-color="#00e7d1">l</span>'
+                '<span data-mx-color="#00e7ff">e</span>'
+                '<span data-mx-color="#00e7ff">.</span>'
+                '<span data-mx-color="#00e5ff">b</span>'
+                '<span data-mx-color="#00e1ff">o</span>'
+                '<span data-mx-color="#00d9ff">t</span>'
+                '<span data-mx-color="#00ceff">]</span> '
+                '<span data-mx-color="#0fa6ff">抱</span>'
+                '<span data-mx-color="#cd88ff">抱</span>'
+                '<span data-mx-color="#ff60ff">大</span>'
+                '<span data-mx-color="#ff15ff">家</span>'
+                '<span data-mx-color="#ff00f2">喵</span>'
+            ),
+        }
+
+        text_handler.append_formatted_text(
+            receiver,
+            chain,
+            content["body"],
+            content,
+        )
+
+        self.assertEqual(chain.chain[0].qq, receiver.user_id)
+        self.assertEqual(chain.chain[0].name, receiver.bot_name)
+        self.assertEqual(chain.chain[1].text, "抱抱大家喵")
+
+
 class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_poll_defaults_and_stable_handler(self):
         components = load_module("components")
