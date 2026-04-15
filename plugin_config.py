@@ -235,6 +235,9 @@ class PluginConfig:
         self._media_upload_allowed_mime_rules: tuple[str, ...] = (
             _DEFAULT_MEDIA_UPLOAD_ALLOWED_MIME_RULES
         )
+        # 预回应表情配置
+        self._pre_ack_emoji_enable: bool = False
+        self._pre_ack_emoji_emojis: list[str] = []
         # 消息类型配置
         self._force_message_type: str = "auto"
         # 数据存储后端（users/rooms/auth/sync/device_info + E2EE 本地状态）
@@ -524,6 +527,20 @@ class PluginConfig:
             _DEFAULT_MEDIA_UPLOAD_ALLOWED_MIME_RULES,
             config_key="matrix_media_rules.allowed_mime_rules",
         )
+        # 预回应表情配置
+        pre_ack_emoji_obj = config.get("matrix_pre_ack_emoji")
+        pre_ack_emoji_enable = None
+        pre_ack_emoji_emojis = None
+        if isinstance(pre_ack_emoji_obj, dict):
+            if isinstance(pre_ack_emoji_obj.get("enable"), (bool, str)):
+                pre_ack_emoji_enable = pre_ack_emoji_obj.get("enable")
+            if isinstance(pre_ack_emoji_obj.get("emojis"), (list, tuple)):
+                pre_ack_emoji_emojis = pre_ack_emoji_obj.get("emojis")
+
+        self._pre_ack_emoji_enable = _normalize_bool(
+            pre_ack_emoji_enable, False
+        )
+        self._pre_ack_emoji_emojis = list(pre_ack_emoji_emojis or [])
         # 消息类型配置
         self._force_message_type = _normalize_message_type(
             config.get("matrix_force_message_type"),
@@ -683,6 +700,16 @@ class PluginConfig:
     def media_upload_allowed_mime_rules(self) -> tuple[str, ...]:
         """媒体上传允许的 MIME 规则"""
         return self._media_upload_allowed_mime_rules
+
+    @property
+    def pre_ack_emoji_enable(self) -> bool:
+        """是否启用预回应表情"""
+        return self._pre_ack_emoji_enable
+
+    @property
+    def pre_ack_emoji_emojis(self) -> list[str]:
+        """预回应表情列表"""
+        return self._pre_ack_emoji_emojis
 
     @property
     def force_message_type(self) -> str:

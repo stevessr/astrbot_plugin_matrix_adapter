@@ -1,4 +1,23 @@
 {
+  "matrix_pre_ack_emoji": {
+    "description": "预回应表情配置",
+    "type": "object",
+    "items": {
+      "enable": {
+        "description": "启用预回应表情",
+        "type": "bool",
+        "hint": "当收到 @机器人或唤醒命令时，随机选择一个表情作为预回应",
+        "default": false
+      },
+      "emojis": {
+        "description": "预回应表情列表",
+        "type": "list",
+        "items": { "type": "string" },
+        "hint": "表情列表，例如 ['👍', '🤔', '✍️']",
+        "default": ["🤗", "🐟", "🍞"]
+      }
+    }
+  },
   "matrix_media": {
     "description": "媒体配置",
     "type": "object",

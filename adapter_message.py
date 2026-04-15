@@ -158,6 +158,8 @@ class MatrixAdapterMessageMixin:
                 except Exception:
                     pass
                 return  # Reactions 已处理，不再进入后续消息/系统事件转换流程
+
+            # 预回应表情：检查是否为 @机器人或唤醒命令
             if getattr(event, "msgtype", None):
                 abm = await self.receiver.convert_message(room, event)
             else:
@@ -180,11 +182,11 @@ class MatrixAdapterMessageMixin:
                 _append_stalk_archive(abm.session_id, record)
 
             if get_plugin_config().force_message_type != "stalk":
-                await self.handle_msg(abm)
+                await self.handle_msg(abm, event_id=getattr(event, "event_id", None))
         except Exception as e:
             logger.error(f"消息回调时出错：{e}")
 
-    async def handle_msg(self, message):
+    async def handle_msg(self, message, event_id: str | None = None):
         try:
             from .matrix_event import MatrixPlatformEvent
 
@@ -198,6 +200,70 @@ class MatrixAdapterMessageMixin:
                 e2ee_manager=self.e2ee_manager,
                 use_notice=self._matrix_config.use_notice,
             )
+
+            # 预回应表情：检查是否需要触发
+            # 条件：1. 配置启用 2. 表情列表非空 3. 消息包含 @机器人或唤醒前缀
+            try:
+                # 从插件配置中读取预回应表情设置
+                plugin_cfg = get_plugin_config()
+                pre_ack_enable = plugin_cfg.pre_ack_emoji_enable
+                pre_ack_emojis = plugin_cfg.pre_ack_emoji_emojis
+
+                logger.info(
+                    f"[pre_ack] 配置检查：enable={pre_ack_enable}, "
+                    f"emojis={pre_ack_emojis}, event_id={event_id}"
+                )
+                if pre_ack_enable and pre_ack_emojis and event_id:
+                    import random
+
+                    from astrbot.api.message_components import At
+
+                    # 检查是否需要触发预回应表情
+                    should_react = False
+
+                    # 检查消息链中是否有 @机器人
+                    logger.info(f"[pre_ack] 消息链组件：{message.message}")
+                    for segment in message.message:
+                        if isinstance(segment, At):
+                            at_target = getattr(segment, "qq", None) or getattr(
+                                segment, "user_id", None
+                            )
+                            logger.info(
+                                f"[pre_ack] 检测到 At 组件：target={at_target}, bot_user_id={self._matrix_config.user_id}"
+                            )
+                            if at_target and str(at_target) == str(
+                                self._matrix_config.user_id
+                            ):
+                                should_react = True
+                                break
+
+                    # 检查是否以唤醒前缀开头
+                    if not should_react:
+                        from astrbot.core import astrbot_config
+
+                        wake_prefixes = astrbot_config.get("wake_prefix", ["/"])
+                        message_str = message.message_str.strip()
+                        logger.info(
+                            f"[pre_ack] 检查唤醒前缀：message_str='{message_str}', wake_prefixes={wake_prefixes}"
+                        )
+                        for wake_prefix in wake_prefixes:
+                            if message_str.startswith(wake_prefix):
+                                should_react = True
+                                logger.info(f"[pre_ack] 匹配唤醒前缀：{wake_prefix}")
+                                break
+
+                    # 发送预回应表情
+                    logger.info(f"[pre_ack] 是否发送预回应表情：should_react={should_react}")
+                    if should_react:
+                        emoji = random.choice(pre_ack_emojis)
+                        # 确保 message_obj 有 message_id
+                        if not hasattr(message, "message_id"):
+                            message.message_id = event_id
+                        await message_event.react(emoji)
+                        logger.info(f"[pre_ack] 已发送预回应表情：{emoji}")
+            except Exception as e:
+                logger.debug(f"预回应表情发送失败：{e}")
+
             self.commit_event(message_event)
             logger.debug(
                 f"Message event committed: session={getattr(message, 'session_id', 'N/A')}, type={getattr(message, 'type', 'N/A')}, sender={getattr(message.sender, 'user_id', 'N/A') if hasattr(message, 'sender') else 'N/A'}"

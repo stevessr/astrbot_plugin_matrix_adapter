@@ -173,6 +173,23 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 }
 ```
 
+### 自动 React
+
+```json
+{
+"matrix_pre_ack_emoji": {
+    "enable": true,
+    "emojis": [
+      "🤗",
+      "🐟",
+      "🍞"，
+      "mxc://example.matrix.domain/$may_be_something"
+    ]
+  }
+}
+```
+在你 @ 人 或者使用唤醒前缀发消息的时候触发，反应的具体渲染取决于客户端的实现，mxc 图片也许可以渲染
+
 ## 命令
 
 ### `/approve_device`
