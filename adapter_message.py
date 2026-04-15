@@ -209,7 +209,7 @@ class MatrixAdapterMessageMixin:
                 pre_ack_enable = plugin_cfg.pre_ack_emoji_enable
                 pre_ack_emojis = plugin_cfg.pre_ack_emoji_emojis
 
-                logger.info(
+                logger.debug(
                     f"[pre_ack] 配置检查：enable={pre_ack_enable}, "
                     f"emojis={pre_ack_emojis}, event_id={event_id}"
                 )
@@ -222,13 +222,13 @@ class MatrixAdapterMessageMixin:
                     should_react = False
 
                     # 检查消息链中是否有 @机器人
-                    logger.info(f"[pre_ack] 消息链组件：{message.message}")
+                    logger.debug(f"[pre_ack] 消息链组件：{message.message}")
                     for segment in message.message:
                         if isinstance(segment, At):
                             at_target = getattr(segment, "qq", None) or getattr(
                                 segment, "user_id", None
                             )
-                            logger.info(
+                            logger.debug(
                                 f"[pre_ack] 检测到 At 组件：target={at_target}, bot_user_id={self._matrix_config.user_id}"
                             )
                             if at_target and str(at_target) == str(
@@ -243,24 +243,24 @@ class MatrixAdapterMessageMixin:
 
                         wake_prefixes = astrbot_config.get("wake_prefix", ["/"])
                         message_str = message.message_str.strip()
-                        logger.info(
+                        logger.debug(
                             f"[pre_ack] 检查唤醒前缀：message_str='{message_str}', wake_prefixes={wake_prefixes}"
                         )
                         for wake_prefix in wake_prefixes:
                             if message_str.startswith(wake_prefix):
                                 should_react = True
-                                logger.info(f"[pre_ack] 匹配唤醒前缀：{wake_prefix}")
+                                logger.debug(f"[pre_ack] 匹配唤醒前缀：{wake_prefix}")
                                 break
 
                     # 发送预回应表情
-                    logger.info(f"[pre_ack] 是否发送预回应表情：should_react={should_react}")
+                    logger.debug(f"[pre_ack] 是否发送预回应表情：should_react={should_react}")
                     if should_react:
                         emoji = random.choice(pre_ack_emojis)
                         # 确保 message_obj 有 message_id
                         if not hasattr(message, "message_id"):
                             message.message_id = event_id
                         await message_event.react(emoji)
-                        logger.info(f"[pre_ack] 已发送预回应表情：{emoji}")
+                        logger.debug(f"[pre_ack] 已发送预回应表情：{emoji}")
             except Exception as e:
                 logger.debug(f"预回应表情发送失败：{e}")
 
