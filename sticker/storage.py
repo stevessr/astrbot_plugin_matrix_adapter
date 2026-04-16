@@ -297,7 +297,7 @@ class StickerStorage:
         self._index[sticker_id] = meta
         self.save_index()
 
-        logger.info(f"保存 sticker: {sticker_id} ({sticker.body})")
+        logger.info(f"保存 sticker: {sticker_id}")
         return meta
 
     def _build_sticker_from_meta(self, sticker_id: str, meta: StickerMeta) -> Sticker:

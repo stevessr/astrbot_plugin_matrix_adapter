@@ -180,7 +180,8 @@ async def send_with_client_impl(
         try:
             is_encrypted_room = await client.is_room_encrypted(room_id)
             if is_encrypted_room:
-                logger.debug(f"房间 {room_id} 已加密，将使用 E2EE 发送消息")
+                # 缩短加密日志，避免在高频发送场景打印冗长房间标识
+                logger.debug("房间 {room_id} 已加密（E2EE）")
         except Exception as e:
             logger.debug(f"检查房间加密状态失败：{e}")
 
@@ -330,8 +331,13 @@ async def send_with_client_impl(
 
         elif _is_poll_component(segment):
             try:
+                # 仅记录投票摘要与选项数量，避免在日志中泄露完整选项列表
+                question_summary = _truncate_text(
+                    getattr(segment, "question", "") or "", max_len=120
+                )
+                answers_count = len(getattr(segment, "answers", []) or [])
                 logger.debug(
-                    f"发送投票消息：question={segment.question}, answers={segment.answers}"
+                    f"发送投票消息：question={question_summary}, answers_count={answers_count}"
                 )
                 await send_poll(
                     client,

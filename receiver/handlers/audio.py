@@ -88,9 +88,7 @@ async def handle_audio(receiver, chain, event, _: str):
     size_bytes = _extract_audio_size(receiver, content, info_data)
     over_limit = receiver._is_media_over_auto_download_limit(size_bytes)
     if over_limit:
-        logger.debug(
-            f"Skip auto-downloading Matrix audio over size limit: {filename} ({size_bytes} bytes)"
-        )
+        logger.debug("Skip auto-downloading Matrix audio over size limit")
 
     rendered = False
     if (

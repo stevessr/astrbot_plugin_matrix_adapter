@@ -43,7 +43,7 @@ async def handle_sticker(receiver, chain, event, _: str):
                     mxc_url=file_info.get("url", ""),
                 )
                 chain.chain.append(sticker)
-                logger.debug(f"收到 sticker: {event.body}")
+                logger.debug("收到 sticker")
                 return
             except Exception as e:
                 logger.error(f"Failed to download Matrix encrypted sticker: {e}")
@@ -62,7 +62,7 @@ async def handle_sticker(receiver, chain, event, _: str):
                     mxc_url=mxc_url,
                 )
                 chain.chain.append(sticker)
-                logger.debug(f"收到 sticker: {event.body}")
+                logger.debug("收到 sticker")
                 return
             except Exception as e:
                 logger.error(f"Failed to download Matrix sticker: {e}")
