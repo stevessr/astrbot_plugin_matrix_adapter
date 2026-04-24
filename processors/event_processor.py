@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING
 
 from astrbot.api import logger
 
-from ..constants import MAX_PROCESSED_MESSAGES_1000, TIMESTAMP_BUFFER_MS_1000
+from ..constants import (
+    MAX_PROCESSED_MESSAGES_1000,
+    TIMESTAMP_BUFFER_MS_1000,
+)
 from ..plugin_config import get_plugin_config
 from ..utils import parse_bool
 from .event_processor_members import MatrixEventProcessorMembers
@@ -165,6 +168,17 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 room.space_parents[state_key] = content
             case "m.room.third_party_invite":
                 room.third_party_invites[state_key] = content
+            case _ if event_type in {
+                "m.room.live_messaging",
+                "org.matrix.msc4357.live_messaging",
+            }:
+                enabled = content.get("enabled")
+                if isinstance(enabled, bool):
+                    room.live_messaging_enabled = enabled
+                elif enabled is None:
+                    room.live_messaging_enabled = None
+                else:
+                    room.live_messaging_enabled = bool(enabled)
             case _:
                 return
 

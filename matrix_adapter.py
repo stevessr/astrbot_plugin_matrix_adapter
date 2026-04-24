@@ -111,8 +111,8 @@ def _load_i18n_resources() -> dict[str, dict]:
     "Matrix 协议适配器",
     default_config_tmpl=DEFAULT_CONFIG,
     adapter_display_name="Matrix",
-    # NOTE: Matrix 协议不支持流式消息，消息编辑方式不可靠且会导致 agent 工具调用后无响应
-    support_streaming_message=False,
+    # NOTE: Matrix 通过 MSC4357 live messages 可以选择性支持流式输出
+    support_streaming_message=True,
     logo_path=LOGO_PATH,
     i18n_resources=_load_i18n_resources(),
     config_metadata=_inject_astrbot_field_metadata(),
@@ -329,8 +329,8 @@ class MatrixPlatformAdapter(
             id=id_,
             adapter_display_name="Matrix",
             logo_path="matrix.svg",
-            # NOTE: Matrix 协议不支持流式消息
-            support_streaming_message=False,
+            # NOTE: Matrix 通过 MSC4357 live messages 选择性支持流式消息
+            support_streaming_message=True,
         )
 
     def unified_webhook(self) -> bool:

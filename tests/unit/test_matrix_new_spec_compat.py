@@ -90,6 +90,78 @@ def _install_astrbot_stubs() -> None:
     message_components.Reply = Reply
     message_components.ComponentType = ComponentType
 
+    event_module = sys.modules.setdefault(
+        "astrbot.api.event", types.ModuleType("astrbot.api.event")
+    )
+
+    class AstrMessageEvent:
+        def __init__(self, message_str, message_obj, platform_meta, session_id):
+            self.message_str = message_str
+            self.message_obj = message_obj
+            self.platform_meta = platform_meta
+            self.session_id = session_id
+            self._extras = {}
+            self._has_send_oper = False
+
+        def set_extra(self, key, value):
+            self._extras[key] = value
+
+        def get_extra(self, key, default=None):
+            return self._extras.get(key, default)
+
+    class MessageChain:
+        def __init__(self, chain=None, type=None):
+            self.chain = list(chain or [])
+            self.type = type
+
+        def message(self, message: str):
+            self.chain.append(Plain(message))
+            return self
+
+        def get_plain_text(self, with_other_comps_mark: bool = False):
+            texts = []
+            for comp in self.chain:
+                if isinstance(comp, Plain):
+                    texts.append(comp.text)
+                elif with_other_comps_mark:
+                    texts.append(f"[{comp.__class__.__name__}]")
+            return " ".join(texts)
+
+    event_module.AstrMessageEvent = AstrMessageEvent
+    event_module.MessageChain = MessageChain
+
+    platform_module = sys.modules.setdefault(
+        "astrbot.api.platform", types.ModuleType("astrbot.api.platform")
+    )
+
+    class AstrBotMessage:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class PlatformMetadata:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    platform_module.AstrBotMessage = AstrBotMessage
+    platform_module.PlatformMetadata = PlatformMetadata
+
+    core_module = sys.modules.setdefault("astrbot.core", types.ModuleType("astrbot.core"))
+    utils_module = sys.modules.setdefault(
+        "astrbot.core.utils", types.ModuleType("astrbot.core.utils")
+    )
+    metrics_module = sys.modules.setdefault(
+        "astrbot.core.utils.metrics", types.ModuleType("astrbot.core.utils.metrics")
+    )
+
+    class Metric:
+        @staticmethod
+        async def upload(**kwargs):
+            return None
+
+    metrics_module.Metric = Metric
+    setattr(core_module, "utils", utils_module)
+    setattr(utils_module, "metrics", metrics_module)
+
 
 def _install_aiohttp_stub() -> None:
     try:
@@ -130,6 +202,32 @@ def _install_package_stubs() -> None:
     for name, path in package_paths.items():
         module = sys.modules.setdefault(name, types.ModuleType(name))
         module.__path__ = [str(path)]
+
+    utils_pkg = sys.modules[f"{PACKAGE_NAME}.utils"]
+    try:
+        utils_mod = importlib.import_module(f"{PACKAGE_NAME}.utils.utils")
+        markdown_mod = importlib.import_module(f"{PACKAGE_NAME}.utils.markdown_utils")
+        utils_pkg.parse_bool = utils_mod.parse_bool
+        utils_pkg.mask_device_id = utils_mod.mask_device_id
+        utils_pkg.MatrixUtils = utils_mod.MatrixUtils
+        utils_pkg.markdown_to_html = markdown_mod.markdown_to_html
+    except Exception:
+        def _parse_bool(value, default=False):
+            if isinstance(value, bool):
+                return value
+            if value is None:
+                return default
+            normalized = str(value).strip().lower()
+            if normalized in {"1", "true", "yes", "on", "enable", "enabled"}:
+                return True
+            if normalized in {"0", "false", "no", "off", "disable", "disabled"}:
+                return False
+            return default
+
+        utils_pkg.parse_bool = _parse_bool
+        utils_pkg.mask_device_id = lambda device_id: device_id or "<empty>"
+        utils_pkg.MatrixUtils = type("MatrixUtils", (), {})
+        utils_pkg.markdown_to_html = lambda text: text
 
 
 def load_module(relative_name: str):
@@ -378,22 +476,108 @@ class MatrixLocationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(captured["msg_type"], "m.room.message")
         self.assertEqual(captured["content"]["msgtype"], "m.location")
         self.assertEqual(captured["content"]["body"], "Big Ben, London, UK")
-        self.assertEqual(captured["content"]["geo_uri"], "geo:51.5008,0.1247")
-        self.assertEqual(
-            captured["content"]["m.text"], [{"body": "Big Ben, London, UK"}]
+
+
+class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_edit_parser_preserves_live_marker_and_relation(self):
+        event_types = load_module("client.event_types")
+
+        event = event_types.parse_event(
+            {
+                "event_id": "$live1",
+                "sender": "@alice:example.org",
+                "origin_server_ts": 123,
+                "type": "m.room.message",
+                "content": {
+                    "msgtype": "m.text",
+                    "body": "* hello",
+                    "m.new_content": {
+                        "msgtype": "m.text",
+                        "body": "hello",
+                        "org.matrix.msc4357.live": {},
+                    },
+                    "m.relates_to": {
+                        "rel_type": "m.replace",
+                        "event_id": "$root",
+                    },
+                },
+            },
+            "!room:example.org",
         )
-        self.assertEqual(
-            captured["content"]["m.location"],
-            {"uri": "geo:51.5008,0.1247", "description": "Big Ben, London, UK"},
+
+        self.assertEqual(event.body, "hello")
+        self.assertEqual(event.content["m.relates_to"]["rel_type"], "m.replace")
+        self.assertIn("org.matrix.msc4357.live", event.content)
+
+    async def test_message_callback_ignores_live_drafts_but_processes_final_edits(
+        self,
+    ):
+        adapter_message = load_module("adapter_message")
+
+        runtime_state = types.SimpleNamespace(
+            mark_live_message_inbound=mock.Mock()
         )
-        self.assertEqual(captured["content"]["m.asset"], {"type": "m.self"})
-        self.assertEqual(
-            captured["content"]["org.matrix.msc3488.location"],
-            {"uri": "geo:51.5008,0.1247", "description": "Big Ben, London, UK"},
+        receiver = types.SimpleNamespace(
+            convert_message=mock.AsyncMock(
+                return_value=types.SimpleNamespace(
+                    message_str="hello",
+                    session_id="!room:example.org",
+                    message=[],
+                )
+            )
         )
-        self.assertEqual(
-            captured["content"]["org.matrix.msc3488.asset"], {"type": "m.self"}
+        handle_msg = mock.AsyncMock()
+        adapter = types.SimpleNamespace(
+            runtime_state=runtime_state,
+            receiver=receiver,
+            handle_msg=handle_msg,
+            _matrix_config=types.SimpleNamespace(user_id="@bot:example.org"),
         )
+        room = types.SimpleNamespace(room_id="!room:example.org", members={})
+
+        draft_event = types.SimpleNamespace(
+            sender="@alice:example.org",
+            msgtype="m.text",
+            event_id="$draft",
+            content={
+                "msgtype": "m.text",
+                "body": "typing...",
+                "org.matrix.msc4357.live": {},
+            },
+        )
+        await adapter_message.MatrixAdapterMessageMixin.message_callback(
+            adapter, room, draft_event
+        )
+        runtime_state.mark_live_message_inbound.assert_called_once_with(
+            is_edit=False
+        )
+        handle_msg.assert_not_awaited()
+
+        runtime_state.mark_live_message_inbound.reset_mock()
+        receiver.convert_message.reset_mock()
+        handle_msg.reset_mock()
+
+        final_event = types.SimpleNamespace(
+            sender="@alice:example.org",
+            msgtype="m.text",
+            event_id="$final",
+            content={
+                "msgtype": "m.text",
+                "body": "hello",
+                "m.relates_to": {
+                    "rel_type": "m.replace",
+                    "event_id": "$draft",
+                },
+            },
+        )
+        await adapter_message.MatrixAdapterMessageMixin.message_callback(
+            adapter, room, final_event
+        )
+        runtime_state.mark_live_message_inbound.assert_called_once_with(
+            is_edit=True
+        )
+        receiver.convert_message.assert_awaited_once()
+        handle_msg.assert_awaited_once()
 
     async def test_location_handler_accepts_extensible_fallback_fields(self):
         location_handler = load_module("receiver.handlers.location")

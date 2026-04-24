@@ -55,6 +55,11 @@
     "type": "bool",
     "hint": "是否使用消息线程（Threading）回复，默认 False"
   },
+  "matrix_enable_live_messages": {
+    "description": "启用 Live Messages",
+    "type": "bool",
+    "hint": "启用 MSC4357 Live Messages（通过 m.replace 持续编辑同一条消息实现流式输出），默认 False"
+  },
   "matrix_use_notice": {
     "description": "使用通知类型消息",
     "type": "bool",

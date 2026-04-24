@@ -13,6 +13,12 @@ MATRIX_HTML_FORMAT = "org.matrix.custom.html"
 
 # 关系与线程常量
 REL_TYPE_THREAD = "m.thread"
+REL_TYPE_REPLACE = "m.replace"
+
+# MSC4357 Live Messages
+MSC4357_LIVE_MESSAGE_MARKER = "org.matrix.msc4357.live"
+M_ROOM_LIVE_MESSAGING = "m.room.live_messaging"
+MSC4357_LIVE_MESSAGING_STATE = "org.matrix.msc4357.live_messaging"
 
 # 通用事件类型
 M_ROOM_ENCRYPTED = "m.room.encrypted"
@@ -154,6 +160,7 @@ DEFAULT_CONFIG = {
     "matrix_auto_join_rooms": True,
     "matrix_sync_timeout": 30000,
     "matrix_enable_threading": False,
+    "matrix_enable_live_messages": False,
     "matrix_use_notice": False,
     # E2EE 配置
     "matrix_enable_e2ee": False,

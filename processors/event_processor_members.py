@@ -70,6 +70,19 @@ class MatrixEventProcessorMembers:
             room.third_party_invites = room_data.get("third_party_invites", {})
         if "state_events" in room_data:
             room.state_events = room_data.get("state_events", {})
+            for event_type in (
+                "m.room.live_messaging",
+                "org.matrix.msc4357.live_messaging",
+            ):
+                live_state = room.state_events.get(event_type, {}).get("", {})
+                if not isinstance(live_state, dict):
+                    continue
+                enabled = live_state.get("enabled")
+                if isinstance(enabled, bool):
+                    room.live_messaging_enabled = enabled
+                elif enabled is not None:
+                    room.live_messaging_enabled = bool(enabled)
+                break
 
         logger.debug(
             f"从存储加载房间 {room.room_id} 成员数据：{room.member_count} 个成员"

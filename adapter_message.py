@@ -9,6 +9,7 @@ from pathlib import Path
 
 from astrbot.api import logger
 
+from .constants import MSC4357_LIVE_MESSAGE_MARKER, REL_TYPE_REPLACE
 from .plugin_config import get_plugin_config
 
 
@@ -37,6 +38,13 @@ def _normalize_text(text: str, limit: int = 120) -> str:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: max(0, limit - 3)] + "..."
+
+
+def _is_live_message_draft(event) -> bool:
+    content = getattr(event, "content", {}) or {}
+    return isinstance(content, dict) and (
+        content.get(MSC4357_LIVE_MESSAGE_MARKER) is not None
+    )
 
 
 def _find_stalk_archive_message(room_id: str, event_id: str) -> str:
@@ -130,6 +138,7 @@ class MatrixAdapterMessageMixin:
             event: Parsed event object
         """
         try:
+            runtime_state = getattr(self, "runtime_state", None)
             sender_id = getattr(event, "sender", "") or ""
             sender_name = room.members.get(sender_id, sender_id) if sender_id else ""
 
@@ -159,6 +168,31 @@ class MatrixAdapterMessageMixin:
                 except Exception:
                     pass
                 return  # Reactions 已处理，不再进入后续消息/系统事件转换流程
+
+            event_content = getattr(event, "content", {}) or {}
+            relates_to = event_content.get("m.relates_to", {})
+            if _is_live_message_draft(event):
+                if runtime_state:
+                    try:
+                        runtime_state.mark_live_message_inbound(
+                            is_edit=bool(
+                                isinstance(relates_to, dict)
+                                and relates_to.get("rel_type") == REL_TYPE_REPLACE
+                            )
+                        )
+                    except Exception:
+                        pass
+                logger.debug(
+                    f"忽略 Matrix live message 草稿/增量：event_id={getattr(event, 'event_id', '')}"
+                )
+                return
+
+            if isinstance(relates_to, dict) and relates_to.get("rel_type") == REL_TYPE_REPLACE:
+                if runtime_state:
+                    try:
+                        runtime_state.mark_live_message_inbound(is_edit=True)
+                    except Exception:
+                        pass
 
             # 预回应表情：检查是否为 @机器人或唤醒命令
             if getattr(event, "msgtype", None):
@@ -198,6 +232,7 @@ class MatrixAdapterMessageMixin:
                 session_id=message.session_id,
                 client=self.client,
                 enable_threading=self._matrix_config.enable_threading,
+                enable_live_messages=self._matrix_config.enable_live_messages,
                 e2ee_manager=self.e2ee_manager,
                 use_notice=self._matrix_config.use_notice,
             )

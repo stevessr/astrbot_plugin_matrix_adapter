@@ -5,7 +5,7 @@ Matrix Event Types - Replacement for matrix-nio event types
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..constants import GROUP_CHAT_MIN_MEMBERS_2
+from ..constants import GROUP_CHAT_MIN_MEMBERS_2, REL_TYPE_REPLACE
 
 
 @dataclass
@@ -135,6 +135,7 @@ class MatrixRoom:
     space_parents: dict[str, dict[str, Any]] = field(default_factory=dict)
     third_party_invites: dict[str, dict[str, Any]] = field(default_factory=dict)
     state_events: dict[str, dict[str, Any]] = field(default_factory=dict)
+    live_messaging_enabled: bool | None = None
     member_count: int = 0
     is_direct: bool | None = None
     members: dict[str, str] = field(default_factory=dict)  # user_id -> display_name
@@ -216,10 +217,11 @@ def parse_event(event_data: dict[str, Any], room_id: str) -> MatrixEvent:
     # Treat edits (m.replace) as normal messages with new content.
     if (
         event_type == "m.room.message"
-        and relates_to.get("rel_type") == "m.replace"
+        and relates_to.get("rel_type") == REL_TYPE_REPLACE
         and content.get("m.new_content")
     ):
         content = dict(content.get("m.new_content", {}))
+        content.setdefault("m.relates_to", relates_to)
         event_data = dict(event_data)
         event_data["content"] = content
 

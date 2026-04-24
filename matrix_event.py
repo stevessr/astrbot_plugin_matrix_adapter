@@ -1,15 +1,25 @@
+import time
+
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageChain
 from astrbot.api.platform import AstrBotMessage, PlatformMetadata
 
 # 导入 Sticker 组件
 from .matrix_event_send import send_with_client_impl
+from .constants import MSC4357_LIVE_MESSAGE_MARKER
+from .streaming_crypto import (
+    edit_message_encrypted,
+    edit_message_plain,
+    send_message_encrypted,
+    send_message_plain,
+)
 
 
 class MatrixPlatformEvent(AstrMessageEvent):
     """Matrix 平台事件处理器（不依赖 matrix-nio）
 
-    NOTE: Matrix 协议不支持真正的流式消息推送，因此禁用流式响应。
+    NOTE: Matrix 默认不启用流式响应；启用后会通过 MSC4357 live messages
+    使用单条消息的连续 m.replace 编辑来模拟流式输出。
     """
 
     def __init__(
@@ -20,18 +30,19 @@ class MatrixPlatformEvent(AstrMessageEvent):
         session_id: str,
         client,
         enable_threading: bool = False,
+        enable_live_messages: bool = False,
         e2ee_manager=None,
         use_notice: bool = False,
     ):
         super().__init__(message_str, message_obj, platform_meta, session_id)
         self.client = client  # MatrixHTTPClient instance
         self.enable_threading = enable_threading  # 试验性：是否默认开启嘟文串模式
+        self.enable_live_messages = enable_live_messages
         self.e2ee_manager = e2ee_manager
         self.use_notice = use_notice  # 使用 m.notice 而不是 m.text
 
-        # NOTE: 强制禁用流式响应，因为 Matrix 不支持真正的流式消息
-        # 这会使 agent 在工具调用后能正常继续生成回复
-        self.set_extra("enable_streaming", False)
+        # 默认关闭；仅在显式启用 Live Messages 时才允许流式输出
+        self.set_extra("enable_streaming", bool(enable_live_messages))
 
     @staticmethod
     async def send_with_client(
@@ -59,6 +70,173 @@ class MatrixPlatformEvent(AstrMessageEvent):
             max_upload_size=max_upload_size,
             use_notice=use_notice,
         )
+
+    async def send_streaming(self, generator, use_fallback: bool = False) -> None:
+        """发送流式消息。
+
+        当启用 MSC4357 Live Messages 时，使用一条持续被 m.replace 编辑的
+        Matrix 消息来模拟流式输出；否则退化为发送普通消息。
+        """
+
+        room_id = self.session_id
+        msg_type = "m.notice" if self.use_notice else "m.text"
+        buffer = ""
+        current_event_id: str | None = None
+        last_sent_text = ""
+        last_flush_at = 0.0
+        flush_interval = 1.0
+        used_self_send = False
+        used_live_send = False
+        is_encrypted_room = False
+        metric_cls = None
+        try:
+            from astrbot.core.utils.metrics import Metric
+
+            metric_cls = Metric
+        except Exception:
+            metric_cls = None
+        if self.e2ee_manager:
+            try:
+                is_encrypted_room = await self.client.is_room_encrypted(room_id)
+            except Exception:
+                is_encrypted_room = False
+
+        async def _send_live_payload(text: str, *, final: bool) -> bool:
+            nonlocal current_event_id, last_sent_text, last_flush_at, used_live_send
+
+            content = {
+                "msgtype": msg_type,
+                "body": text,
+            }
+            if not final:
+                content[MSC4357_LIVE_MESSAGE_MARKER] = {}
+
+            tracker_metadata = {
+                "proposal": "msc4357-live-messages",
+                "live_message": True,
+                "phase": "final" if final else (
+                    "initial" if current_event_id is None else "edit"
+                ),
+            }
+
+            try:
+                if current_event_id is None:
+                    if is_encrypted_room:
+                        response = await send_message_encrypted(
+                            self.client,
+                            self.e2ee_manager,
+                            room_id,
+                            "m.room.message",
+                            content,
+                            tracker_metadata=tracker_metadata,
+                        )
+                    else:
+                        response = await send_message_plain(
+                            self.client,
+                            room_id,
+                            "m.room.message",
+                            content,
+                            tracker_metadata=tracker_metadata,
+                        )
+                    current_event_id = (response or {}).get("event_id")
+                else:
+                    if is_encrypted_room:
+                        await edit_message_encrypted(
+                            self.client,
+                            self.e2ee_manager,
+                            room_id,
+                            current_event_id,
+                            content,
+                            tracker_metadata=tracker_metadata,
+                        )
+                    else:
+                        await edit_message_plain(
+                            self.client,
+                            room_id,
+                            current_event_id,
+                            content,
+                            tracker_metadata=tracker_metadata,
+                        )
+            except Exception as e:
+                logger.warning(f"Matrix live message update failed: {e}")
+                return False
+
+            used_live_send = True
+            last_sent_text = text
+            last_flush_at = time.monotonic()
+            return True
+
+        if not self.enable_live_messages:
+            async for chain in generator:
+                if not isinstance(chain, MessageChain):
+                    continue
+                if chain.type == "break":
+                    if buffer:
+                        await self.send(MessageChain().message(buffer))
+                        used_self_send = True
+                        buffer = ""
+                    continue
+                text = chain.get_plain_text()
+                if text:
+                    buffer += text
+            if buffer:
+                await self.send(MessageChain().message(buffer))
+                used_self_send = True
+            if not used_self_send:
+                if metric_cls is not None:
+                    await metric_cls.upload(
+                        msg_event_tick=1, adapter_name=self.platform_meta.name
+                    )
+                self._has_send_oper = True
+            return
+
+        async for chain in generator:
+            if not isinstance(chain, MessageChain):
+                continue
+            if chain.type == "break":
+                if current_event_id is None:
+                    if buffer:
+                        await self.send(MessageChain().message(buffer))
+                        used_self_send = True
+                else:
+                    await _send_live_payload(buffer, final=True)
+                buffer = ""
+                current_event_id = None
+                last_sent_text = ""
+                last_flush_at = 0.0
+                continue
+
+            text = chain.get_plain_text()
+            if not text:
+                continue
+            buffer += text
+
+            should_flush = current_event_id is None or (
+                buffer != last_sent_text
+                and (time.monotonic() - last_flush_at) >= flush_interval
+            )
+            if should_flush:
+                await _send_live_payload(buffer, final=False)
+
+        if current_event_id is None:
+            if buffer:
+                await self.send(MessageChain().message(buffer))
+                used_self_send = True
+            if not used_self_send:
+                if metric_cls is not None:
+                    await metric_cls.upload(
+                        msg_event_tick=1, adapter_name=self.platform_meta.name
+                    )
+                self._has_send_oper = True
+            return
+
+        if buffer != last_sent_text or last_sent_text:
+            await _send_live_payload(buffer, final=True)
+        if metric_cls is not None and (used_live_send or not used_self_send):
+            await metric_cls.upload(
+                msg_event_tick=1, adapter_name=self.platform_meta.name
+            )
+        self._has_send_oper = True
 
     async def send(self, message_chain: MessageChain):
         """发送消息"""

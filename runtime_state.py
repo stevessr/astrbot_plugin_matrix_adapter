@@ -35,6 +35,11 @@ class MatrixRuntimeState:
         self.last_error_message: str | None = None
         self.send_success_count = 0
         self.send_failure_count = 0
+        self.live_message_inbound_count = 0
+        self.live_message_inbound_edit_count = 0
+        self.live_message_outbound_initial_count = 0
+        self.live_message_outbound_edit_count = 0
+        self.last_live_message_at: str | None = None
         self.reconnect_requests = 0
         self._recent_errors: deque[MatrixRuntimeErrorEntry] = deque(
             maxlen=max_recent_errors
@@ -79,6 +84,20 @@ class MatrixRuntimeState:
         self.send_failure_count += 1
         self.record_error("send", message)
 
+    def mark_live_message_inbound(self, *, is_edit: bool = False) -> None:
+        self.live_message_inbound_count += 1
+        if is_edit:
+            self.live_message_inbound_edit_count += 1
+        self.last_live_message_at = _utc_now_iso()
+
+    def mark_live_message_outbound_initial(self) -> None:
+        self.live_message_outbound_initial_count += 1
+        self.last_live_message_at = _utc_now_iso()
+
+    def mark_live_message_outbound_edit(self) -> None:
+        self.live_message_outbound_edit_count += 1
+        self.last_live_message_at = _utc_now_iso()
+
     def mark_presence_updated(self) -> None:
         self.last_presence_update_at = _utc_now_iso()
 
@@ -108,6 +127,11 @@ class MatrixRuntimeState:
             "last_error_message": self.last_error_message,
             "send_success_count": self.send_success_count,
             "send_failure_count": self.send_failure_count,
+            "live_message_inbound_count": self.live_message_inbound_count,
+            "live_message_inbound_edit_count": self.live_message_inbound_edit_count,
+            "live_message_outbound_initial_count": self.live_message_outbound_initial_count,
+            "live_message_outbound_edit_count": self.live_message_outbound_edit_count,
+            "last_live_message_at": self.last_live_message_at,
             "reconnect_requests": self.reconnect_requests,
             "recent_errors": self.recent_errors(),
         }

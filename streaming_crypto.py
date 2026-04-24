@@ -19,7 +19,12 @@ def check_encrypted_room(e2ee_manager, room_id: str) -> bool:
 
 
 async def send_message_encrypted(
-    client, e2ee_manager, room_id: str, msg_type: str, content: dict
+    client,
+    e2ee_manager,
+    room_id: str,
+    msg_type: str,
+    content: dict,
+    tracker_metadata: dict | None = None,
 ) -> dict:
     """加密并发送消息"""
     try:
@@ -29,26 +34,42 @@ async def send_message_encrypted(
                 room_id=room_id,
                 msg_type="m.room.encrypted",
                 content=encrypted,
+                tracker_metadata=tracker_metadata,
             )
         logger.warning("流式发送：加密失败，回退到未加密发送")
     except Exception as e:
         logger.warning(f"流式发送：加密异常 {e}，回退到未加密发送")
     return await client.send_message(
-        room_id=room_id, msg_type=msg_type, content=content
+        room_id=room_id,
+        msg_type=msg_type,
+        content=content,
+        tracker_metadata=tracker_metadata,
     )
 
 
 async def send_message_plain(
-    client, room_id: str, msg_type: str, content: dict
+    client,
+    room_id: str,
+    msg_type: str,
+    content: dict,
+    tracker_metadata: dict | None = None,
 ) -> dict:
     """发送未加密消息"""
     return await client.send_message(
-        room_id=room_id, msg_type=msg_type, content=content
+        room_id=room_id,
+        msg_type=msg_type,
+        content=content,
+        tracker_metadata=tracker_metadata,
     )
 
 
 async def edit_message_encrypted(
-    client, e2ee_manager, room_id: str, original_event_id: str, new_content: dict
+    client,
+    e2ee_manager,
+    room_id: str,
+    original_event_id: str,
+    new_content: dict,
+    tracker_metadata: dict | None = None,
 ):
     """加密并编辑消息"""
     try:
@@ -76,6 +97,7 @@ async def edit_message_encrypted(
                 room_id=room_id,
                 msg_type="m.room.encrypted",
                 content=encrypted,
+                tracker_metadata=tracker_metadata,
             )
             return
         logger.warning("流式编辑：加密失败，回退到未加密编辑")
@@ -85,15 +107,21 @@ async def edit_message_encrypted(
         room_id=room_id,
         original_event_id=original_event_id,
         new_content=new_content,
+        tracker_metadata=tracker_metadata,
     )
 
 
 async def edit_message_plain(
-    client, room_id: str, original_event_id: str, new_content: dict
+    client,
+    room_id: str,
+    original_event_id: str,
+    new_content: dict,
+    tracker_metadata: dict | None = None,
 ):
     """编辑未加密消息"""
     await client.edit_message(
         room_id=room_id,
         original_event_id=original_event_id,
         new_content=new_content,
+        tracker_metadata=tracker_metadata,
     )

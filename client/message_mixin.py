@@ -16,8 +16,49 @@ from astrbot.api import logger
 from ..constants import (
     DEFAULT_TIMEOUT_MS_30000,
     HTTP_ERROR_STATUS_400,
+    MSC4357_LIVE_MESSAGE_MARKER,
+    REL_TYPE_REPLACE,
     RESPONSE_TRUNCATE_LENGTH_400,
 )
+
+
+def _content_has_live_marker(content: dict[str, Any]) -> bool:
+    if not isinstance(content, dict):
+        return False
+    if content.get(MSC4357_LIVE_MESSAGE_MARKER) is not None:
+        return True
+    new_content = content.get("m.new_content")
+    return isinstance(new_content, dict) and (
+        new_content.get(MSC4357_LIVE_MESSAGE_MARKER) is not None
+    )
+
+
+def _content_is_edit(content: dict[str, Any]) -> bool:
+    if not isinstance(content, dict):
+        return False
+    relates_to = content.get("m.relates_to")
+    return isinstance(relates_to, dict) and relates_to.get("rel_type") == REL_TYPE_REPLACE
+
+
+def _build_live_message_metadata(
+    content: dict[str, Any], *, phase: str | None = None
+) -> dict[str, Any] | None:
+    if not isinstance(content, dict):
+        return None
+    is_live = _content_has_live_marker(content) or _content_is_edit(content)
+    if not is_live:
+        return None
+    metadata: dict[str, Any] = {
+        "proposal": "msc4357-live-messages",
+        "live_message": True,
+    }
+    if phase:
+        metadata["phase"] = phase
+    elif _content_is_edit(content):
+        metadata["phase"] = "edit"
+    else:
+        metadata["phase"] = "initial"
+    return metadata
 
 
 class MessageMixin:
@@ -29,6 +70,7 @@ class MessageMixin:
         msg_type: str,
         content: dict[str, Any],
         txn_id: str | None = None,
+        tracker_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Send a message to a room
@@ -44,6 +86,9 @@ class MessageMixin:
         txn_id = txn_id or f"{int(time.time() * 1000)}_{id(content)}"
         tracker = getattr(self, "outbound_tracker", None)
         runtime_state = getattr(self, "runtime_state", None)
+        metadata = _build_live_message_metadata(content)
+        if tracker_metadata:
+            metadata = {**(metadata or {}), **tracker_metadata}
         if tracker:
             tracker.record_attempt(
                 txn_id=txn_id,
@@ -51,6 +96,7 @@ class MessageMixin:
                 room_id=room_id,
                 event_type=msg_type,
                 content=content,
+                metadata=metadata,
             )
         endpoint = f"/_matrix/client/v3/rooms/{room_id}/send/{msg_type}/{txn_id}"
         try:
@@ -65,6 +111,12 @@ class MessageMixin:
             tracker.mark_success(txn_id, response)
         if runtime_state:
             runtime_state.mark_send_ok()
+            if metadata and metadata.get("live_message"):
+                phase = str(metadata.get("phase") or "initial")
+                if phase == "initial":
+                    runtime_state.mark_live_message_outbound_initial()
+                else:
+                    runtime_state.mark_live_message_outbound_edit()
         return response
 
     async def send_room_event(
@@ -73,6 +125,7 @@ class MessageMixin:
         event_type: str,
         content: dict[str, Any],
         txn_id: str | None = None,
+        tracker_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Send a custom event to a room
@@ -88,6 +141,9 @@ class MessageMixin:
         txn_id = txn_id or f"txn_{int(time.time() * 1000)}"
         tracker = getattr(self, "outbound_tracker", None)
         runtime_state = getattr(self, "runtime_state", None)
+        metadata = _build_live_message_metadata(content)
+        if tracker_metadata:
+            metadata = {**(metadata or {}), **tracker_metadata}
         if tracker:
             tracker.record_attempt(
                 txn_id=txn_id,
@@ -95,6 +151,7 @@ class MessageMixin:
                 room_id=room_id,
                 event_type=event_type,
                 content=content,
+                metadata=metadata,
             )
         endpoint = f"/_matrix/client/v3/rooms/{room_id}/send/{event_type}/{txn_id}"
         try:
@@ -109,6 +166,12 @@ class MessageMixin:
             tracker.mark_success(txn_id, response)
         if runtime_state:
             runtime_state.mark_send_ok()
+            if metadata and metadata.get("live_message"):
+                phase = str(metadata.get("phase") or "edit")
+                if phase == "initial":
+                    runtime_state.mark_live_message_outbound_initial()
+                else:
+                    runtime_state.mark_live_message_outbound_edit()
         return response
 
     async def send_room_message(self, room_id: str, message: str) -> dict[str, Any]:
@@ -132,6 +195,7 @@ class MessageMixin:
         original_event_id: str,
         new_content: dict[str, Any],
         msg_type: str = "m.text",
+        tracker_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Edit an existing message
@@ -146,8 +210,6 @@ class MessageMixin:
             Send response with event_id
         """
         txn_id = f"{int(time.time() * 1000)}_{id(new_content)}"
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/send/m.room.message/{txn_id}"
-
         # Construct edit content according to Matrix spec
         content = {
             "msgtype": msg_type,
@@ -161,8 +223,16 @@ class MessageMixin:
             },
             "m.relates_to": {"rel_type": "m.replace", "event_id": original_event_id},
         }
-
-        return await self._request("PUT", endpoint, data=content)
+        edit_metadata = {"proposal": "msc4357-live-messages", "live_message": True, "phase": "edit"}
+        if tracker_metadata:
+            edit_metadata.update(tracker_metadata)
+        return await self.send_room_event(
+            room_id=room_id,
+            event_type="m.room.message",
+            content=content,
+            txn_id=txn_id,
+            tracker_metadata=edit_metadata,
+        )
 
     async def send_reaction(
         self, room_id: str, event_id: str, emoji: str

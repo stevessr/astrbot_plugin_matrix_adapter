@@ -104,6 +104,13 @@ class MatrixConfig:
             False,
         )
 
+        # Live Messages（MSC4357）配置
+        # 启用后，流式响应会通过单条消息的连续 m.replace 编辑来呈现
+        self.enable_live_messages = self._parse_bool(
+            self.config.get("matrix_enable_live_messages"),
+            False,
+        )
+
         # 消息类型配置
         # 当启用时，机器人使用 m.notice 而不是 m.text 发送消息
         # m.notice 通常用于机器人消息，不会触发通知声音

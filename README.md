@@ -362,6 +362,15 @@ await adapter.sender.send_custom_event(
 )
 ```
 
+### Live Messages / 流式输出
+
+如果你希望 Bot 的流式回复通过 Matrix 的 `m.replace` 编辑逐步更新到同一条消息，
+可以在 Matrix 适配器配置中启用 `matrix_enable_live_messages`。
+
+启用后，适配器会在发送的初始消息里加入
+`org.matrix.msc4357.live` 标记，并在后续更新中持续编辑同一条消息。
+最终完成时会移除该标记，兼容不支持该提案的客户端仍会看到正常的编辑消息。
+
 ### 删除消息
 
 Matrix 适配器暴露了 `MatrixSender.delete_message` 接口用于删除（撤回）消息：
