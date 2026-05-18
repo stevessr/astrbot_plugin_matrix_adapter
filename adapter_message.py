@@ -245,7 +245,6 @@ class MatrixAdapterMessageMixin:
                 pre_ack_enable = plugin_cfg.pre_ack_emoji_enable
                 pre_ack_emojis = plugin_cfg.pre_ack_emoji_emojis
 
-                logger.debug(f"[pre_ack] 配置检查：enable={pre_ack_enable}, event_id={event_id}")
                 if pre_ack_enable and pre_ack_emojis and event_id:
                     import random
 
@@ -285,9 +284,8 @@ class MatrixAdapterMessageMixin:
                         if not hasattr(message, "message_id"):
                             message.message_id = event_id
                         await message_event.react(emoji)
-                        logger.debug(f"[pre_ack] 发送预回应表情：{emoji}, reason={react_reason}")
-            except Exception as e:
-                logger.debug(f"预回应表情发送失败：{e}")
+            except Exception:
+                pass
 
             self.commit_event(message_event)
             # 仅记录必要的事件元信息，避免在 debug 中打印过多用户标识
