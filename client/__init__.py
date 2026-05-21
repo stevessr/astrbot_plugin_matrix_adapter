@@ -19,6 +19,7 @@ from .event_types import InviteEvent, MatrixEvent, RoomMessageEvent
 from .http_client import (
     AccountMixin,
     AuthMixin,
+    DelayedEventsMixin,
     DeviceMixin,
     E2EEMixin,
     KeyBackupMixin,
@@ -58,6 +59,7 @@ __all__ = [
     "TagsMixin",
     "ThirdPartyMixin",
     "VoipMixin",
+    "DelayedEventsMixin",
     # Event types
     "MatrixEvent",
     "RoomMessageEvent",

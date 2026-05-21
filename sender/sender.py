@@ -7,6 +7,16 @@ from typing import Any
 from astrbot.api.event import MessageChain
 from astrbot.api.message_components import Record, Video
 
+from ..constants import (
+    M_BEACON,
+    M_BEACON_INFO,
+    M_PROFILE_KEY,
+    MSC1767_TEXT_KEY,
+    MSC3488_ASSET_KEY,
+    MSC3488_TS_KEY,
+    MSC4144_PROFILE_KEY,
+)
+
 # Update import: markdown_utils is now in ..utils.markdown_utils
 
 
@@ -269,3 +279,202 @@ class MatrixSender:
         return await self.client.redact_event(
             room_id, event_id, reason=reason, txn_id=txn_id
         )
+
+    async def send_with_per_message_profile(
+        self,
+        room_id: str,
+        body: str,
+        *,
+        displayname: str | None = None,
+        avatar_url: str | None = None,
+        msgtype: str = "m.text",
+        formatted_body: str | None = None,
+        reply_to: str | None = None,
+        thread_root: str | None = None,
+        use_thread: bool = False,
+        stable: bool = True,
+    ) -> dict | None:
+        """
+        Send a message with a per-message profile override (MSC4144).
+
+        Bridges and bots often need to render messages under a different
+        identity than the sending Matrix user. MSC4144 lets the sender attach
+        an alternate ``displayname``/``avatar_url`` to a single event without
+        touching the underlying profile.
+
+        Args:
+            room_id: Target room ID
+            body: Plain-text body
+            displayname: Display name to attach to this message
+            avatar_url: ``mxc://`` avatar URL to attach to this message
+            msgtype: Message type, defaults to ``m.text``
+            formatted_body: Optional HTML formatted body
+            stable: Also include the stable ``m.per_message_profile`` key
+                alongside the unstable ``com.beeper.per_message_profile`` key
+        """
+        if not displayname and not avatar_url:
+            raise ValueError(
+                "at least one of displayname/avatar_url is required for per-message profile"
+            )
+        profile: dict[str, Any] = {}
+        if displayname:
+            profile["displayname"] = displayname
+        if avatar_url:
+            profile["avatar_url"] = avatar_url
+
+        content: dict[str, Any] = {
+            "msgtype": msgtype,
+            "body": body,
+            MSC4144_PROFILE_KEY: dict(profile),
+        }
+        if stable:
+            content[M_PROFILE_KEY] = dict(profile)
+        if formatted_body:
+            content["format"] = "org.matrix.custom.html"
+            content["formatted_body"] = formatted_body
+
+        return await self.send_custom_message(
+            room_id,
+            "m.room.message",
+            content,
+            reply_to=reply_to,
+            thread_root=thread_root,
+            use_thread=use_thread,
+        )
+
+    async def send_live_location_beacon_info(
+        self,
+        room_id: str,
+        *,
+        description: str | None = None,
+        timeout_ms: int = 3600_000,
+        live: bool = True,
+        asset_type: str = "m.self",
+    ) -> dict | None:
+        """
+        Publish a live-location ``m.beacon_info`` state event (MSC3489).
+
+        The state key MUST be the sender's user ID. Once published, the sender
+        can call :meth:`send_live_location_beacon` repeatedly to publish
+        ``m.beacon`` events that update the location.
+        """
+        if timeout_ms <= 0:
+            raise ValueError("timeout_ms must be positive for live location")
+        user_id = getattr(self.client, "user_id", None)
+        if not user_id:
+            raise RuntimeError("client.user_id is required for beacon_info")
+
+        content: dict[str, Any] = {
+            "live": bool(live),
+            "timeout": int(timeout_ms),
+            "org.matrix.msc3488.ts": int(self._now_ms()),
+            MSC3488_TS_KEY: int(self._now_ms()),
+            MSC3488_ASSET_KEY: {"type": asset_type},
+            "m.asset": {"type": asset_type},
+        }
+        if description:
+            content["description"] = description
+
+        return await self.client.send_room_event(
+            room_id=room_id,
+            event_type=M_BEACON_INFO,
+            content=content,
+            txn_id=None,
+        )
+
+    async def send_live_location_beacon(
+        self,
+        room_id: str,
+        beacon_info_event_id: str,
+        latitude: float,
+        longitude: float,
+        *,
+        accuracy_m: float | None = None,
+        description: str | None = None,
+    ) -> dict | None:
+        """
+        Publish a live-location ``m.beacon`` update (MSC3489).
+
+        Args:
+            beacon_info_event_id: The event ID of the ``m.beacon_info`` state event.
+            latitude / longitude: Coordinates of the location update.
+            accuracy_m: Optional horizontal accuracy in meters.
+            description: Optional human-readable description.
+        """
+        if not beacon_info_event_id:
+            raise ValueError("beacon_info_event_id is required")
+
+        geo_uri = f"geo:{latitude},{longitude}"
+        if accuracy_m and accuracy_m > 0:
+            geo_uri += f";u={accuracy_m}"
+        location_payload: dict[str, Any] = {"uri": geo_uri}
+        if description:
+            location_payload["description"] = description
+
+        content: dict[str, Any] = {
+            "m.location": location_payload,
+            "org.matrix.msc3488.location": dict(location_payload),
+            "m.ts": int(self._now_ms()),
+            MSC3488_TS_KEY: int(self._now_ms()),
+            "m.relates_to": {
+                "rel_type": "m.reference",
+                "event_id": beacon_info_event_id,
+            },
+            MSC1767_TEXT_KEY: description or geo_uri,
+        }
+
+        return await self.client.send_room_event(
+            room_id=room_id,
+            event_type=M_BEACON,
+            content=content,
+            txn_id=None,
+        )
+
+    async def mark_room_unread(
+        self, room_id: str, unread: bool = True
+    ) -> dict:
+        """Mark a room as (un)read for this account (MSC2867)."""
+        return await self.client.set_room_marked_unread(room_id, unread)
+
+    async def send_delayed_message(
+        self,
+        room_id: str,
+        event_type: str,
+        content: dict[str, Any],
+        delay_ms: int,
+        parent_delay_id: str | None = None,
+    ) -> dict:
+        """Schedule a delayed Matrix event (MSC4140)."""
+        return await self.client.send_delayed_room_event(
+            room_id=room_id,
+            event_type=event_type,
+            content=content,
+            delay_ms=delay_ms,
+            parent_delay_id=parent_delay_id,
+        )
+
+    async def cancel_delayed_message(self, delay_id: str) -> dict:
+        """Cancel a previously scheduled delayed event (MSC4140)."""
+        return await self.client.cancel_delayed_event(delay_id)
+
+    async def fire_delayed_message(self, delay_id: str) -> dict:
+        """Immediately fire a pending delayed event (MSC4140)."""
+        return await self.client.fire_delayed_event(delay_id)
+
+    async def restart_delayed_message(self, delay_id: str) -> dict:
+        """Reset the timeout on a pending delayed event (MSC4140)."""
+        return await self.client.restart_delayed_event(delay_id)
+
+    async def list_delayed_messages(
+        self, from_token: str | None = None, limit: int | None = None
+    ) -> dict:
+        """List currently pending delayed events (MSC4140)."""
+        return await self.client.list_delayed_events(
+            from_token=from_token, limit=limit
+        )
+
+    @staticmethod
+    def _now_ms() -> int:
+        import time
+
+        return int(time.time() * 1000)

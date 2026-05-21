@@ -388,6 +388,10 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             "org.matrix.msc3381.poll.start",
             "org.matrix.msc3381.poll.response",
             "org.matrix.msc3381.poll.end",
+            "m.beacon",
+            "m.beacon_info",
+            "org.matrix.msc3672.beacon",
+            "org.matrix.msc3672.beacon_info",
         ):
             # Parse plaintext message event, encrypted event, sticker, or poll event
             event = parse_event(event_data, room.room_id)

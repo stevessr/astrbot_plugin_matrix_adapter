@@ -386,6 +386,121 @@ await adapter.sender.delete_message("!roomid:example.org", "$event_id:example.or
 await event.delete()
 ```
 
+### 标记房间未读（MSC2867）
+
+```python
+# 把房间在自身账户上标记为未读 / 已读
+await adapter.sender.mark_room_unread("!roomid:example.org", True)
+await adapter.sender.mark_room_unread("!roomid:example.org", False)
+```
+
+写入会同时落地稳定 `m.marked_unread` 与旧版 `com.famedly.marked_unread` 两个键，
+以兼容尚未升级到 v1.12 的客户端/服务器。
+
+### 延迟事件（MSC4140，可取消的 future events）
+
+```python
+# 安排一条 2 分钟后才会发出的文本消息
+resp = await adapter.sender.send_delayed_message(
+    "!roomid:example.org",
+    event_type="m.room.message",
+    content={"msgtype": "m.text", "body": "稍后送达"},
+    delay_ms=120_000,
+)
+delay_id = resp["delay_id"]
+
+await adapter.sender.restart_delayed_message(delay_id)  # 重置倒计时
+await adapter.sender.fire_delayed_message(delay_id)      # 立刻发送
+await adapter.sender.cancel_delayed_message(delay_id)    # 取消发送
+
+pending = await adapter.sender.list_delayed_messages()
+```
+
+需要 Homeserver 启用 MSC4140（例如 Synapse `experimental_features.msc4140_enabled`，
+tuwunel/conduwuit 默认启用）。如果服务端没启用，调用会返回 `M_UNRECOGNIZED`。
+
+### Per-Message Profiles（MSC4144）
+
+让单条消息呈现不同的发送者画像（典型用途：桥接、bot 角色切换）：
+
+```python
+await adapter.sender.send_with_per_message_profile(
+    "!roomid:example.org",
+    body="小蓝说：你好",
+    displayname="小蓝",
+    avatar_url="mxc://example.org/some_avatar_id",
+)
+```
+
+内容会同时携带稳定 `m.per_message_profile` 与 unstable `com.beeper.per_message_profile`
+两个键，确保新旧客户端都能识别。
+
+### Live Location 实时位置（MSC3489）
+
+```python
+# 1. 发布一个 1 小时内有效的实时位置会话
+beacon_info = await adapter.sender.send_live_location_beacon_info(
+    "!roomid:example.org",
+    description="出差中",
+    timeout_ms=3_600_000,
+    live=True,
+)
+beacon_info_event_id = beacon_info["event_id"]
+
+# 2. 周期性发布位置更新（建议 5~30 秒一次）
+await adapter.sender.send_live_location_beacon(
+    "!roomid:example.org",
+    beacon_info_event_id,
+    latitude=39.9042,
+    longitude=116.4074,
+    accuracy_m=15.0,
+    description="天安门附近",
+)
+
+# 3. 结束会话
+await adapter.sender.send_live_location_beacon_info(
+    "!roomid:example.org",
+    description="出差中",
+    timeout_ms=3_600_000,
+    live=False,
+)
+```
+
+接收端会把 `m.beacon_info` / `m.beacon` 渲染为 `[实时位置开启]` / `[实时位置更新]`
+文本消息进入消息链。
+
+### 扩展用户档案（MSC4133）
+
+```python
+profile = await adapter.sender.client.get_extended_profile()
+await adapter.sender.client.set_extended_profile_field("us.cloke.msc4175.tz", "Asia/Shanghai")
+await adapter.sender.client.delete_extended_profile_field("us.cloke.msc4175.tz")
+```
+
+若服务端未实现 MSC4133，`get_extended_profile` 会自动回退到 stable
+`/_matrix/client/v3/profile/{user_id}` 端点。
+
+## 已支持的 Matrix Spec Change（MSC）
+
+| MSC | 名称 | 角色 | 说明 |
+|-----|------|------|------|
+| MSC1767 | Extensible Events | 收/发 | 在音频/文本/投票内容中携带 `m.text` / `m.audio` / `m.file` |
+| MSC2697 | Dehydrated Devices | 收 | E2EE 脱水设备恢复 |
+| MSC2867 | Marking Rooms as Unread | 发 | `mark_room_unread`，双写稳定与 unstable 键 |
+| MSC2965 | OAuth2 Discovery | 发 | 登录元数据自动发现 |
+| MSC2967 | OAuth2 Scopes | 发 | API/设备 scope（兼容 legacy） |
+| MSC3245 | Voice Messages | 发 | 发送音频时附加 `org.matrix.msc3245.voice` 标记 |
+| MSC3381 | Polls | 收/发 | 双向兼容稳定 `m.poll` 与 `org.matrix.msc3381.*` |
+| MSC3488 | Location | 收/发 | `m.location` 与 `org.matrix.msc3488.*` 双写/双解 |
+| MSC3489 / MSC3672 | Live Location Sharing | 收/发 | `m.beacon_info` + `m.beacon` |
+| MSC3771 | Read Receipts for Threads | 发 | 支持 `thread_id` 字段 |
+| MSC3952 | Intentional Mentions | 收/发 | At/AtAll 自动生成 `m.mentions`，回复时合并被提及者 |
+| MSC4133 | Extended Profile Fields | 发 | 扩展个人资料读写，未支持时回退到稳定端点 |
+| MSC4140 | Cancellable Delayed Events | 发 | `send_delayed_message` / `cancel_delayed_message` 等 |
+| MSC4143 | OAuth2 Auth Metadata | 发 | 优先请求 `/_matrix/client/v1/auth_metadata` |
+| MSC4144 | Per-Message Profiles | 发 | `send_with_per_message_profile` 单条消息携带 displayname/avatar |
+| MSC4357 | Live Messages（流式编辑） | 发 | 见下方"流式输出"章节 |
+
 ## E2EE 端到端加密
 
 ### 概述

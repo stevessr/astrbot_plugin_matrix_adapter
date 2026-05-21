@@ -18,6 +18,7 @@ This module provides a modular HTTP client for Matrix, composed of:
 from .account_mixin import AccountMixin
 from .auth_mixin import AuthMixin
 from .base import MatrixAPIError, MatrixClientBase
+from .delayed_events_mixin import DelayedEventsMixin
 from .device_mixin import DeviceMixin
 from .e2ee_mixin import E2EEMixin
 from .key_backup_mixin import KeyBackupMixin
@@ -50,6 +51,7 @@ class MatrixHTTPClient(
     WidgetMixin,
     UserMixin,
     VoipMixin,
+    DelayedEventsMixin,
 ):
     """
     Complete Matrix HTTP client combining all API modules.
@@ -88,4 +90,5 @@ __all__ = [
     "WidgetMixin",
     "UserMixin",
     "VoipMixin",
+    "DelayedEventsMixin",
 ]

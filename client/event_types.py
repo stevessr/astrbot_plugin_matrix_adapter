@@ -262,6 +262,20 @@ def parse_event(event_data: dict[str, Any], room_id: str) -> MatrixEvent:
             event = RoomMessageEvent.from_dict(event_data, room_id)
             event.msgtype = "m.location"
             return event
+        case (
+            "m.beacon"
+            | "m.beacon_info"
+            | "org.matrix.msc3672.beacon"
+            | "org.matrix.msc3672.beacon_info"
+        ):
+            beacon_content = dict(content)
+            beacon_content.setdefault("msgtype", "m.beacon")
+            beacon_content.setdefault("body", _build_location_body(content))
+            event_data = dict(event_data)
+            event_data["content"] = beacon_content
+            event = RoomMessageEvent.from_dict(event_data, room_id)
+            event.msgtype = "m.beacon"
+            return event
         case "m.room.member" if content.get("membership") == "invite":
             return InviteEvent.from_dict(event_data, room_id)
         case "m.room.redaction":

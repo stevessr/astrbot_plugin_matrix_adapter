@@ -24,8 +24,11 @@ from ..utils.media_cache_index import MediaCacheIndexStore
 from ..utils.media_crypto import decrypt_encrypted_file
 from ..utils.utils import MatrixUtils
 from .handlers import (
+    BEACON_EVENT_TYPES,
     ROOM_STATE_HANDLERS,
     handle_audio,
+    handle_beacon,
+    handle_beacon_info,
     handle_file,
     handle_image,
     handle_location,
@@ -866,6 +869,10 @@ class MatrixReceiver:
             await handle_poll_response(self, chain, event, event_type)
         elif event_type in ("m.poll.end", "org.matrix.msc3381.poll.end"):
             await handle_poll_end(self, chain, event, event_type)
+        elif event_type in BEACON_EVENT_TYPES and event_type and "beacon_info" in event_type:
+            await handle_beacon_info(self, chain, event, event_type)
+        elif event_type in BEACON_EVENT_TYPES:
+            await handle_beacon(self, chain, event, event_type)
         else:
             handler = self._MSGTYPE_HANDLERS.get(msgtype, handle_unknown)
             await handler(self, chain, event, msgtype)

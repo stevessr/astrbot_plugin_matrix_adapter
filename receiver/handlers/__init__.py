@@ -1,4 +1,7 @@
 from .audio import handle_audio as handle_audio
+from .beacon import BEACON_EVENT_TYPES as BEACON_EVENT_TYPES
+from .beacon import handle_beacon as handle_beacon
+from .beacon import handle_beacon_info as handle_beacon_info
 from .file import handle_file as handle_file
 from .image import handle_image as handle_image
 from .location import handle_location as handle_location

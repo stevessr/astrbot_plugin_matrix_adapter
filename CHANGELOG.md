@@ -4,6 +4,12 @@
 - 现在在脱 html 包装会尝试合并连续的 plain 了
 - 现在可以设置 React，但是似乎并没有什么用处？
 - 添加了未并入主线的 MSC4357
+- 补全 MSC 支持：
+  - **MSC2867 标记房间未读**：`MatrixSender.mark_room_unread(room_id, unread)`，同时写入稳定 `m.marked_unread` 与旧版 `com.famedly.marked_unread`
+  - **MSC4140 可取消的延迟事件**：新增 `DelayedEventsMixin`，提供 `send_delayed_message` / `cancel_delayed_message` / `fire_delayed_message` / `restart_delayed_message` / `list_delayed_messages`
+  - **MSC4144 Per-Message Profiles**：`MatrixSender.send_with_per_message_profile()`，单条消息携带 displayname/avatar_url（同时附带稳定 `m.per_message_profile` 与 unstable `com.beeper.per_message_profile`）
+  - **MSC3489 Live Location 实时位置**：`MatrixSender.send_live_location_beacon_info()` / `send_live_location_beacon()` 发送 beacon_info/beacon；receiver 识别 `m.beacon` / `m.beacon_info` / `org.matrix.msc3672.*` 并渲染为文本
+  - **MSC4133 扩展用户档案字段**：`get_extended_profile` / `set_extended_profile_field` / `delete_extended_profile_field`，无支持时自动回退至 stable `/profile`
 
 ## 0.3.6
 - 现在重新登陆会更换设备 ID 了，这可能会减少很多问题
