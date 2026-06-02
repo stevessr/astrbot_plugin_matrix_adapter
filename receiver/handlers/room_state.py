@@ -207,6 +207,57 @@ async def handle_room_history_visibility(receiver, chain, event, _: str):
     chain.chain.append(Plain(text))
 
 
+async def handle_room_guest_access(receiver, chain, event, _: str):
+    """Handle m.room.guest_access state event."""
+    content = event.content or {}
+    guest_access = content.get("guest_access", "unknown")
+    sender = getattr(event, "sender", "Someone")
+
+    access_descriptions = {
+        "can_join": "guests can join",
+        "forbidden": "guests cannot join",
+    }
+    description = access_descriptions.get(guest_access, guest_access)
+    chain.chain.append(
+        Plain(f"[Room Info] {sender} changed guest access to: {description}")
+    )
+
+
+async def handle_room_canonical_alias(receiver, chain, event, _: str):
+    """Handle m.room.canonical_alias state event."""
+    content = event.content or {}
+    alias = content.get("alias") or ""
+    alt_aliases = content.get("alt_aliases") or []
+    sender = getattr(event, "sender", "Someone")
+
+    if alias:
+        text = f"[Room Info] {sender} changed canonical alias to: {alias}"
+    else:
+        text = f"[Room Info] {sender} removed the canonical alias"
+    if isinstance(alt_aliases, list) and alt_aliases:
+        text += f" (alt aliases: {', '.join(str(item) for item in alt_aliases[:5])})"
+        if len(alt_aliases) > 5:
+            text += f" (+{len(alt_aliases) - 5} more)"
+    chain.chain.append(Plain(text))
+
+
+async def handle_room_pinned_events(receiver, chain, event, _: str):
+    """Handle m.room.pinned_events state event."""
+    content = event.content or {}
+    pinned = content.get("pinned") or []
+    sender = getattr(event, "sender", "Someone")
+    if not isinstance(pinned, list):
+        pinned = []
+    count = len(pinned)
+    if count == 0:
+        text = f"[Room Info] {sender} removed all pinned events"
+    elif count == 1:
+        text = f"[Room Info] {sender} pinned 1 event"
+    else:
+        text = f"[Room Info] {sender} pinned {count} events"
+    chain.chain.append(Plain(text))
+
+
 async def handle_room_member_change(receiver, chain, event, _: str):
     """
     Handle m.room.member membership/profile state events.
@@ -272,4 +323,7 @@ ROOM_STATE_HANDLERS = {
     "m.room.power_levels": handle_room_power_levels,
     "m.room.join_rules": handle_room_join_rules,
     "m.room.history_visibility": handle_room_history_visibility,
+    "m.room.guest_access": handle_room_guest_access,
+    "m.room.canonical_alias": handle_room_canonical_alias,
+    "m.room.pinned_events": handle_room_pinned_events,
 }

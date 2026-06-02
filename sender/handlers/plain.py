@@ -1,3 +1,5 @@
+import html
+
 from astrbot.api import logger
 from astrbot.api.message_components import Plain
 
@@ -85,7 +87,7 @@ async def send_plain(
             formatted_body = markdown_to_html(text)
         except Exception as e:
             logger.warning(f"Failed to render markdown: {e}")
-            formatted_body = text.replace("\n", "<br>")
+            formatted_body = html.escape(text).replace("\n", "<br>")
 
     if hasattr(segment, "format") and segment.format:
         content["format"] = segment.format

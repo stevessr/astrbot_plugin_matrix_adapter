@@ -386,6 +386,23 @@ await adapter.sender.delete_message("!roomid:example.org", "$event_id:example.or
 await event.delete()
 ```
 
+### 置顶 / 取消置顶房间事件
+
+Matrix 适配器暴露了 `MatrixSender.pin_message` / `unpin_message` 等接口用于维护
+`m.room.pinned_events`：
+
+```python
+# 置顶某条 Matrix 事件
+await adapter.sender.pin_message("!roomid:example.org", "$event_id:example.org")
+
+# 取消置顶
+await adapter.sender.unpin_message("!roomid:example.org", "$event_id:example.org")
+
+# 读取或整体替换置顶列表
+pins = await adapter.sender.get_pinned_messages("!roomid:example.org")
+await adapter.sender.set_pinned_messages("!roomid:example.org", pins[:5])
+```
+
 ### 标记房间未读（MSC2867）
 
 ```python

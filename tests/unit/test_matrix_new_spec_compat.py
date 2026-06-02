@@ -372,6 +372,100 @@ class MatrixTextMentionCompatTests(unittest.TestCase):
         self.assertEqual(chain.chain[0].name, receiver.bot_name)
         self.assertEqual(chain.chain[1].text, "抱抱大家喵")
 
+    def test_percent_encoded_matrix_to_mentions_are_decoded(self):
+        text_handler = load_module("receiver.handlers.text")
+
+        receiver = types.SimpleNamespace(
+            user_id="@bot:example.org",
+            bot_name="MatrixBot",
+        )
+        chain = types.SimpleNamespace(chain=[])
+        content = {
+            "body": "Alice says hi",
+            "format": "org.matrix.custom.html",
+            "formatted_body": (
+                '<a href="https://matrix.to/#/%40alice%3Aexample.org">'
+                "Alice</a> says hi"
+            ),
+        }
+
+        text_handler.append_formatted_text(receiver, chain, content["body"], content)
+
+        self.assertEqual(chain.chain[0].qq, "@alice:example.org")
+        self.assertEqual(chain.chain[0].name, "Alice")
+        self.assertEqual(chain.chain[1].text, " says hi")
+
+    def test_percent_encoded_reply_fallback_is_decoded(self):
+        text_handler = load_module("receiver.handlers.text")
+
+        receiver = types.SimpleNamespace(
+            user_id="@bot:example.org",
+            bot_name="MatrixBot",
+        )
+        chain = types.SimpleNamespace(chain=[])
+        content = {
+            "body": "reply body",
+            "format": "org.matrix.custom.html",
+            "formatted_body": (
+                "<mx-reply><blockquote>"
+                '<a href="https://matrix.to/#/%21room%3Aexample.org/%24event%2F1%3Aexample.org">In reply to</a> '
+                '<a href="https://matrix.to/#/%40alice%3Aexample.org">Alice</a>'
+                "<br />quoted text"
+                "</blockquote></mx-reply>"
+                "reply body"
+            ),
+        }
+
+        text_handler.append_formatted_text(receiver, chain, content["body"], content)
+
+        self.assertEqual(chain.chain[0].id, "$event/1:example.org")
+        self.assertEqual(chain.chain[0].sender_id, "@alice:example.org")
+        self.assertEqual(chain.chain[0].message_str, "quoted text")
+        self.assertEqual(chain.chain[1].text, "reply body")
+
+    def test_matrix_to_reply_with_via_query_does_not_pollute_event_id(self):
+        text_handler = load_module("receiver.handlers.text")
+
+        receiver = types.SimpleNamespace(
+            user_id="@bot:example.org",
+            bot_name="MatrixBot",
+        )
+        chain = types.SimpleNamespace(chain=[])
+        content = {
+            "body": "reply body",
+            "format": "org.matrix.custom.html",
+            "formatted_body": (
+                "<mx-reply><blockquote>"
+                '<a href="https://matrix.to/#/!room:example.org/$event:example.org?via=example.org">In reply to</a> '
+                '<a href="https://matrix.to/#/@alice:example.org?via=example.org">Alice</a>'
+                "<br />quoted text"
+                "</blockquote></mx-reply>"
+                "reply body"
+            ),
+        }
+
+        text_handler.append_formatted_text(receiver, chain, content["body"], content)
+
+        self.assertEqual(chain.chain[0].id, "$event:example.org")
+        self.assertEqual(chain.chain[0].sender_id, "@alice:example.org")
+
+    def test_create_reply_fallback_encodes_links_and_escapes_text(self):
+        utils_module = load_module("utils.utils")
+
+        fallback = utils_module.MatrixUtils.create_reply_fallback(
+            original_body="<b>quoted</b>",
+            original_sender="@alice:example.org",
+            original_event_id="$event/1:example.org",
+            room_id="!room/space:example.org",
+        )
+
+        self.assertIn(
+            "https://matrix.to/#/%21room%2Fspace%3Aexample.org/%24event%2F1%3Aexample.org",
+            fallback,
+        )
+        self.assertIn("https://matrix.to/#/%40alice%3Aexample.org", fallback)
+        self.assertIn("&lt;b&gt;quoted&lt;/b&gt;", fallback)
+
 
 class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_poll_defaults_and_stable_handler(self):
@@ -738,6 +832,71 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
             "/_matrix/client/v3/rooms/%21room%3Aexample.org/typing/%40bot%3Aexample.org",
         )
 
+    async def test_send_to_device_uses_request_and_percent_encodes_path(self):
+        message_mixin = load_module("client.message_mixin")
+
+        class FakeClient(message_mixin.MessageMixin):
+            def __init__(self):
+                self.calls = []
+
+            async def _request(
+                self,
+                method,
+                endpoint,
+                data=None,
+                params=None,
+                authenticated=True,
+                _retry_count=0,
+            ):
+                self.calls.append((method, endpoint, data, params, authenticated))
+                return {"ok": True}
+
+        client = FakeClient()
+        response = await client.send_to_device(
+            "m.room.encrypted/custom",
+            {"@alice:example.org": {"body": "secret"}},
+            txn_id="txn/with space",
+        )
+
+        self.assertEqual(response, {"ok": True})
+        self.assertEqual(
+            client.calls[0][1],
+            "/_matrix/client/v3/sendToDevice/m.room.encrypted%2Fcustom/txn%2Fwith%20space",
+        )
+        self.assertEqual(
+            client.calls[0][2],
+            {"messages": {"@alice:example.org": {"*": {"body": "secret"}}}},
+        )
+
+    async def test_send_to_device_keeps_device_message_map(self):
+        message_mixin = load_module("client.message_mixin")
+
+        class FakeClient(message_mixin.MessageMixin):
+            def __init__(self):
+                self.calls = []
+
+            async def _request(self, method, endpoint, data=None, **kwargs):
+                self.calls.append((method, endpoint, data, kwargs))
+                return {}
+
+        client = FakeClient()
+        await client.send_to_device(
+            "m.key.verification.request",
+            {"@alice:example.org": {"DEVICE/1": {"transaction_id": "t1"}}},
+            txn_id="txn1",
+        )
+
+        self.assertEqual(
+            client.calls[0][2],
+            {
+                "messages": {
+                    "@alice:example.org": {
+                        "DEVICE/1": {"transaction_id": "t1"}
+                    }
+                }
+            },
+        )
+
     async def test_profile_tag_and_device_paths_percent_encode_segments(self):
         profile_mixin = load_module("client.profile_mixin")
         tags_mixin = load_module("client.tags_mixin")
@@ -860,6 +1019,134 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             client.calls[5][1],
             "/_matrix/client/unstable/org.matrix.msc4140/delayed_events/delay%2F1",
+        )
+
+    async def test_room_pinned_event_helpers_read_modify_write_state(self):
+        room_core_mixin = load_module("client.room_core_mixin")
+        room_state_mixin = load_module("client.room_state_mixin")
+
+        class FakeClient(
+            room_core_mixin.RoomCoreMixin,
+            room_state_mixin.RoomStateMixin,
+        ):
+            def __init__(self):
+                self.calls = []
+                self.pinned_state = None
+
+            async def _request(
+                self,
+                method,
+                endpoint,
+                data=None,
+                params=None,
+                authenticated=True,
+                _retry_count=0,
+            ):
+                self.calls.append((method, endpoint, data, params))
+                if method == "GET":
+                    if self.pinned_state is None:
+                        raise room_state_mixin.MatrixAPIError(
+                            404,
+                            {"errcode": "M_NOT_FOUND"},
+                            "pinned state not found",
+                        )
+                    return {"pinned": list(self.pinned_state)}
+                if method == "PUT":
+                    self.pinned_state = list(data.get("pinned", []))
+                    return {"event_id": f"$pin-{len(self.calls)}:example.org"}
+                raise AssertionError(f"unexpected call: {method} {endpoint}")
+
+        client = FakeClient()
+
+        await client.pin_room_event("!room:example.org", "$event/1:example.org")
+        self.assertEqual(client.pinned_state, ["$event/1:example.org"])
+
+        client.pinned_state = [
+            "$event/1:example.org",
+            "$event/2:example.org",
+            "$event/1:example.org",
+            "",
+        ]
+        await client.pin_room_event(
+            "!room:example.org",
+            "$event/3:example.org",
+            prepend=True,
+        )
+        self.assertEqual(
+            client.pinned_state,
+            [
+                "$event/3:example.org",
+                "$event/1:example.org",
+                "$event/2:example.org",
+            ],
+        )
+
+        await client.unpin_room_event("!room:example.org", "$event/1:example.org")
+        self.assertEqual(
+            client.pinned_state,
+            ["$event/3:example.org", "$event/2:example.org"],
+        )
+
+        self.assertEqual(
+            client.calls[0][1],
+            "/_matrix/client/v3/rooms/%21room%3Aexample.org/state/m.room.pinned_events/",
+        )
+        self.assertEqual(
+            client.calls[1][1],
+            "/_matrix/client/v3/rooms/%21room%3Aexample.org/state/m.room.pinned_events/",
+        )
+        self.assertEqual(client.calls[1][2], {"pinned": ["$event/1:example.org"]})
+
+    async def test_sender_pinned_message_helpers_delegate_to_client(self):
+        sender_module = load_module("sender.sender")
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
+
+            async def get_room_pinned_events(self, room_id):
+                self.calls.append(("get", room_id))
+                return ["$event1:example.org"]
+
+            async def set_room_pinned_events(self, room_id, event_ids):
+                self.calls.append(("set", room_id, list(event_ids)))
+                return {"event_id": "$set:example.org"}
+
+            async def pin_room_event(self, room_id, event_id, *, prepend=False):
+                self.calls.append(("pin", room_id, event_id, prepend))
+                return {"event_id": "$pin:example.org"}
+
+            async def unpin_room_event(self, room_id, event_id):
+                self.calls.append(("unpin", room_id, event_id))
+                return {"event_id": "$unpin:example.org"}
+
+        client = FakeClient()
+        sender = sender_module.MatrixSender(client)
+
+        self.assertEqual(
+            await sender.get_pinned_messages("!room:example.org"),
+            ["$event1:example.org"],
+        )
+        await sender.set_pinned_messages(
+            "!room:example.org", ["$event1:example.org", "$event2:example.org"]
+        )
+        await sender.pin_message(
+            "!room:example.org", "$event3:example.org", prepend=True
+        )
+        await sender.unpin_message("!room:example.org", "$event1:example.org")
+
+        self.assertEqual(
+            client.calls,
+            [
+                ("get", "!room:example.org"),
+                (
+                    "set",
+                    "!room:example.org",
+                    ["$event1:example.org", "$event2:example.org"],
+                ),
+                ("pin", "!room:example.org", "$event3:example.org", True),
+                ("unpin", "!room:example.org", "$event1:example.org"),
+            ],
         )
 
     async def test_key_backup_push_auth_and_thirdparty_paths_percent_encode_segments(
@@ -1006,6 +1293,129 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
             client.session.urls[0],
             "https://matrix.example/_matrix/client/v1/media/thumbnail/example.org%3A8448/media%2Fid%20with%20spaces?width=800&height=600&method=scale%2Ffast&animated=false",
         )
+
+        with self.assertRaises(Exception):
+            await client.get_thumbnail(
+                "mxc://example.org/media/id?download=1#frag",
+                64,
+                64,
+            )
+
+        self.assertEqual(
+            client.session.urls[1],
+            "https://matrix.example/_matrix/client/v1/media/thumbnail/example.org/media%2Fid?width=64&height=64",
+        )
+
+    async def test_get_media_config_uses_unified_request(self):
+        media_mixin = load_module("client.media_mixin")
+
+        class FakeClient(media_mixin.MediaMixin):
+            def __init__(self):
+                self.calls = []
+
+            async def _request(
+                self,
+                method,
+                endpoint,
+                data=None,
+                params=None,
+                authenticated=True,
+                _retry_count=0,
+            ):
+                self.calls.append((method, endpoint, data, params, authenticated))
+                return {"m.upload.size": 12345}
+
+        client = FakeClient()
+        result = await client.get_media_config()
+
+        self.assertEqual(result, {"m.upload.size": 12345})
+        self.assertEqual(
+            client.calls,
+            [("GET", "/_matrix/client/v1/media/config", None, None, True)],
+        )
+
+    async def test_thumbnail_retries_rate_limit_and_uses_memory_limit_reader(self):
+        media_mixin = load_module("client.media_mixin")
+
+        class FakeContent:
+            def __init__(self, chunks):
+                self.chunks = chunks
+
+            async def iter_chunked(self, _size):
+                for chunk in self.chunks:
+                    yield chunk
+
+        class FakeResponse:
+            def __init__(self, status, payload=b"", headers=None, json_payload=None):
+                self.status = status
+                self.headers = headers or {}
+                self.content = FakeContent([payload] if payload else [])
+                self._json_payload = json_payload or {}
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def json(self, *args, **kwargs):
+                return self._json_payload
+
+        class FakeSession:
+            def __init__(self):
+                self.urls = []
+                self.responses = [
+                    FakeResponse(429, json_payload={"retry_after_ms": 1}),
+                    FakeResponse(200, payload=b"thumb", headers={"Content-Length": "5"}),
+                ]
+
+            def get(self, url, **kwargs):
+                self.urls.append((url, kwargs))
+                return self.responses.pop(0)
+
+        class FakeSlot:
+            async def __aenter__(self):
+                return None
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        class FakeClient(media_mixin.MediaMixin):
+            def __init__(self):
+                self.homeserver = "https://matrix.example"
+                self.access_token = "token"
+                self.session = FakeSession()
+                self.successes = []
+                self.failures = []
+
+            async def _ensure_session(self):
+                return None
+
+            async def _wait_media_download_breaker(self, source_key):
+                return None
+
+            def _media_download_slot(self, source_key):
+                return FakeSlot()
+
+            def _get_media_download_max_in_memory_bytes(self):
+                return 10
+
+            def _compute_retry_delay(self, attempt, retry_after_seconds=None):
+                return 0
+
+            def _record_media_download_success(self, source_key):
+                self.successes.append(source_key)
+
+            def _record_media_download_failure(self, source_key, status):
+                self.failures.append((source_key, status))
+
+        client = FakeClient()
+        data = await client.get_thumbnail("mxc://Example.ORG/media/id", 32, 32)
+
+        self.assertEqual(data, b"thumb")
+        self.assertEqual(len(client.session.urls), 2)
+        self.assertEqual(client.successes, ["example.org"])
+        self.assertEqual(client.failures, [])
 
 
 class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
@@ -1415,6 +1825,70 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_event_processor_reparses_decrypted_edits(self):
+        event_processor = load_module("processors.event_processor")
+
+        class DummyE2EEManager:
+            device_id = "BOT123"
+
+            async def decrypt_event(self, content, sender, room_id):
+                return {
+                    "type": "m.room.message",
+                    "content": {
+                        "msgtype": "m.text",
+                        "body": "* final text",
+                        "m.new_content": {
+                            "msgtype": "m.text",
+                            "body": "final text",
+                        },
+                        "m.relates_to": {
+                            "rel_type": "m.replace",
+                            "event_id": "$root:example.org",
+                        },
+                    },
+                }
+
+        processor = event_processor.MatrixEventProcessor.__new__(
+            event_processor.MatrixEventProcessor
+        )
+        processor.user_id = "@bot:example.org"
+        processor.startup_ts = 0
+        processor.e2ee_manager = DummyE2EEManager()
+        processor._processed_messages = OrderedDict()
+        processor._max_processed_messages = 1000
+        processor._persist_interacted_user = mock.AsyncMock()
+        processor.client = types.SimpleNamespace(send_read_receipt=mock.AsyncMock())
+        captured = []
+
+        async def fake_on_message(room, event):
+            captured.append(event)
+
+        processor.on_message = fake_on_message
+        room = types.SimpleNamespace(room_id="!room:example.org", members={})
+        encrypted_event = types.SimpleNamespace(
+            event_id="$encrypted:example.org",
+            sender="@alice:example.org",
+            origin_server_ts=123,
+            event_type="m.room.encrypted",
+            content={"algorithm": "m.megolm.v1.aes-sha2"},
+            unsigned=None,
+        )
+
+        await event_processor.MatrixEventProcessor._process_message_event(
+            processor,
+            room,
+            encrypted_event,
+        )
+
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0].event_type, "m.room.message")
+        self.assertEqual(captured[0].msgtype, "m.text")
+        self.assertEqual(captured[0].body, "final text")
+        self.assertEqual(
+            captured[0].content["m.relates_to"],
+            {"rel_type": "m.replace", "event_id": "$root:example.org"},
+        )
+
 
 class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_event_processor_forwards_visible_room_state_events(self):
@@ -1434,7 +1908,26 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
         class _MatrixEventProcessorStreams:
             pass
 
+        client_pkg = _make_module(f"{PACKAGE_NAME}.client")
+        client_pkg.__path__ = [str(REPO_ROOT / "client")]
+
         stubs = {
+            f"{PACKAGE_NAME}.client": client_pkg,
+            f"{PACKAGE_NAME}.client.event_types": _make_module(
+                f"{PACKAGE_NAME}.client.event_types",
+                parse_event=lambda event_data, room_id: types.SimpleNamespace(
+                    event_id=event_data.get("event_id", ""),
+                    sender=event_data.get("sender", ""),
+                    origin_server_ts=event_data.get("origin_server_ts", 0),
+                    room_id=room_id,
+                    content=event_data.get("content", {}),
+                    event_type=event_data.get("type", ""),
+                    state_key=event_data.get("state_key"),
+                    unsigned=event_data.get("unsigned"),
+                    msgtype=(event_data.get("content") or {}).get("msgtype", ""),
+                    body=(event_data.get("content") or {}).get("body", ""),
+                ),
+            ),
             f"{PACKAGE_NAME}.constants": _make_module(
                 f"{PACKAGE_NAME}.constants",
                 MAX_PROCESSED_MESSAGES_1000=1000,
@@ -1490,6 +1983,10 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                 join_rules=None,
                 power_levels=None,
                 history_visibility=None,
+                guest_access=None,
+                canonical_alias=None,
+                room_aliases=[],
+                pinned_events=[],
             )
 
             cases = [
@@ -1497,6 +1994,15 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                 ("m.room.power_levels", {"users_default": 0, "events_default": 50}),
                 ("m.room.join_rules", {"join_rule": "restricted"}),
                 ("m.room.history_visibility", {"history_visibility": "shared"}),
+                ("m.room.guest_access", {"guest_access": "can_join"}),
+                (
+                    "m.room.canonical_alias",
+                    {
+                        "alias": "#main:example.org",
+                        "alt_aliases": ["#alt:example.org"],
+                    },
+                ),
+                ("m.room.pinned_events", {"pinned": ["$event1", "$event2"]}),
             ]
             for index, (event_type, content) in enumerate(cases, start=1):
                 await event_processor.MatrixEventProcessor._handle_event(
@@ -1519,13 +2025,54 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                 "m.room.power_levels",
                 "m.room.join_rules",
                 "m.room.history_visibility",
+                "m.room.guest_access",
+                "m.room.canonical_alias",
+                "m.room.pinned_events",
             ],
         )
         self.assertEqual(room.avatar_url, "mxc://example.org/avatar")
         self.assertEqual(room.power_levels, {"users_default": 0, "events_default": 50})
         self.assertEqual(room.join_rules, {"join_rule": "restricted"})
         self.assertEqual(room.history_visibility, "shared")
+        self.assertEqual(room.guest_access, "can_join")
+        self.assertEqual(room.canonical_alias, "#main:example.org")
+        self.assertEqual(room.room_aliases, ["#alt:example.org"])
+        self.assertEqual(room.pinned_events, ["$event1", "$event2"])
         self.assertEqual(processor._persist_room_state.await_count, len(cases))
+
+    async def test_room_state_handlers_render_alias_guest_access_and_pins(self):
+        room_state = load_module("receiver.handlers.room_state")
+
+        cases = [
+            (
+                room_state.handle_room_guest_access,
+                {"guest_access": "forbidden"},
+                "[Room Info] @alice:example.org changed guest access to: guests cannot join",
+            ),
+            (
+                room_state.handle_room_canonical_alias,
+                {
+                    "alias": "#main:example.org",
+                    "alt_aliases": ["#alt1:example.org", "#alt2:example.org"],
+                },
+                "[Room Info] @alice:example.org changed canonical alias to: #main:example.org (alt aliases: #alt1:example.org, #alt2:example.org)",
+            ),
+            (
+                room_state.handle_room_pinned_events,
+                {"pinned": ["$event1", "$event2"]},
+                "[Room Info] @alice:example.org pinned 2 events",
+            ),
+        ]
+
+        for handler, content, expected in cases:
+            with self.subTest(handler=handler.__name__):
+                chain = types.SimpleNamespace(chain=[])
+                event = types.SimpleNamespace(
+                    sender="@alice:example.org",
+                    content=content,
+                )
+                await handler(None, chain, event, "")
+                self.assertEqual(chain.chain[0].text, expected)
 
     async def test_event_processor_applies_live_messaging_state_events(self):
         module_name = f"{PACKAGE_NAME}.processors.event_processor"
@@ -2271,6 +2818,51 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             {"user_ids": ["@alice:example.org", "@carol:example.org"]},
         )
 
+    async def test_send_plain_escapes_html_when_markdown_renderer_fails(self):
+        plain_sender = load_module("sender.handlers.plain")
+        plain_cls = sys.modules["astrbot.api.message_components"].Plain
+        captured = {}
+
+        async def fake_send_content(
+            client,
+            content,
+            room_id,
+            reply_to,
+            thread_root,
+            use_thread,
+            is_encrypted_room,
+            e2ee_manager,
+            msg_type="m.room.message",
+        ):
+            captured["content"] = content
+            return {"event_id": "$plain"}
+
+        with (
+            mock.patch.object(
+                plain_sender,
+                "markdown_to_html",
+                side_effect=RuntimeError("renderer unavailable"),
+            ),
+            mock.patch.object(plain_sender, "send_content", new=fake_send_content),
+        ):
+            await plain_sender.send_plain(
+                client=object(),
+                segment=plain_cls("<script>alert(1)</script>\nnext"),
+                room_id="!room:example.org",
+                reply_to=None,
+                thread_root=None,
+                use_thread=False,
+                original_message_info=None,
+                is_encrypted_room=False,
+                e2ee_manager=None,
+                use_notice=False,
+            )
+
+        self.assertEqual(
+            captured["content"]["formatted_body"],
+            "&lt;script&gt;alert(1)&lt;/script&gt;<br>next",
+        )
+
 
 class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
     def test_oauth2_normalizes_legacy_scopes_to_stable(self):
@@ -2386,6 +2978,52 @@ class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(code, "oauth-code-xyz")
 
+    async def test_oauth2_callback_accepts_query_params_and_list_values(self):
+        oauth2_core = load_module("auth.oauth2_core")
+
+        controller = oauth2_core.OAuth2CallbackServer(
+            "https://astrbot.example/api/platform/webhook/matrix123"
+        )
+        controller.prepare_callback("state-123")
+
+        response = await controller.handle_callback(
+            types.SimpleNamespace(
+                query_params={
+                    "state": ["state-123"],
+                    "code": ["oauth-code-list"],
+                }
+            )
+        )
+        code = await controller.wait_for_callback()
+
+        self.assertEqual(
+            response,
+            ("Authentication successful! You can close this window.", 200),
+        )
+        self.assertEqual(code, "oauth-code-list")
+
+    async def test_oauth2_callback_rejects_error_with_wrong_state_first(self):
+        oauth2_core = load_module("auth.oauth2_core")
+
+        controller = oauth2_core.OAuth2CallbackServer(
+            "https://astrbot.example/api/platform/webhook/matrix123"
+        )
+        controller.prepare_callback("state-123")
+
+        response = await controller.handle_callback(
+            types.SimpleNamespace(
+                args={
+                    "state": "evil-state",
+                    "error": "access_denied",
+                    "error_description": "denied",
+                }
+            )
+        )
+
+        self.assertEqual(response, ("State mismatch", 400))
+        with self.assertRaisesRegex(Exception, "State mismatch"):
+            await controller.wait_for_callback()
+
     async def test_sso_callback_controller_handles_unified_webhook_request(self):
         sso_module = load_module("auth.sso")
 
@@ -2406,6 +3044,52 @@ class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
             ("Authentication successful! You can close this window.", 200),
         )
         self.assertEqual(token, "login-token-xyz")
+
+    async def test_sso_callback_accepts_query_params_and_login_token_alias(self):
+        sso_module = load_module("auth.sso")
+
+        controller = sso_module.SSOCallbackServer(
+            "https://astrbot.example/api/platform/webhook/matrix123"
+        )
+        controller.prepare_callback("state-456")
+
+        response = await controller.handle_callback(
+            types.SimpleNamespace(
+                query_params={
+                    "state": ["state-456"],
+                    "login_token": ["login-token-alias"],
+                }
+            )
+        )
+        token = await controller.wait_for_callback()
+
+        self.assertEqual(
+            response,
+            ("Authentication successful! You can close this window.", 200),
+        )
+        self.assertEqual(token, "login-token-alias")
+
+    async def test_sso_callback_rejects_error_with_wrong_state_first(self):
+        sso_module = load_module("auth.sso")
+
+        controller = sso_module.SSOCallbackServer(
+            "https://astrbot.example/api/platform/webhook/matrix123"
+        )
+        controller.prepare_callback("state-456")
+
+        response = await controller.handle_callback(
+            types.SimpleNamespace(
+                args={
+                    "state": "evil-state",
+                    "error": "access_denied",
+                    "error_description": "denied",
+                }
+            )
+        )
+
+        self.assertEqual(response, ("State mismatch", 400))
+        with self.assertRaisesRegex(Exception, "state mismatch"):
+            await controller.wait_for_callback()
 
     def test_webhook_url_builder_prefers_callback_api_base(self):
         webhook_module = load_module("webhook")

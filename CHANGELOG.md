@@ -6,6 +6,8 @@
 - 添加了未并入主线的 MSC4357
 - 修复 `m.room.redaction` 同步事件被跳过的问题，撤回事件现在会按 `[消息已撤回...]` 文本进入接收链路。
 - 房间头像、权限、加入规则和历史可见性状态变更现在也会进入系统消息链路，不再只持久化状态。
+- 房间 guest_access / canonical_alias / pinned_events 状态变更现在也会进入系统消息链路并渲染为可读文本。
+- Matrix client 新增 `get_room_pinned_events()` / `set_room_pinned_events()` / `pin_room_event()` / `unpin_room_event()`，`MatrixSender` 同步提供 `get_pinned_messages()` / `pin_message()` / `unpin_message()` 等入口，补齐房间置顶事件的读写与增删辅助能力。
 - 修复 `org.matrix.msc4357.live_messaging` unstable 房间状态被前置过滤挡掉的问题，初始状态与时间线状态都会更新房间 live-message 能力。
 - 修复 `send_live_location_beacon_info()` 发送端：`m.beacon_info` 现在按 Matrix 要求写入以 bot MXID 为 `state_key` 的房间状态事件，而不是普通 timeline 事件。
 - 修复多个 Client-Server API endpoint 的路径段编码：room alias、event id、state_key、txn_id、device_id、tag、profile/user id 等包含 `#`、`/`、`:` 时不再破坏请求路径。
@@ -14,6 +16,13 @@
 - E2EE 设备签名状态查询和 Key Backup 版本创建/读取继续收敛到 Matrix client mixin 方法，减少散落的裸 endpoint 调用。
 - `m.room.member` 状态事件现在保留 `state_key` 并渲染加入、离开、邀请、封禁、敲门和资料变化，不再产生空的系统消息。
 - 发送 At / Contact / Share 的 HTML fallback 时会转义 display/title/content/url，并对 matrix.to MXID path 做编码，避免特殊字符破坏 formatted_body。
+- 回复 fallback 的 matrix.to 链接现在会对 room/event/sender 做路径编码并转义展示文本；接收端也能解析 percent-encoded matrix.to 提及与回复事件 ID。
+- 接收端解析 matrix.to 回复/提及时会忽略 `?via=` 等查询参数，避免污染事件 ID 或 MXID。
+- 加密消息解密后会重新走事件解析，修复 E2EE 房间中编辑/线程/live-message 最终更新没有套用 `m.new_content` 和 cleartext `m.relates_to` 的问题。
+- `send_to_device()` 现在复用统一 `_request()` 发送，保留 payload 归一化与诊断日志，同时继承统一鉴权、重试和 Matrix 错误处理。
+- OAuth2 / SSO 统一 Webhook 回调现在支持 `query_params`、`rel_url.query` 和多值参数，并且会先校验 state 再处理 error/code/token，降低错误回调串扰风险。
+- 媒体配置读取现在复用统一 `_request()`；MXC 下载/缩略图解析会剥离 query/fragment 后再编码 server/media path，兼容带本地提示参数的 `mxc://` 引用。
+- 缩略图下载现在和普通媒体下载一样支持 429/5xx/network retry，并复用内存上限读取逻辑，避免大缩略图响应直接无界读入内存。
 - 补全 MSC 支持：
   - **MSC2867 标记房间未读**：`MatrixSender.mark_room_unread(room_id, unread)`，同时写入稳定 `m.marked_unread` 与旧版 `com.famedly.marked_unread`
   - **MSC4140 可取消的延迟事件**：新增 `DelayedEventsMixin`，提供 `send_delayed_message` / `cancel_delayed_message` / `fire_delayed_message` / `restart_delayed_message` / `list_delayed_messages`

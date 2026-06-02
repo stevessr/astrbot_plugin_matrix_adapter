@@ -33,6 +33,9 @@ VISIBLE_ROOM_STATE_EVENT_TYPES = frozenset(
         "m.room.power_levels",
         "m.room.join_rules",
         "m.room.history_visibility",
+        "m.room.guest_access",
+        "m.room.canonical_alias",
+        "m.room.pinned_events",
     }
 )
 
@@ -538,8 +541,21 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                         event_content, sender, room.room_id
                     )
                     if decrypted:
+                        decrypted_content = dict(decrypted.get("content", {}) or {})
+                        # Relation metadata for encrypted relation/verification
+                        # events is often carried in the cleartext envelope.  Keep
+                        # it before reparsing so edits, threads, live-message final
+                        # updates, and verification commitment calculations all see
+                        # the same m.relates_to data as plaintext events.
+                        cleartext_relates_to = event_content.get("m.relates_to")
+                        if (
+                            cleartext_relates_to
+                            and "m.relates_to" not in decrypted_content
+                        ):
+                            decrypted_content["m.relates_to"] = cleartext_relates_to
+
                         # 替换事件内容为解密后的内容
-                        event.content = decrypted.get("content", {})
+                        event.content = decrypted_content
                         event.event_type = decrypted.get("type", "m.room.message")
                         event.msgtype = event.content.get("msgtype", "")
                         event.body = event.content.get("body", "")
@@ -573,7 +589,6 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                             # m.relates_to is in the CLEARTEXT portion of the encrypted event
                             # (event_content), not in the decrypted payload.
                             # We need to copy it to the decrypted content for commitment calculation.
-                            cleartext_relates_to = event_content.get("m.relates_to")
                             if cleartext_relates_to:
                                 event.content["m.relates_to"] = cleartext_relates_to
 
@@ -588,6 +603,24 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                                 room, verification_event
                             )
                             return
+
+                        from ..client.event_types import parse_event
+
+                        event = parse_event(
+                            {
+                                "type": event.event_type,
+                                "event_id": event.event_id,
+                                "sender": sender,
+                                "origin_server_ts": getattr(
+                                    event, "origin_server_ts", 0
+                                ),
+                                "content": event.content,
+                                "unsigned": getattr(event, "unsigned", None),
+                            },
+                            room.room_id,
+                        )
+                        event_type = event.event_type
+                        event_content = event.content
                     else:
                         logger.warning(
                             f"无法解密消息 (room_id={room.room_id}, event_id={event.event_id})"

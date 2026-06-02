@@ -1,9 +1,10 @@
 import html
 import re
+from urllib.parse import unquote
 
 from astrbot.api.message_components import At, AtAll, Plain, Reply
 
-MENTION_HREF_RE = re.compile(r'href="(?:https?://)?matrix\.to/#/(@[^"<> ]+)"')
+MENTION_HREF_RE = re.compile(r'href="(?:https?://)?matrix\.to/#/([^/"<> ?#]+)')
 MENTION_MXID_RE = re.compile(r'data-mxid="(@[^"<> ]+)"')
 ANCHOR_RE = re.compile(r"<a\s+[^>]*>.*?</a>", re.IGNORECASE | re.DOTALL)
 INLINE_TAG_RE = re.compile(r"<(a|span)\s+[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
@@ -13,9 +14,15 @@ PARA_RE = re.compile(r"</\s*p\s*>", re.IGNORECASE)
 REPLY_RE = re.compile(r"<mx-reply>.*?</mx-reply>", re.IGNORECASE | re.DOTALL)
 REPLY_BLOCK_RE = re.compile(r"<mx-reply>.*?</mx-reply>", re.IGNORECASE | re.DOTALL)
 REPLY_EVENT_RE = re.compile(
-    r'href="(?:https?://)?matrix\.to/#/[^"<> ]+/(\$[^"<> ]+)"', re.IGNORECASE
+    r'href="(?:https?://)?matrix\.to/#/[^/"<> ?#]+/([^/"<> ?#]+)', re.IGNORECASE
 )
 PLAIN_MENTION_RE = re.compile(r"^@\[([^\]\r\n]+)\](?=\s|$)")
+
+
+def _decode_matrix_to_segment(value: str | None) -> str:
+    if not value:
+        return ""
+    return unquote(value)
 
 
 def should_append_caption(content: dict, filename: str | None = None) -> bool:
@@ -84,11 +91,13 @@ def append_formatted_text(
         event_id = None
         event_match = REPLY_EVENT_RE.search(block)
         if event_match:
-            event_id = event_match.group(1)
+            candidate_event_id = _decode_matrix_to_segment(event_match.group(1))
+            if candidate_event_id.startswith("$"):
+                event_id = candidate_event_id
 
         sender_id = None
         for href_match in MENTION_HREF_RE.finditer(block):
-            mxid = href_match.group(1)
+            mxid = _decode_matrix_to_segment(href_match.group(1))
             if mxid and mxid.startswith("@"):
                 sender_id = mxid
                 break
@@ -153,11 +162,11 @@ def append_formatted_text(
             user_id = None
             mxid_match = MENTION_MXID_RE.search(inline_tag)
             if mxid_match:
-                user_id = mxid_match.group(1)
+                user_id = _decode_matrix_to_segment(mxid_match.group(1))
             else:
                 href_match = MENTION_HREF_RE.search(inline_tag)
                 if href_match:
-                    user_id = href_match.group(1)
+                    user_id = _decode_matrix_to_segment(href_match.group(1))
 
             anchor_text = _plain_from_html(inline_tag)
             if user_id and user_id.startswith("@"):

@@ -160,6 +160,34 @@ class MediaMixin:
                 return normalized
         return "__homeserver__"
 
+    @staticmethod
+    def _parse_mxc_server_media_id(mxc_url: str) -> tuple[str, str]:
+        """Parse an ``mxc://server/media`` URI into Matrix path segments.
+
+        Some bridges and clients append query strings or fragments to MXC
+        references for local UI hints.  The Matrix media repository path only
+        accepts the server name and media ID, so strip those suffixes before
+        percent-encoding each segment.
+        """
+        if not isinstance(mxc_url, str) or not mxc_url.startswith("mxc://"):
+            raise ValueError(f"Invalid MXC URL: {mxc_url}")
+
+        parts = mxc_url[6:].split("/", 1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid MXC URL format: {mxc_url}")
+
+        server_name = parts[0].strip()
+        media_id = (
+            parts[1]
+            .split("?", 1)[0]
+            .split("#", 1)[0]
+            .strip()
+            .lstrip("/")
+        )
+        if not server_name or not media_id:
+            raise ValueError(f"Invalid MXC URL format: {mxc_url}")
+        return server_name, media_id
+
     def _get_media_download_concurrency_limit(self) -> int:
         default_limit = self._MEDIA_DOWNLOAD_CONCURRENCY_DEFAULT
         try:
@@ -1063,23 +1091,12 @@ class MediaMixin:
         Returns:
             包含 m.upload.size 等配置的字典
         """
-        await self._ensure_session()
-
         endpoint = "/_matrix/client/v1/media/config"
         try:
-            url = f"{self.homeserver}{endpoint}"
-            headers = {
-                "Authorization": f"Bearer {self.access_token}",
-                "User-Agent": "AstrBot Matrix Client/1.0",
-            }
-
-            async with self.session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    return await response.json()
+            return await self._request("GET", endpoint)
         except Exception as e:
             logger.debug(f"获取媒体配置失败 ({endpoint}): {e}")
 
-        # 如果所有端点都失败，返回空字典
         logger.warning("无法获取 Matrix 媒体服务器配置，将使用默认值")
         return {}
 
@@ -1107,14 +1124,7 @@ class MediaMixin:
         await self._ensure_session()
         resolved_output_path = Path(output_path) if output_path is not None else None
 
-        if not mxc_url.startswith("mxc://"):
-            raise ValueError(f"Invalid MXC URL: {mxc_url}")
-
-        parts = mxc_url[6:].split("/", 1)
-        if len(parts) != 2:
-            raise ValueError(f"Invalid MXC URL format: {mxc_url}")
-
-        server_name, media_id = parts
+        server_name, media_id = self._parse_mxc_server_media_id(mxc_url)
         server_path = quote_path_segment(server_name)
         media_path = quote_path_segment(media_id)
         source_key = self._normalize_media_source_key(server_name)
@@ -1344,17 +1354,11 @@ class MediaMixin:
         """
         await self._ensure_session()
 
-        if not mxc_url.startswith("mxc://"):
-            raise ValueError(f"Invalid MXC URL: {mxc_url}")
-
-        parts = mxc_url[6:].split("/", 1)
-        if len(parts) != 2:
-            raise ValueError(f"Invalid MXC URL format: {mxc_url}")
-
-        server_name, media_id = parts
+        server_name, media_id = self._parse_mxc_server_media_id(mxc_url)
         server_path = quote_path_segment(server_name)
         media_path = quote_path_segment(media_id)
         source_key = self._normalize_media_source_key(server_name)
+        max_in_memory_bytes = self._get_media_download_max_in_memory_bytes()
         query_params: dict[str, Any] = {"width": width, "height": height}
         if method:
             query_params["method"] = method
@@ -1375,30 +1379,80 @@ class MediaMixin:
             if self.access_token:
                 headers["Authorization"] = f"Bearer {self.access_token}"
 
-            try:
-                await self._wait_media_download_breaker(source_key)
-                async with self._media_download_slot(source_key):
-                    async with self.session.get(
-                        url, headers=headers, allow_redirects=True
-                    ) as response:
-                        last_status = response.status
-                        if response.status == 200:
-                            self._record_media_download_success(source_key)
-                            return await response.read()
-                        if self._is_media_download_breaker_failure_status(
-                            response.status
-                        ):
-                            self._record_media_download_failure(
-                                source_key, response.status
-                            )
-                        last_error = f"HTTP {response.status}"
-            except aiohttp.ClientError as e:
-                self._record_media_download_failure(source_key, None)
-                last_error = str(e)
-                continue
-            except Exception as e:
-                last_error = str(e)
-                continue
+            attempt = 0
+            while True:
+                try:
+                    await self._wait_media_download_breaker(source_key)
+                    async with self._media_download_slot(source_key):
+                        async with self.session.get(
+                            url, headers=headers, allow_redirects=True
+                        ) as response:
+                            last_status = response.status
+                            if response.status == 200:
+                                self._record_media_download_success(source_key)
+                                return await self._read_response_with_memory_limit(
+                                    response,
+                                    max_in_memory_bytes=max_in_memory_bytes,
+                                    resource_hint=mxc_url,
+                                )
+
+                            retry_after_seconds = None
+                            if response.status == 429:
+                                retry_payload: dict[str, Any] = {}
+                                try:
+                                    parsed = await response.json(content_type=None)
+                                    if isinstance(parsed, dict):
+                                        retry_payload = parsed
+                                except Exception:
+                                    retry_payload = {}
+                                retry_after_seconds = self._extract_retry_after_seconds(
+                                    response.headers, retry_payload
+                                )
+                            elif response.status >= 500:
+                                retry_after_seconds = self._extract_retry_after_seconds(
+                                    response.headers, None
+                                )
+
+                            if (
+                                self._should_retry_http_status(response.status)
+                                and attempt < self._MEDIA_HTTP_MAX_RETRIES
+                            ):
+                                delay = self._compute_retry_delay(
+                                    attempt, retry_after_seconds
+                                )
+                                attempt += 1
+                                logger.debug(
+                                    "Matrix thumbnail request failed with status "
+                                    f"{response.status}, retrying in {delay:.2f}s "
+                                    f"({attempt}/{self._MEDIA_HTTP_MAX_RETRIES})"
+                                )
+                                await asyncio.sleep(delay)
+                                continue
+
+                            if self._is_media_download_breaker_failure_status(
+                                response.status
+                            ):
+                                self._record_media_download_failure(
+                                    source_key, response.status
+                                )
+                            last_error = f"HTTP {response.status}"
+                            break
+                except aiohttp.ClientError as e:
+                    if attempt < self._MEDIA_HTTP_MAX_RETRIES:
+                        delay = self._compute_retry_delay(attempt)
+                        attempt += 1
+                        logger.debug(
+                            "Matrix thumbnail network error, retrying in "
+                            f"{delay:.2f}s ({attempt}/{self._MEDIA_HTTP_MAX_RETRIES}): {e}"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    self._record_media_download_failure(source_key, None)
+                    last_error = str(e)
+                    break
+                except Exception as e:
+                    last_error = str(e)
+                    break
 
         error_msg = (
             f"Matrix thumbnail error: {last_error} (last status: {last_status}) "

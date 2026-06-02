@@ -28,11 +28,68 @@ def _get_request_query_params(request) -> object:
     if params is not None:
         return params
 
+    params = getattr(request, "query_params", None)
+    if params is not None:
+        return params
+
     params = getattr(request, "query", None)
     if params is not None:
         return params
 
+    rel_url = getattr(request, "rel_url", None)
+    params = getattr(rel_url, "query", None)
+    if params is not None:
+        return params
+
     return {}
+
+
+def _get_query_param(params: object, name: str, default: str = "") -> str:
+    """Return the first scalar query value from common web-framework mappings."""
+    if params is None:
+        return default
+
+    getall = getattr(params, "getall", None)
+    if callable(getall):
+        try:
+            values = getall(name)
+            if values:
+                value = values[0]
+                return str(value) if value is not None else default
+        except Exception:
+            pass
+
+    getter = getattr(params, "get", None)
+    if callable(getter):
+        try:
+            value = getter(name, default)
+        except TypeError:
+            try:
+                value = getter(name)
+            except Exception:
+                value = default
+        except Exception:
+            value = default
+    elif isinstance(params, dict):
+        value = params.get(name, default)
+    else:
+        value = default
+
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else default
+    if value is None:
+        return default
+    return str(value)
+
+
+def _has_query_param(params: object, name: str) -> bool:
+    if params is None:
+        return False
+    try:
+        return name in params
+    except Exception:
+        pass
+    return _get_query_param(params, name, "") != ""
 
 
 class OAuth2CallbackServer:
@@ -58,9 +115,20 @@ class OAuth2CallbackServer:
 
             query_params = _get_request_query_params(request)
 
-            if "error" in query_params:
-                error = query_params.get("error")
-                error_description = query_params.get("error_description", "")
+            state = _get_query_param(query_params, "state")
+            if state != self.expected_state:
+                _log("error", "State mismatch in OAuth2 callback")
+                if self.callback_future and not self.callback_future.done():
+                    self.callback_future.set_exception(
+                        Exception("State mismatch in OAuth2 callback")
+                    )
+                return "State mismatch", 400
+
+            if _has_query_param(query_params, "error"):
+                error = _get_query_param(query_params, "error")
+                error_description = _get_query_param(
+                    query_params, "error_description"
+                )
                 _log("error", f"OAuth2 error: {error} - {error_description}")
 
                 if self.callback_future and not self.callback_future.done():
@@ -70,16 +138,7 @@ class OAuth2CallbackServer:
 
                 return f"Authentication failed: {error}\n{error_description}", 400
 
-            state = query_params.get("state")
-            if state != self.expected_state:
-                _log("error", "State mismatch in OAuth2 callback")
-                if self.callback_future and not self.callback_future.done():
-                    self.callback_future.set_exception(
-                        Exception("State mismatch in OAuth2 callback")
-                    )
-                return "State mismatch", 400
-
-            code = query_params.get("code")
+            code = _get_query_param(query_params, "code")
             if not code:
                 _log("error", "No authorization code in OAuth2 callback")
                 if self.callback_future and not self.callback_future.done():

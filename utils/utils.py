@@ -228,16 +228,21 @@ class MatrixUtils:
         if len(original_body) > 200:
             original_body = original_body[:200] + "..."
 
-        # 转义 HTML 特殊字符，避免注入
+        # 转义 HTML 特殊字符，避免注入；matrix.to path segments 也要
+        # percent-encode，避免 room/event/user id 中的 /、#、空格等破坏链接。
         import html
 
         safe_body = html.escape(original_body).replace("\n", "<br />")
+        safe_sender = html.escape(str(original_sender or ""))
+        room_path = quote(str(room_id or ""), safe="")
+        event_path = quote(str(original_event_id or ""), safe="")
+        sender_path = quote(str(original_sender or ""), safe="")
 
         return (
             f"<mx-reply>"
             f"<blockquote>"
-            f'<a href="https://matrix.to/#/{room_id}/{original_event_id}">In reply to</a> '
-            f'<a href="https://matrix.to/#/{original_sender}">{original_sender}</a>'
+            f'<a href="https://matrix.to/#/{room_path}/{event_path}">In reply to</a> '
+            f'<a href="https://matrix.to/#/{sender_path}">{safe_sender}</a>'
             f"<br />{safe_body}"
             f"</blockquote>"
             f"</mx-reply>"

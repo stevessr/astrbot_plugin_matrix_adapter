@@ -9,13 +9,10 @@ import secrets
 import time
 from typing import Any
 
-import aiohttp
-
 from astrbot.api import logger
 
 from ..constants import (
     DEFAULT_TIMEOUT_MS_30000,
-    HTTP_ERROR_STATUS_400,
     MSC4357_LIVE_MESSAGE_MARKER,
     REL_TYPE_REPLACE,
     RESPONSE_TRUNCATE_LENGTH_400,
@@ -571,54 +568,24 @@ class MessageMixin:
                 return s[: maxlen - 80] + f"... (truncated, {len(s)} bytes)"
             return s
 
-        # Build request manually so we can capture HTTP status and raw response body
-        await self._ensure_session()
-        url = f"{self.homeserver}{endpoint}"
-        headers = self._get_headers()
-
         try:
-            async with self.session.put(url, json=data, headers=headers) as resp:
-                status = resp.status
-                # Try to parse JSON, fallback to text
-                try:
-                    resp_body = await resp.json()
-                except Exception:
-                    resp_text = await resp.text()
-                    resp_body = resp_text
-
-                # Log summary for diagnostics
-                try:
-                    logger.debug(
-                        f"send_to_device response for {event_type} txn {txn_id}: status={status} body={_short(resp_body)}"
-                    )
-
-                    if verbose:
-                        logger.debug(
-                            f"send_to_device request payload: {_short(data, maxlen=2000)}"
-                        )
-                        logger.debug(
-                            f"send_to_device full response: {_short(resp_body, maxlen=2000)}"
-                        )
-                except Exception:
-                    pass
-
-                if status >= HTTP_ERROR_STATUS_400:
-                    # Try to extract errcode/message if JSON
-                    if isinstance(resp_body, dict):
-                        error_code = resp_body.get("errcode", "UNKNOWN")
-                        error_msg = resp_body.get("error", "Unknown error")
-                    else:
-                        error_code = "UNKNOWN"
-                        error_msg = str(resp_body)
-
-                    raise Exception(
-                        f"Matrix API error: {error_code} - {error_msg} (status: {status})"
-                    )
-
-                return resp_body
-
-        except aiohttp.ClientError as e:
+            response = await self._request("PUT", endpoint, data=data)
+        except Exception as e:
             logger.error(
-                f"send_to_device network error for {event_type} txn {txn_id}: {e}"
+                f"send_to_device failed for {event_type} txn {txn_id}: {e}"
             )
             raise
+        try:
+            logger.debug(
+                f"send_to_device response for {event_type} txn {txn_id}: body={_short(response)}"
+            )
+            if verbose:
+                logger.debug(
+                    f"send_to_device request payload: {_short(data, maxlen=2000)}"
+                )
+                logger.debug(
+                    f"send_to_device full response: {_short(response, maxlen=2000)}"
+                )
+        except Exception:
+            pass
+        return response
