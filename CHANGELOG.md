@@ -10,6 +10,10 @@
 - `m.room.aliases` 与 `m.space.child` / `m.space.parent` 状态变更现在也会渲染为系统消息；Space 子/父房间状态收到空 content 时会同步从本地缓存移除。
 - `m.room.create` / `m.room.server_acl` / `m.room.third_party_invite` 状态变更现在会进入系统消息链路；第三方邀请状态收到空 content 时会从本地缓存移除。
 - Matrix client 新增 `get_room_pinned_events()` / `set_room_pinned_events()` / `pin_room_event()` / `unpin_room_event()`，`MatrixSender` 同步提供 `get_pinned_messages()` / `pin_message()` / `unpin_message()` 等入口，补齐房间置顶事件的读写与增删辅助能力。
+- `MatrixSender` 新增 `report_message()` / `get_message_context()` / `get_message_relations()` / `set_read_markers()`，补齐举报、上下文、关系和 read marker 管理入口。
+- `MatrixSender` 新增 create room/DM、join/leave/forget、历史分页、房间状态读写、事件搜索、knock/upgrade/hierarchy 等房间生命周期与查询入口，插件侧不再需要绕到裸 client。
+- `MatrixSender` 新增邀请、踢出、封禁/解封、power level 调整和管理员/版主查询入口，复用底层 Matrix client 的房间成员管理能力。
+- `MatrixSender` 新增房间名称、主题、头像、加入规则、历史可见性、访客访问、canonical alias、目录可见性、publicRooms 与 alias 创建/解析/删除/查询入口。
 - 修复 `org.matrix.msc4357.live_messaging` unstable 房间状态被前置过滤挡掉的问题，初始状态与时间线状态都会更新房间 live-message 能力。
 - 修复 `send_live_location_beacon_info()` 发送端：`m.beacon_info` 现在按 Matrix 要求写入以 bot MXID 为 `state_key` 的房间状态事件，而不是普通 timeline 事件。
 - 修复多个 Client-Server API endpoint 的路径段编码：room alias、event id、state_key、txn_id、device_id、tag、profile/user id 等包含 `#`、`/`、`:` 时不再破坏请求路径。

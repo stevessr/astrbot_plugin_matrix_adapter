@@ -386,6 +386,130 @@ await adapter.sender.delete_message("!roomid:example.org", "$event_id:example.or
 await event.delete()
 ```
 
+### 消息管理与上下文查询
+
+`MatrixSender` 也暴露了常用的 Matrix 事件管理/查询接口：
+
+```python
+# 举报消息
+await adapter.sender.report_message(
+    "!roomid:example.org",
+    "$event_id:example.org",
+    score=-100,
+    reason="spam",
+)
+
+# 查询消息上下文与关系（例如 reaction / edit）
+ctx = await adapter.sender.get_message_context("!roomid:example.org", "$event_id:example.org", limit=10)
+relations = await adapter.sender.get_message_relations(
+    "!roomid:example.org",
+    "$event_id:example.org",
+    "m.annotation",
+    event_type="m.reaction",
+)
+
+# 设置 read marker
+await adapter.sender.set_read_markers(
+    "!roomid:example.org",
+    fully_read="$event_id:example.org",
+    read="$event_id:example.org",
+)
+```
+
+### 房间生命周期、历史和搜索
+
+已有的 Matrix 房间生命周期与查询能力也同步补齐到 `MatrixSender`：
+
+```python
+# 创建普通房间 / DM
+created = await adapter.sender.create_room(
+    name="项目讨论",
+    topic="本周迭代同步",
+    invite=["@alice:example.org"],
+    is_public=False,
+)
+dm = await adapter.sender.create_dm_room("@alice:example.org")
+existing_dm = await adapter.sender.get_user_room("@alice:example.org")
+
+# 加入 / 退出 / 忘记房间
+await adapter.sender.join_room("#public:example.org")
+await adapter.sender.leave_room("!roomid:example.org")
+await adapter.sender.forget_room("!roomid:example.org")
+
+# 查询已加入房间、成员、历史和单个事件
+rooms = await adapter.sender.get_joined_rooms()
+members = await adapter.sender.get_room_members("!roomid:example.org")
+history = await adapter.sender.get_room_messages("!roomid:example.org", limit=20)
+event = await adapter.sender.get_event("!roomid:example.org", "$event_id:example.org")
+
+# 通用状态读写 / 搜索
+state = await adapter.sender.get_room_state("!roomid:example.org")
+name = await adapter.sender.get_room_state_event("!roomid:example.org", "m.room.name")
+await adapter.sender.set_room_state_event(
+    "!roomid:example.org",
+    "com.example.state",
+    {"enabled": True},
+)
+results = await adapter.sender.search_messages("关键字")
+
+# knock / room upgrade / Space hierarchy
+await adapter.sender.knock_room("#knock-only:example.org", reason="申请加入")
+await adapter.sender.accept_knock("!roomid:example.org", "@alice:example.org")
+await adapter.sender.reject_knock("!roomid:example.org", "@mallory:example.org")
+upgrade = await adapter.sender.upgrade_room("!roomid:example.org", "11")
+hierarchy = await adapter.sender.get_room_hierarchy("!space:example.org")
+```
+
+### 房间成员管理
+
+`MatrixSender` 也可以调用 Matrix 房间成员管理接口：
+
+```python
+await adapter.sender.invite_user("!roomid:example.org", "@alice:example.org")
+await adapter.sender.kick_user("!roomid:example.org", "@spammer:example.org", reason="spam")
+await adapter.sender.ban_user("!roomid:example.org", "@abuse:example.org", reason="abuse")
+await adapter.sender.unban_user("!roomid:example.org", "@abuse:example.org")
+
+# 调整 power level / 查询管理员
+await adapter.sender.set_user_power_level("!roomid:example.org", "@mod:example.org", 50)
+await adapter.sender.promote_to_admin("!roomid:example.org", "@alice:example.org")
+admins = await adapter.sender.get_room_admins("!roomid:example.org")
+moderators = await adapter.sender.get_room_moderators("!roomid:example.org")
+```
+
+### 房间资料与目录设置
+
+常用房间状态和目录可见性也可以直接通过 `MatrixSender` 调整：
+
+```python
+await adapter.sender.set_room_name("!roomid:example.org", "项目讨论")
+await adapter.sender.set_room_topic("!roomid:example.org", "本周迭代同步")
+await adapter.sender.set_room_avatar("!roomid:example.org", "mxc://example.org/avatar_id")
+
+await adapter.sender.set_room_join_rules("!roomid:example.org", "invite")
+await adapter.sender.set_room_history_visibility("!roomid:example.org", "shared")
+await adapter.sender.set_room_guest_access("!roomid:example.org", "forbidden")
+
+await adapter.sender.set_room_canonical_alias(
+    "!roomid:example.org",
+    "#project:example.org",
+    alt_aliases=["#project-alt:example.org"],
+)
+
+visibility = await adapter.sender.get_room_visibility("!roomid:example.org")
+await adapter.sender.set_room_visibility("!roomid:example.org", "public")
+aliases = await adapter.sender.get_room_aliases("!roomid:example.org")
+
+# 目录 alias / publicRooms
+await adapter.sender.create_room_alias("#project:example.org", "!roomid:example.org")
+resolved = await adapter.sender.get_room_alias("#project:example.org")
+await adapter.sender.delete_room_alias("#old:example.org")
+public_rooms = await adapter.sender.list_public_rooms(
+    server="example.org",
+    filter={"generic_search_term": "project"},
+)
+```
+
 ### 置顶 / 取消置顶房间事件
 
 Matrix 适配器暴露了 `MatrixSender.pin_message` / `unpin_message` 等接口用于维护

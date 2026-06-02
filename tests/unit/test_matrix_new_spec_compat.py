@@ -1218,6 +1218,641 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_sender_message_management_helpers_delegate_to_client(self):
+        sender_module = load_module("sender.sender")
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
+
+            async def report_event(self, **kwargs):
+                self.calls.append(("report", kwargs))
+                return {"ok": True}
+
+            async def get_event_context(self, **kwargs):
+                self.calls.append(("context", kwargs))
+                return {"event": {"event_id": kwargs["event_id"]}}
+
+            async def get_event_relations(self, **kwargs):
+                self.calls.append(("relations", kwargs))
+                return {"chunk": []}
+
+            async def send_read_markers(self, **kwargs):
+                self.calls.append(("markers", kwargs))
+                return {"ok": True}
+
+        client = FakeClient()
+        sender = sender_module.MatrixSender(client)
+
+        await sender.report_message(
+            "!room:example.org",
+            "$event:example.org",
+            score=-50,
+            reason="spam",
+        )
+        await sender.get_message_context(
+            "!room:example.org",
+            "$event:example.org",
+            limit=5,
+            filter={"types": ["m.room.message"]},
+        )
+        await sender.get_message_relations(
+            "!room:example.org",
+            "$event:example.org",
+            "m.annotation",
+            event_type="m.reaction",
+            from_token="from",
+            to_token="to",
+            limit=10,
+        )
+        await sender.set_read_markers(
+            "!room:example.org",
+            fully_read="$fully:example.org",
+            read="$read:example.org",
+        )
+
+        self.assertEqual(
+            client.calls,
+            [
+                (
+                    "report",
+                    {
+                        "room_id": "!room:example.org",
+                        "event_id": "$event:example.org",
+                        "score": -50,
+                        "reason": "spam",
+                    },
+                ),
+                (
+                    "context",
+                    {
+                        "room_id": "!room:example.org",
+                        "event_id": "$event:example.org",
+                        "limit": 5,
+                        "filter": {"types": ["m.room.message"]},
+                    },
+                ),
+                (
+                    "relations",
+                    {
+                        "room_id": "!room:example.org",
+                        "event_id": "$event:example.org",
+                        "rel_type": "m.annotation",
+                        "event_type": "m.reaction",
+                        "from_token": "from",
+                        "to_token": "to",
+                        "limit": 10,
+                    },
+                ),
+                (
+                    "markers",
+                    {
+                        "room_id": "!room:example.org",
+                        "fully_read": "$fully:example.org",
+                        "read": "$read:example.org",
+                    },
+                ),
+            ],
+        )
+
+    async def test_sender_room_lifecycle_and_query_helpers_delegate_to_client(self):
+        sender_module = load_module("sender.sender")
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
+
+            async def create_room(self, **kwargs):
+                self.calls.append(("create_room", kwargs))
+                return {"room_id": "!created:example.org"}
+
+            async def create_dm_room(self, **kwargs):
+                self.calls.append(("create_dm", kwargs))
+                return {"room_id": "!dm:example.org"}
+
+            async def get_user_room(self, user_id):
+                self.calls.append(("dm_lookup", user_id))
+                return "!dm:example.org"
+
+            async def join_room(self, room_id):
+                self.calls.append(("join", room_id))
+                return {"room_id": "!room:example.org"}
+
+            async def leave_room(self, room_id):
+                self.calls.append(("leave", room_id))
+                return {}
+
+            async def forget_room(self, room_id):
+                self.calls.append(("forget", room_id))
+                return {}
+
+            async def get_joined_rooms(self):
+                self.calls.append(("joined",))
+                return ["!room:example.org"]
+
+            async def get_room_members(self, room_id):
+                self.calls.append(("members", room_id))
+                return {"chunk": []}
+
+            async def room_messages(self, **kwargs):
+                self.calls.append(("messages", kwargs))
+                return {"chunk": []}
+
+            async def get_room_state(self, room_id):
+                self.calls.append(("state", room_id))
+                return [{"type": "m.room.name"}]
+
+            async def get_room_state_event(self, **kwargs):
+                self.calls.append(("state_event", kwargs))
+                return {"name": "Matrix Room"}
+
+            async def set_room_state_event(self, **kwargs):
+                self.calls.append(("set_state", kwargs))
+                return {"event_id": "$state:example.org"}
+
+            async def get_event(self, **kwargs):
+                self.calls.append(("event", kwargs))
+                return {"event_id": kwargs["event_id"]}
+
+            async def search(self, **kwargs):
+                self.calls.append(("search", kwargs))
+                return {"search_categories": {}}
+
+            async def upgrade_room(self, **kwargs):
+                self.calls.append(("upgrade", kwargs))
+                return {"replacement_room": "!new:example.org"}
+
+            async def knock_room(self, **kwargs):
+                self.calls.append(("knock", kwargs))
+                return {"room_id": "!room:example.org"}
+
+            async def accept_knock(self, **kwargs):
+                self.calls.append(("accept_knock", kwargs))
+                return {}
+
+            async def reject_knock(self, **kwargs):
+                self.calls.append(("reject_knock", kwargs))
+                return {}
+
+            async def get_room_hierarchy(self, **kwargs):
+                self.calls.append(("hierarchy", kwargs))
+                return {"rooms": []}
+
+        client = FakeClient()
+        sender = sender_module.MatrixSender(client)
+
+        await sender.create_room(
+            name="Project",
+            topic="Sprint",
+            invite=["@alice:example.org"],
+            is_public=True,
+            preset="public_chat",
+            creation_content={"m.federate": False},
+            initial_state=[{"type": "m.room.topic", "content": {"topic": "Sprint"}}],
+        )
+        await sender.create_dm_room("@alice:example.org", name="Alice")
+        self.assertEqual(
+            await sender.get_user_room("@alice:example.org"),
+            "!dm:example.org",
+        )
+        await sender.join_room("#room:example.org")
+        await sender.leave_room("!room:example.org")
+        await sender.forget_room("!room:example.org")
+        self.assertEqual(await sender.get_joined_rooms(), ["!room:example.org"])
+        await sender.get_room_members("!room:example.org")
+        await sender.get_room_messages(
+            "!room:example.org",
+            from_token="from",
+            to_token="to",
+            direction="f",
+            limit=20,
+        )
+        await sender.get_room_state("!room:example.org")
+        await sender.get_room_state_event(
+            "!room:example.org", "m.room.name", state_key=""
+        )
+        await sender.set_room_state_event(
+            "!room:example.org",
+            "com.example.state",
+            {"enabled": True},
+            state_key="state/key",
+        )
+        await sender.get_event("!room:example.org", "$event:example.org")
+        await sender.search_messages(
+            "hello",
+            keys=["content.body"],
+            filter={"rooms": ["!room:example.org"]},
+            order_by="rank",
+            event_context={"before_limit": 1},
+        )
+        await sender.upgrade_room("!room:example.org", "11")
+        await sender.knock_room("#room:example.org", reason="join request")
+        await sender.accept_knock(
+            "!room:example.org", "@alice:example.org", reason="ok"
+        )
+        await sender.reject_knock(
+            "!room:example.org", "@mallory:example.org", reason="no"
+        )
+        await sender.get_room_hierarchy(
+            "!space:example.org", limit=50, from_token="page"
+        )
+
+        self.assertEqual(
+            client.calls,
+            [
+                (
+                    "create_room",
+                    {
+                        "name": "Project",
+                        "topic": "Sprint",
+                        "invite": ["@alice:example.org"],
+                        "is_public": True,
+                        "preset": "public_chat",
+                        "creation_content": {"m.federate": False},
+                        "initial_state": [
+                            {
+                                "type": "m.room.topic",
+                                "content": {"topic": "Sprint"},
+                            }
+                        ],
+                    },
+                ),
+                (
+                    "create_dm",
+                    {"user_id": "@alice:example.org", "name": "Alice"},
+                ),
+                ("dm_lookup", "@alice:example.org"),
+                ("join", "#room:example.org"),
+                ("leave", "!room:example.org"),
+                ("forget", "!room:example.org"),
+                ("joined",),
+                ("members", "!room:example.org"),
+                (
+                    "messages",
+                    {
+                        "room_id": "!room:example.org",
+                        "from_token": "from",
+                        "to_token": "to",
+                        "direction": "f",
+                        "limit": 20,
+                    },
+                ),
+                ("state", "!room:example.org"),
+                (
+                    "state_event",
+                    {
+                        "room_id": "!room:example.org",
+                        "event_type": "m.room.name",
+                        "state_key": "",
+                    },
+                ),
+                (
+                    "set_state",
+                    {
+                        "room_id": "!room:example.org",
+                        "event_type": "com.example.state",
+                        "content": {"enabled": True},
+                        "state_key": "state/key",
+                    },
+                ),
+                (
+                    "event",
+                    {
+                        "room_id": "!room:example.org",
+                        "event_id": "$event:example.org",
+                    },
+                ),
+                (
+                    "search",
+                    {
+                        "search_term": "hello",
+                        "keys": ["content.body"],
+                        "filter": {"rooms": ["!room:example.org"]},
+                        "order_by": "rank",
+                        "event_context": {"before_limit": 1},
+                    },
+                ),
+                (
+                    "upgrade",
+                    {"room_id": "!room:example.org", "new_version": "11"},
+                ),
+                (
+                    "knock",
+                    {"room_id_or_alias": "#room:example.org", "reason": "join request"},
+                ),
+                (
+                    "accept_knock",
+                    {
+                        "room_id": "!room:example.org",
+                        "user_id": "@alice:example.org",
+                        "reason": "ok",
+                    },
+                ),
+                (
+                    "reject_knock",
+                    {
+                        "room_id": "!room:example.org",
+                        "user_id": "@mallory:example.org",
+                        "reason": "no",
+                    },
+                ),
+                (
+                    "hierarchy",
+                    {
+                        "room_id": "!space:example.org",
+                        "limit": 50,
+                        "from_token": "page",
+                    },
+                ),
+            ],
+        )
+
+    async def test_sender_room_member_management_helpers_delegate_to_client(self):
+        sender_module = load_module("sender.sender")
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
+
+            async def invite_user(self, **kwargs):
+                self.calls.append(("invite", kwargs))
+                return {"ok": True}
+
+            async def kick_user(self, **kwargs):
+                self.calls.append(("kick", kwargs))
+                return {"ok": True}
+
+            async def ban_user(self, **kwargs):
+                self.calls.append(("ban", kwargs))
+                return {"ok": True}
+
+            async def unban_user(self, **kwargs):
+                self.calls.append(("unban", kwargs))
+                return {"ok": True}
+
+            async def set_user_power_level(self, **kwargs):
+                self.calls.append(("power", kwargs))
+                return {"event_id": "$power:example.org"}
+
+            async def promote_to_moderator(self, **kwargs):
+                self.calls.append(("mod", kwargs))
+                return {"event_id": "$mod:example.org"}
+
+            async def promote_to_admin(self, **kwargs):
+                self.calls.append(("admin", kwargs))
+                return {"event_id": "$admin:example.org"}
+
+            async def demote_user(self, **kwargs):
+                self.calls.append(("demote", kwargs))
+                return {"event_id": "$demote:example.org"}
+
+            async def get_room_admins(self, room_id):
+                self.calls.append(("admins", room_id))
+                return ["@admin:example.org"]
+
+            async def get_room_moderators(self, room_id):
+                self.calls.append(("moderators", room_id))
+                return ["@mod:example.org"]
+
+        client = FakeClient()
+        sender = sender_module.MatrixSender(client)
+
+        await sender.invite_user("!room:example.org", "@alice:example.org")
+        await sender.kick_user("!room:example.org", "@bob:example.org", reason="spam")
+        await sender.ban_user("!room:example.org", "@eve:example.org", reason="abuse")
+        await sender.unban_user("!room:example.org", "@eve:example.org")
+        await sender.set_user_power_level("!room:example.org", "@mod:example.org", 50)
+        await sender.promote_to_moderator("!room:example.org", "@mod:example.org")
+        await sender.promote_to_admin("!room:example.org", "@admin:example.org")
+        await sender.demote_user("!room:example.org", "@alice:example.org")
+        self.assertEqual(
+            await sender.get_room_admins("!room:example.org"),
+            ["@admin:example.org"],
+        )
+        self.assertEqual(
+            await sender.get_room_moderators("!room:example.org"),
+            ["@mod:example.org"],
+        )
+
+        self.assertEqual(
+            client.calls,
+            [
+                (
+                    "invite",
+                    {"room_id": "!room:example.org", "user_id": "@alice:example.org"},
+                ),
+                (
+                    "kick",
+                    {
+                        "room_id": "!room:example.org",
+                        "user_id": "@bob:example.org",
+                        "reason": "spam",
+                    },
+                ),
+                (
+                    "ban",
+                    {
+                        "room_id": "!room:example.org",
+                        "user_id": "@eve:example.org",
+                        "reason": "abuse",
+                    },
+                ),
+                (
+                    "unban",
+                    {"room_id": "!room:example.org", "user_id": "@eve:example.org"},
+                ),
+                (
+                    "power",
+                    {
+                        "room_id": "!room:example.org",
+                        "user_id": "@mod:example.org",
+                        "power_level": 50,
+                    },
+                ),
+                (
+                    "mod",
+                    {"room_id": "!room:example.org", "user_id": "@mod:example.org"},
+                ),
+                (
+                    "admin",
+                    {"room_id": "!room:example.org", "user_id": "@admin:example.org"},
+                ),
+                (
+                    "demote",
+                    {"room_id": "!room:example.org", "user_id": "@alice:example.org"},
+                ),
+                ("admins", "!room:example.org"),
+                ("moderators", "!room:example.org"),
+            ],
+        )
+
+    async def test_sender_room_state_helpers_delegate_to_client(self):
+        sender_module = load_module("sender.sender")
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
+
+            async def set_room_name(self, **kwargs):
+                self.calls.append(("name", kwargs))
+                return {"event_id": "$name:example.org"}
+
+            async def set_room_topic(self, **kwargs):
+                self.calls.append(("topic", kwargs))
+                return {"event_id": "$topic:example.org"}
+
+            async def set_room_avatar(self, **kwargs):
+                self.calls.append(("avatar", kwargs))
+                return {"event_id": "$avatar:example.org"}
+
+            async def set_room_join_rules(self, **kwargs):
+                self.calls.append(("join", kwargs))
+                return {"event_id": "$join:example.org"}
+
+            async def set_room_history_visibility(self, **kwargs):
+                self.calls.append(("history", kwargs))
+                return {"event_id": "$history:example.org"}
+
+            async def set_room_guest_access(self, **kwargs):
+                self.calls.append(("guest", kwargs))
+                return {"event_id": "$guest:example.org"}
+
+            async def set_room_canonical_alias(self, **kwargs):
+                self.calls.append(("alias", kwargs))
+                return {"event_id": "$alias:example.org"}
+
+            async def create_room_alias(self, **kwargs):
+                self.calls.append(("create_alias", kwargs))
+                return {"ok": True}
+
+            async def delete_room_alias(self, room_alias):
+                self.calls.append(("delete_alias", room_alias))
+                return {}
+
+            async def get_room_alias(self, room_alias):
+                self.calls.append(("resolve_alias", room_alias))
+                return {"room_id": "!room:example.org", "servers": ["example.org"]}
+
+            async def list_public_rooms(self, **kwargs):
+                self.calls.append(("public_rooms", kwargs))
+                return {"chunk": []}
+
+            async def get_room_visibility(self, room_id):
+                self.calls.append(("get_visibility", room_id))
+                return {"visibility": "private"}
+
+            async def set_room_visibility(self, **kwargs):
+                self.calls.append(("set_visibility", kwargs))
+                return {"ok": True}
+
+            async def get_room_aliases(self, room_id):
+                self.calls.append(("aliases", room_id))
+                return {"aliases": ["#main:example.org"]}
+
+        client = FakeClient()
+        sender = sender_module.MatrixSender(client)
+
+        await sender.set_room_name("!room:example.org", "Matrix Room")
+        await sender.set_room_topic("!room:example.org", "Topic")
+        await sender.set_room_avatar("!room:example.org", "mxc://example.org/avatar")
+        await sender.set_room_join_rules("!room:example.org", "invite")
+        await sender.set_room_history_visibility("!room:example.org", "shared")
+        await sender.set_room_guest_access("!room:example.org", "forbidden")
+        await sender.set_room_canonical_alias(
+            "!room:example.org",
+            "#main:example.org",
+            alt_aliases=["#alt:example.org"],
+        )
+        await sender.create_room_alias("#project:example.org", "!room:example.org")
+        await sender.delete_room_alias("#old:example.org")
+        self.assertEqual(
+            await sender.get_room_alias("#project:example.org"),
+            {"room_id": "!room:example.org", "servers": ["example.org"]},
+        )
+        await sender.list_public_rooms(
+            server="example.org",
+            limit=20,
+            since="page",
+            filter={"generic_search_term": "project"},
+        )
+        self.assertEqual(
+            await sender.get_room_visibility("!room:example.org"),
+            {"visibility": "private"},
+        )
+        await sender.set_room_visibility("!room:example.org", "public")
+        self.assertEqual(
+            await sender.get_room_aliases("!room:example.org"),
+            {"aliases": ["#main:example.org"]},
+        )
+
+        self.assertEqual(
+            client.calls,
+            [
+                (
+                    "name",
+                    {"room_id": "!room:example.org", "name": "Matrix Room"},
+                ),
+                (
+                    "topic",
+                    {"room_id": "!room:example.org", "topic": "Topic"},
+                ),
+                (
+                    "avatar",
+                    {
+                        "room_id": "!room:example.org",
+                        "avatar_url": "mxc://example.org/avatar",
+                    },
+                ),
+                (
+                    "join",
+                    {"room_id": "!room:example.org", "join_rule": "invite"},
+                ),
+                (
+                    "history",
+                    {
+                        "room_id": "!room:example.org",
+                        "history_visibility": "shared",
+                    },
+                ),
+                (
+                    "guest",
+                    {"room_id": "!room:example.org", "guest_access": "forbidden"},
+                ),
+                (
+                    "alias",
+                    {
+                        "room_id": "!room:example.org",
+                        "alias": "#main:example.org",
+                        "alt_aliases": ["#alt:example.org"],
+                    },
+                ),
+                (
+                    "create_alias",
+                    {
+                        "room_alias": "#project:example.org",
+                        "room_id": "!room:example.org",
+                    },
+                ),
+                ("delete_alias", "#old:example.org"),
+                ("resolve_alias", "#project:example.org"),
+                (
+                    "public_rooms",
+                    {
+                        "server": "example.org",
+                        "limit": 20,
+                        "since": "page",
+                        "filter": {"generic_search_term": "project"},
+                    },
+                ),
+                ("get_visibility", "!room:example.org"),
+                (
+                    "set_visibility",
+                    {"room_id": "!room:example.org", "visibility": "public"},
+                ),
+                ("aliases", "!room:example.org"),
+            ],
+        )
+
     async def test_key_backup_push_auth_and_thirdparty_paths_percent_encode_segments(
         self,
     ):
