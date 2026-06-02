@@ -1,3 +1,6 @@
+import html
+from urllib.parse import quote
+
 from astrbot.api.message_components import At
 
 from .common import send_content
@@ -26,7 +29,12 @@ async def send_at(
         display = segment.name or user_id
         if not display.startswith("@"):
             display = f"@{display}"
-        formatted_body = f'<a href="https://matrix.to/#/{user_id}" data-mxid="{user_id}">{display}</a>'
+        matrix_to_url = f"https://matrix.to/#/{quote(user_id, safe='')}"
+        formatted_body = (
+            f'<a href="{html.escape(matrix_to_url, quote=True)}" '
+            f'data-mxid="{html.escape(user_id, quote=True)}">'
+            f"{html.escape(display)}</a>"
+        )
         content = {
             "msgtype": "m.text",
             "body": display,

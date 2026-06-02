@@ -12,6 +12,7 @@ from ..constants import (
     MSC2867_MARKED_UNREAD,
     MSC4133_PROFILE_PATH,
 )
+from .path_utils import quote_path_segment
 
 
 class ProfileMixin:
@@ -31,7 +32,9 @@ class ProfileMixin:
         if not hasattr(self, "user_id") or not self.user_id:
             raise Exception("Client not logged in or user_id not set")
 
-        endpoint = f"/_matrix/client/v3/user/{self.user_id}/account_data/{type}"
+        user = quote_path_segment(self.user_id)
+        data_type = quote_path_segment(type)
+        endpoint = f"/_matrix/client/v3/user/{user}/account_data/{data_type}"
         try:
             return await self._request("GET", endpoint)
         except Exception:
@@ -53,7 +56,9 @@ class ProfileMixin:
         """
         if not hasattr(self, "user_id") or not self.user_id:
             raise Exception("Client not logged in or user_id not set")
-        endpoint = f"/_matrix/client/v3/user/{self.user_id}/account_data/{type}"
+        user = quote_path_segment(self.user_id)
+        data_type = quote_path_segment(type)
+        endpoint = f"/_matrix/client/v3/user/{user}/account_data/{data_type}"
         return await self._request("PUT", endpoint, data=content)
 
     async def get_room_account_data(self, room_id: str, type: str) -> dict[str, Any]:
@@ -69,7 +74,10 @@ class ProfileMixin:
         """
         if not hasattr(self, "user_id") or not self.user_id:
             raise Exception("Client not logged in or user_id not set")
-        endpoint = f"/_matrix/client/v3/user/{self.user_id}/rooms/{room_id}/account_data/{type}"
+        user = quote_path_segment(self.user_id)
+        room = quote_path_segment(room_id)
+        data_type = quote_path_segment(type)
+        endpoint = f"/_matrix/client/v3/user/{user}/rooms/{room}/account_data/{data_type}"
         try:
             return await self._request("GET", endpoint)
         except Exception:
@@ -91,7 +99,10 @@ class ProfileMixin:
         """
         if not hasattr(self, "user_id") or not self.user_id:
             raise Exception("Client not logged in or user_id not set")
-        endpoint = f"/_matrix/client/v3/user/{self.user_id}/rooms/{room_id}/account_data/{type}"
+        user = quote_path_segment(self.user_id)
+        room = quote_path_segment(room_id)
+        data_type = quote_path_segment(type)
+        endpoint = f"/_matrix/client/v3/user/{user}/rooms/{room}/account_data/{data_type}"
         return await self._request("PUT", endpoint, data=content)
 
     async def set_display_name(self, display_name: str) -> dict[str, Any]:
@@ -104,7 +115,8 @@ class ProfileMixin:
         Returns:
             Response data
         """
-        endpoint = f"/_matrix/client/v3/profile/{self.user_id}/displayname"
+        user = quote_path_segment(self.user_id)
+        endpoint = f"/_matrix/client/v3/profile/{user}/displayname"
         return await self._request("PUT", endpoint, data={"displayname": display_name})
 
     async def get_display_name(self, user_id: str) -> str:
@@ -117,7 +129,8 @@ class ProfileMixin:
         Returns:
             Display name
         """
-        endpoint = f"/_matrix/client/v3/profile/{user_id}/displayname"
+        user = quote_path_segment(user_id)
+        endpoint = f"/_matrix/client/v3/profile/{user}/displayname"
         response = await self._request("GET", endpoint, authenticated=False)
         return response.get("displayname", user_id)
 
@@ -131,7 +144,8 @@ class ProfileMixin:
         Returns:
             Avatar URL (mxc:// format) or None
         """
-        endpoint = f"/_matrix/client/v3/profile/{user_id}/avatar_url"
+        user = quote_path_segment(user_id)
+        endpoint = f"/_matrix/client/v3/profile/{user}/avatar_url"
         try:
             response = await self._request("GET", endpoint, authenticated=False)
             return response.get("avatar_url")
@@ -148,7 +162,8 @@ class ProfileMixin:
         Returns:
             Response data
         """
-        endpoint = f"/_matrix/client/v3/profile/{self.user_id}/avatar_url"
+        user = quote_path_segment(self.user_id)
+        endpoint = f"/_matrix/client/v3/profile/{user}/avatar_url"
         return await self._request("PUT", endpoint, data={"avatar_url": avatar_url})
 
     async def set_presence(
@@ -170,7 +185,8 @@ class ProfileMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/presence/{self.user_id}/status"
+        user = quote_path_segment(self.user_id)
+        endpoint = f"/_matrix/client/v3/presence/{user}/status"
         data: dict[str, Any] = {"presence": status}
         if status_msg:
             data["status_msg"] = status_msg
@@ -190,7 +206,8 @@ class ProfileMixin:
         Returns:
             Presence response
         """
-        endpoint = f"/_matrix/client/v3/presence/{user_id}/status"
+        user = quote_path_segment(user_id)
+        endpoint = f"/_matrix/client/v3/presence/{user}/status"
         return await self._request("GET", endpoint)
 
     async def get_user_room(self, user_id: str) -> str | None:
@@ -269,12 +286,18 @@ class ProfileMixin:
         if not target:
             raise Exception("user_id is required for get_extended_profile")
         try:
+            encoded_target = quote_path_segment(target)
             return await self._request(
-                "GET", f"{MSC4133_PROFILE_PATH}/{target}", authenticated=False
+                "GET",
+                f"{MSC4133_PROFILE_PATH}/{encoded_target}",
+                authenticated=False,
             )
         except Exception:
+            encoded_target = quote_path_segment(target)
             return await self._request(
-                "GET", f"/_matrix/client/v3/profile/{target}", authenticated=False
+                "GET",
+                f"/_matrix/client/v3/profile/{encoded_target}",
+                authenticated=False,
             )
 
     async def set_extended_profile_field(
@@ -283,12 +306,16 @@ class ProfileMixin:
         """Set a single extended profile field (MSC4133)."""
         if not field:
             raise ValueError("field is required")
-        endpoint = f"{MSC4133_PROFILE_PATH}/{self.user_id}/{field}"
+        user = quote_path_segment(self.user_id)
+        profile_field = quote_path_segment(field)
+        endpoint = f"{MSC4133_PROFILE_PATH}/{user}/{profile_field}"
         return await self._request("PUT", endpoint, data={field: value})
 
     async def delete_extended_profile_field(self, field: str) -> dict[str, Any]:
         """Remove a single extended profile field (MSC4133)."""
         if not field:
             raise ValueError("field is required")
-        endpoint = f"{MSC4133_PROFILE_PATH}/{self.user_id}/{field}"
+        user = quote_path_segment(self.user_id)
+        profile_field = quote_path_segment(field)
+        endpoint = f"{MSC4133_PROFILE_PATH}/{user}/{profile_field}"
         return await self._request("DELETE", endpoint)

@@ -1,3 +1,6 @@
+import html
+from urllib.parse import quote
+
 from astrbot.api.message_components import Contact
 
 from .common import send_content
@@ -19,13 +22,16 @@ async def send_contact(
     content_data = {"msgtype": "m.text", "body": body}
 
     if isinstance(contact_id, str) and contact_id.startswith("@") and ":" in contact_id:
-        link = f"https://matrix.to/#/{contact_id}"
+        link = f"https://matrix.to/#/{quote(contact_id, safe='')}"
         display = contact_id
         content_data = {
             "msgtype": "m.text",
             "body": display,
             "format": "org.matrix.custom.html",
-            "formatted_body": f'<a href="{link}">{display}</a>',
+            "formatted_body": (
+                f'<a href="{html.escape(link, quote=True)}">'
+                f"{html.escape(display)}</a>"
+            ),
             "m.mentions": {"user_ids": [contact_id]},
         }
 

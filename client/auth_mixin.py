@@ -8,6 +8,7 @@ from typing import Any
 from astrbot.api import logger
 
 from ..constants import DEFAULT_TIMEOUT_MS_30000
+from .path_utils import quote_path_segment
 
 
 class AuthMixin:
@@ -339,7 +340,8 @@ class AuthMixin:
         Returns:
             Response with filter_id
         """
-        endpoint = f"/_matrix/client/v3/user/{user_id}/filter"
+        user = quote_path_segment(user_id)
+        endpoint = f"/_matrix/client/v3/user/{user}/filter"
         return await self._request("POST", endpoint, data=filter_data)
 
     async def get_filter(self, user_id: str, filter_id: str) -> dict[str, Any]:
@@ -353,5 +355,7 @@ class AuthMixin:
         Returns:
             Filter definition
         """
-        endpoint = f"/_matrix/client/v3/user/{user_id}/filter/{filter_id}"
+        user = quote_path_segment(user_id)
+        filter_path = quote_path_segment(filter_id)
+        endpoint = f"/_matrix/client/v3/user/{user}/filter/{filter_path}"
         return await self._request("GET", endpoint)

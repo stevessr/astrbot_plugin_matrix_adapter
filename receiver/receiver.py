@@ -859,7 +859,7 @@ class MatrixReceiver:
                     logger.debug(f"Could not fetch original event for reply: {e}")
 
         # 处理消息内容
-        msgtype = event.content.get("msgtype")
+        msgtype = event.content.get("msgtype") or getattr(event, "msgtype", None)
         event_type = getattr(event, "event_type", None)
 
         # Handle poll events by event type rather than msgtype
@@ -876,6 +876,13 @@ class MatrixReceiver:
         else:
             handler = self._MSGTYPE_HANDLERS.get(msgtype, handle_unknown)
             await handler(self, chain, event, msgtype)
+
+        if msgtype == "m.redaction":
+            message.message_str = "".join(
+                str(getattr(component, "text", ""))
+                for component in chain.chain
+                if getattr(component, "text", None)
+            )
 
         message.message = (
             chain.chain

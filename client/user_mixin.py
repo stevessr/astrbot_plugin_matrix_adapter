@@ -7,6 +7,8 @@ from typing import Any
 
 from astrbot.api import logger
 
+from .path_utils import quote_path_segment
+
 
 class UserMixin:
     """User management methods for Matrix client"""
@@ -24,7 +26,8 @@ class UserMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/invite"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/invite"
         return await self._request("POST", endpoint, data={"user_id": user_id})
 
     # ========== User Removal ==========
@@ -43,7 +46,8 @@ class UserMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/kick"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/kick"
         data: dict[str, Any] = {"user_id": user_id}
         if reason:
             data["reason"] = reason
@@ -63,7 +67,8 @@ class UserMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/ban"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/ban"
         data: dict[str, Any] = {"user_id": user_id}
         if reason:
             data["reason"] = reason
@@ -80,7 +85,8 @@ class UserMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/unban"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/unban"
         return await self._request("POST", endpoint, data={"user_id": user_id})
 
     # ========== Power Levels (Permissions) ==========
@@ -95,7 +101,8 @@ class UserMixin:
         Returns:
             Power levels state event content
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/state/m.room.power_levels/"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/state/m.room.power_levels/"
         return await self._request("GET", endpoint)
 
     async def set_power_levels(
@@ -111,7 +118,8 @@ class UserMixin:
         Returns:
             Response with event_id
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/state/m.room.power_levels/"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/state/m.room.power_levels/"
         return await self._request("PUT", endpoint, data=power_levels)
 
     async def set_user_power_level(
@@ -189,7 +197,8 @@ class UserMixin:
         Returns:
             Profile data including displayname and avatar_url
         """
-        endpoint = f"/_matrix/client/v3/profile/{user_id}"
+        user = quote_path_segment(user_id)
+        endpoint = f"/_matrix/client/v3/profile/{user}"
         try:
             return await self._request("GET", endpoint, authenticated=False)
         except Exception as e:
@@ -228,7 +237,9 @@ class UserMixin:
         Returns:
             Member state event content or None if not found
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/state/m.room.member/{user_id}"
+        room = quote_path_segment(room_id)
+        user = quote_path_segment(user_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/state/m.room.member/{user}"
         try:
             return await self._request("GET", endpoint)
         except Exception:
@@ -305,7 +316,8 @@ class UserMixin:
         ignored_users = {uid: {} for uid in ignored}
 
         endpoint = (
-            f"/_matrix/client/v3/user/{self.user_id}/account_data/m.ignored_user_list"
+            f"/_matrix/client/v3/user/{quote_path_segment(self.user_id)}"
+            "/account_data/m.ignored_user_list"
         )
         return await self._request(
             "PUT", endpoint, data={"ignored_users": ignored_users}
@@ -330,7 +342,8 @@ class UserMixin:
         ignored_users = {uid: {} for uid in ignored}
 
         endpoint = (
-            f"/_matrix/client/v3/user/{self.user_id}/account_data/m.ignored_user_list"
+            f"/_matrix/client/v3/user/{quote_path_segment(self.user_id)}"
+            "/account_data/m.ignored_user_list"
         )
         return await self._request(
             "PUT", endpoint, data={"ignored_users": ignored_users}
@@ -373,7 +386,8 @@ class UserMixin:
                     direct_data[user_id].append(room_id)
 
                 endpoint = (
-                    f"/_matrix/client/v3/user/{self.user_id}/account_data/m.direct"
+                    f"/_matrix/client/v3/user/{quote_path_segment(self.user_id)}"
+                    "/account_data/m.direct"
                 )
                 await self._request("PUT", endpoint, data=direct_data)
             except Exception as e:

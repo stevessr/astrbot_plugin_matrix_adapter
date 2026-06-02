@@ -6,6 +6,8 @@ Provides room state helper methods
 import json
 from typing import Any
 
+from .path_utils import quote_path_segment
+
 
 class RoomStateMixin:
     """Room state helper methods for Matrix client"""
@@ -20,7 +22,8 @@ class RoomStateMixin:
         Returns:
             Joined members response
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/joined_members"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/joined_members"
         return await self._request("GET", endpoint)
 
     async def get_room_state_ids(self, room_id: str) -> dict[str, Any]:
@@ -33,7 +36,8 @@ class RoomStateMixin:
         Returns:
             State IDs response
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/state_ids"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/state_ids"
         return await self._request("GET", endpoint)
 
     async def get_room_summary(self, room_id: str) -> dict[str, Any]:
@@ -46,7 +50,8 @@ class RoomStateMixin:
         Returns:
             Summary response
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/summary"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/summary"
         return await self._request("GET", endpoint)
 
     async def timestamp_to_event(
@@ -63,7 +68,8 @@ class RoomStateMixin:
         Returns:
             Event lookup response
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/timestamp_to_event"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/timestamp_to_event"
         params = {"ts": timestamp, "dir": direction}
         return await self._request("GET", endpoint, params=params)
 
@@ -113,7 +119,8 @@ class RoomStateMixin:
         Returns:
             Response data
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/invite"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/invite"
         data = {"id_server": id_server, "medium": medium, "address": address}
         return await self._request("POST", endpoint, data=data)
 

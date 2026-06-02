@@ -5,6 +5,8 @@ Provides push rules and notifications methods
 
 from typing import Any
 
+from .path_utils import quote_path_segment
+
 
 class PushMixin:
     """Push rules and notifications methods for Matrix client"""
@@ -24,7 +26,10 @@ class PushMixin:
         """
         Get a specific push rule
         """
-        endpoint = f"/_matrix/client/v3/pushrules/{scope}/{kind}/{rule_id}"
+        scope_path = quote_path_segment(scope)
+        kind_path = quote_path_segment(kind)
+        rule = quote_path_segment(rule_id)
+        endpoint = f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}"
         return await self._request("GET", endpoint)
 
     async def delete_push_rule(
@@ -33,7 +38,10 @@ class PushMixin:
         """
         Delete a push rule
         """
-        endpoint = f"/_matrix/client/v3/pushrules/{scope}/{kind}/{rule_id}"
+        scope_path = quote_path_segment(scope)
+        kind_path = quote_path_segment(kind)
+        rule = quote_path_segment(rule_id)
+        endpoint = f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}"
         return await self._request("DELETE", endpoint)
 
     async def set_push_rule(
@@ -48,7 +56,10 @@ class PushMixin:
         """
         Create or update a push rule
         """
-        endpoint = f"/_matrix/client/v3/pushrules/{scope}/{kind}/{rule_id}"
+        scope_path = quote_path_segment(scope)
+        kind_path = quote_path_segment(kind)
+        rule = quote_path_segment(rule_id)
+        endpoint = f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}"
         params: dict[str, Any] = {}
         if before:
             params["before"] = before
@@ -62,7 +73,10 @@ class PushMixin:
         """
         Get actions for a push rule
         """
-        endpoint = f"/_matrix/client/v3/pushrules/{scope}/{kind}/{rule_id}/actions"
+        scope_path = quote_path_segment(scope)
+        kind_path = quote_path_segment(kind)
+        rule = quote_path_segment(rule_id)
+        endpoint = f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/actions"
         return await self._request("GET", endpoint)
 
     async def set_push_rule_actions(
@@ -71,7 +85,10 @@ class PushMixin:
         """
         Set actions for a push rule
         """
-        endpoint = f"/_matrix/client/v3/pushrules/{scope}/{kind}/{rule_id}/actions"
+        scope_path = quote_path_segment(scope)
+        kind_path = quote_path_segment(kind)
+        rule = quote_path_segment(rule_id)
+        endpoint = f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/actions"
         return await self._request("PUT", endpoint, data={"actions": actions})
 
     async def get_push_rule_enabled(
@@ -80,7 +97,10 @@ class PushMixin:
         """
         Get enabled state for a push rule
         """
-        endpoint = f"/_matrix/client/v3/pushrules/{scope}/{kind}/{rule_id}/enabled"
+        scope_path = quote_path_segment(scope)
+        kind_path = quote_path_segment(kind)
+        rule = quote_path_segment(rule_id)
+        endpoint = f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/enabled"
         return await self._request("GET", endpoint)
 
     async def set_push_rule_enabled(
@@ -89,7 +109,10 @@ class PushMixin:
         """
         Set enabled state for a push rule
         """
-        endpoint = f"/_matrix/client/v3/pushrules/{scope}/{kind}/{rule_id}/enabled"
+        scope_path = quote_path_segment(scope)
+        kind_path = quote_path_segment(kind)
+        rule = quote_path_segment(rule_id)
+        endpoint = f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/enabled"
         return await self._request("PUT", endpoint, data={"enabled": enabled})
 
     async def get_pushers(self) -> dict[str, Any]:

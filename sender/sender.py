@@ -364,22 +364,23 @@ class MatrixSender:
         if not user_id:
             raise RuntimeError("client.user_id is required for beacon_info")
 
+        ts_ms = int(self._now_ms())
         content: dict[str, Any] = {
             "live": bool(live),
             "timeout": int(timeout_ms),
-            "org.matrix.msc3488.ts": int(self._now_ms()),
-            MSC3488_TS_KEY: int(self._now_ms()),
+            "m.ts": ts_ms,
+            MSC3488_TS_KEY: ts_ms,
             MSC3488_ASSET_KEY: {"type": asset_type},
             "m.asset": {"type": asset_type},
         }
         if description:
             content["description"] = description
 
-        return await self.client.send_room_event(
+        return await self.client.set_room_state_event(
             room_id=room_id,
             event_type=M_BEACON_INFO,
             content=content,
-            txn_id=None,
+            state_key=user_id,
         )
 
     async def send_live_location_beacon(
@@ -411,11 +412,12 @@ class MatrixSender:
         if description:
             location_payload["description"] = description
 
+        ts_ms = int(self._now_ms())
         content: dict[str, Any] = {
             "m.location": location_payload,
             "org.matrix.msc3488.location": dict(location_payload),
-            "m.ts": int(self._now_ms()),
-            MSC3488_TS_KEY: int(self._now_ms()),
+            "m.ts": ts_ms,
+            MSC3488_TS_KEY: ts_ms,
             "m.relates_to": {
                 "rel_type": "m.reference",
                 "event_id": beacon_info_event_id,

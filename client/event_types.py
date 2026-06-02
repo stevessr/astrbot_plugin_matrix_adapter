@@ -18,6 +18,7 @@ class MatrixEvent:
     room_id: str
     content: dict[str, Any]
     event_type: str
+    state_key: str | None = None
     unsigned: dict[str, Any] | None = None
 
     @classmethod
@@ -30,6 +31,7 @@ class MatrixEvent:
             room_id=room_id,
             content=data.get("content", {}),
             event_type=data.get("type", ""),
+            state_key=data.get("state_key"),
             unsigned=data.get("unsigned"),
         )
 
@@ -54,6 +56,7 @@ class RoomMessageEvent(MatrixEvent):
             room_id=room_id,
             content=content,
             event_type=data.get("type", ""),
+            state_key=data.get("state_key"),
             unsigned=data.get("unsigned"),
             msgtype=content.get("msgtype", ""),
             body=content.get("body", ""),
@@ -109,6 +112,7 @@ class InviteEvent(MatrixEvent):
             room_id=room_id,
             content=data.get("content", {}),
             event_type="m.room.member",
+            state_key=data.get("state_key"),
             unsigned=data.get("unsigned"),
         )
 

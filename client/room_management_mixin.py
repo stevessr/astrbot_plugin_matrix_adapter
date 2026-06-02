@@ -5,6 +5,8 @@ Provides room lifecycle and hierarchy methods
 
 from typing import Any
 
+from .path_utils import quote_path_segment
+
 
 class RoomManagementMixin:
     """Room management methods for Matrix client"""
@@ -19,7 +21,8 @@ class RoomManagementMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/forget"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/forget"
         return await self._request("POST", endpoint, data={})
 
     async def upgrade_room(self, room_id: str, new_version: str) -> dict[str, Any]:
@@ -33,7 +36,8 @@ class RoomManagementMixin:
         Returns:
             Response with replacement_room
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/upgrade"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/upgrade"
         return await self._request("POST", endpoint, data={"new_version": new_version})
 
     async def knock_room(
@@ -49,7 +53,8 @@ class RoomManagementMixin:
         Returns:
             Knock response with room_id
         """
-        endpoint = f"/_matrix/client/v3/knock/{room_id_or_alias}"
+        room = quote_path_segment(room_id_or_alias)
+        endpoint = f"/_matrix/client/v3/knock/{room}"
         data: dict[str, Any] = {}
         if reason:
             data["reason"] = reason
@@ -71,7 +76,8 @@ class RoomManagementMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/invite"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/invite"
         data: dict[str, Any] = {"user_id": user_id}
         if reason:
             data["reason"] = reason
@@ -94,7 +100,8 @@ class RoomManagementMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/kick"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/kick"
         data: dict[str, Any] = {"user_id": user_id}
         if reason:
             data["reason"] = reason
@@ -114,7 +121,8 @@ class RoomManagementMixin:
         Returns:
             Hierarchy response
         """
-        endpoint = f"/_matrix/client/v1/rooms/{room_id}/hierarchy"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v1/rooms/{room}/hierarchy"
         params: dict[str, Any] = {}
         if limit is not None:
             params["limit"] = limit

@@ -5,6 +5,8 @@ Provides core room operations and search methods
 
 from typing import Any
 
+from .path_utils import quote_path_segment
+
 
 class RoomCoreMixin:
     """Core room-related methods for Matrix client"""
@@ -19,7 +21,7 @@ class RoomCoreMixin:
         Returns:
             Join response with room_id
         """
-        endpoint = f"/_matrix/client/v3/join/{room_id}"
+        endpoint = f"/_matrix/client/v3/join/{quote_path_segment(room_id)}"
         return await self._request("POST", endpoint, data={})
 
     async def leave_room(self, room_id: str) -> dict[str, Any]:
@@ -32,7 +34,8 @@ class RoomCoreMixin:
         Returns:
             Leave response
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/leave"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/leave"
         return await self._request("POST", endpoint, data={})
 
     async def get_room_members(self, room_id: str) -> dict[str, Any]:
@@ -45,7 +48,8 @@ class RoomCoreMixin:
         Returns:
             Room members data
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/members"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/members"
         return await self._request("GET", endpoint)
 
     async def room_messages(
@@ -69,7 +73,8 @@ class RoomCoreMixin:
         Returns:
             Response with chunk of events and pagination tokens
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/messages"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/messages"
         params = {
             "dir": direction,
             "limit": limit,
@@ -101,7 +106,8 @@ class RoomCoreMixin:
         Returns:
             List of state events
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/state"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/state"
         return await self._request("GET", endpoint)
 
     async def is_room_encrypted(self, room_id: str) -> bool:
@@ -137,7 +143,10 @@ class RoomCoreMixin:
         Returns:
             State event content
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/state/{event_type}/{state_key}"
+        room = quote_path_segment(room_id)
+        event = quote_path_segment(event_type)
+        state = quote_path_segment(state_key)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/state/{event}/{state}"
         return await self._request("GET", endpoint)
 
     async def set_room_state_event(
@@ -159,7 +168,10 @@ class RoomCoreMixin:
         Returns:
             Response with event_id
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/state/{event_type}/{state_key}"
+        room = quote_path_segment(room_id)
+        event = quote_path_segment(event_type)
+        state = quote_path_segment(state_key)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/state/{event}/{state}"
         return await self._request("PUT", endpoint, data=content)
 
     async def get_event(self, room_id: str, event_id: str) -> dict[str, Any]:
@@ -173,7 +185,9 @@ class RoomCoreMixin:
         Returns:
             Event data
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/event/{event_id}"
+        room = quote_path_segment(room_id)
+        event = quote_path_segment(event_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/event/{event}"
         return await self._request("GET", endpoint)
 
     async def search(

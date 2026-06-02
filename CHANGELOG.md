@@ -4,6 +4,16 @@
 - 现在在脱 html 包装会尝试合并连续的 plain 了
 - 现在可以设置 React，但是似乎并没有什么用处？
 - 添加了未并入主线的 MSC4357
+- 修复 `m.room.redaction` 同步事件被跳过的问题，撤回事件现在会按 `[消息已撤回...]` 文本进入接收链路。
+- 房间头像、权限、加入规则和历史可见性状态变更现在也会进入系统消息链路，不再只持久化状态。
+- 修复 `org.matrix.msc4357.live_messaging` unstable 房间状态被前置过滤挡掉的问题，初始状态与时间线状态都会更新房间 live-message 能力。
+- 修复 `send_live_location_beacon_info()` 发送端：`m.beacon_info` 现在按 Matrix 要求写入以 bot MXID 为 `state_key` 的房间状态事件，而不是普通 timeline 事件。
+- 修复多个 Client-Server API endpoint 的路径段编码：room alias、event id、state_key、txn_id、device_id、tag、profile/user id 等包含 `#`、`/`、`:` 时不再破坏请求路径。
+- Key Backup、Push Rules、Filter、Third-party、Media 下载/缩略图等 endpoint 也统一补齐路径段编码；Key Backup 的 `version` 改走 query params。
+- E2EE Key Backup 上传/恢复流程改为复用 Matrix client 的 room key backup API，避免绕过统一路径编码和 query 参数处理。
+- E2EE 设备签名状态查询和 Key Backup 版本创建/读取继续收敛到 Matrix client mixin 方法，减少散落的裸 endpoint 调用。
+- `m.room.member` 状态事件现在保留 `state_key` 并渲染加入、离开、邀请、封禁、敲门和资料变化，不再产生空的系统消息。
+- 发送 At / Contact / Share 的 HTML fallback 时会转义 display/title/content/url，并对 matrix.to MXID path 做编码，避免特殊字符破坏 formatted_body。
 - 补全 MSC 支持：
   - **MSC2867 标记房间未读**：`MatrixSender.mark_room_unread(room_id, unread)`，同时写入稳定 `m.marked_unread` 与旧版 `com.famedly.marked_unread`
   - **MSC4140 可取消的延迟事件**：新增 `DelayedEventsMixin`，提供 `send_delayed_message` / `cancel_delayed_message` / `fire_delayed_message` / `restart_delayed_message` / `list_delayed_messages`

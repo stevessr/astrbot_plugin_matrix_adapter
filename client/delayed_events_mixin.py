@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 from ..constants import MSC4140_DELAYED_EVENTS_PATH
+from .path_utils import quote_path_segment
 
 
 class DelayedEventsMixin:
@@ -46,7 +47,10 @@ class DelayedEventsMixin:
             raise ValueError("delay_ms must be positive for delayed events")
 
         txn_id = txn_id or f"delay_{int(time.time() * 1000)}_{secrets.token_hex(4)}"
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/send/{event_type}/{txn_id}"
+        room = quote_path_segment(room_id)
+        event = quote_path_segment(event_type)
+        txn = quote_path_segment(txn_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/send/{event}/{txn}"
         params: dict[str, Any] = {"org.matrix.msc4140.delay": delay_ms}
         if parent_delay_id:
             params["org.matrix.msc4140.parent_delay_id"] = parent_delay_id
@@ -75,9 +79,10 @@ class DelayedEventsMixin:
         if delay_ms <= 0:
             raise ValueError("delay_ms must be positive for delayed events")
 
-        endpoint = (
-            f"/_matrix/client/v3/rooms/{room_id}/state/{event_type}/{state_key}"
-        )
+        room = quote_path_segment(room_id)
+        event = quote_path_segment(event_type)
+        state = quote_path_segment(state_key)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/state/{event}/{state}"
         params: dict[str, Any] = {"org.matrix.msc4140.delay": delay_ms}
         if parent_delay_id:
             params["org.matrix.msc4140.parent_delay_id"] = parent_delay_id
@@ -113,7 +118,8 @@ class DelayedEventsMixin:
             raise ValueError(
                 "action must be one of 'send', 'restart', 'cancel'"
             )
-        endpoint = f"{MSC4140_DELAYED_EVENTS_PATH}/{delay_id}"
+        delay = quote_path_segment(delay_id)
+        endpoint = f"{MSC4140_DELAYED_EVENTS_PATH}/{delay}"
         return await self._request("POST", endpoint, data={"action": action})
 
     async def cancel_delayed_event(self, delay_id: str) -> dict[str, Any]:

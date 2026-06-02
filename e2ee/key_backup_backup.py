@@ -172,9 +172,7 @@ class KeyBackupBackupMixin:
     async def _get_current_backup_version(self) -> str | None:
         """获取当前备份版本"""
         try:
-            response = await self.client._request(
-                "GET", "/_matrix/client/v3/room_keys/version"
-            )
+            response = await self.client.get_key_backup_versions()
             version = response.get("version")
             if version:
                 self._backup_auth_data = response.get("auth_data", {})
@@ -322,10 +320,8 @@ class KeyBackupBackupMixin:
             public_key = base64.b64encode(public_key_bytes).decode().rstrip("=")
 
             # 创建备份
-            response = await self.client._request(
-                "POST",
-                "/_matrix/client/v3/room_keys/version",
-                data={
+            response = await self.client.create_key_backup_version(
+                {
                     "algorithm": MEGOLM_BACKUP_ALGO,
                     "auth_data": {
                         "public_key": public_key,
@@ -378,10 +374,9 @@ class KeyBackupBackupMixin:
                     rooms[target_room] = {}
                 rooms[target_room][session_id] = session_data
 
-            await self.client._request(
-                "PUT",
-                f"/_matrix/client/v3/room_keys/keys?version={self._backup_version}",
-                data={"rooms": rooms},
+            await self.client.store_room_keys(
+                self._backup_version,
+                {"rooms": rooms},
             )
 
             logger.info(f"已上传 {len(sessions)} 个会话密钥")
@@ -436,10 +431,7 @@ class KeyBackupBackupMixin:
 
         try:
             logger.info(f"开始从备份恢复密钥 (version={self._backup_version})")
-            response = await self.client._request(
-                "GET",
-                f"/_matrix/client/v3/room_keys/keys?version={self._backup_version}",
-            )
+            response = await self.client.get_room_keys(self._backup_version)
 
             rooms = response.get("rooms", {})
             total_sessions = sum(len(s) for s in rooms.values())
@@ -563,10 +555,11 @@ class KeyBackupBackupMixin:
             }
 
             try:
-                await self.client._request(
-                    "PUT",
-                    f"/_matrix/client/v3/room_keys/keys/{room_id}/{session_id}?version={self._backup_version}",
-                    data=session_data,
+                await self.client.store_room_key_for_session(
+                    self._backup_version,
+                    room_id,
+                    session_id,
+                    session_data,
                 )
                 return True
             except Exception as e:
@@ -579,10 +572,9 @@ class KeyBackupBackupMixin:
                 logger.info(
                     "[KeyBackup] 单会话备份接口未识别，回退到批量 room_keys 接口"
                 )
-                await self.client._request(
-                    "PUT",
-                    f"/_matrix/client/v3/room_keys/keys?version={self._backup_version}",
-                    data={
+                await self.client.store_room_keys(
+                    self._backup_version,
+                    {
                         "rooms": {
                             room_id: {
                                 "sessions": {

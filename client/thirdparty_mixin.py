@@ -5,6 +5,8 @@ Provides third-party protocol lookup methods
 
 from typing import Any
 
+from .path_utils import quote_path_segment
+
 
 class ThirdPartyMixin:
     """Third-party protocol lookup methods for Matrix client"""
@@ -28,7 +30,8 @@ class ThirdPartyMixin:
         Returns:
             Protocol response
         """
-        endpoint = f"/_matrix/client/v3/thirdparty/protocol/{protocol}"
+        protocol_path = quote_path_segment(protocol)
+        endpoint = f"/_matrix/client/v3/thirdparty/protocol/{protocol_path}"
         return await self._request("GET", endpoint)
 
     async def get_thirdparty_location(
@@ -44,7 +47,8 @@ class ThirdPartyMixin:
         Returns:
             List of locations
         """
-        endpoint = f"/_matrix/client/v3/thirdparty/location/{protocol}"
+        protocol_path = quote_path_segment(protocol)
+        endpoint = f"/_matrix/client/v3/thirdparty/location/{protocol_path}"
         return await self._request("GET", endpoint, params=fields)
 
     async def get_thirdparty_user(
@@ -60,5 +64,6 @@ class ThirdPartyMixin:
         Returns:
             List of users
         """
-        endpoint = f"/_matrix/client/v3/thirdparty/user/{protocol}"
+        protocol_path = quote_path_segment(protocol)
+        endpoint = f"/_matrix/client/v3/thirdparty/user/{protocol_path}"
         return await self._request("GET", endpoint, params=fields)

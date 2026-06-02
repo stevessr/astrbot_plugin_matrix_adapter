@@ -5,6 +5,8 @@ Provides room directory, aliases, and public rooms methods
 
 from typing import Any
 
+from .path_utils import quote_path_segment
+
 
 class RoomDirectoryMixin:
     """Room directory and aliases methods for Matrix client"""
@@ -20,7 +22,8 @@ class RoomDirectoryMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/directory/room/{room_alias}"
+        alias = quote_path_segment(room_alias)
+        endpoint = f"/_matrix/client/v3/directory/room/{alias}"
         return await self._request("PUT", endpoint, data={"room_id": room_id})
 
     async def delete_room_alias(self, room_alias: str) -> dict[str, Any]:
@@ -33,7 +36,8 @@ class RoomDirectoryMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/directory/room/{room_alias}"
+        alias = quote_path_segment(room_alias)
+        endpoint = f"/_matrix/client/v3/directory/room/{alias}"
         return await self._request("DELETE", endpoint)
 
     async def get_room_alias(self, room_alias: str) -> dict[str, Any]:
@@ -46,7 +50,8 @@ class RoomDirectoryMixin:
         Returns:
             Dict containing room_id and servers
         """
-        endpoint = f"/_matrix/client/v3/directory/room/{room_alias}"
+        alias = quote_path_segment(room_alias)
+        endpoint = f"/_matrix/client/v3/directory/room/{alias}"
         return await self._request("GET", endpoint)
 
     async def list_public_rooms(
@@ -99,7 +104,8 @@ class RoomDirectoryMixin:
         Returns:
             Response containing aliases
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/aliases"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/aliases"
         return await self._request("GET", endpoint)
 
     async def get_room_visibility(self, room_id: str) -> dict[str, Any]:
@@ -112,7 +118,8 @@ class RoomDirectoryMixin:
         Returns:
             Response with visibility
         """
-        endpoint = f"/_matrix/client/v3/directory/list/room/{room_id}"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/directory/list/room/{room}"
         return await self._request("GET", endpoint)
 
     async def set_room_visibility(
@@ -128,5 +135,6 @@ class RoomDirectoryMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/directory/list/room/{room_id}"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/directory/list/room/{room}"
         return await self._request("PUT", endpoint, data={"visibility": visibility})

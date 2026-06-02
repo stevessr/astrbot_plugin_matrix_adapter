@@ -23,6 +23,34 @@ if TYPE_CHECKING:
     from ..e2ee import E2EEManager
 
 
+VISIBLE_ROOM_STATE_EVENT_TYPES = frozenset(
+    {
+        "m.room.name",
+        "m.room.topic",
+        "m.room.avatar",
+        "m.room.encryption",
+        "m.room.tombstone",
+        "m.room.power_levels",
+        "m.room.join_rules",
+        "m.room.history_visibility",
+    }
+)
+
+LIVE_MESSAGING_STATE_EVENT_TYPES = frozenset(
+    {
+        "m.room.live_messaging",
+        "org.matrix.msc4357.live_messaging",
+    }
+)
+
+
+def _is_room_state_event_type(event_type: str) -> bool:
+    return isinstance(event_type, str) and bool(event_type) and (
+        event_type.startswith(("m.room.", "m.space."))
+        or event_type in LIVE_MESSAGING_STATE_EVENT_TYPES
+    )
+
+
 class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMembers):
     """
     Processes Matrix events
@@ -121,7 +149,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
     def _apply_room_state_event(self, room, event_data: dict) -> None:
         event_type = event_data.get("type", "")
-        if not (event_type.startswith("m.room.") or event_type.startswith("m.space.")):
+        if not _is_room_state_event_type(event_type):
             return
         state_key = event_data.get("state_key", "")
         content = event_data.get("content", {}) or {}
@@ -168,10 +196,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 room.space_parents[state_key] = content
             case "m.room.third_party_invite":
                 room.third_party_invites[state_key] = content
-            case _ if event_type in {
-                "m.room.live_messaging",
-                "org.matrix.msc4357.live_messaging",
-            }:
+            case _ if event_type in LIVE_MESSAGING_STATE_EVENT_TYPES:
                 enabled = content.get("enabled")
                 if isinstance(enabled, bool):
                     room.live_messaging_enabled = enabled
@@ -303,7 +328,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                     avatar_url = content.get("avatar_url")
                     if avatar_url:
                         room.member_avatars[user_id] = avatar_url
-            elif event.get("type", "").startswith(("m.room.", "m.space.")):
+            elif _is_room_state_event_type(event.get("type", "")):
                 self._apply_room_state_event(room, event)
 
         # Persist room state/members after initial state processing
@@ -336,20 +361,14 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
         # Handle other room state updates
         if (
-            event_type
-            and event_type.startswith(("m.room.", "m.space."))
+            _is_room_state_event_type(event_type)
             and "state_key" in event_data
         ):
             self._apply_room_state_event(room, event_data)
             await self._persist_room_state(room)
 
             # Process notable state changes as system events for user visibility
-            if event_type in (
-                "m.room.name",
-                "m.room.topic",
-                "m.room.encryption",
-                "m.room.tombstone",
-            ):
+            if event_type in VISIBLE_ROOM_STATE_EVENT_TYPES:
                 event = parse_event(event_data, room.room_id)
                 await self._process_room_state_event(room, event)
 
@@ -360,10 +379,6 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         # But in-room verification REQUEST is sent as m.room.message with msgtype m.key.verification.request
         if event_type and event_type.startswith("m.key.verification."):
             await self._handle_in_room_verification(room, event_data)
-            return
-
-        # Skip redaction events (no visible output)
-        if event_type == "m.room.redaction":
             return
 
         # Skip VoIP call events (framework does not support m.call.* yet)
@@ -378,6 +393,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         if event_type in (
             "m.room.message",
             "m.room.encrypted",
+            "m.room.redaction",
             "m.sticker",
             "m.reaction",
             "m.location",

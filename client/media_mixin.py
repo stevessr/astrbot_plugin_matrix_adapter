@@ -11,6 +11,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import aiohttp
 
@@ -18,6 +19,7 @@ from astrbot.api import logger
 
 from ..constants import HTTP_ERROR_STATUS_400
 from ..plugin_config import get_plugin_config
+from .path_utils import quote_path_segment
 
 
 class MediaMixin:
@@ -1113,11 +1115,13 @@ class MediaMixin:
             raise ValueError(f"Invalid MXC URL format: {mxc_url}")
 
         server_name, media_id = parts
+        server_path = quote_path_segment(server_name)
+        media_path = quote_path_segment(media_id)
         source_key = self._normalize_media_source_key(server_name)
         max_in_memory_bytes = self._get_media_download_max_in_memory_bytes()
 
         proxy_endpoints = [
-            f"/_matrix/client/v1/media/download/{server_name}/{media_id}",
+            f"/_matrix/client/v1/media/download/{server_path}/{media_path}",
         ]
         direct_endpoints: list[str] = []
         public_endpoints: list[str] = []
@@ -1245,8 +1249,9 @@ class MediaMixin:
 
         if allow_thumbnail_fallback and last_status in [403, 404]:
             logger.debug("Trying thumbnail endpoints as fallback...")
+            thumbnail_query = urlencode({"width": 800, "height": 600})
             thumbnail_endpoints = [
-                f"/_matrix/client/v1/media/thumbnail/{server_name}/{media_id}?width=800&height=600",
+                f"/_matrix/client/v1/media/thumbnail/{server_path}/{media_path}?{thumbnail_query}",
             ]
 
             for endpoint in thumbnail_endpoints:
@@ -1347,15 +1352,18 @@ class MediaMixin:
             raise ValueError(f"Invalid MXC URL format: {mxc_url}")
 
         server_name, media_id = parts
+        server_path = quote_path_segment(server_name)
+        media_path = quote_path_segment(media_id)
         source_key = self._normalize_media_source_key(server_name)
-        query = f"width={width}&height={height}"
+        query_params: dict[str, Any] = {"width": width, "height": height}
         if method:
-            query += f"&method={method}"
+            query_params["method"] = method
         if animated is not None:
-            query += f"&animated={'true' if animated else 'false'}"
+            query_params["animated"] = "true" if animated else "false"
+        query = urlencode(query_params)
 
         endpoints = [
-            f"/_matrix/client/v1/media/thumbnail/{server_name}/{media_id}?{query}",
+            f"/_matrix/client/v1/media/thumbnail/{server_path}/{media_path}?{query}",
         ]
 
         last_error = None

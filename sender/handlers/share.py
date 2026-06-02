@@ -1,3 +1,5 @@
+import html
+
 from astrbot.api.message_components import Share
 
 from .common import send_content
@@ -23,11 +25,14 @@ async def send_share(
 
     if url:
         link_title = title or url
-        formatted = f'<a href="{url}">{link_title}</a>'
+        formatted = (
+            f'<a href="{html.escape(url, quote=True)}">'
+            f"{html.escape(link_title)}</a>"
+        )
         if content:
-            formatted = f"{formatted}<br>{content}"
+            formatted = f"{formatted}<br>{html.escape(content)}"
         if image:
-            formatted = f"{formatted}<br>{image}"
+            formatted = f"{formatted}<br>{html.escape(image)}"
         content_data = {
             "msgtype": "m.text",
             "body": body,

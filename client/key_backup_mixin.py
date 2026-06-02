@@ -5,6 +5,8 @@ Provides room key backup API methods
 
 from typing import Any
 
+from .path_utils import quote_path_segment
+
 
 class KeyBackupMixin:
     """Room key backup methods for Matrix client"""
@@ -28,7 +30,8 @@ class KeyBackupMixin:
         Returns:
             Version data
         """
-        endpoint = f"/_matrix/client/v3/room_keys/version/{version}"
+        backup_version = quote_path_segment(version)
+        endpoint = f"/_matrix/client/v3/room_keys/version/{backup_version}"
         return await self._request("GET", endpoint)
 
     async def create_key_backup_version(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -58,7 +61,8 @@ class KeyBackupMixin:
         Returns:
             Response data
         """
-        endpoint = f"/_matrix/client/v3/room_keys/version/{version}"
+        backup_version = quote_path_segment(version)
+        endpoint = f"/_matrix/client/v3/room_keys/version/{backup_version}"
         return await self._request("PUT", endpoint, data=data)
 
     async def delete_key_backup_version(self, version: str) -> dict[str, Any]:
@@ -71,7 +75,8 @@ class KeyBackupMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/room_keys/version/{version}"
+        backup_version = quote_path_segment(version)
+        endpoint = f"/_matrix/client/v3/room_keys/version/{backup_version}"
         return await self._request("DELETE", endpoint)
 
     async def get_room_keys(self, version: str) -> dict[str, Any]:
@@ -84,8 +89,11 @@ class KeyBackupMixin:
         Returns:
             Room keys response
         """
-        endpoint = f"/_matrix/client/v3/room_keys/keys?version={version}"
-        return await self._request("GET", endpoint)
+        return await self._request(
+            "GET",
+            "/_matrix/client/v3/room_keys/keys",
+            params={"version": version},
+        )
 
     async def get_room_keys_for_room(
         self, version: str, room_id: str
@@ -100,8 +108,9 @@ class KeyBackupMixin:
         Returns:
             Room keys response
         """
-        endpoint = f"/_matrix/client/v3/room_keys/keys/{room_id}?version={version}"
-        return await self._request("GET", endpoint)
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/room_keys/keys/{room}"
+        return await self._request("GET", endpoint, params={"version": version})
 
     async def get_room_key_for_session(
         self, version: str, room_id: str, session_id: str
@@ -117,8 +126,10 @@ class KeyBackupMixin:
         Returns:
             Session data
         """
-        endpoint = f"/_matrix/client/v3/room_keys/keys/{room_id}/{session_id}?version={version}"
-        return await self._request("GET", endpoint)
+        room = quote_path_segment(room_id)
+        session = quote_path_segment(session_id)
+        endpoint = f"/_matrix/client/v3/room_keys/keys/{room}/{session}"
+        return await self._request("GET", endpoint, params={"version": version})
 
     async def store_room_keys(
         self, version: str, data: dict[str, Any]
@@ -133,8 +144,34 @@ class KeyBackupMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/room_keys/keys?version={version}"
-        return await self._request("PUT", endpoint, data=data)
+        return await self._request(
+            "PUT",
+            "/_matrix/client/v3/room_keys/keys",
+            data=data,
+            params={"version": version},
+        )
+
+    async def store_room_key_for_session(
+        self, version: str, room_id: str, session_id: str, data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Store a single room key session for a backup version.
+
+        Args:
+            version: Backup version
+            room_id: Room ID
+            session_id: Megolm session ID
+            data: Session payload
+
+        Returns:
+            Empty dict on success
+        """
+        room = quote_path_segment(room_id)
+        session = quote_path_segment(session_id)
+        endpoint = f"/_matrix/client/v3/room_keys/keys/{room}/{session}"
+        return await self._request(
+            "PUT", endpoint, data=data, params={"version": version}
+        )
 
     async def delete_room_keys(self, version: str) -> dict[str, Any]:
         """
@@ -146,8 +183,11 @@ class KeyBackupMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/room_keys/keys?version={version}"
-        return await self._request("DELETE", endpoint)
+        return await self._request(
+            "DELETE",
+            "/_matrix/client/v3/room_keys/keys",
+            params={"version": version},
+        )
 
     async def delete_room_keys_for_room(
         self, version: str, room_id: str
@@ -162,8 +202,9 @@ class KeyBackupMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/room_keys/keys/{room_id}?version={version}"
-        return await self._request("DELETE", endpoint)
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/room_keys/keys/{room}"
+        return await self._request("DELETE", endpoint, params={"version": version})
 
     async def delete_room_key_for_session(
         self, version: str, room_id: str, session_id: str
@@ -179,5 +220,7 @@ class KeyBackupMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/room_keys/keys/{room_id}/{session_id}?version={version}"
-        return await self._request("DELETE", endpoint)
+        room = quote_path_segment(room_id)
+        session = quote_path_segment(session_id)
+        endpoint = f"/_matrix/client/v3/room_keys/keys/{room}/{session}"
+        return await self._request("DELETE", endpoint, params={"version": version})

@@ -72,14 +72,10 @@ class E2EEManagerVerificationMixin:
         if not device_id or device_id == current_device_id:
             return
         client = getattr(self, "client", None)
-        if not client or not hasattr(client, "_request"):
+        if not client or not hasattr(client, "query_keys"):
             return
         try:
-            response = await client._request(
-                "POST",
-                "/_matrix/client/v3/keys/query",
-                {"device_keys": {self.user_id: []}},
-            )
+            response = await client.query_keys({self.user_id: []})
             state = self._classify_own_device_cross_signing_state(response).get(
                 device_id, {}
             )
@@ -237,11 +233,7 @@ class E2EEManagerVerificationMixin:
             return
 
         try:
-            response = await self.client._request(
-                "POST",
-                "/_matrix/client/v3/keys/query",
-                {"device_keys": {self.user_id: []}},
-            )
+            response = await self.client.query_keys({self.user_id: []})
 
             device_keys = (response.get("device_keys") or {}).get(self.user_id) or {}
             if not device_keys:

@@ -5,6 +5,8 @@ Provides device management methods
 
 from typing import Any
 
+from .path_utils import quote_path_segment
+
 
 class DeviceMixin:
     """Device management methods for Matrix client"""
@@ -29,7 +31,8 @@ class DeviceMixin:
         Returns:
             Device information
         """
-        endpoint = f"/_matrix/client/v3/devices/{device_id}"
+        device = quote_path_segment(device_id)
+        endpoint = f"/_matrix/client/v3/devices/{device}"
         return await self._request("GET", endpoint)
 
     async def update_device(
@@ -45,7 +48,8 @@ class DeviceMixin:
         Returns:
             Empty dict on success
         """
-        endpoint = f"/_matrix/client/v3/devices/{device_id}"
+        device = quote_path_segment(device_id)
+        endpoint = f"/_matrix/client/v3/devices/{device}"
 
         data = {}
         if display_name is not None:
@@ -66,7 +70,8 @@ class DeviceMixin:
         Returns:
             Empty dict on success or auth flow information
         """
-        endpoint = f"/_matrix/client/v3/devices/{device_id}"
+        device = quote_path_segment(device_id)
+        endpoint = f"/_matrix/client/v3/devices/{device}"
 
         data = {}
         if auth:

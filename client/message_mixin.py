@@ -20,6 +20,7 @@ from ..constants import (
     REL_TYPE_REPLACE,
     RESPONSE_TRUNCATE_LENGTH_400,
 )
+from .path_utils import quote_path_segment
 
 
 def _content_has_live_marker(content: dict[str, Any]) -> bool:
@@ -98,7 +99,10 @@ class MessageMixin:
                 content=content,
                 metadata=metadata,
             )
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/send/{msg_type}/{txn_id}"
+        room = quote_path_segment(room_id)
+        event_type = quote_path_segment(msg_type)
+        txn = quote_path_segment(txn_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/send/{event_type}/{txn}"
         try:
             response = await self._request("PUT", endpoint, data=content)
         except Exception as e:
@@ -153,7 +157,10 @@ class MessageMixin:
                 content=content,
                 metadata=metadata,
             )
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/send/{event_type}/{txn_id}"
+        room = quote_path_segment(room_id)
+        event = quote_path_segment(event_type)
+        txn = quote_path_segment(txn_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/send/{event}/{txn}"
         try:
             response = await self._request("PUT", endpoint, data=content)
         except Exception as e:
@@ -252,7 +259,9 @@ class MessageMixin:
             Response with event_id of the reaction
         """
         txn_id = f"{int(time.time() * 1000)}_{id(emoji)}"
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/send/m.reaction/{txn_id}"
+        room = quote_path_segment(room_id)
+        txn = quote_path_segment(txn_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/send/m.reaction/{txn}"
 
         content = {
             "m.relates_to": {
@@ -278,7 +287,9 @@ class MessageMixin:
         Returns:
             Response data
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/receipt/m.read/{event_id}"
+        room = quote_path_segment(room_id)
+        event = quote_path_segment(event_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/receipt/m.read/{event}"
         data: dict[str, Any] = {}
         if thread_id:
             data["thread_id"] = thread_id
@@ -299,7 +310,8 @@ class MessageMixin:
             Response data
         """
         endpoint = (
-            f"/_matrix/client/v3/rooms/{room_id}/receipt/m.read.private/{event_id}"
+            f"/_matrix/client/v3/rooms/{quote_path_segment(room_id)}"
+            f"/receipt/m.read.private/{quote_path_segment(event_id)}"
         )
         data: dict[str, Any] = {}
         if thread_id:
@@ -323,7 +335,8 @@ class MessageMixin:
         Returns:
             Response data
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/read_markers"
+        room = quote_path_segment(room_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/read_markers"
         data: dict[str, Any] = {}
         if fully_read:
             data["m.fully_read"] = fully_read
@@ -366,7 +379,10 @@ class MessageMixin:
                 content=data,
                 metadata={"event_id": event_id, "reason": reason},
             )
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/redact/{event_id}/{txn_id}"
+        room = quote_path_segment(room_id)
+        event = quote_path_segment(event_id)
+        txn = quote_path_segment(txn_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/redact/{event}/{txn}"
         try:
             response = await self._request("PUT", endpoint, data=data)
         except Exception as e:
@@ -396,7 +412,9 @@ class MessageMixin:
         Returns:
             Response data
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/report/{event_id}"
+        room = quote_path_segment(room_id)
+        event = quote_path_segment(event_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/report/{event}"
         data: dict[str, Any] = {"score": score}
         if reason:
             data["reason"] = reason
@@ -421,7 +439,9 @@ class MessageMixin:
         Returns:
             Context response
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/context/{event_id}"
+        room = quote_path_segment(room_id)
+        event = quote_path_segment(event_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/context/{event}"
         params: dict[str, Any] = {}
         if limit is not None:
             params["limit"] = limit
@@ -454,9 +474,12 @@ class MessageMixin:
         Returns:
             Relations response
         """
-        path = f"/_matrix/client/v3/rooms/{room_id}/relations/{event_id}/{rel_type}"
+        room = quote_path_segment(room_id)
+        event = quote_path_segment(event_id)
+        relation = quote_path_segment(rel_type)
+        path = f"/_matrix/client/v3/rooms/{room}/relations/{event}/{relation}"
         if event_type:
-            path += f"/{event_type}"
+            path += f"/{quote_path_segment(event_type)}"
         params: dict[str, Any] = {}
         if from_token:
             params["from"] = from_token
@@ -480,7 +503,9 @@ class MessageMixin:
         Returns:
             Response data
         """
-        endpoint = f"/_matrix/client/v3/rooms/{room_id}/typing/{self.user_id}"
+        room = quote_path_segment(room_id)
+        user = quote_path_segment(self.user_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/typing/{user}"
         data = {"typing": typing, "timeout": timeout} if typing else {"typing": False}
         return await self._request("PUT", endpoint, data=data)
 
@@ -501,7 +526,9 @@ class MessageMixin:
         if txn_id is None:
             txn_id = secrets.token_hex(16)
 
-        endpoint = f"/_matrix/client/v3/sendToDevice/{event_type}/{txn_id}"
+        event = quote_path_segment(event_type)
+        txn = quote_path_segment(txn_id)
+        endpoint = f"/_matrix/client/v3/sendToDevice/{event}/{txn}"
 
         # 处理不同的消息格式
         if isinstance(messages, dict):

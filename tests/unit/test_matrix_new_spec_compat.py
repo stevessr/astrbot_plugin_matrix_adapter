@@ -4,6 +4,7 @@ import sys
 import tempfile
 import types
 import unittest
+from collections import OrderedDict
 from pathlib import Path
 from unittest import mock
 
@@ -78,6 +79,34 @@ def _install_astrbot_stubs() -> None:
                 raise RuntimeError("Record stub missing file path")
             return self.file
 
+    class Image(BaseMessageComponent):
+        @classmethod
+        def fromFileSystem(cls, file_path: str):
+            return cls(file=file_path)
+
+        @classmethod
+        def fromURL(cls, url: str):
+            return cls(url=url)
+
+    class Video(BaseMessageComponent):
+        @classmethod
+        def fromFileSystem(cls, file_path: str):
+            return cls(file=file_path)
+
+        @classmethod
+        def fromURL(cls, url: str):
+            return cls(url=url)
+
+    class File(BaseMessageComponent):
+        def __init__(self, name=None, file=None, url=None, **kwargs):
+            super().__init__(name=name, file=file, url=url, **kwargs)
+
+    class Contact(BaseMessageComponent):
+        pass
+
+    class Share(BaseMessageComponent):
+        pass
+
     class ComponentType:
         Unknown = "unknown"
 
@@ -87,6 +116,11 @@ def _install_astrbot_stubs() -> None:
     message_components.Location = Location
     message_components.Plain = Plain
     message_components.Record = Record
+    message_components.Image = Image
+    message_components.Video = Video
+    message_components.File = File
+    message_components.Contact = Contact
+    message_components.Share = Share
     message_components.Reply = Reply
     message_components.ComponentType = ComponentType
 
@@ -149,8 +183,26 @@ def _install_astrbot_stubs() -> None:
     utils_module = sys.modules.setdefault(
         "astrbot.core.utils", types.ModuleType("astrbot.core.utils")
     )
+    platform_core_module = sys.modules.setdefault(
+        "astrbot.core.platform", types.ModuleType("astrbot.core.platform")
+    )
+    platform_message_module = sys.modules.setdefault(
+        "astrbot.core.platform.astrbot_message",
+        types.ModuleType("astrbot.core.platform.astrbot_message"),
+    )
+    message_type_module = sys.modules.setdefault(
+        "astrbot.core.platform.message_type",
+        types.ModuleType("astrbot.core.platform.message_type"),
+    )
     metrics_module = sys.modules.setdefault(
         "astrbot.core.utils.metrics", types.ModuleType("astrbot.core.utils.metrics")
+    )
+    astrbot_path_module = sys.modules.setdefault(
+        "astrbot.core.utils.astrbot_path",
+        types.ModuleType("astrbot.core.utils.astrbot_path"),
+    )
+    io_module = sys.modules.setdefault(
+        "astrbot.core.utils.io", types.ModuleType("astrbot.core.utils.io")
     )
 
     class Metric:
@@ -158,9 +210,39 @@ def _install_astrbot_stubs() -> None:
         async def upload(**kwargs):
             return None
 
+    class MessageMember:
+        def __init__(self, user_id="", nickname="", **kwargs):
+            self.user_id = user_id
+            self.nickname = nickname
+            self.__dict__.update(kwargs)
+
+    class Group:
+        def __init__(self, group_id="", **kwargs):
+            self.group_id = group_id
+            self.__dict__.update(kwargs)
+
+    class MessageType:
+        FRIEND_MESSAGE = "friend"
+        GROUP_MESSAGE = "group"
+        OTHER_MESSAGE = "other"
+
+    class _AstrbotPath:
+        @staticmethod
+        def get_astrbot_data_path():
+            return str(Path(tempfile.gettempdir()) / "astrbot_data")
+
     metrics_module.Metric = Metric
     setattr(core_module, "utils", utils_module)
+    setattr(core_module, "platform", platform_core_module)
     setattr(utils_module, "metrics", metrics_module)
+    setattr(utils_module, "astrbot_path", _AstrbotPath)
+    astrbot_path_module.get_astrbot_data_path = _AstrbotPath.get_astrbot_data_path
+    io_module.download_image_by_url = mock.AsyncMock(
+        return_value=str(Path(tempfile.gettempdir()) / "stub-image.png")
+    )
+    platform_message_module.MessageMember = MessageMember
+    platform_message_module.Group = Group
+    message_type_module.MessageType = MessageType
 
 
 def _install_aiohttp_stub() -> None:
@@ -478,6 +560,525 @@ class MatrixLocationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(captured["content"]["body"], "Big Ben, London, UK")
 
 
+class MatrixLiveLocationCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_beacon_info_sender_uses_room_state_event(self):
+        sender_module = load_module("sender.sender")
+
+        calls = []
+
+        class FakeClient:
+            user_id = "@bot:example.org"
+
+            async def set_room_state_event(self, **kwargs):
+                calls.append(("state", kwargs))
+                return {"event_id": "$beacon-info:example.org"}
+
+            async def send_room_event(self, **kwargs):
+                raise AssertionError(f"beacon_info must be a state event: {kwargs}")
+
+        sender = sender_module.MatrixSender(FakeClient())
+        with mock.patch.object(sender_module.MatrixSender, "_now_ms", return_value=123456):
+            response = await sender.send_live_location_beacon_info(
+                "!room:example.org",
+                description="出差中",
+                timeout_ms=60_000,
+                live=True,
+                asset_type="m.self",
+            )
+
+        self.assertEqual(response, {"event_id": "$beacon-info:example.org"})
+        self.assertEqual(len(calls), 1)
+        _, kwargs = calls[0]
+        self.assertEqual(kwargs["room_id"], "!room:example.org")
+        self.assertEqual(kwargs["event_type"], "m.beacon_info")
+        self.assertEqual(kwargs["state_key"], "@bot:example.org")
+        self.assertEqual(
+            kwargs["content"],
+            {
+                "live": True,
+                "timeout": 60_000,
+                "org.matrix.msc3488.ts": 123456,
+                "m.ts": 123456,
+                "org.matrix.msc3488.asset": {"type": "m.self"},
+                "m.asset": {"type": "m.self"},
+                "description": "出差中",
+            },
+        )
+
+    async def test_beacon_sender_references_beacon_info_event(self):
+        sender_module = load_module("sender.sender")
+
+        calls = []
+
+        class FakeClient:
+            user_id = "@bot:example.org"
+
+            async def send_room_event(self, **kwargs):
+                calls.append(kwargs)
+                return {"event_id": "$beacon:example.org"}
+
+        sender = sender_module.MatrixSender(FakeClient())
+        with mock.patch.object(sender_module.MatrixSender, "_now_ms", return_value=654321):
+            response = await sender.send_live_location_beacon(
+                "!room:example.org",
+                "$beacon-info:example.org",
+                latitude=39.9042,
+                longitude=116.4074,
+                accuracy_m=15.0,
+                description="天安门附近",
+            )
+
+        self.assertEqual(response, {"event_id": "$beacon:example.org"})
+        self.assertEqual(len(calls), 1)
+        kwargs = calls[0]
+        self.assertEqual(kwargs["room_id"], "!room:example.org")
+        self.assertEqual(kwargs["event_type"], "m.beacon")
+        self.assertEqual(
+            kwargs["content"]["m.relates_to"],
+            {
+                "rel_type": "m.reference",
+                "event_id": "$beacon-info:example.org",
+            },
+        )
+        self.assertEqual(
+            kwargs["content"]["m.location"],
+            {"uri": "geo:39.9042,116.4074;u=15.0", "description": "天安门附近"},
+        )
+        self.assertEqual(kwargs["content"]["m.ts"], 654321)
+
+
+class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_room_core_paths_percent_encode_matrix_identifiers(self):
+        room_core = load_module("client.room_core_mixin")
+
+        class FakeClient(room_core.RoomCoreMixin):
+            def __init__(self):
+                self.calls = []
+
+            async def _request(
+                self,
+                method,
+                endpoint,
+                data=None,
+                params=None,
+                authenticated=True,
+                _retry_count=0,
+            ):
+                self.calls.append((method, endpoint, data, params))
+                return {"ok": True}
+
+        client = FakeClient()
+        await client.join_room("#public room:example.org")
+        await client.set_room_state_event(
+            "!room:example.org",
+            "m.beacon_info",
+            {"live": True},
+            state_key="@bot:example.org",
+        )
+        await client.get_event("!room:example.org", "$event/with/slash:example.org")
+
+        self.assertEqual(
+            client.calls[0][1],
+            "/_matrix/client/v3/join/%23public%20room%3Aexample.org",
+        )
+        self.assertEqual(
+            client.calls[1][1],
+            "/_matrix/client/v3/rooms/%21room%3Aexample.org/state/m.beacon_info/%40bot%3Aexample.org",
+        )
+        self.assertEqual(
+            client.calls[2][1],
+            "/_matrix/client/v3/rooms/%21room%3Aexample.org/event/%24event%2Fwith%2Fslash%3Aexample.org",
+        )
+
+    async def test_message_paths_percent_encode_matrix_identifiers(self):
+        message_mixin = load_module("client.message_mixin")
+
+        class FakeClient(message_mixin.MessageMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.calls = []
+
+            async def _request(
+                self,
+                method,
+                endpoint,
+                data=None,
+                params=None,
+                authenticated=True,
+                _retry_count=0,
+            ):
+                self.calls.append((method, endpoint, data, params))
+                return {"event_id": "$ok"}
+
+        client = FakeClient()
+        await client.send_message(
+            "!room:example.org",
+            "m.room.message",
+            {"msgtype": "m.text", "body": "hello"},
+            txn_id="txn/a b",
+        )
+        await client.redact_event(
+            "!room:example.org",
+            "$event/with/slash:example.org",
+            reason="duplicate",
+            txn_id="redact/1",
+        )
+        await client.set_typing("!room:example.org", typing=True)
+
+        self.assertEqual(
+            client.calls[0][1],
+            "/_matrix/client/v3/rooms/%21room%3Aexample.org/send/m.room.message/txn%2Fa%20b",
+        )
+        self.assertEqual(
+            client.calls[1][1],
+            "/_matrix/client/v3/rooms/%21room%3Aexample.org/redact/%24event%2Fwith%2Fslash%3Aexample.org/redact%2F1",
+        )
+        self.assertEqual(
+            client.calls[2][1],
+            "/_matrix/client/v3/rooms/%21room%3Aexample.org/typing/%40bot%3Aexample.org",
+        )
+
+    async def test_profile_tag_and_device_paths_percent_encode_segments(self):
+        profile_mixin = load_module("client.profile_mixin")
+        tags_mixin = load_module("client.tags_mixin")
+        device_mixin = load_module("client.device_mixin")
+
+        class FakeClient(
+            profile_mixin.ProfileMixin,
+            tags_mixin.TagsMixin,
+            device_mixin.DeviceMixin,
+        ):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.calls = []
+
+            async def _request(
+                self,
+                method,
+                endpoint,
+                data=None,
+                params=None,
+                authenticated=True,
+                _retry_count=0,
+            ):
+                self.calls.append((method, endpoint, data, params, authenticated))
+                return {"ok": True, "displayname": "Alice"}
+
+        client = FakeClient()
+        await client.set_room_account_data(
+            "!room:example.org", "com.example/type", {"x": 1}
+        )
+        await client.get_display_name("@alice:example.org")
+        await client.set_presence("online")
+        await client.set_room_tag("!room:example.org", "u/priority", {"order": 0.1})
+        await client.get_device("DEVICE/1")
+
+        self.assertEqual(
+            client.calls[0][1],
+            "/_matrix/client/v3/user/%40bot%3Aexample.org/rooms/%21room%3Aexample.org/account_data/com.example%2Ftype",
+        )
+        self.assertEqual(
+            client.calls[1][1],
+            "/_matrix/client/v3/profile/%40alice%3Aexample.org/displayname",
+        )
+        self.assertEqual(
+            client.calls[2][1],
+            "/_matrix/client/v3/presence/%40bot%3Aexample.org/status",
+        )
+        self.assertEqual(
+            client.calls[3][1],
+            "/_matrix/client/v3/user/%40bot%3Aexample.org/rooms/%21room%3Aexample.org/tags/u%2Fpriority",
+        )
+        self.assertEqual(client.calls[4][1], "/_matrix/client/v3/devices/DEVICE%2F1")
+
+    async def test_room_directory_user_and_delayed_paths_percent_encode_segments(
+        self,
+    ):
+        room_state_mixin = load_module("client.room_state_mixin")
+        room_management_mixin = load_module("client.room_management_mixin")
+        room_directory_mixin = load_module("client.room_directory_mixin")
+        user_mixin = load_module("client.user_mixin")
+        delayed_mixin = load_module("client.delayed_events_mixin")
+
+        class FakeClient(
+            room_state_mixin.RoomStateMixin,
+            room_management_mixin.RoomManagementMixin,
+            room_directory_mixin.RoomDirectoryMixin,
+            user_mixin.UserMixin,
+            delayed_mixin.DelayedEventsMixin,
+        ):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.calls = []
+
+            async def _request(
+                self,
+                method,
+                endpoint,
+                data=None,
+                params=None,
+                authenticated=True,
+                _retry_count=0,
+            ):
+                self.calls.append((method, endpoint, data, params))
+                return {"ok": True}
+
+        client = FakeClient()
+        await client.get_joined_members("!room:example.org")
+        await client.knock_room("#public room:example.org", reason="hi")
+        await client.get_room_alias("#public room:example.org")
+        await client.get_room_member("!room:example.org", "@alice:example.org")
+        await client.send_delayed_room_event(
+            "!room:example.org",
+            "m.room.message",
+            {"msgtype": "m.text", "body": "later"},
+            delay_ms=1000,
+            txn_id="delay/txn",
+        )
+        await client.manage_delayed_event("delay/1", "cancel")
+
+        self.assertEqual(
+            client.calls[0][1],
+            "/_matrix/client/v3/rooms/%21room%3Aexample.org/joined_members",
+        )
+        self.assertEqual(
+            client.calls[1][1],
+            "/_matrix/client/v3/knock/%23public%20room%3Aexample.org",
+        )
+        self.assertEqual(
+            client.calls[2][1],
+            "/_matrix/client/v3/directory/room/%23public%20room%3Aexample.org",
+        )
+        self.assertEqual(
+            client.calls[3][1],
+            "/_matrix/client/v3/rooms/%21room%3Aexample.org/state/m.room.member/%40alice%3Aexample.org",
+        )
+        self.assertEqual(
+            client.calls[4][1],
+            "/_matrix/client/v3/rooms/%21room%3Aexample.org/send/m.room.message/delay%2Ftxn",
+        )
+        self.assertEqual(
+            client.calls[5][1],
+            "/_matrix/client/unstable/org.matrix.msc4140/delayed_events/delay%2F1",
+        )
+
+    async def test_key_backup_push_auth_and_thirdparty_paths_percent_encode_segments(
+        self,
+    ):
+        key_backup_mixin = load_module("client.key_backup_mixin")
+        push_mixin = load_module("client.push_mixin")
+        auth_mixin = load_module("client.auth_mixin")
+        thirdparty_mixin = load_module("client.thirdparty_mixin")
+
+        class FakeClient(
+            key_backup_mixin.KeyBackupMixin,
+            push_mixin.PushMixin,
+            auth_mixin.AuthMixin,
+            thirdparty_mixin.ThirdPartyMixin,
+        ):
+            def __init__(self):
+                self.calls = []
+
+            async def _request(
+                self,
+                method,
+                endpoint,
+                data=None,
+                params=None,
+                authenticated=True,
+                _retry_count=0,
+            ):
+                self.calls.append((method, endpoint, data, params))
+                return {"ok": True}
+
+        client = FakeClient()
+        await client.get_key_backup_version("version/1")
+        await client.get_room_key_for_session(
+            "version/1",
+            "!room:example.org",
+            "session/with/slash",
+        )
+        await client.set_push_rule(
+            "global",
+            "override",
+            ".m.rule/custom",
+            {"actions": ["notify"]},
+        )
+        await client.create_filter("@bot:example.org", {"room": {}})
+        await client.get_filter("@bot:example.org", "filter/1")
+        await client.get_thirdparty_protocol("irc/bridge")
+
+        self.assertEqual(
+            client.calls[0][1],
+            "/_matrix/client/v3/room_keys/version/version%2F1",
+        )
+        self.assertEqual(
+            client.calls[1][1],
+            "/_matrix/client/v3/room_keys/keys/%21room%3Aexample.org/session%2Fwith%2Fslash",
+        )
+        self.assertEqual(client.calls[1][3], {"version": "version/1"})
+        self.assertEqual(
+            client.calls[2][1],
+            "/_matrix/client/v3/pushrules/global/override/.m.rule%2Fcustom",
+        )
+        self.assertEqual(
+            client.calls[3][1],
+            "/_matrix/client/v3/user/%40bot%3Aexample.org/filter",
+        )
+        self.assertEqual(
+            client.calls[4][1],
+            "/_matrix/client/v3/user/%40bot%3Aexample.org/filter/filter%2F1",
+        )
+        self.assertEqual(
+            client.calls[5][1],
+            "/_matrix/client/v3/thirdparty/protocol/irc%2Fbridge",
+        )
+
+    async def test_media_download_paths_percent_encode_mxc_segments(self):
+        media_mixin = load_module("client.media_mixin")
+
+        class FakeResponse:
+            status = 404
+            headers = {}
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def json(self, *args, **kwargs):
+                return {}
+
+            async def read(self):
+                return b""
+
+        class FakeSession:
+            def __init__(self):
+                self.urls = []
+
+            def get(self, url, **kwargs):
+                self.urls.append(url)
+                return FakeResponse()
+
+        class FakeSlot:
+            async def __aenter__(self):
+                return None
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        class FakeClient(media_mixin.MediaMixin):
+            def __init__(self):
+                self.homeserver = "https://matrix.example"
+                self.access_token = "token"
+                self.session = FakeSession()
+
+            async def _ensure_session(self):
+                return None
+
+            def _normalize_media_source_key(self, server_name):
+                return server_name
+
+            async def _wait_media_download_breaker(self, source_key):
+                return None
+
+            def _media_download_slot(self, source_key):
+                return FakeSlot()
+
+            def _is_media_download_breaker_failure_status(self, status):
+                return False
+
+            def _record_media_download_failure(self, source_key, status):
+                return None
+
+        client = FakeClient()
+        with self.assertRaises(Exception):
+            await client.get_thumbnail(
+                "mxc://example.org:8448/media/id with spaces",
+                800,
+                600,
+                method="scale/fast",
+                animated=False,
+            )
+
+        self.assertEqual(
+            client.session.urls[0],
+            "https://matrix.example/_matrix/client/v1/media/thumbnail/example.org%3A8448/media%2Fid%20with%20spaces?width=800&height=600&method=scale%2Ffast&animated=false",
+        )
+
+
+class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_at_sender_escapes_formatted_body_and_encodes_matrix_to_link(self):
+        at_handler = load_module("sender.handlers.at")
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
+
+            async def send_message(self, room_id, msg_type, content):
+                self.calls.append((room_id, msg_type, content))
+                return {"event_id": "$ok"}
+
+        client = FakeClient()
+        await at_handler.send_at(
+            client,
+            types.SimpleNamespace(
+                qq="@alice:example.org",
+                name="Alice <Admin>",
+            ),
+            "!room:example.org",
+            reply_to=None,
+            thread_root=None,
+            use_thread=False,
+            is_encrypted_room=False,
+            e2ee_manager=None,
+        )
+
+        content = client.calls[0][2]
+        self.assertEqual(content["body"], "@Alice <Admin>")
+        self.assertIn("https://matrix.to/#/%40alice%3Aexample.org", content["formatted_body"])
+        self.assertIn("data-mxid=\"@alice:example.org\"", content["formatted_body"])
+        self.assertIn("@Alice &lt;Admin&gt;", content["formatted_body"])
+        self.assertNotIn("<Admin>", content["formatted_body"])
+
+    async def test_share_sender_escapes_formatted_body_fields(self):
+        share_handler = load_module("sender.handlers.share")
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
+
+            async def send_message(self, room_id, msg_type, content):
+                self.calls.append((room_id, msg_type, content))
+                return {"event_id": "$ok"}
+
+        client = FakeClient()
+        await share_handler.send_share(
+            client,
+            types.SimpleNamespace(
+                title="Docs <Guide>",
+                content="read <now>",
+                url='https://example.org/?q="matrix"',
+                image="thumb <1>",
+            ),
+            "!room:example.org",
+            reply_to=None,
+            thread_root=None,
+            use_thread=False,
+            is_encrypted_room=False,
+            e2ee_manager=None,
+        )
+
+        formatted = client.calls[0][2]["formatted_body"]
+        self.assertIn("Docs &lt;Guide&gt;", formatted)
+        self.assertIn("read &lt;now&gt;", formatted)
+        self.assertIn("thumb &lt;1&gt;", formatted)
+        self.assertIn("q=&quot;matrix&quot;", formatted)
+        self.assertNotIn("Docs <Guide>", formatted)
+        self.assertNotIn("read <now>", formatted)
+
+
 class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_edit_parser_preserves_live_marker_and_relation(self):
         event_types = load_module("client.event_types")
@@ -641,6 +1242,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                 MAX_PROCESSED_MESSAGES_1000=1000,
                 TIMESTAMP_BUFFER_MS_1000=1000,
                 GROUP_CHAT_MIN_MEMBERS_2=2,
+                REL_TYPE_REPLACE="m.replace",
             ),
             f"{PACKAGE_NAME}.plugin_config": _make_module(
                 f"{PACKAGE_NAME}.plugin_config",
@@ -812,6 +1414,530 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                 )
             ],
         )
+
+
+class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_event_processor_forwards_visible_room_state_events(self):
+        module_name = f"{PACKAGE_NAME}.processors.event_processor"
+        sys.modules.pop(module_name, None)
+
+        def _make_module(name: str, **attrs):
+            module = types.ModuleType(name)
+            for key, value in attrs.items():
+                setattr(module, key, value)
+            return module
+
+        class _MatrixEventProcessorMembers:
+            async def _persist_interacted_user(self, room, event):
+                return None
+
+        class _MatrixEventProcessorStreams:
+            pass
+
+        stubs = {
+            f"{PACKAGE_NAME}.constants": _make_module(
+                f"{PACKAGE_NAME}.constants",
+                MAX_PROCESSED_MESSAGES_1000=1000,
+                TIMESTAMP_BUFFER_MS_1000=1000,
+                GROUP_CHAT_MIN_MEMBERS_2=2,
+                REL_TYPE_REPLACE="m.replace",
+            ),
+            f"{PACKAGE_NAME}.plugin_config": _make_module(
+                f"{PACKAGE_NAME}.plugin_config",
+                get_plugin_config=lambda: types.SimpleNamespace(
+                    storage_backend_config=None
+                ),
+            ),
+            f"{PACKAGE_NAME}.processors.event_processor_members": _make_module(
+                f"{PACKAGE_NAME}.processors.event_processor_members",
+                MatrixEventProcessorMembers=_MatrixEventProcessorMembers,
+            ),
+            f"{PACKAGE_NAME}.processors.event_processor_streams": _make_module(
+                f"{PACKAGE_NAME}.processors.event_processor_streams",
+                MatrixEventProcessorStreams=_MatrixEventProcessorStreams,
+            ),
+            f"{PACKAGE_NAME}.utils": _make_module(
+                f"{PACKAGE_NAME}.utils",
+                parse_bool=lambda value, default=False: default,
+            ),
+        }
+
+        with mock.patch.dict(sys.modules, stubs):
+            event_processor = importlib.import_module(module_name)
+
+            processor = event_processor.MatrixEventProcessor.__new__(
+                event_processor.MatrixEventProcessor
+            )
+            processor.user_id = "@bot:example.org"
+            processor.startup_ts = 0
+            processor._processed_messages = OrderedDict()
+            processor._max_processed_messages = 1000
+            processor._persist_room_state = mock.AsyncMock()
+
+            captured = []
+
+            async def fake_on_message(room, event):
+                captured.append((room.room_id, event.event_type, event.content))
+
+            processor.on_message = fake_on_message
+
+            room = types.SimpleNamespace(
+                room_id="!room:example.org",
+                state_events={},
+                display_name="",
+                topic="",
+                avatar_url=None,
+                join_rules=None,
+                power_levels=None,
+                history_visibility=None,
+            )
+
+            cases = [
+                ("m.room.avatar", {"url": "mxc://example.org/avatar"}),
+                ("m.room.power_levels", {"users_default": 0, "events_default": 50}),
+                ("m.room.join_rules", {"join_rule": "restricted"}),
+                ("m.room.history_visibility", {"history_visibility": "shared"}),
+            ]
+            for index, (event_type, content) in enumerate(cases, start=1):
+                await event_processor.MatrixEventProcessor._handle_event(
+                    processor,
+                    room,
+                    {
+                        "type": event_type,
+                        "event_id": f"$state-{index}:example.org",
+                        "sender": "@alice:example.org",
+                        "origin_server_ts": 123 + index,
+                        "state_key": "",
+                        "content": content,
+                    },
+                )
+
+        self.assertEqual(
+            [event_type for _, event_type, _ in captured],
+            [
+                "m.room.avatar",
+                "m.room.power_levels",
+                "m.room.join_rules",
+                "m.room.history_visibility",
+            ],
+        )
+        self.assertEqual(room.avatar_url, "mxc://example.org/avatar")
+        self.assertEqual(room.power_levels, {"users_default": 0, "events_default": 50})
+        self.assertEqual(room.join_rules, {"join_rule": "restricted"})
+        self.assertEqual(room.history_visibility, "shared")
+        self.assertEqual(processor._persist_room_state.await_count, len(cases))
+
+    async def test_event_processor_applies_live_messaging_state_events(self):
+        module_name = f"{PACKAGE_NAME}.processors.event_processor"
+        sys.modules.pop(module_name, None)
+
+        def _make_module(name: str, **attrs):
+            module = types.ModuleType(name)
+            for key, value in attrs.items():
+                setattr(module, key, value)
+            return module
+
+        class _MatrixEventProcessorMembers:
+            pass
+
+        class _MatrixEventProcessorStreams:
+            pass
+
+        stubs = {
+            f"{PACKAGE_NAME}.constants": _make_module(
+                f"{PACKAGE_NAME}.constants",
+                MAX_PROCESSED_MESSAGES_1000=1000,
+                TIMESTAMP_BUFFER_MS_1000=1000,
+                GROUP_CHAT_MIN_MEMBERS_2=2,
+                REL_TYPE_REPLACE="m.replace",
+            ),
+            f"{PACKAGE_NAME}.plugin_config": _make_module(
+                f"{PACKAGE_NAME}.plugin_config",
+                get_plugin_config=lambda: types.SimpleNamespace(
+                    storage_backend_config=None
+                ),
+            ),
+            f"{PACKAGE_NAME}.processors.event_processor_members": _make_module(
+                f"{PACKAGE_NAME}.processors.event_processor_members",
+                MatrixEventProcessorMembers=_MatrixEventProcessorMembers,
+            ),
+            f"{PACKAGE_NAME}.processors.event_processor_streams": _make_module(
+                f"{PACKAGE_NAME}.processors.event_processor_streams",
+                MatrixEventProcessorStreams=_MatrixEventProcessorStreams,
+            ),
+            f"{PACKAGE_NAME}.utils": _make_module(
+                f"{PACKAGE_NAME}.utils",
+                parse_bool=lambda value, default=False: default,
+            ),
+        }
+
+        with mock.patch.dict(sys.modules, stubs):
+            event_processor = importlib.import_module(module_name)
+
+            processor = event_processor.MatrixEventProcessor.__new__(
+                event_processor.MatrixEventProcessor
+            )
+            processor._persist_room_state = mock.AsyncMock()
+            processor._process_room_state_event = mock.AsyncMock()
+
+            room = types.SimpleNamespace(
+                room_id="!room:example.org",
+                state_events={},
+                live_messaging_enabled=None,
+            )
+
+            for index, (event_type, enabled) in enumerate(
+                (
+                    ("m.room.live_messaging", False),
+                    ("org.matrix.msc4357.live_messaging", True),
+                ),
+                start=1,
+            ):
+                await event_processor.MatrixEventProcessor._handle_event(
+                    processor,
+                    room,
+                    {
+                        "type": event_type,
+                        "event_id": f"$live-state-{index}:example.org",
+                        "sender": "@alice:example.org",
+                        "origin_server_ts": 123 + index,
+                        "state_key": "",
+                        "content": {"enabled": enabled},
+                    },
+                )
+                self.assertEqual(room.live_messaging_enabled, enabled)
+                self.assertEqual(
+                    room.state_events[event_type][""],
+                    {"enabled": enabled},
+                )
+
+            self.assertEqual(processor._persist_room_state.await_count, 2)
+            processor._process_room_state_event.assert_not_awaited()
+
+    async def test_process_room_events_applies_initial_unstable_live_messaging_state(
+        self,
+    ):
+        module_name = f"{PACKAGE_NAME}.processors.event_processor"
+        sys.modules.pop(module_name, None)
+
+        def _make_module(name: str, **attrs):
+            module = types.ModuleType(name)
+            for key, value in attrs.items():
+                setattr(module, key, value)
+            return module
+
+        class _MatrixEventProcessorMembers:
+            pass
+
+        class _MatrixEventProcessorStreams:
+            pass
+
+        stubs = {
+            f"{PACKAGE_NAME}.constants": _make_module(
+                f"{PACKAGE_NAME}.constants",
+                MAX_PROCESSED_MESSAGES_1000=1000,
+                TIMESTAMP_BUFFER_MS_1000=1000,
+                GROUP_CHAT_MIN_MEMBERS_2=2,
+                REL_TYPE_REPLACE="m.replace",
+            ),
+            f"{PACKAGE_NAME}.plugin_config": _make_module(
+                f"{PACKAGE_NAME}.plugin_config",
+                get_plugin_config=lambda: types.SimpleNamespace(
+                    storage_backend_config=None
+                ),
+            ),
+            f"{PACKAGE_NAME}.processors.event_processor_members": _make_module(
+                f"{PACKAGE_NAME}.processors.event_processor_members",
+                MatrixEventProcessorMembers=_MatrixEventProcessorMembers,
+            ),
+            f"{PACKAGE_NAME}.processors.event_processor_streams": _make_module(
+                f"{PACKAGE_NAME}.processors.event_processor_streams",
+                MatrixEventProcessorStreams=_MatrixEventProcessorStreams,
+            ),
+            f"{PACKAGE_NAME}.utils": _make_module(
+                f"{PACKAGE_NAME}.utils",
+                parse_bool=lambda value, default=False: default,
+            ),
+        }
+
+        with mock.patch.dict(sys.modules, stubs):
+            event_processor = importlib.import_module(module_name)
+
+            processor = event_processor.MatrixEventProcessor.__new__(
+                event_processor.MatrixEventProcessor
+            )
+            processor.user_id = "@bot:example.org"
+            processor.global_account_data = {}
+            processor.client = types.SimpleNamespace()
+            processor.load_room_members_from_storage = mock.AsyncMock(return_value=True)
+            processor._handle_event = mock.AsyncMock()
+
+            persisted_rooms = []
+
+            async def fake_persist_room_state(room):
+                persisted_rooms.append(room)
+
+            processor._persist_room_state = fake_persist_room_state
+
+            await event_processor.MatrixEventProcessor.process_room_events(
+                processor,
+                "!room:example.org",
+                {
+                    "state": {
+                        "events": [
+                            {
+                                "type": "org.matrix.msc4357.live_messaging",
+                                "state_key": "",
+                                "content": {"enabled": True},
+                            }
+                        ]
+                    },
+                    "timeline": {"events": []},
+                },
+            )
+
+        self.assertEqual(len(persisted_rooms), 1)
+        room = persisted_rooms[0]
+        self.assertIs(room.live_messaging_enabled, True)
+        self.assertEqual(
+            room.state_events["org.matrix.msc4357.live_messaging"][""],
+            {"enabled": True},
+        )
+
+
+class MatrixMemberEventCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_parse_event_preserves_state_key_for_member_events(self):
+        event_types = load_module("client.event_types")
+
+        event = event_types.parse_event(
+            {
+                "type": "m.room.member",
+                "event_id": "$member:example.org",
+                "sender": "@alice:example.org",
+                "state_key": "@alice:example.org",
+                "origin_server_ts": 123,
+                "content": {
+                    "membership": "join",
+                    "displayname": "Alice",
+                },
+            },
+            "!room:example.org",
+        )
+
+        self.assertEqual(event.event_type, "m.room.member")
+        self.assertEqual(event.state_key, "@alice:example.org")
+
+    async def test_receiver_renders_member_join_system_event(self):
+        _install_astrbot_stubs()
+        _install_aiohttp_stub()
+        _install_package_stubs()
+        sys.modules.pop(f"{PACKAGE_NAME}.receiver.handlers", None)
+        sys.modules.pop(f"{PACKAGE_NAME}.receiver.receiver", None)
+        receiver_module = importlib.import_module(f"{PACKAGE_NAME}.receiver.receiver")
+        event_types = load_module("client.event_types")
+
+        plugin_config_stub = types.SimpleNamespace(
+            force_message_type="auto",
+            media_cache_dir=Path(tempfile.gettempdir()) / "matrix_media",
+            media_cache_index_persist=False,
+            quoted_media_background_download_concurrency=2,
+            is_media_auto_download_enabled=lambda _msgtype: True,
+        )
+
+        with mock.patch(
+            f"{PACKAGE_NAME}.receiver.receiver.get_plugin_config",
+            return_value=plugin_config_stub,
+        ):
+            receiver = receiver_module.MatrixReceiver(
+                user_id="@bot:example.org",
+                bot_name="MatrixBot",
+                client=None,
+            )
+            room = event_types.MatrixRoom(
+                room_id="!room:example.org",
+                member_count=3,
+                members={"@alice:example.org": "Alice"},
+            )
+            event = event_types.parse_event(
+                {
+                    "type": "m.room.member",
+                    "event_id": "$member:example.org",
+                    "sender": "@alice:example.org",
+                    "state_key": "@alice:example.org",
+                    "origin_server_ts": 123,
+                    "content": {
+                        "membership": "join",
+                        "displayname": "Alice",
+                    },
+                },
+                room.room_id,
+            )
+
+            message = await receiver.convert_system_event(room, event)
+
+        self.assertEqual(message.message_str, "[Room Member] Alice (@alice:example.org) joined the room")
+        self.assertEqual(message.message[0].text, message.message_str)
+
+    async def test_room_member_handler_renders_moderation_reason(self):
+        room_state = load_module("receiver.handlers.room_state")
+
+        chain = types.SimpleNamespace(chain=[])
+        event = types.SimpleNamespace(
+            event_type="m.room.member",
+            sender="@mod:example.org",
+            state_key="@alice:example.org",
+            content={
+                "membership": "ban",
+                "displayname": "Alice",
+                "reason": "spam",
+            },
+            unsigned={},
+        )
+
+        await room_state.handle_room_member_change(None, chain, event, "m.room.member")
+
+        self.assertEqual(
+            chain.chain[0].text,
+            "[Room Member] @mod:example.org banned Alice (@alice:example.org): spam",
+        )
+
+
+class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_event_processor_forwards_room_redactions(self):
+        redaction_handler = load_module("receiver.handlers.redaction")
+
+        module_name = f"{PACKAGE_NAME}.processors.event_processor"
+        sys.modules.pop(module_name, None)
+
+        def _make_module(name: str, **attrs):
+            module = types.ModuleType(name)
+            for key, value in attrs.items():
+                setattr(module, key, value)
+            return module
+
+        class _MatrixEventProcessorMembers:
+            pass
+
+        class _MatrixEventProcessorStreams:
+            pass
+
+        stubs = {
+            f"{PACKAGE_NAME}.constants": _make_module(
+                f"{PACKAGE_NAME}.constants",
+                MAX_PROCESSED_MESSAGES_1000=1000,
+                TIMESTAMP_BUFFER_MS_1000=1000,
+                GROUP_CHAT_MIN_MEMBERS_2=2,
+                REL_TYPE_REPLACE="m.replace",
+            ),
+            f"{PACKAGE_NAME}.plugin_config": _make_module(
+                f"{PACKAGE_NAME}.plugin_config",
+                get_plugin_config=lambda: types.SimpleNamespace(
+                    storage_backend_config=None
+                ),
+            ),
+            f"{PACKAGE_NAME}.processors.event_processor_members": _make_module(
+                f"{PACKAGE_NAME}.processors.event_processor_members",
+                MatrixEventProcessorMembers=_MatrixEventProcessorMembers,
+            ),
+            f"{PACKAGE_NAME}.processors.event_processor_streams": _make_module(
+                f"{PACKAGE_NAME}.processors.event_processor_streams",
+                MatrixEventProcessorStreams=_MatrixEventProcessorStreams,
+            ),
+            f"{PACKAGE_NAME}.utils": _make_module(
+                f"{PACKAGE_NAME}.utils",
+                parse_bool=lambda value, default=False: default,
+            ),
+        }
+
+        with mock.patch.dict(sys.modules, stubs):
+            event_processor = importlib.import_module(module_name)
+
+            captured = {}
+
+            async def fake_process_message_event(room, event):
+                captured["room_id"] = room.room_id
+                captured["event"] = event
+
+            processor = event_processor.MatrixEventProcessor.__new__(
+                event_processor.MatrixEventProcessor
+            )
+            processor._process_message_event = fake_process_message_event
+
+            room = types.SimpleNamespace(room_id="!room:example.org")
+            await event_processor.MatrixEventProcessor._handle_event(
+                processor,
+                room,
+                {
+                    "type": "m.room.redaction",
+                    "event_id": "$redaction:example.org",
+                    "sender": "@alice:example.org",
+                    "origin_server_ts": 123,
+                    "redacts": "$target:example.org",
+                    "content": {"reason": "duplicate"},
+                },
+            )
+
+        self.assertEqual(captured["room_id"], "!room:example.org")
+        self.assertEqual(captured["event"].msgtype, "m.redaction")
+        self.assertEqual(captured["event"].content["redacts"], "$target:example.org")
+
+        chain = types.SimpleNamespace(chain=[])
+        await redaction_handler.handle_redaction(
+            None,
+            chain,
+            captured["event"],
+            captured["event"].event_type,
+        )
+        self.assertEqual(
+            chain.chain[0].text,
+            "[消息已撤回：$target:example.org] duplicate",
+        )
+
+    async def test_receiver_redaction_message_str_uses_rendered_text(self):
+        _install_astrbot_stubs()
+        _install_aiohttp_stub()
+        _install_package_stubs()
+        sys.modules.pop(f"{PACKAGE_NAME}.receiver.handlers", None)
+        sys.modules.pop(f"{PACKAGE_NAME}.receiver.receiver", None)
+        receiver_module = importlib.import_module(f"{PACKAGE_NAME}.receiver.receiver")
+        event_types = load_module("client.event_types")
+
+        plugin_config_stub = types.SimpleNamespace(
+            force_message_type="auto",
+            media_cache_dir=Path(tempfile.gettempdir()) / "matrix_media",
+            media_cache_index_persist=False,
+            is_media_auto_download_enabled=lambda _msgtype: True,
+        )
+
+        with mock.patch(
+            f"{PACKAGE_NAME}.receiver.receiver.get_plugin_config",
+            return_value=plugin_config_stub,
+        ):
+            receiver = receiver_module.MatrixReceiver(
+                user_id="@bot:example.org",
+                bot_name="MatrixBot",
+                client=None,
+            )
+            room = event_types.MatrixRoom(
+                room_id="!room:example.org",
+                member_count=3,
+                members={"@alice:example.org": "Alice"},
+            )
+            event = event_types.parse_event(
+                {
+                    "type": "m.room.redaction",
+                    "event_id": "$redaction:example.org",
+                    "sender": "@alice:example.org",
+                    "origin_server_ts": 123,
+                    "content": {"redacts": "$target:example.org"},
+                },
+                room.room_id,
+            )
+
+            message = await receiver.convert_message(room, event)
+
+        self.assertEqual(message.message_str, "[消息已撤回：$target:example.org]")
+        self.assertEqual(message.message[0].text, "[消息已撤回：$target:example.org]")
 
 
 class MatrixVoiceCompatTests(unittest.IsolatedAsyncioTestCase):
@@ -2833,7 +3959,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         verification_module = load_module("e2ee.e2ee_manager_verification")
 
         class DummyClient:
-            async def _request(self, method, path, body):
+            async def query_keys(self, device_keys, timeout=10000):
                 return {
                     "device_keys": {
                         "@bot:example.org": {
@@ -4725,8 +5851,9 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_restore_room_keys_supports_legacy_aes_gcm_backup_format(self):
         backup_module = load_module("e2ee.key_backup_backup")
         crypto_module = load_module("e2ee.key_backup_crypto")
+        key_backup_client_mod = load_module("client.key_backup_mixin")
 
-        class DummyClient:
+        class DummyClient(key_backup_client_mod.KeyBackupMixin):
             async def _request(self, method, endpoint, data=None, **kwargs):
                 return {
                     "rooms": {
@@ -4790,6 +5917,7 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_upload_single_key_uses_matrix_backup_v1_format_when_public_key_exists(self):
         backup_module = load_module("e2ee.key_backup_backup")
+        key_backup_client_mod = load_module("client.key_backup_mixin")
 
         if not getattr(load_module("e2ee.key_backup_crypto"), "CRYPTO_AVAILABLE", False):
             self.skipTest("cryptography unavailable")
@@ -4803,12 +5931,12 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
             format=serialization.PublicFormat.Raw,
         )
 
-        class DummyClient:
+        class DummyClient(key_backup_client_mod.KeyBackupMixin):
             def __init__(self):
                 self.calls = []
 
             async def _request(self, method, endpoint, data=None, **kwargs):
-                self.calls.append((method, endpoint, data))
+                self.calls.append((method, endpoint, data, kwargs))
                 return {}
 
         class DummyBackup(backup_module.KeyBackupBackupMixin):
@@ -4825,11 +5953,13 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(ok)
         session_data = backup.client.calls[0][2]["session_data"]
+        self.assertEqual(backup.client.calls[0][3], {"params": {"version": "1"}})
         ephemeral = backup._decode_unpadded_base64(session_data["ephemeral"])
         self.assertEqual(len(ephemeral), 32)
 
     async def test_upload_single_key_falls_back_to_bulk_endpoint_on_unrecognized(self):
         backup_module = load_module("e2ee.key_backup_backup")
+        key_backup_client_mod = load_module("client.key_backup_mixin")
 
         class DummyMatrixError(Exception):
             def __init__(self, status, data, message):
@@ -4837,13 +5967,13 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.data = data
                 super().__init__(message)
 
-        class DummyClient:
+        class DummyClient(key_backup_client_mod.KeyBackupMixin):
             def __init__(self):
                 self.calls = []
 
             async def _request(self, method, endpoint, data=None, **kwargs):
-                self.calls.append((method, endpoint, data))
-                if endpoint.startswith("/_matrix/client/v3/room_keys/keys/!"):
+                self.calls.append((method, endpoint, data, kwargs))
+                if endpoint.startswith("/_matrix/client/v3/room_keys/keys/%21"):
                     raise DummyMatrixError(
                         404,
                         {"errcode": "M_UNRECOGNIZED", "error": "Unrecognized request"},
@@ -4864,12 +5994,14 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(backup.client.calls), 2)
         self.assertEqual(
             backup.client.calls[0][1],
-            "/_matrix/client/v3/room_keys/keys/!room:example.org/sess1?version=1",
+            "/_matrix/client/v3/room_keys/keys/%21room%3Aexample.org/sess1",
         )
         self.assertEqual(
             backup.client.calls[1][1],
-            "/_matrix/client/v3/room_keys/keys?version=1",
+            "/_matrix/client/v3/room_keys/keys",
         )
+        self.assertEqual(backup.client.calls[0][3], {"params": {"version": "1"}})
+        self.assertEqual(backup.client.calls[1][3], {"params": {"version": "1"}})
         self.assertEqual(
             set(backup.client.calls[1][2]["rooms"]["!room:example.org"]["sessions"].keys()),
             {"sess1"},
@@ -4877,6 +6009,7 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_upload_single_key_does_not_fall_back_for_other_errors(self):
         backup_module = load_module("e2ee.key_backup_backup")
+        key_backup_client_mod = load_module("client.key_backup_mixin")
 
         class DummyMatrixError(Exception):
             def __init__(self, status, data, message):
@@ -4884,12 +6017,12 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.data = data
                 super().__init__(message)
 
-        class DummyClient:
+        class DummyClient(key_backup_client_mod.KeyBackupMixin):
             def __init__(self):
                 self.calls = []
 
             async def _request(self, method, endpoint, data=None, **kwargs):
-                self.calls.append((method, endpoint, data))
+                self.calls.append((method, endpoint, data, kwargs))
                 raise DummyMatrixError(
                     403,
                     {"errcode": "M_FORBIDDEN", "error": "Forbidden"},
