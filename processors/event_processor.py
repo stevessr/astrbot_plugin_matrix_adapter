@@ -28,14 +28,20 @@ VISIBLE_ROOM_STATE_EVENT_TYPES = frozenset(
         "m.room.name",
         "m.room.topic",
         "m.room.avatar",
+        "m.room.create",
         "m.room.encryption",
+        "m.room.server_acl",
         "m.room.tombstone",
         "m.room.power_levels",
         "m.room.join_rules",
         "m.room.history_visibility",
         "m.room.guest_access",
         "m.room.canonical_alias",
+        "m.room.aliases",
         "m.room.pinned_events",
+        "m.room.third_party_invite",
+        "m.space.child",
+        "m.space.parent",
     }
 )
 
@@ -194,11 +200,20 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 if isinstance(pinned, list):
                     room.pinned_events = pinned
             case "m.space.child":
-                room.space_children[state_key] = content
+                if content:
+                    room.space_children[state_key] = content
+                else:
+                    room.space_children.pop(state_key, None)
             case "m.space.parent":
-                room.space_parents[state_key] = content
+                if content:
+                    room.space_parents[state_key] = content
+                else:
+                    room.space_parents.pop(state_key, None)
             case "m.room.third_party_invite":
-                room.third_party_invites[state_key] = content
+                if content:
+                    room.third_party_invites[state_key] = content
+                else:
+                    room.third_party_invites.pop(state_key, None)
             case _ if event_type in LIVE_MESSAGING_STATE_EVENT_TYPES:
                 enabled = content.get("enabled")
                 if isinstance(enabled, bool):

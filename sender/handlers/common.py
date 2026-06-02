@@ -1,6 +1,14 @@
 from astrbot.api import logger
 
 
+def _copy_cleartext_relates_to(encrypted: dict, content: dict) -> dict:
+    """Expose relation metadata on encrypted events for aggregation."""
+    relates_to = content.get("m.relates_to")
+    if isinstance(encrypted, dict) and isinstance(relates_to, dict):
+        encrypted.setdefault("m.relates_to", dict(relates_to))
+    return encrypted
+
+
 async def send_content(
     client,
     content: dict,
@@ -26,6 +34,7 @@ async def send_content(
     if is_encrypted_room and e2ee_manager:
         encrypted = await e2ee_manager.encrypt_message(room_id, msg_type, content)
         if encrypted:
+            _copy_cleartext_relates_to(encrypted, content)
             return await client.send_message(
                 room_id=room_id,
                 msg_type="m.room.encrypted",

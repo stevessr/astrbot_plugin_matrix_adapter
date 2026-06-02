@@ -27,6 +27,18 @@ def _get_prev_content(event) -> dict:
     return prev_content if isinstance(prev_content, dict) else {}
 
 
+def _format_limited_list(values: object, *, limit: int = 5) -> str:
+    if not isinstance(values, list):
+        return ""
+    normalized = [str(item) for item in values if str(item)]
+    if not normalized:
+        return ""
+    text = ", ".join(normalized[:limit])
+    if len(normalized) > limit:
+        text += f" (+{len(normalized) - limit} more)"
+    return text
+
+
 async def handle_room_name_change(receiver, chain, event, _: str):
     """
     Handle m.room.name state event
@@ -136,6 +148,52 @@ async def handle_room_tombstone(receiver, chain, event, _: str):
         text += f" (new room: {replacement_room})"
 
     chain.chain.append(Plain(text))
+
+
+async def handle_room_create(receiver, chain, event, _: str):
+    """Handle m.room.create state event."""
+    content = event.content or {}
+    sender = getattr(event, "sender", "Someone")
+    room_version = content.get("room_version") or "unknown"
+    room_type = content.get("type")
+    federate = content.get("m.federate")
+
+    details = [f"version={room_version}"]
+    if room_type:
+        details.append(f"type={room_type}")
+    if federate is False:
+        details.append("federation disabled")
+    elif federate is True:
+        details.append("federation enabled")
+
+    chain.chain.append(
+        Plain(f"[Room Info] {sender} created the room ({', '.join(details)})")
+    )
+
+
+async def handle_room_server_acl(receiver, chain, event, _: str):
+    """Handle m.room.server_acl state event."""
+    content = event.content or {}
+    sender = getattr(event, "sender", "Someone")
+    if not content:
+        chain.chain.append(Plain(f"[Room Info] {sender} removed server ACL rules"))
+        return
+
+    allow = _format_limited_list(content.get("allow"))
+    deny = _format_limited_list(content.get("deny"))
+    allow_ip_literals = content.get("allow_ip_literals")
+    parts: list[str] = []
+    if allow:
+        parts.append(f"allow: {allow}")
+    if deny:
+        parts.append(f"deny: {deny}")
+    if allow_ip_literals is not None:
+        parts.append(f"allow_ip_literals={bool(allow_ip_literals)}")
+    if not parts:
+        parts.append("rules updated")
+    chain.chain.append(
+        Plain(f"[Room Info] {sender} updated server ACL ({'; '.join(parts)})")
+    )
 
 
 async def handle_room_power_levels(receiver, chain, event, _: str):
@@ -258,6 +316,86 @@ async def handle_room_pinned_events(receiver, chain, event, _: str):
     chain.chain.append(Plain(text))
 
 
+async def handle_room_third_party_invite(receiver, chain, event, _: str):
+    """Handle m.room.third_party_invite state event."""
+    content = event.content or {}
+    sender = getattr(event, "sender", "Someone")
+    token = getattr(event, "state_key", "") or ""
+    display_name = content.get("display_name") or content.get("displayname") or token
+
+    if content:
+        if token and display_name and display_name != token:
+            text = (
+                f"[Room Invite] {sender} added third-party invite for "
+                f"{display_name} ({token})"
+            )
+        else:
+            text = f"[Room Invite] {sender} added third-party invite for {display_name}"
+    else:
+        target = f" for {token}" if token else ""
+        text = f"[Room Invite] {sender} removed third-party invite{target}"
+    chain.chain.append(Plain(text))
+
+
+async def handle_room_aliases(receiver, chain, event, _: str):
+    """Handle m.room.aliases state event."""
+    content = event.content or {}
+    aliases = content.get("aliases") or []
+    sender = getattr(event, "sender", "Someone")
+    server = getattr(event, "state_key", "") or ""
+
+    if not isinstance(aliases, list):
+        aliases = []
+
+    suffix = f" for {server}" if server else ""
+    if aliases:
+        alias_text = ", ".join(str(item) for item in aliases[:5])
+        text = f"[Room Info] {sender} updated room aliases{suffix}: {alias_text}"
+        if len(aliases) > 5:
+            text += f" (+{len(aliases) - 5} more)"
+    else:
+        text = f"[Room Info] {sender} removed room aliases{suffix}"
+    chain.chain.append(Plain(text))
+
+
+async def handle_space_child(receiver, chain, event, _: str):
+    """Handle m.space.child state event."""
+    content = event.content or {}
+    child_room = getattr(event, "state_key", "") or "unknown room"
+    sender = getattr(event, "sender", "Someone")
+    if content:
+        via = content.get("via") or []
+        via_text = ""
+        if isinstance(via, list) and via:
+            via_text = f" via {', '.join(str(item) for item in via[:3])}"
+            if len(via) > 3:
+                via_text += f" (+{len(via) - 3} more)"
+        suggested = " suggested" if content.get("suggested") is True else ""
+        text = f"[Space] {sender} added{suggested} child room: {child_room}{via_text}"
+    else:
+        text = f"[Space] {sender} removed child room: {child_room}"
+    chain.chain.append(Plain(text))
+
+
+async def handle_space_parent(receiver, chain, event, _: str):
+    """Handle m.space.parent state event."""
+    content = event.content or {}
+    parent_room = getattr(event, "state_key", "") or "unknown room"
+    sender = getattr(event, "sender", "Someone")
+    if content:
+        via = content.get("via") or []
+        via_text = ""
+        if isinstance(via, list) and via:
+            via_text = f" via {', '.join(str(item) for item in via[:3])}"
+            if len(via) > 3:
+                via_text += f" (+{len(via) - 3} more)"
+        canonical = " canonical" if content.get("canonical") is True else ""
+        text = f"[Space] {sender} added{canonical} parent space: {parent_room}{via_text}"
+    else:
+        text = f"[Space] {sender} removed parent space: {parent_room}"
+    chain.chain.append(Plain(text))
+
+
 async def handle_room_member_change(receiver, chain, event, _: str):
     """
     Handle m.room.member membership/profile state events.
@@ -318,12 +456,18 @@ ROOM_STATE_HANDLERS = {
     "m.room.name": handle_room_name_change,
     "m.room.topic": handle_room_topic_change,
     "m.room.avatar": handle_room_avatar_change,
+    "m.room.create": handle_room_create,
     "m.room.encryption": handle_room_encryption,
+    "m.room.server_acl": handle_room_server_acl,
     "m.room.tombstone": handle_room_tombstone,
     "m.room.power_levels": handle_room_power_levels,
     "m.room.join_rules": handle_room_join_rules,
     "m.room.history_visibility": handle_room_history_visibility,
     "m.room.guest_access": handle_room_guest_access,
     "m.room.canonical_alias": handle_room_canonical_alias,
+    "m.room.aliases": handle_room_aliases,
     "m.room.pinned_events": handle_room_pinned_events,
+    "m.room.third_party_invite": handle_room_third_party_invite,
+    "m.space.child": handle_space_child,
+    "m.space.parent": handle_space_parent,
 }

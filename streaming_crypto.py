@@ -5,6 +5,14 @@
 from astrbot.api import logger
 
 
+def _copy_cleartext_relates_to(encrypted: dict, content: dict) -> dict:
+    """Expose relation metadata on encrypted events for Matrix aggregation."""
+    relates_to = content.get("m.relates_to")
+    if isinstance(encrypted, dict) and isinstance(relates_to, dict):
+        encrypted.setdefault("m.relates_to", dict(relates_to))
+    return encrypted
+
+
 def check_encrypted_room(e2ee_manager, room_id: str) -> bool:
     """检查房间是否启用加密"""
     if not e2ee_manager:
@@ -30,6 +38,7 @@ async def send_message_encrypted(
     try:
         encrypted = await e2ee_manager.encrypt_message(room_id, msg_type, content)
         if encrypted:
+            _copy_cleartext_relates_to(encrypted, content)
             return await client.send_message(
                 room_id=room_id,
                 msg_type="m.room.encrypted",
@@ -93,6 +102,7 @@ async def edit_message_encrypted(
             room_id, "m.room.message", edit_content
         )
         if encrypted:
+            _copy_cleartext_relates_to(encrypted, edit_content)
             await client.send_message(
                 room_id=room_id,
                 msg_type="m.room.encrypted",

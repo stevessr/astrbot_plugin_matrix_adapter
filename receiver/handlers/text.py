@@ -4,8 +4,14 @@ from urllib.parse import unquote
 
 from astrbot.api.message_components import At, AtAll, Plain, Reply
 
-MENTION_HREF_RE = re.compile(r'href="(?:https?://)?matrix\.to/#/([^/"<> ?#]+)')
-MENTION_MXID_RE = re.compile(r'data-mxid="(@[^"<> ]+)"')
+MENTION_HREF_RE = re.compile(
+    r"""href\s*=\s*["'](?:https?://)?matrix\.to/#/([^/"'<> ?#]+)""",
+    re.IGNORECASE,
+)
+MENTION_MXID_RE = re.compile(
+    r"""data-mxid\s*=\s*["'](@[^"'<> ]+)["']""",
+    re.IGNORECASE,
+)
 ANCHOR_RE = re.compile(r"<a\s+[^>]*>.*?</a>", re.IGNORECASE | re.DOTALL)
 INLINE_TAG_RE = re.compile(r"<(a|span)\s+[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
 TAG_RE = re.compile(r"<[^>]+>")
@@ -14,7 +20,8 @@ PARA_RE = re.compile(r"</\s*p\s*>", re.IGNORECASE)
 REPLY_RE = re.compile(r"<mx-reply>.*?</mx-reply>", re.IGNORECASE | re.DOTALL)
 REPLY_BLOCK_RE = re.compile(r"<mx-reply>.*?</mx-reply>", re.IGNORECASE | re.DOTALL)
 REPLY_EVENT_RE = re.compile(
-    r'href="(?:https?://)?matrix\.to/#/[^/"<> ?#]+/([^/"<> ?#]+)', re.IGNORECASE
+    r"""href\s*=\s*["'](?:https?://)?matrix\.to/#/[^/"'<> ?#]+/([^/"'<> ?#]+)""",
+    re.IGNORECASE,
 )
 PLAIN_MENTION_RE = re.compile(r"^@\[([^\]\r\n]+)\](?=\s|$)")
 
@@ -216,11 +223,26 @@ def append_formatted_text(
             _append_plain(text)
 
 
-async def handle_text(receiver, chain, event, _: str):
+async def handle_text(receiver, chain, event, msgtype: str):
+    content = event.content or {}
+    resolved_msgtype = msgtype or content.get("msgtype") or getattr(event, "msgtype", "")
+    body = event.body or content.get("body", "")
+    if resolved_msgtype == "m.emote":
+        sender = getattr(event, "sender", "") or "Someone"
+        chain.chain.append(Plain(f"* {sender} "))
+        append_formatted_text(
+            receiver,
+            chain,
+            body,
+            content,
+            allow_command_rewrite=False,
+        )
+        return
+
     append_formatted_text(
         receiver,
         chain,
-        event.body or "",
-        event.content or {},
-        allow_command_rewrite=True,
+        body,
+        content,
+        allow_command_rewrite=resolved_msgtype != "m.notice",
     )

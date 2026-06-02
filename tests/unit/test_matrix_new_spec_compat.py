@@ -449,6 +449,35 @@ class MatrixTextMentionCompatTests(unittest.TestCase):
         self.assertEqual(chain.chain[0].id, "$event:example.org")
         self.assertEqual(chain.chain[0].sender_id, "@alice:example.org")
 
+    def test_single_quoted_matrix_to_links_are_parsed(self):
+        text_handler = load_module("receiver.handlers.text")
+
+        receiver = types.SimpleNamespace(
+            user_id="@bot:example.org",
+            bot_name="MatrixBot",
+        )
+        chain = types.SimpleNamespace(chain=[])
+        content = {
+            "body": "reply body",
+            "format": "org.matrix.custom.html",
+            "formatted_body": (
+                "<mx-reply><blockquote>"
+                "<a href='https://matrix.to/#/%21room%3Aexample.org/%24event%3Aexample.org'>In reply to</a> "
+                "<a href='https://matrix.to/#/%40alice%3Aexample.org' data-mxid='@alice:example.org'>Alice</a>"
+                "<br />quoted text"
+                "</blockquote></mx-reply>"
+                "<a href='https://matrix.to/#/%40bob%3Aexample.org' data-mxid='@bob:example.org'>Bob</a> reply body"
+            ),
+        }
+
+        text_handler.append_formatted_text(receiver, chain, content["body"], content)
+
+        self.assertEqual(chain.chain[0].id, "$event:example.org")
+        self.assertEqual(chain.chain[0].sender_id, "@alice:example.org")
+        self.assertEqual(chain.chain[1].qq, "@bob:example.org")
+        self.assertEqual(chain.chain[1].name, "Bob")
+        self.assertEqual(chain.chain[2].text, " reply body")
+
     def test_create_reply_fallback_encodes_links_and_escapes_text(self):
         utils_module = load_module("utils.utils")
 
@@ -465,6 +494,46 @@ class MatrixTextMentionCompatTests(unittest.TestCase):
         )
         self.assertIn("https://matrix.to/#/%40alice%3Aexample.org", fallback)
         self.assertIn("&lt;b&gt;quoted&lt;/b&gt;", fallback)
+
+
+class MatrixTextMessageCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_notice_message_does_not_rewrite_bang_command_prefix(self):
+        text_handler = load_module("receiver.handlers.text")
+
+        receiver = types.SimpleNamespace(
+            user_id="@bot:example.org",
+            bot_name="MatrixBot",
+        )
+        chain = types.SimpleNamespace(chain=[])
+        event = types.SimpleNamespace(
+            sender="@alice:example.org",
+            body="!status from another bot",
+            content={"msgtype": "m.notice", "body": "!status from another bot"},
+        )
+
+        await text_handler.handle_text(receiver, chain, event, "m.notice")
+
+        self.assertEqual(chain.chain[0].text, "!status from another bot")
+        self.assertNotIn("/status", chain.chain[0].text)
+
+    async def test_emote_message_renders_sender_action_without_command_rewrite(self):
+        text_handler = load_module("receiver.handlers.text")
+
+        receiver = types.SimpleNamespace(
+            user_id="@bot:example.org",
+            bot_name="MatrixBot",
+        )
+        chain = types.SimpleNamespace(chain=[])
+        event = types.SimpleNamespace(
+            sender="@alice:example.org",
+            body="!waves at the room",
+            content={"msgtype": "m.emote", "body": "!waves at the room"},
+        )
+
+        await text_handler.handle_text(receiver, chain, event, "m.emote")
+
+        self.assertEqual(chain.chain[0].text, "* @alice:example.org !waves at the room")
+        self.assertNotIn("/waves", chain.chain[0].text)
 
 
 class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
@@ -1590,6 +1659,45 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         receiver.convert_message.assert_awaited_once()
         handle_msg.assert_awaited_once()
 
+    async def test_message_callback_does_not_auto_dispatch_notice_messages(self):
+        adapter_message = load_module("adapter_message")
+
+        receiver = types.SimpleNamespace(
+            convert_message=mock.AsyncMock(
+                return_value=types.SimpleNamespace(
+                    message_str="!status from another bot",
+                    session_id="!room:example.org",
+                    message=[],
+                )
+            )
+        )
+        handle_msg = mock.AsyncMock()
+        adapter = types.SimpleNamespace(
+            runtime_state=None,
+            receiver=receiver,
+            handle_msg=handle_msg,
+            _matrix_config=types.SimpleNamespace(user_id="@bot:example.org"),
+        )
+        room = types.SimpleNamespace(room_id="!room:example.org", members={})
+        event = types.SimpleNamespace(
+            sender="@bridge:example.org",
+            msgtype="m.notice",
+            event_id="$notice:example.org",
+            content={"msgtype": "m.notice", "body": "!status from another bot"},
+        )
+
+        with mock.patch.object(
+            adapter_message,
+            "get_plugin_config",
+            return_value=types.SimpleNamespace(force_message_type="auto"),
+        ):
+            await adapter_message.MatrixAdapterMessageMixin.message_callback(
+                adapter, room, event
+            )
+
+        receiver.convert_message.assert_awaited_once()
+        handle_msg.assert_not_awaited()
+
     async def test_location_handler_accepts_extensible_fallback_fields(self):
         location_handler = load_module("receiver.handlers.location")
 
@@ -1987,24 +2095,72 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                 canonical_alias=None,
                 room_aliases=[],
                 pinned_events=[],
+                create=None,
+                third_party_invites={
+                    "old-token": {"display_name": "Old Invite"},
+                },
+                space_children={},
+                space_parents={
+                    "!parent:example.org": {"via": ["old.example.org"]},
+                },
             )
 
             cases = [
-                ("m.room.avatar", {"url": "mxc://example.org/avatar"}),
-                ("m.room.power_levels", {"users_default": 0, "events_default": 50}),
-                ("m.room.join_rules", {"join_rule": "restricted"}),
-                ("m.room.history_visibility", {"history_visibility": "shared"}),
-                ("m.room.guest_access", {"guest_access": "can_join"}),
+                ("m.room.avatar", {"url": "mxc://example.org/avatar"}, ""),
+                (
+                    "m.room.create",
+                    {
+                        "creator": "@alice:example.org",
+                        "room_version": "11",
+                        "m.federate": False,
+                    },
+                    "",
+                ),
+                (
+                    "m.room.server_acl",
+                    {
+                        "allow": ["*"],
+                        "deny": ["evil.example.org"],
+                        "allow_ip_literals": False,
+                    },
+                    "",
+                ),
+                (
+                    "m.room.power_levels",
+                    {"users_default": 0, "events_default": 50},
+                    "",
+                ),
+                ("m.room.join_rules", {"join_rule": "restricted"}, ""),
+                ("m.room.history_visibility", {"history_visibility": "shared"}, ""),
+                ("m.room.guest_access", {"guest_access": "can_join"}, ""),
                 (
                     "m.room.canonical_alias",
                     {
                         "alias": "#main:example.org",
                         "alt_aliases": ["#alt:example.org"],
                     },
+                    "",
                 ),
-                ("m.room.pinned_events", {"pinned": ["$event1", "$event2"]}),
+                (
+                    "m.room.aliases",
+                    {"aliases": ["#local:example.org", "#dev:example.org"]},
+                    "example.org",
+                ),
+                ("m.room.pinned_events", {"pinned": ["$event1", "$event2"]}, ""),
+                (
+                    "m.room.third_party_invite",
+                    {"display_name": "Bob <bob@example.org>"},
+                    "token-1",
+                ),
+                ("m.room.third_party_invite", {}, "old-token"),
+                (
+                    "m.space.child",
+                    {"via": ["example.org"], "suggested": True},
+                    "!child:example.org",
+                ),
+                ("m.space.parent", {}, "!parent:example.org"),
             ]
-            for index, (event_type, content) in enumerate(cases, start=1):
+            for index, (event_type, content, state_key) in enumerate(cases, start=1):
                 await event_processor.MatrixEventProcessor._handle_event(
                     processor,
                     room,
@@ -2013,7 +2169,7 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                         "event_id": f"$state-{index}:example.org",
                         "sender": "@alice:example.org",
                         "origin_server_ts": 123 + index,
-                        "state_key": "",
+                        "state_key": state_key,
                         "content": content,
                     },
                 )
@@ -2022,31 +2178,84 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
             [event_type for _, event_type, _ in captured],
             [
                 "m.room.avatar",
+                "m.room.create",
+                "m.room.server_acl",
                 "m.room.power_levels",
                 "m.room.join_rules",
                 "m.room.history_visibility",
                 "m.room.guest_access",
                 "m.room.canonical_alias",
+                "m.room.aliases",
                 "m.room.pinned_events",
+                "m.room.third_party_invite",
+                "m.room.third_party_invite",
+                "m.space.child",
+                "m.space.parent",
             ],
         )
         self.assertEqual(room.avatar_url, "mxc://example.org/avatar")
+        self.assertEqual(
+            room.create,
+            {
+                "creator": "@alice:example.org",
+                "room_version": "11",
+                "m.federate": False,
+            },
+        )
+        self.assertEqual(
+            room.state_events["m.room.server_acl"][""],
+            {
+                "allow": ["*"],
+                "deny": ["evil.example.org"],
+                "allow_ip_literals": False,
+            },
+        )
         self.assertEqual(room.power_levels, {"users_default": 0, "events_default": 50})
         self.assertEqual(room.join_rules, {"join_rule": "restricted"})
         self.assertEqual(room.history_visibility, "shared")
         self.assertEqual(room.guest_access, "can_join")
         self.assertEqual(room.canonical_alias, "#main:example.org")
-        self.assertEqual(room.room_aliases, ["#alt:example.org"])
+        self.assertEqual(room.room_aliases, ["#local:example.org", "#dev:example.org"])
         self.assertEqual(room.pinned_events, ["$event1", "$event2"])
+        self.assertEqual(
+            room.third_party_invites,
+            {"token-1": {"display_name": "Bob <bob@example.org>"}},
+        )
+        self.assertEqual(
+            room.space_children,
+            {"!child:example.org": {"via": ["example.org"], "suggested": True}},
+        )
+        self.assertEqual(room.space_parents, {})
         self.assertEqual(processor._persist_room_state.await_count, len(cases))
 
-    async def test_room_state_handlers_render_alias_guest_access_and_pins(self):
+    async def test_room_state_handlers_render_alias_guest_pins_and_space_links(self):
         room_state = load_module("receiver.handlers.room_state")
 
         cases = [
             (
+                room_state.handle_room_create,
+                {
+                    "room_version": "11",
+                    "type": "m.space",
+                    "m.federate": False,
+                },
+                "",
+                "[Room Info] @alice:example.org created the room (version=11, type=m.space, federation disabled)",
+            ),
+            (
+                room_state.handle_room_server_acl,
+                {
+                    "allow": ["*"],
+                    "deny": ["evil.example.org", "spam.example.org"],
+                    "allow_ip_literals": False,
+                },
+                "",
+                "[Room Info] @alice:example.org updated server ACL (allow: *; deny: evil.example.org, spam.example.org; allow_ip_literals=False)",
+            ),
+            (
                 room_state.handle_room_guest_access,
                 {"guest_access": "forbidden"},
+                "",
                 "[Room Info] @alice:example.org changed guest access to: guests cannot join",
             ),
             (
@@ -2055,20 +2264,47 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                     "alias": "#main:example.org",
                     "alt_aliases": ["#alt1:example.org", "#alt2:example.org"],
                 },
+                "",
                 "[Room Info] @alice:example.org changed canonical alias to: #main:example.org (alt aliases: #alt1:example.org, #alt2:example.org)",
             ),
             (
                 room_state.handle_room_pinned_events,
                 {"pinned": ["$event1", "$event2"]},
+                "",
                 "[Room Info] @alice:example.org pinned 2 events",
+            ),
+            (
+                room_state.handle_room_third_party_invite,
+                {"display_name": "Bob <bob@example.org>"},
+                "token-1",
+                "[Room Invite] @alice:example.org added third-party invite for Bob <bob@example.org> (token-1)",
+            ),
+            (
+                room_state.handle_room_aliases,
+                {"aliases": ["#main:example.org", "#dev:example.org"]},
+                "example.org",
+                "[Room Info] @alice:example.org updated room aliases for example.org: #main:example.org, #dev:example.org",
+            ),
+            (
+                room_state.handle_space_child,
+                {"via": ["example.org"], "suggested": True},
+                "!child:example.org",
+                "[Space] @alice:example.org added suggested child room: !child:example.org via example.org",
+            ),
+            (
+                room_state.handle_space_parent,
+                {},
+                "!parent:example.org",
+                "[Space] @alice:example.org removed parent space: !parent:example.org",
             ),
         ]
 
-        for handler, content, expected in cases:
+        for handler, content, state_key, expected in cases:
             with self.subTest(handler=handler.__name__):
                 chain = types.SimpleNamespace(chain=[])
                 event = types.SimpleNamespace(
                     sender="@alice:example.org",
+                    state_key=state_key,
                     content=content,
                 )
                 await handler(None, chain, event, "")
@@ -2590,6 +2826,83 @@ class MatrixVoiceCompatTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_send_content_keeps_cleartext_relation_on_encrypted_events(self):
+        common_sender = load_module("sender.handlers.common")
+
+        class FakeClient:
+            async def send_message(self, **kwargs):
+                return kwargs
+
+        class FakeE2EEManager:
+            async def encrypt_message(self, room_id, msg_type, content):
+                self.plaintext = (room_id, msg_type, dict(content))
+                return {
+                    "algorithm": "m.megolm.v1.aes-sha2",
+                    "ciphertext": "encrypted-payload",
+                }
+
+        e2ee_manager = FakeE2EEManager()
+        response = await common_sender.send_content(
+            client=FakeClient(),
+            content={"msgtype": "m.text", "body": "hello"},
+            room_id="!room:example.org",
+            reply_to="$reply:example.org",
+            thread_root="$root:example.org",
+            use_thread=True,
+            is_encrypted_room=True,
+            e2ee_manager=e2ee_manager,
+        )
+
+        self.assertEqual(response["msg_type"], "m.room.encrypted")
+        self.assertEqual(
+            response["content"]["m.relates_to"],
+            {
+                "rel_type": "m.thread",
+                "event_id": "$root:example.org",
+                "m.in_reply_to": {"event_id": "$reply:example.org"},
+                "is_falling_back": False,
+            },
+        )
+
+    async def test_streaming_encrypted_edit_keeps_cleartext_replace_relation(self):
+        streaming_crypto = load_module("streaming_crypto")
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
+
+            async def send_message(self, **kwargs):
+                self.calls.append(("send_message", kwargs))
+                return kwargs
+
+            async def edit_message(self, **kwargs):
+                self.calls.append(("edit_message", kwargs))
+                return kwargs
+
+        class FakeE2EEManager:
+            async def encrypt_message(self, room_id, msg_type, content):
+                return {
+                    "algorithm": "m.megolm.v1.aes-sha2",
+                    "ciphertext": "encrypted-edit",
+                }
+
+        client = FakeClient()
+        await streaming_crypto.edit_message_encrypted(
+            client=client,
+            e2ee_manager=FakeE2EEManager(),
+            room_id="!room:example.org",
+            original_event_id="$root:example.org",
+            new_content={"msgtype": "m.text", "body": "final"},
+        )
+
+        self.assertEqual(client.calls[0][0], "send_message")
+        sent = client.calls[0][1]
+        self.assertEqual(sent["msg_type"], "m.room.encrypted")
+        self.assertEqual(
+            sent["content"]["m.relates_to"],
+            {"rel_type": "m.replace", "event_id": "$root:example.org"},
+        )
+
     async def test_send_content_marks_thread_messages_as_fallback(self):
         common_sender = load_module("sender.handlers.common")
 

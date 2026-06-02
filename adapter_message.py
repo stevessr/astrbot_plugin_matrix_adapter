@@ -203,7 +203,9 @@ class MatrixAdapterMessageMixin:
                 logger.warning(f"转换消息失败：{event}")
                 return
 
-            if abm and get_plugin_config().force_message_type == "stalk":
+            force_message_type = get_plugin_config().force_message_type
+
+            if abm and force_message_type == "stalk":
                 record = {
                     "ts": int(time.time() * 1000),
                     "room_id": abm.session_id,
@@ -216,7 +218,13 @@ class MatrixAdapterMessageMixin:
                 }
                 _append_stalk_archive(abm.session_id, record)
 
-            if get_plugin_config().force_message_type != "stalk":
+            if getattr(event, "msgtype", None) == "m.notice":
+                logger.debug(
+                    f"忽略 m.notice 自动分发，避免 bot notice 触发回复：event_id={getattr(event, 'event_id', '')}"
+                )
+                return
+
+            if force_message_type != "stalk":
                 await self.handle_msg(abm, event_id=getattr(event, "event_id", None))
         except Exception as e:
             logger.error(f"消息回调时出错：{e}")
