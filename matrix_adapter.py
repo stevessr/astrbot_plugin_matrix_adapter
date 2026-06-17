@@ -225,6 +225,7 @@ class MatrixPlatformAdapter(
             client=self.client,
             user_id=self._matrix_config.user_id,
             startup_ts=self._startup_ts,
+            call_event_config=self._matrix_config.call_event_config,
         )
 
         # Initialize E2EE manager (if enabled)

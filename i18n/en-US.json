@@ -39,6 +39,26 @@
     "description": "Use Notice Type",
     "hint": "When enabled, the bot will send messages as m.notice instead of m.text. m.notice is typically used for bot messages and won't trigger notification sounds"
   },
+  "matrix_enable_call_events": {
+    "description": "Enable Live Call Events",
+    "hint": "When enabled, VoIP (1-to-1) / MatrixRTC (group Live) call events are rendered as system prompt messages (won't trigger LLM replies), default: False"
+  },
+  "matrix_call_include_1to1": {
+    "description": "Render 1-to-1 Calls",
+    "hint": "Render 1-to-1 VoIP call lifecycle events (invite/answer/hangup/reject/transfer), default: True"
+  },
+  "matrix_call_include_group": {
+    "description": "Render Group Live Calls",
+    "hint": "Render MatrixRTC group / Live call events (call start/end, member join/leave), default: True"
+  },
+  "matrix_call_include_ringing": {
+    "description": "Render Ringing Notifications",
+    "hint": "Render incoming call ringing / notification events (MSC4075 m.call.notify), default: True"
+  },
+  "matrix_call_suppress_signalling": {
+    "description": "Suppress Signalling Events",
+    "hint": "Suppress high-frequency low-level signalling events (candidates/negotiate/select_answer/sdp_stream_metadata_changed, etc.), default: True. When disabled, these events are also rendered"
+  },
   "matrix_enable_e2ee": {
     "description": "Enable E2EE",
     "hint": "Whether to enable end-to-end encryption (experimental), default: False"

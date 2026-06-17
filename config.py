@@ -6,6 +6,7 @@ from pathlib import Path
 
 from astrbot.api import logger
 
+from .call_events import CallEventConfig
 from .constants import DEFAULT_TIMEOUT_MS_30000
 from .device_manager import MatrixDeviceManager
 from .plugin_config import get_plugin_config
@@ -119,6 +120,35 @@ class MatrixConfig:
             False,
         )
 
+        # Live 通话事件配置
+        # 启用后，VoIP（1 对 1）/ MatrixRTC（群组 Live）通话事件会被归一化为
+        # 系统提示消息呈现给上层，便于机器人感知通话发生与状态变化。
+        # 机器人无法真正参与 WebRTC 媒体，因此这些事件不会触发 LLM 回复。
+        self.enable_call_events = self._parse_bool(
+            self.config.get("matrix_enable_call_events"),
+            False,
+        )
+        # 呈现 1 对 1 VoIP 通话生命周期事件（发起/接听/挂断/拒绝/转移）
+        self.call_include_1to1 = self._parse_bool(
+            self.config.get("matrix_call_include_1to1"),
+            True,
+        )
+        # 呈现 MatrixRTC 群组 / Live 通话事件（通话开始/结束、成员加入/离开）
+        self.call_include_group = self._parse_bool(
+            self.config.get("matrix_call_include_group"),
+            True,
+        )
+        # 呈现来电响铃 / 通知事件（MSC4075）
+        self.call_include_ringing = self._parse_bool(
+            self.config.get("matrix_call_include_ringing"),
+            True,
+        )
+        # 抑制高频底层信令事件（candidates/negotiate/select_answer 等）
+        self.call_suppress_signalling = self._parse_bool(
+            self.config.get("matrix_call_suppress_signalling"),
+            True,
+        )
+
         # E2EE 端到端加密配置（试验性）
         # 启用后 Bot 可以在加密房间中接收和发送消息
         self.enable_e2ee = self._parse_bool(
@@ -221,6 +251,17 @@ class MatrixConfig:
     @property
     def store_path(self) -> Path:
         return get_plugin_config().store_path
+
+    @property
+    def call_event_config(self) -> CallEventConfig:
+        """Live 通话事件呈现配置。"""
+        return CallEventConfig(
+            enabled=self.enable_call_events,
+            include_1to1=self.call_include_1to1,
+            include_group=self.call_include_group,
+            include_ringing=self.call_include_ringing,
+            suppress_signalling=self.call_suppress_signalling,
+        )
 
     @property
     def e2ee_store_path(self) -> Path:

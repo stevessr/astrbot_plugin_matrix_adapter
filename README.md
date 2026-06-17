@@ -62,6 +62,24 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 | `matrix_auto_join_rooms` | bool | `true` | 是否自动接受房间邀请 |
 | `matrix_sync_timeout` | int | `30000` | 同步超时时间（毫秒） |
 | `matrix_enable_threading` | bool | `false` | 是否使用消息线程回复 |
+| `matrix_enable_live_messages` | bool | `false` | 是否启用 MSC4357 Live Messages（流式编辑） |
+| `matrix_use_notice` | bool | `false` | 是否使用 m.notice 类型发送消息 |
+
+### Live 通话事件配置
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `matrix_enable_call_events` | bool | `false` | 是否启用 Live 通话事件（VoIP / MatrixRTC）呈现为系统提示消息 |
+| `matrix_call_include_1to1` | bool | `true` | 是否呈现 1 对 1 VoIP 通话生命周期事件（发起/接听/挂断/拒绝/转移） |
+| `matrix_call_include_group` | bool | `true` | 是否呈现 MatrixRTC 群组 / Live 通话事件（通话开始/结束、成员加入/离开） |
+| `matrix_call_include_ringing` | bool | `true` | 是否呈现来电响铃 / 通知事件（MSC4075 m.call.notify） |
+| `matrix_call_suppress_signalling` | bool | `true` | 是否抑制高频底层信令事件（candidates/negotiate/select_answer 等） |
+
+**说明**：
+- 启用 `matrix_enable_call_events` 后，Matrix VoIP（1 对 1）和 MatrixRTC（群组 Live）通话事件会被归一化为系统提示消息呈现给上层。
+- 这些事件**不会触发 LLM 回复**，仅作为通话状态的可视化提示。
+- Bot 无法真正参与 WebRTC 媒体流，因此这些事件主要用于让 Bot 感知通话的发生与状态变化。
+- 底层信令事件（如 ICE candidates、SDP negotiation）默认被抑制，以避免产生过多噪音。
 
 ### 插件级别存储配置
 
@@ -626,6 +644,8 @@ await adapter.sender.client.delete_extended_profile_field("us.cloke.msc4175.tz")
 | MSC | 名称 | 角色 | 说明 |
 |-----|------|------|------|
 | MSC1767 | Extensible Events | 收/发 | 在音频/文本/投票内容中携带 `m.text` / `m.audio` / `m.file` |
+| MSC2746 | VoIP (m.call.*) | 收 | 1 对 1 VoIP 通话事件（invite/answer/hangup/reject 等） |
+| MSC2746 | MatrixRTC (m.call.member) | 收 | 群组 Live 通话状态（成员加入/离开通话） |
 | MSC2697 | Dehydrated Devices | 收 | E2EE 脱水设备恢复 |
 | MSC2867 | Marking Rooms as Unread | 发 | `mark_room_unread`，双写稳定与 unstable 键 |
 | MSC2965 | OAuth2 Discovery | 发 | 登录元数据自动发现 |
@@ -636,6 +656,7 @@ await adapter.sender.client.delete_extended_profile_field("us.cloke.msc4175.tz")
 | MSC3489 / MSC3672 | Live Location Sharing | 收/发 | `m.beacon_info` + `m.beacon` |
 | MSC3771 | Read Receipts for Threads | 发 | 支持 `thread_id` 字段 |
 | MSC3952 | Intentional Mentions | 收/发 | At/AtAll 自动生成 `m.mentions`，回复时合并被提及者 |
+| MSC4075 | Ringing Notifications (m.call.notify) | 收 | 来电响铃/通知事件 |
 | MSC4133 | Extended Profile Fields | 发 | 扩展个人资料读写，未支持时回退到稳定端点 |
 | MSC4140 | Cancellable Delayed Events | 发 | `send_delayed_message` / `cancel_delayed_message` 等 |
 | MSC4143 | OAuth2 Auth Metadata | 发 | 优先请求 `/_matrix/client/v1/auth_metadata` |

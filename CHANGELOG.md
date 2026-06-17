@@ -1,6 +1,13 @@
 # Changelog
 
 ## unrelesed
+- 新增 Live 通话事件适配：VoIP（1 对 1）和 MatrixRTC（群组 Live）通话事件现在可以通过配置呈现为系统提示消息。
+  - 新增配置项：`matrix_enable_call_events`（总开关）、`matrix_call_include_1to1`（1 对 1 通话）、`matrix_call_include_group`（群组通话）、`matrix_call_include_ringing`（来电响铃）、`matrix_call_suppress_signalling`（抑制底层信令）。
+  - 支持 VoIP 生命周期事件（m.call.invite/answer/hangup/reject/transfer 等）渲染为可读文本。
+  - 支持 MatrixRTC 群组通话状态（m.call.member）渲染，包括成员加入/离开通话。
+  - 支持来电响铃通知（MSC4075 m.call.notify）。
+  - 底层信令事件（candidates/negotiate/select_answer/sdp_stream_metadata_changed 等）默认抑制，可通过配置启用。
+  - 通话事件不会触发 LLM 回复，仅作为状态可视化提示。
 - 现在在脱 html 包装会尝试合并连续的 plain 了
 - 现在可以设置 React，但是似乎并没有什么用处？
 - 添加了未并入主线的 MSC4357

@@ -65,6 +65,35 @@
     "type": "bool",
     "hint": "启用后机器人将使用 m.notice 类型发送消息，而不是 m.text。m.notice 通常用于机器人消息，不会触发通知声音"
   },
+  "matrix_enable_call_events": {
+    "description": "启用 Live 通话事件",
+    "type": "bool",
+    "hint": "启用后将把 VoIP（1 对 1）/ MatrixRTC（群组 Live）通话事件呈现为系统提示消息（不会触发 LLM 回复），默认 False"
+  },
+  "matrix_call_include_1to1": {
+    "description": "呈现 1 对 1 通话",
+    "type": "bool",
+    "hint": "呈现 1 对 1 VoIP 通话生命周期事件（发起/接听/挂断/拒绝/转移），默认 True",
+    "condition": {"matrix_enable_call_events": true}
+  },
+  "matrix_call_include_group": {
+    "description": "呈现群组 Live 通话",
+    "type": "bool",
+    "hint": "呈现 MatrixRTC 群组 / Live 通话事件（通话开始/结束、成员加入/离开），默认 True",
+    "condition": {"matrix_enable_call_events": true}
+  },
+  "matrix_call_include_ringing": {
+    "description": "呈现来电响铃通知",
+    "type": "bool",
+    "hint": "呈现来电响铃 / 通知事件（MSC4075 m.call.notify），默认 True",
+    "condition": {"matrix_enable_call_events": true}
+  },
+  "matrix_call_suppress_signalling": {
+    "description": "抑制底层信令事件",
+    "type": "bool",
+    "hint": "抑制高频底层信令事件（candidates/negotiate/select_answer/sdp_stream_metadata_changed 等），默认 True。关闭后这些事件也会被呈现",
+    "condition": {"matrix_enable_call_events": true}
+  },
   "matrix_enable_e2ee": {
     "description": "启用端到端加密",
     "type": "bool",

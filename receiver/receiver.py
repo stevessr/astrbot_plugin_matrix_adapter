@@ -29,6 +29,7 @@ from .handlers import (
     handle_audio,
     handle_beacon,
     handle_beacon_info,
+    handle_call_event,
     handle_file,
     handle_image,
     handle_location,
@@ -41,6 +42,7 @@ from .handlers import (
     handle_text,
     handle_unknown,
     handle_video,
+    is_call_event_type,
 )
 
 
@@ -922,9 +924,14 @@ class MatrixReceiver:
         chain = MessageChain()
         event_type = getattr(event, "event_type", None)
 
-        # Handle room state events with specific handlers
+        # Resolve a handler: room state events, then VoIP / MatrixRTC call events
+        handler = None
         if event_type and event_type in ROOM_STATE_HANDLERS:
             handler = ROOM_STATE_HANDLERS[event_type]
+        elif event_type and is_call_event_type(event_type):
+            handler = handle_call_event
+
+        if handler is not None:
             await handler(self, chain, event, event_type)
             if chain.chain and chain.chain[0] is not None:
                 first_comp = chain.chain[0]

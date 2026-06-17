@@ -203,6 +203,12 @@ DEFAULT_CONFIG = {
     "matrix_enable_threading": False,
     "matrix_enable_live_messages": False,
     "matrix_use_notice": False,
+    # Live 通话事件配置
+    "matrix_enable_call_events": False,
+    "matrix_call_include_1to1": True,
+    "matrix_call_include_group": True,
+    "matrix_call_include_ringing": True,
+    "matrix_call_suppress_signalling": True,
     # E2EE 配置
     "matrix_enable_e2ee": False,
     "matrix_e2ee_auto_verify": "auto_accept",
