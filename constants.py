@@ -61,6 +61,40 @@ M_MENTIONS_KEY = "m.mentions"
 # MSC4133 Custom Profile Fields (extended profile)
 MSC4133_PROFILE_PATH = "/_matrix/client/unstable/uk.tcpip.msc4133/profile"
 
+# MSC4446 Allow moving the fully read marker to older events
+# 用于 read_markers / receipt/m.fully_read 请求体，允许 m.fully_read 回移到更早事件
+MSC4446_ALLOW_BACKWARD = "com.beeper.allow_backward"
+MSC4446_CAPABILITY = "com.beeper.msc4446"
+
+# MSC4310 MatrixRTC decline event (通话拒接)
+M_RTC_DECLINE = "m.rtc.decline"
+MSC4310_RTC_DECLINE = "org.matrix.msc4310.rtc.decline"
+
+# MSC4319 Room member events for invite and knock rooms in the /sync response
+# InvitedRoom/KnockedRoom 上携带完整 member 事件的 state 键（unstable）
+MSC4319_STATE_KEY = "org.matrix.msc4319.state"
+
+# MSC4495 Selective Presence (选择性在线状态)
+M_PRESENCE_SHARING = "m.presence.sharing"
+MSC4495_PRESENCE_SHARING = "org.continuwuity.presence_v2.msc4495.presence.sharing"
+M_PRESENCE_PROMPTED = "m.presence.prompted"
+MSC4495_PRESENCE_PROMPTED = "org.continuwuity.presence_v2.msc4495.presence.prompted"
+M_ROOM_PRESENCE_SHARING = "m.room.presence_sharing"
+MSC4495_ROOM_PRESENCE_SHARING = (
+    "org.continuwuity.presence_v2.msc4495.room.presence_sharing"
+)
+# 服务器能力：capabilities.m.selective_presence 或 versions.unstable_features 列出 MSC4495_CAPABILITY
+M_SELECTIVE_PRESENCE_CAP = "m.selective_presence"
+MSC4495_SELECTIVE_PRESENCE_CAP = (
+    "org.continuwuity.presence_v2.msc4495.selective_presence"
+)
+MSC4495_CAPABILITY = "org.continuwuity.presence_v2.msc4495"
+# presence sharing 取值
+PRESENCE_SHARING_ALLOW = "allow"
+PRESENCE_SHARING_DENY = "deny"
+PRESENCE_HINT_SUGGEST = "suggest"
+PRESENCE_HINT_FORBID = "forbid"
+
 # 通用事件类型
 M_ROOM_ENCRYPTED = "m.room.encrypted"
 M_ROOM_KEY = "m.room_key"

@@ -13,7 +13,9 @@ from astrbot.api import logger
 
 from ..constants import (
     DEFAULT_TIMEOUT_MS_30000,
+    MSC4310_RTC_DECLINE,
     MSC4357_LIVE_MESSAGE_MARKER,
+    MSC4446_ALLOW_BACKWARD,
     REL_TYPE_REPLACE,
     RESPONSE_TRUNCATE_LENGTH_400,
 )
@@ -178,6 +180,45 @@ class MessageMixin:
                     runtime_state.mark_live_message_outbound_edit()
         return response
 
+    async def send_call_decline(
+        self,
+        room_id: str,
+        notification_event_id: str,
+        *,
+        txn_id: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        发送 MatrixRTC 通话拒接事件（MSC4310）。
+
+        构造 ``m.rtc.decline``（unstable 类型 ``org.matrix.msc4310.rtc.decline``）
+        事件，通过 ``m.reference`` 关系指向被拒接的 ``m.rtc.notification`` 事件。
+        按 MSC 该事件 SHOULD NOT 包含 intentional mentions、SHOULD NOT 触发 push。
+
+        Args:
+            room_id: Room ID
+            notification_event_id: 被拒接的 ``m.rtc.notification`` 事件 ID
+            txn_id: Optional transaction ID
+            reason: Optional human-readable decline reason (扩展字段，MSC 未规定)
+
+        Returns:
+            Send response with event_id
+        """
+        content: dict[str, Any] = {
+            "m.relates_to": {
+                "rel_type": "m.reference",
+                "event_id": notification_event_id,
+            },
+        }
+        if reason:
+            content["reason"] = reason
+        return await self.send_room_event(
+            room_id,
+            MSC4310_RTC_DECLINE,
+            content,
+            txn_id=txn_id,
+        )
+
     async def send_room_message(self, room_id: str, message: str) -> dict[str, Any]:
         """
         Helper to send a simple text message to a room
@@ -320,6 +361,7 @@ class MessageMixin:
         room_id: str,
         fully_read: str | None = None,
         read: str | None = None,
+        allow_backward: bool = False,
     ) -> dict[str, Any]:
         """
         Set read markers for a room
@@ -328,6 +370,10 @@ class MessageMixin:
             room_id: Room ID
             fully_read: Event ID for fully_read marker
             read: Event ID for read marker
+            allow_backward: MSC4446 — 允许把 ``m.fully_read`` 回移到更早的事件。
+                同时写入稳定键 ``allow_backward`` 与 unstable 键
+                ``com.beeper.allow_backward``，兼容尚未支持稳定名的服务器。
+                注意：read receipts (``m.read`` / ``m.read.private``) 仍受单调性约束。
 
         Returns:
             Response data
@@ -339,6 +385,42 @@ class MessageMixin:
             data["m.fully_read"] = fully_read
         if read:
             data["m.read"] = read
+        if allow_backward:
+            data["allow_backward"] = True
+            data[MSC4446_ALLOW_BACKWARD] = True
+        return await self._request("POST", endpoint, data=data)
+
+    async def send_fully_read_receipt(
+        self,
+        room_id: str,
+        event_id: str,
+        *,
+        allow_backward: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Set the fully read marker to a specific event via the receipt endpoint
+        (MSC4446 aware).
+
+        走 ``POST /_matrix/client/v3/rooms/{roomId}/receipt/m.fully_read/{eventId}``，
+        当 ``allow_backward=True`` 时同时写入稳定与 unstable 键，允许把标记回移到
+        更早的事件。该端点只接受 ``m.fully_read`` receipt 类型，传其它类型会被
+        服务器以 400 拒绝。
+
+        Args:
+            room_id: Room ID
+            event_id: Event ID to mark as fully read
+            allow_backward: 允许回移到更早事件
+
+        Returns:
+            Response data
+        """
+        room = quote_path_segment(room_id)
+        event = quote_path_segment(event_id)
+        endpoint = f"/_matrix/client/v3/rooms/{room}/receipt/m.fully_read/{event}"
+        data: dict[str, Any] = {}
+        if allow_backward:
+            data["allow_backward"] = True
+            data[MSC4446_ALLOW_BACKWARD] = True
         return await self._request("POST", endpoint, data=data)
 
     async def redact_event(

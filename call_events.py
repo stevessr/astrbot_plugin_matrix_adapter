@@ -22,6 +22,8 @@ Matrix Live 通话（VoIP / MatrixRTC）事件适配的共享逻辑。
 
 from dataclasses import dataclass
 
+from .constants import M_RTC_DECLINE, MSC4310_RTC_DECLINE
+
 # --- 事件类型常量 -----------------------------------------------------------
 
 # 1 对 1 通话生命周期事件（值得呈现给用户）
@@ -67,11 +69,15 @@ CALL_NOTIFY_EVENT_TYPES = frozenset(
     }
 )
 
+# 通话拒接事件（MSC4310）：以 m.reference 关联 m.rtc.notification
+CALL_DECLINE_EVENT_TYPES = frozenset({M_RTC_DECLINE, MSC4310_RTC_DECLINE})
+
 # 事件类别标识
 CATEGORY_1TO1 = "1to1"
 CATEGORY_GROUP_OBJECT = "group_object"
 CATEGORY_GROUP_MEMBER = "group_member"
 CATEGORY_RINGING = "ringing"
+CATEGORY_DECLINE = "decline"
 CATEGORY_SIGNALLING = "signalling"
 
 
@@ -102,6 +108,8 @@ def classify_call_event(event_type: object) -> str | None:
         return None
     if event_type in CALL_NOTIFY_EVENT_TYPES:
         return CATEGORY_RINGING
+    if event_type in CALL_DECLINE_EVENT_TYPES:
+        return CATEGORY_DECLINE
     if event_type in CALL_GROUP_MEMBER_EVENT_TYPES:
         return CATEGORY_GROUP_MEMBER
     if event_type in CALL_GROUP_OBJECT_EVENT_TYPES:
@@ -133,6 +141,8 @@ def should_surface_call_event(event_type: object, config: object) -> bool:
     if category in (CATEGORY_GROUP_OBJECT, CATEGORY_GROUP_MEMBER):
         return bool(getattr(config, "include_group", True))
     if category == CATEGORY_RINGING:
+        return bool(getattr(config, "include_ringing", True))
+    if category == CATEGORY_DECLINE:
         return bool(getattr(config, "include_ringing", True))
     if category == CATEGORY_SIGNALLING:
         return not bool(getattr(config, "suppress_signalling", True))
@@ -229,6 +239,13 @@ def format_call_event_text(event: object) -> str | None:
         if notify_type == "ring":
             return f"[Call] {sender} is ringing for a call"
         return f"[Call] {sender} sent a call notification"
+
+    if category == CATEGORY_DECLINE:
+        relates_to = content.get("m.relates_to") if isinstance(content, dict) else None
+        related = ""
+        if isinstance(relates_to, dict) and relates_to.get("event_id"):
+            related = f" (notification {relates_to.get('event_id')})"
+        return f"[Call] {sender} declined the call{related}"
 
     if category == CATEGORY_SIGNALLING:
         label = event_type.rsplit(".", 1)[-1] or event_type
