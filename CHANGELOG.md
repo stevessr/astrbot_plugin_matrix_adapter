@@ -1,6 +1,7 @@
 # Changelog
 
 ## unrelesed
+- 修复 AstrBot 开启回复分段时，首段之后的消息逃逸出 Matrix 消息串的问题；同时在关闭全局引用、开启 `matrix_enable_threading` 时，使用入站事件作为线程回复目标。
 - 新增 Live 通话事件适配：VoIP（1 对 1）和 MatrixRTC（群组 Live）通话事件现在可以通过配置呈现为系统提示消息。
   - 新增配置项：`matrix_enable_call_events`（总开关）、`matrix_call_include_1to1`（1 对 1 通话）、`matrix_call_include_group`（群组通话）、`matrix_call_include_ringing`（来电响铃）、`matrix_call_suppress_signalling`（抑制底层信令）。
   - 支持 VoIP 生命周期事件（m.call.invite/answer/hangup/reject/transfer 等）渲染为可读文本。

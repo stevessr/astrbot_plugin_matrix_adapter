@@ -3461,6 +3461,159 @@ class MatrixVoiceCompatTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
+    def _load_matrix_event_for_test(self):
+        """Load MatrixPlatformEvent without importing the full sender graph."""
+        module_name = f"{PACKAGE_NAME}.matrix_event"
+        sys.modules.pop(module_name, None)
+
+        event_send_stub = types.ModuleType(f"{PACKAGE_NAME}.matrix_event_send")
+
+        async def send_with_client_impl(**_kwargs):
+            return 1
+
+        event_send_stub.send_with_client_impl = send_with_client_impl
+        # Install the normal test modules before entering patch.dict; otherwise
+        # patch.dict would remove modules created by load_module on exit.
+        _install_astrbot_stubs()
+        _install_aiohttp_stub()
+        _install_package_stubs()
+        with mock.patch.dict(
+            sys.modules,
+            {f"{PACKAGE_NAME}.matrix_event_send": event_send_stub},
+        ):
+            module = load_module("matrix_event")
+
+        base_event = sys.modules["astrbot.api.event"].AstrMessageEvent
+
+        async def base_send(self, _message_chain):
+            self._has_send_oper = True
+
+        base_event.send = base_send
+        return module
+
+    async def _send_two_segments(
+        self,
+        *,
+        event_module=None,
+        enable_threading: bool,
+        event_content: dict,
+        first_chain,
+        second_chain,
+    ):
+        matrix_event = event_module or self._load_matrix_event_for_test()
+        captured = []
+
+        async def fake_send_with_client(
+            client,
+            message_chain,
+            room_id,
+            reply_to=None,
+            thread_root=None,
+            use_thread=False,
+            original_message_info=None,
+            e2ee_manager=None,
+            max_upload_size=None,
+            use_notice=False,
+        ):
+            captured.append(
+                {
+                    "chain": message_chain.chain,
+                    "room_id": room_id,
+                    "reply_to": reply_to,
+                    "thread_root": thread_root,
+                    "use_thread": use_thread,
+                    "original_message_info": original_message_info,
+                }
+            )
+            return 1
+
+        matrix_event.MatrixPlatformEvent.send_with_client = staticmethod(
+            fake_send_with_client
+        )
+
+        class FakeClient:
+            user_id = "@bot:example.org"
+
+            async def get_event(self, _room_id, event_id):
+                return {
+                    "event_id": event_id,
+                    "sender": "@alice:example.org",
+                    "content": event_content,
+                }
+
+        message_obj = types.SimpleNamespace(
+            message_id="$inbound:example.org",
+            sender=types.SimpleNamespace(user_id="@alice:example.org"),
+        )
+        platform_meta = sys.modules["astrbot.api.platform"].PlatformMetadata(
+            name="matrix", id="matrix"
+        )
+        event = matrix_event.MatrixPlatformEvent(
+            message_str="input",
+            message_obj=message_obj,
+            platform_meta=platform_meta,
+            session_id="!room:example.org",
+            client=FakeClient(),
+            enable_threading=enable_threading,
+        )
+
+        await event.send(first_chain)
+        await event.send(second_chain)
+        return captured
+
+    async def test_segmented_thread_reply_reuses_thread_context_after_reply_header(self):
+        matrix_event = self._load_matrix_event_for_test()
+        components = sys.modules["astrbot.api.message_components"]
+        message_chain = sys.modules["astrbot.api.event"].MessageChain
+
+        captured = await self._send_two_segments(
+            event_module=matrix_event,
+            enable_threading=False,
+            event_content={
+                "msgtype": "m.text",
+                "body": "thread message",
+                "m.relates_to": {
+                    "rel_type": "m.thread",
+                    "event_id": "$root:example.org",
+                },
+            },
+            first_chain=message_chain(
+                [
+                    components.Reply(id="$inbound:example.org"),
+                    components.Plain("first"),
+                ]
+            ),
+            second_chain=message_chain([components.Plain("second")]),
+        )
+
+        self.assertEqual(len(captured), 2)
+        for call in captured:
+            self.assertTrue(call["use_thread"])
+            self.assertEqual(call["thread_root"], "$root:example.org")
+            self.assertEqual(call["reply_to"], "$inbound:example.org")
+
+    async def test_threading_uses_inbound_event_without_reply_component(self):
+        matrix_event = self._load_matrix_event_for_test()
+        components = sys.modules["astrbot.api.message_components"]
+        message_chain = sys.modules["astrbot.api.event"].MessageChain
+
+        captured = await self._send_two_segments(
+            event_module=matrix_event,
+            enable_threading=True,
+            event_content={
+                "msgtype": "m.text",
+                "body": "ordinary message",
+            },
+            first_chain=message_chain([components.Plain("first")]),
+            second_chain=message_chain([components.Plain("second")]),
+        )
+
+        self.assertEqual(len(captured), 2)
+        for call in captured:
+            self.assertTrue(call["use_thread"])
+            self.assertEqual(call["thread_root"], "$inbound:example.org")
+            self.assertEqual(call["reply_to"], "$inbound:example.org")
+
     async def test_send_content_keeps_cleartext_relation_on_encrypted_events(self):
         common_sender = load_module("sender.handlers.common")
 

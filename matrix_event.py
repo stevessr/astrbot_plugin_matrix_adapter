@@ -41,6 +41,13 @@ class MatrixPlatformEvent(AstrMessageEvent):
         self.e2ee_manager = e2ee_manager
         self.use_notice = use_notice  # 使用 m.notice 而不是 m.text
 
+        # AstrBot 的分段回复会把 Reply/At 头部组件只放在第一段，之后的
+        # ``event.send`` 调用只带 Plain（见 RespondStage）。Matrix 的线程关系
+        # 是每条事件独立声明的，因此不能仅依赖当前消息段里的 Reply 组件。
+        # 这里保存本次入站事件发送过程中解析出的线程上下文，让后续分段
+        # 继续使用同一个线程根，而不会回落到房间时间线。
+        self._response_thread_context: dict | None = None
+
         # 默认关闭；仅在显式启用 Live Messages 时才允许流式输出
         self.set_extra("enable_streaming", bool(enable_live_messages))
 
@@ -269,11 +276,17 @@ class MatrixPlatformEvent(AstrMessageEvent):
         reply_to = None
         thread_root = None
         use_thread = False
+        reused_thread_context = False
+        original_message_info = None
+        has_reply_component = False
 
         # 尝试从消息链中提取 Reply 段
         try:
             from astrbot.api.message_components import Reply as _Reply
 
+            has_reply_component = any(
+                isinstance(seg, _Reply) for seg in message_chain.chain
+            )
             for seg in message_chain.chain:
                 if isinstance(seg, _Reply) and getattr(seg, "id", None):
                     reply_to = str(seg.id)
@@ -281,15 +294,23 @@ class MatrixPlatformEvent(AstrMessageEvent):
         except Exception:
             pass
 
+        # 分段回复的后续消息没有 Reply 组件。优先复用本次事件前一段已经
+        # 解析好的线程上下文；如果没有上下文且启用了线程，则使用本次入站
+        # 事件作为回复目标，使“关闭引用 + 开启消息串”仍能创建线程。
+        if not reply_to:
+            context = self._response_thread_context
+            if isinstance(context, dict) and context.get("use_thread"):
+                reply_to = context.get("reply_to")
+                thread_root = context.get("thread_root")
+                use_thread = bool(thread_root)
+                original_message_info = context.get("original_message_info")
+                reused_thread_context = use_thread
+
         # 如果没有找到回复对象，但消息链中包含 Reply 组件（表示开启了回复模式）
         # 则尝试获取自己最近发送的消息作为回复对象
         if not reply_to:
             try:
                 from astrbot.api.message_components import Reply as _Reply
-
-                has_reply_component = any(
-                    isinstance(seg, _Reply) for seg in message_chain.chain
-                )
 
                 if has_reply_component:
                     # 直接使用已缓存的 user_id（登录时已设置），无需额外 API 调用
@@ -323,10 +344,30 @@ class MatrixPlatformEvent(AstrMessageEvent):
             except Exception as e:
                 logger.debug(f"处理回复模式时出错：{e}")
 
+        # 没有 Reply 组件时（例如关闭 AstrBot 全局引用）直接使用入站事件
+        # 作为线程目标。放在上面的兼容查询之后，保留空 Reply 组件原有的
+        # “尝试回复最近一条 bot 消息”行为。
+        if not reply_to and self.enable_threading:
+            source_event_id = getattr(self.message_obj, "message_id", None)
+            if not source_event_id:
+                raw_message = getattr(self.message_obj, "raw_message", None)
+                if isinstance(raw_message, dict):
+                    source_event_id = raw_message.get("event_id")
+                else:
+                    source_event_id = getattr(raw_message, "event_id", None)
+            if source_event_id:
+                reply_to = str(source_event_id)
+
         # 如果有回复，检查是否需要使用嘟文串模式
-        original_message_info = None
-        if reply_to:
+        if reply_to and not reused_thread_context:
             try:
+                # 配置开启线程时，即使事件查询失败，也可以先按当前回复
+                # 目标创建线程；如果查询到的目标本身已在其他线程中，下面
+                # 再用真实线程根覆盖这个默认值。
+                if self.enable_threading:
+                    use_thread = True
+                    thread_root = reply_to
+
                 # 获取被回复消息的事件信息
                 resp = await self.client.get_event(room_id, reply_to)
                 if resp:
@@ -340,9 +381,11 @@ class MatrixPlatformEvent(AstrMessageEvent):
                     # 检查被回复消息是否已经是嘟文串的一部分
                     if "content" in resp:
                         relates_to = resp["content"].get("m.relates_to", {})
+                        if not isinstance(relates_to, dict):
+                            relates_to = {}
                         if relates_to.get("rel_type") == "m.thread":
                             # 如果是嘟文串的一部分，获取根消息 ID
-                            thread_root = relates_to.get("event_id")
+                            thread_root = relates_to.get("event_id") or reply_to
                             use_thread = True
                         elif self.enable_threading:
                             # 试验性功能：如果启用嘟文串模式，创建新的嘟文串
@@ -354,6 +397,21 @@ class MatrixPlatformEvent(AstrMessageEvent):
                             thread_root = None
             except Exception as e:
                 logger.warning(f"Failed to get event for threading: {e}")
+
+        # 发送前记住线程上下文。第一段可能带 Reply，后续分段没有 Reply，
+        # 但每一段仍必须携带 m.thread 关系。只缓存真正的线程关系，普通
+        # m.in_reply_to 回复保持 AstrBot 原本的行为。
+        if use_thread and thread_root:
+            self._response_thread_context = {
+                "reply_to": reply_to or thread_root,
+                "thread_root": thread_root,
+                "use_thread": True,
+                "original_message_info": original_message_info,
+            }
+        elif reply_to and not reused_thread_context:
+            # 当前调用明确指定了普通回复时，不要把上一次线程上下文泄漏
+            # 到一个新的、非线程回复中。
+            self._response_thread_context = None
 
         await MatrixPlatformEvent.send_with_client(
             self.client,
