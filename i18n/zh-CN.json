@@ -35,6 +35,10 @@
     "description": "启用消息线程",
     "hint": "是否使用消息线程（Threading）回复，默认 False"
   },
+  "matrix_enable_live_messages":{
+    "description": "启用 Live Messages",
+    "hint": "是否启用 Live Messages（实验性功能），默认 False"
+  },
   "matrix_use_notice": {
     "description": "使用通知类型消息",
     "hint": "启用后机器人将使用 m.notice 类型发送消息，而不是 m.text。m.notice 通常用于机器人消息，不会触发通知声音"

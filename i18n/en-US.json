@@ -35,6 +35,10 @@
     "description": "Enable Threading",
     "hint": "Whether to use message threading for replies, default: False"
   },
+  "matrix_enable_live_messages": {
+    "description": "Enable Live Messages",
+    "hint": "Whether to enable Live Messages (experimental feature), default: False"
+  },
   "matrix_use_notice": {
     "description": "Use Notice Type",
     "hint": "When enabled, the bot will send messages as m.notice instead of m.text. m.notice is typically used for bot messages and won't trigger notification sounds"

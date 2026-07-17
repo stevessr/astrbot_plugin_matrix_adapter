@@ -35,6 +35,10 @@
     "description": "Включить треды",
     "hint": "Использовать треды сообщений для ответов, по умолчанию: False"
   },
+  "matrix_enable_live_messages":{
+    "description": "Включить Live Messages",
+    "hint": "Включить Live Messages (экспериментальная функция), по умолчанию: False"
+  },
   "matrix_use_notice": {
     "description": "Использовать тип Notice",
     "hint": "Если включено, бот будет отправлять сообщения как m.notice вместо m.text. m.notice обычно используется для сообщений ботов и не вызывает звуковых уведомлений"
