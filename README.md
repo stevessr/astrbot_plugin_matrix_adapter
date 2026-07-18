@@ -396,6 +396,38 @@ await adapter.sender.delete_message("!roomid:example.org", "$event_id:example.or
 await event.delete()
 ```
 
+### Reaction、LLM Tool 与插件接口
+
+LLM 可调用 `matrix_react_to_event` 工具，主动给当前 Matrix 消息添加 Reaction：
+
+- `reaction`：必填，支持 Unicode 表情或自定义 Matrix Reaction key；
+- `room_id` / `event_id`：默认取当前 Matrix 消息，也可显式指定其他事件；
+- `matrix_platform_id`：当前事件不是 Matrix 且运行了多个 Matrix 适配器时必填。
+
+其他插件可以对当前事件使用 AstrBot 标准接口：
+
+```python
+await event.react("👍")
+```
+
+对任意已知 Matrix 事件，使用适配器公开的稳定入口：
+
+```python
+from astrbot_plugin_matrix_adapter import MatrixUtils
+
+response = await MatrixUtils.send_reaction(
+    self.context,
+    "!roomid:example.org",
+    "$event_id:example.org",
+    "👍",
+    platform_id="matrix-main",
+)
+reaction_event_id = response.get("event_id")
+```
+
+未指定 `platform_id` 时，公共接口可以回退到首个 Matrix 适配器；显式指定但不存在的
+平台 ID 不会回退到其他账号，避免 Reaction 发往错误的 Matrix 实例。
+
 ### 消息管理与上下文查询
 
 `MatrixSender` 也暴露了常用的 Matrix 事件管理/查询接口：

@@ -64,6 +64,104 @@ class MatrixPlugin(Star):
             # 抛出异常，避免处于"已加载但不可用"的不一致状态
             raise
 
+    @filter.llm_tool(name="matrix_react_to_event")
+    async def matrix_react_to_event(
+        self,
+        event: AstrMessageEvent,
+        reaction: str,
+        room_id: str = "",
+        event_id: str = "",
+        matrix_platform_id: str = "",
+    ) -> str:
+        """React to the current or an explicitly identified Matrix event.
+
+        Args:
+            reaction(string): Unicode emoji or custom Matrix reaction key to send.
+            room_id(string): Target Matrix room ID. Defaults to the current Matrix
+                room.
+            event_id(string): Target Matrix event ID. Defaults to the current Matrix
+                message.
+            matrix_platform_id(string): AstrBot Matrix platform ID. Required only
+                when the current event is not Matrix and multiple Matrix adapters run.
+
+        Returns:
+            A concise status message for the next LLM turn.
+        """
+        reaction_key = str(reaction or "").strip()
+        if not reaction_key:
+            return "A non-empty Matrix reaction key is required."
+
+        current_platform_name = str(event.get_platform_name() or "").strip().lower()
+        target_platform_id = str(matrix_platform_id or "").strip()
+        target_room_id = str(room_id or "").strip()
+        target_event_id = str(event_id or "").strip()
+        message_obj = getattr(event, "message_obj", None)
+
+        if current_platform_name == "matrix":
+            target_platform_id = (
+                target_platform_id or str(event.get_platform_id() or "").strip()
+            )
+            target_room_id = (
+                target_room_id
+                or str(
+                    getattr(message_obj, "session_id", None)
+                    or event.get_group_id()
+                    or event.get_session_id()
+                    or ""
+                ).strip()
+            )
+            target_event_id = (
+                target_event_id
+                or str(getattr(message_obj, "message_id", None) or "").strip()
+            )
+            if not target_event_id:
+                raw_message = getattr(message_obj, "raw_message", None)
+                if isinstance(raw_message, dict):
+                    target_event_id = str(raw_message.get("event_id") or "").strip()
+                else:
+                    target_event_id = str(
+                        getattr(raw_message, "event_id", None) or ""
+                    ).strip()
+
+        if not target_room_id:
+            return "A Matrix room_id is required outside a Matrix message."
+        if not target_event_id:
+            return "A Matrix event_id is required when the current message has none."
+
+        if not target_platform_id:
+            matrix_platform_ids = MatrixUtils.list_matrix_platform_ids(self.context)
+            if not matrix_platform_ids:
+                return "No running Matrix adapter is available."
+            if len(matrix_platform_ids) > 1:
+                return (
+                    "Multiple Matrix adapters are running; provide matrix_platform_id: "
+                    + ", ".join(matrix_platform_ids)
+                )
+            target_platform_id = matrix_platform_ids[0]
+
+        try:
+            response = await MatrixUtils.send_reaction(
+                self.context,
+                target_room_id,
+                target_event_id,
+                reaction_key,
+                platform_id=target_platform_id,
+                fallback_to_first=False,
+            )
+        except Exception as exc:
+            logger.warning("Matrix reaction tool failed: %s", exc)
+            return f"Failed to send Matrix reaction: {exc}"
+
+        reaction_event_id = (
+            str(response.get("event_id") or "").strip()
+            if isinstance(response, dict)
+            else ""
+        )
+        result = f"Sent Matrix reaction {reaction_key!r} to {target_event_id}."
+        if reaction_event_id:
+            result += f" Reaction event: {reaction_event_id}."
+        return result
+
     # ========== Commands ==========
     # 装饰器必须定义在 main.py 中，否则 handler 的 __module__ 不匹配
 

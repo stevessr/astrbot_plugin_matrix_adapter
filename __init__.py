@@ -1,6 +1,7 @@
 # Matrix Adapter Plugin for AstrBot
 
-# 导出 Sticker 相关模块供其他插件使用
+# Public exports for other AstrBot plugins.
 from .sticker import Sticker, StickerInfo, StickerStorage
+from .utils import MatrixUtils
 
-__all__ = ["Sticker", "StickerInfo", "StickerStorage"]
+__all__ = ["MatrixUtils", "Sticker", "StickerInfo", "StickerStorage"]

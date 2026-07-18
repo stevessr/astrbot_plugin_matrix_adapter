@@ -1,6 +1,7 @@
 # Changelog
 
 ## unrelesed
+- 新增 LLM 工具 `matrix_react_to_event` 与公共接口 `MatrixUtils.send_reaction()`，支持 LLM 或其他插件主动为当前/指定 Matrix 事件发送 Reaction。
 - 将按规则自动 React 的预回应逻辑拆分到独立插件 `astrbot_plugin_matrix_rule_react`，Matrix 适配器不再承载该配置和触发逻辑。
 - 修复 AstrBot 开启回复分段时，首段之后的消息逃逸出 Matrix 消息串的问题；同时在关闭全局引用、开启 `matrix_enable_threading` 时，使用入站事件作为线程回复目标。
 - 新增 Live 通话事件适配：VoIP（1 对 1）和 MatrixRTC（群组 Live）通话事件现在可以通过配置呈现为系统提示消息。

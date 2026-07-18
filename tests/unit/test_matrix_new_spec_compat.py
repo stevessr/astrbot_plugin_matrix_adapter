@@ -34,7 +34,22 @@ def _install_astrbot_stubs() -> None:
         def get_data_dir(_name: str):
             return Path(tempfile.gettempdir()) / "astrbot_plugin_matrix_adapter"
 
+    def _identity_decorator(*args, **kwargs):
+        """Return a no-op AstrBot registration decorator.
+
+        Args:
+            *args: Positional decorator arguments ignored by the stub.
+            **kwargs: Keyword decorator arguments ignored by the stub.
+
+        Returns:
+            Decorator that returns its target unchanged.
+        """
+        return lambda target: target
+
     star_module.StarTools = StarTools
+    star_module.Context = type("Context", (), {})
+    star_module.Star = type("Star", (), {})
+    star_module.register = _identity_decorator
 
     message_components = sys.modules.setdefault(
         "astrbot.api.message_components",
@@ -163,6 +178,17 @@ def _install_astrbot_stubs() -> None:
 
     event_module.AstrMessageEvent = AstrMessageEvent
     event_module.MessageChain = MessageChain
+    event_module.filter = types.SimpleNamespace(
+        command=_identity_decorator,
+        llm_tool=_identity_decorator,
+        permission_type=_identity_decorator,
+    )
+
+    permission_module = sys.modules.setdefault(
+        "astrbot.core.star.filter.permission",
+        types.ModuleType("astrbot.core.star.filter.permission"),
+    )
+    permission_module.PermissionType = types.SimpleNamespace(ADMIN="admin")
 
     platform_module = sys.modules.setdefault(
         "astrbot.api.platform", types.ModuleType("astrbot.api.platform")
@@ -317,6 +343,109 @@ def load_module(relative_name: str):
     _install_aiohttp_stub()
     _install_package_stubs()
     return importlib.import_module(f"{PACKAGE_NAME}.{relative_name}")
+
+
+class MatrixReactionApiCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_public_reaction_api_routes_to_selected_adapter(self):
+        """The public API should select the requested Matrix platform instance."""
+        utils_module = load_module("utils.utils")
+        first_sender = types.SimpleNamespace(send_reaction=mock.AsyncMock())
+        selected_sender = types.SimpleNamespace(
+            send_reaction=mock.AsyncMock(return_value={"event_id": "$reaction"})
+        )
+
+        platforms = [
+            types.SimpleNamespace(
+                meta=lambda: types.SimpleNamespace(
+                    name="matrix", id="matrix-first"
+                ),
+                sender=first_sender,
+            ),
+            types.SimpleNamespace(
+                meta=lambda: types.SimpleNamespace(
+                    name="matrix", id="matrix-selected"
+                ),
+                sender=selected_sender,
+            ),
+        ]
+        context = types.SimpleNamespace(
+            platform_manager=types.SimpleNamespace(get_insts=lambda: platforms)
+        )
+
+        response = await utils_module.MatrixUtils.send_reaction(
+            context,
+            "!room:example.org",
+            "$event:example.org",
+            " 👍 ",
+            platform_id="matrix-selected",
+        )
+
+        self.assertEqual(response, {"event_id": "$reaction"})
+        selected_sender.send_reaction.assert_awaited_once_with(
+            "!room:example.org", "$event:example.org", "👍"
+        )
+        first_sender.send_reaction.assert_not_awaited()
+
+    async def test_public_reaction_api_rejects_invalid_or_missing_targets(self):
+        """Invalid input and unknown explicit adapter IDs should fail safely."""
+        utils_module = load_module("utils.utils")
+        platform = types.SimpleNamespace(
+            meta=lambda: types.SimpleNamespace(name="matrix", id="matrix-main"),
+            sender=types.SimpleNamespace(send_reaction=mock.AsyncMock()),
+        )
+        context = types.SimpleNamespace(
+            platform_manager=types.SimpleNamespace(get_insts=lambda: [platform])
+        )
+
+        with self.assertRaisesRegex(ValueError, "reaction is required"):
+            await utils_module.MatrixUtils.send_reaction(
+                context, "!room:example.org", "$event:example.org", ""
+            )
+        with self.assertRaisesRegex(RuntimeError, "matrix-missing"):
+            await utils_module.MatrixUtils.send_reaction(
+                context,
+                "!room:example.org",
+                "$event:example.org",
+                "👍",
+                platform_id="matrix-missing",
+                fallback_to_first=True,
+            )
+
+    async def test_llm_tool_reacts_to_current_matrix_event(self):
+        """The LLM tool should infer the current room, event, and adapter IDs."""
+        main_module = load_module("main")
+        plugin = main_module.MatrixPlugin.__new__(main_module.MatrixPlugin)
+        plugin.context = types.SimpleNamespace()
+        event = types.SimpleNamespace(
+            message_obj=types.SimpleNamespace(
+                session_id="!room:example.org",
+                message_id="$event:example.org",
+                raw_message=None,
+            ),
+            get_platform_name=lambda: "matrix",
+            get_platform_id=lambda: "matrix-main",
+            get_group_id=lambda: "!room:example.org",
+            get_session_id=lambda: "!room:example.org",
+        )
+        send_reaction = mock.AsyncMock(
+            return_value={"event_id": "$reaction:example.org"}
+        )
+
+        with mock.patch.object(
+            main_module.MatrixUtils, "send_reaction", send_reaction
+        ):
+            result = await plugin.matrix_react_to_event(event, " 👍 ")
+
+        self.assertIn("Sent Matrix reaction", result)
+        self.assertIn("$reaction:example.org", result)
+        send_reaction.assert_awaited_once_with(
+            plugin.context,
+            "!room:example.org",
+            "$event:example.org",
+            "👍",
+            platform_id="matrix-main",
+            fallback_to_first=False,
+        )
 
 
 class MatrixTextMentionCompatTests(unittest.TestCase):
@@ -2152,7 +2281,7 @@ class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
         content = client.calls[0][2]
         self.assertEqual(content["body"], "@Alice <Admin>")
         self.assertIn("https://matrix.to/#/%40alice%3Aexample.org", content["formatted_body"])
-        self.assertIn("data-mxid=\"@alice:example.org\"", content["formatted_body"])
+        self.assertIn('data-mxid="@alice:example.org"', content["formatted_body"])
         self.assertIn("@Alice &lt;Admin&gt;", content["formatted_body"])
         self.assertNotIn("<Admin>", content["formatted_body"])
 
