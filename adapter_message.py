@@ -187,14 +187,17 @@ class MatrixAdapterMessageMixin:
                 )
                 return
 
-            if isinstance(relates_to, dict) and relates_to.get("rel_type") == REL_TYPE_REPLACE:
+            if (
+                isinstance(relates_to, dict)
+                and relates_to.get("rel_type") == REL_TYPE_REPLACE
+            ):
                 if runtime_state:
                     try:
                         runtime_state.mark_live_message_inbound(is_edit=True)
                     except Exception:
                         pass
 
-            # 预回应表情：检查是否为 @机器人或唤醒命令
+            # Convert the Matrix event into an AstrBot message.
             if getattr(event, "msgtype", None):
                 abm = await self.receiver.convert_message(room, event)
             else:
@@ -244,56 +247,6 @@ class MatrixAdapterMessageMixin:
                 e2ee_manager=self.e2ee_manager,
                 use_notice=self._matrix_config.use_notice,
             )
-
-            # 预回应表情：检查是否需要触发
-            # 条件：1. 配置启用 2. 表情列表非空 3. 消息包含 @机器人或唤醒前缀
-            try:
-                # 从插件配置中读取预回应表情设置（仅记录必要信息）
-                plugin_cfg = get_plugin_config()
-                pre_ack_enable = plugin_cfg.pre_ack_emoji_enable
-                pre_ack_emojis = plugin_cfg.pre_ack_emoji_emojis
-
-                if pre_ack_enable and pre_ack_emojis and event_id:
-                    import random
-
-                    from astrbot.api.message_components import At
-
-                    should_react = False
-                    react_reason = None
-
-                    # 检查消息链中是否有 @机器人（只记录触发结果，避免打印整个消息内容）
-                    for segment in getattr(message, "message", []):
-                        if isinstance(segment, At):
-                            at_target = getattr(segment, "qq", None) or getattr(
-                                segment, "user_id", None
-                            )
-                            if at_target and str(at_target) == str(
-                                self._matrix_config.user_id
-                            ):
-                                should_react = True
-                                react_reason = "mention"
-                                break
-
-                    # 检查是否以唤醒前缀开头
-                    if not should_react:
-                        from astrbot.core import astrbot_config
-
-                        wake_prefixes = astrbot_config.get("wake_prefix", ["/"])
-                        message_str = (getattr(message, "message_str", "") or "").strip()
-                        for wake_prefix in wake_prefixes:
-                            if message_str.startswith(wake_prefix):
-                                should_react = True
-                                react_reason = f"wake_prefix:{wake_prefix}"
-                                break
-
-                    # 若触发则发送反应并记录触发原因（不打印过多上下文）
-                    if should_react:
-                        emoji = random.choice(pre_ack_emojis)
-                        if not hasattr(message, "message_id"):
-                            message.message_id = event_id
-                        await message_event.react(emoji)
-            except Exception:
-                pass
 
             self.commit_event(message_event)
             # 仅记录必要的事件元信息，避免在 debug 中打印过多用户标识

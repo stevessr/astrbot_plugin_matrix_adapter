@@ -193,20 +193,12 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 
 ### 自动 React
 
-```json
-{
-"matrix_pre_ack_emoji": {
-    "enable": true,
-    "emojis": [
-      "🤗",
-      "🐟",
-      "🍞"，
-      "mxc://example.matrix.domain/$may_be_something"
-    ]
-  }
-}
-```
-在你 @ 人 或者使用唤醒前缀发消息的时候触发，反应的具体渲染取决于客户端的实现，mxc 图片也许可以渲染
+按规则自动回应已拆分为独立插件：
+[`astrbot_plugin_matrix_rule_react`](https://github.com/stevessr/astrbot_plugin_matrix_rule_react)。
+
+请安装并配置该插件，以便在 @机器人或使用有效唤醒前缀时随机发送 Matrix
+Reaction。旧配置 `matrix_pre_ack_emoji` 不再由适配器读取，需要迁移到新插件的
+`matrix_rule_react` 配置中。
 
 ## 命令
 
