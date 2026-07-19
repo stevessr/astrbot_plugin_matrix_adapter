@@ -97,6 +97,6 @@
   },
   "matrix_e2ee_key_share_check_interval": {
     "description": "Key Share Check Interval",
-    "hint": "Interval (seconds) for proactive room-key distribution checks. The default 0 disables checks when proactive exchange is off and selects 30 seconds when it is on"
+    "hint": "Interval (seconds) for proactive room-key distribution checks. The default 0 uses lazy mode when proactive exchange is off, sharing on encrypted sends or new device-list entries, and selects 30 seconds when it is on"
   }
 }

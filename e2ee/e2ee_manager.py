@@ -82,8 +82,8 @@ class E2EEManager(
             key_maintenance_interval: 一次性密钥自动补充的最小间隔（秒）
             otk_threshold_ratio: 触发一次性密钥补充的服务器密钥数量比例（百分比）
             key_share_check_interval: Periodic room-key distribution interval in
-                seconds. Zero disables it unless proactive key exchange is enabled,
-                in which case a 30-second interval is used.
+                seconds. Zero selects event-driven lazy mode unless proactive key
+                exchange is enabled, in which case a 30-second interval is used.
         """
         self.client = client
         self.user_id = user_id
@@ -380,6 +380,11 @@ class E2EEManager(
                 await self._start_key_share_check_task()
                 logger.info(
                     f"已启动定期密钥分发检查任务，间隔：{self.key_share_check_interval} 秒"
+                )
+            else:
+                logger.info(
+                    "Room-key distribution is using lazy mode; keys will be "
+                    "rechecked on encrypted sends and device-list changes"
                 )
 
             return True

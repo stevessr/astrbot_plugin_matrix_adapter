@@ -209,8 +209,8 @@ class MatrixConfig:
             minimum=1,
             maximum=100,
         )
-        # Periodic room-key distribution interval. With proactive exchange enabled,
-        # zero selects the built-in 30-second interval instead of disabling checks.
+        # Periodic room-key distribution interval. Zero selects event-driven lazy
+        # mode, or the built-in 30-second interval when proactive exchange is on.
         self.e2ee_key_share_check_interval = self._parse_int(
             self.config.get("matrix_e2ee_key_share_check_interval"),
             0,

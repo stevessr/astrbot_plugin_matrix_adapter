@@ -39,7 +39,14 @@ class E2EEManagerSessionsMixin:
         )
 
     async def on_device_list_changed(self, changed_users: list[str]) -> None:
-        """Proactively re-check key sharing when users publish device list changes."""
+        """Re-check key sharing when users publish device-list changes.
+
+        This event-driven path remains active in lazy mode so newly announced
+        devices can receive an existing outbound room key without a periodic scan.
+
+        Args:
+            changed_users: Matrix users whose device lists changed.
+        """
         if not self._olm or not self._initialized:
             return
 

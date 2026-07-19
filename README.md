@@ -135,7 +135,7 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 | `matrix_e2ee_proactive_key_exchange` | bool | `false` | 启动后立即检查并定期补发房间密钥；检查间隔为 `0` 时自动使用 30 秒 |
 | `matrix_e2ee_key_maintenance_interval` | int | `60` | 一次性密钥自动补充的最小间隔（秒） |
 | `matrix_e2ee_otk_threshold_ratio` | int | `33` | 触发一次性密钥补充的服务器密钥数量比例（百分比） |
-| `matrix_e2ee_key_share_check_interval` | int | `0` | 房间密钥分发检查间隔（秒）；主动交换关闭时 `0` 表示禁用，开启时表示 30 秒 |
+| `matrix_e2ee_key_share_check_interval` | int | `0` | 房间密钥分发检查间隔（秒）；主动交换关闭且为 `0` 时使用 lazyload 模式，在加密发送或设备列表出现新设备时按需交换；主动交换开启时为 30 秒 |
 
 ## 配置示例
 
