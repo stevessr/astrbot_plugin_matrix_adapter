@@ -1439,6 +1439,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
                         "room_id": "!room:example.org",
                         "fully_read": "$fully:example.org",
                         "read": "$read:example.org",
+                        "allow_backward": False,
                     },
                 ),
             ],
@@ -2525,6 +2526,8 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                 TIMESTAMP_BUFFER_MS_1000=1000,
                 GROUP_CHAT_MIN_MEMBERS_2=2,
                 REL_TYPE_REPLACE="m.replace",
+                M_RTC_DECLINE="m.rtc.decline",
+                MSC4310_RTC_DECLINE="org.matrix.msc4310.rtc.decline",
             ),
             f"{PACKAGE_NAME}.plugin_config": _make_module(
                 f"{PACKAGE_NAME}.plugin_config",
@@ -2806,6 +2809,8 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                 TIMESTAMP_BUFFER_MS_1000=1000,
                 GROUP_CHAT_MIN_MEMBERS_2=2,
                 REL_TYPE_REPLACE="m.replace",
+                M_RTC_DECLINE="m.rtc.decline",
+                MSC4310_RTC_DECLINE="org.matrix.msc4310.rtc.decline",
             ),
             f"{PACKAGE_NAME}.plugin_config": _make_module(
                 f"{PACKAGE_NAME}.plugin_config",
@@ -3097,6 +3102,8 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                 TIMESTAMP_BUFFER_MS_1000=1000,
                 GROUP_CHAT_MIN_MEMBERS_2=2,
                 REL_TYPE_REPLACE="m.replace",
+                M_RTC_DECLINE="m.rtc.decline",
+                MSC4310_RTC_DECLINE="org.matrix.msc4310.rtc.decline",
             ),
             f"{PACKAGE_NAME}.plugin_config": _make_module(
                 f"{PACKAGE_NAME}.plugin_config",
@@ -3186,6 +3193,8 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                 TIMESTAMP_BUFFER_MS_1000=1000,
                 GROUP_CHAT_MIN_MEMBERS_2=2,
                 REL_TYPE_REPLACE="m.replace",
+                M_RTC_DECLINE="m.rtc.decline",
+                MSC4310_RTC_DECLINE="org.matrix.msc4310.rtc.decline",
             ),
             f"{PACKAGE_NAME}.plugin_config": _make_module(
                 f"{PACKAGE_NAME}.plugin_config",
@@ -3375,6 +3384,8 @@ class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
                 TIMESTAMP_BUFFER_MS_1000=1000,
                 GROUP_CHAT_MIN_MEMBERS_2=2,
                 REL_TYPE_REPLACE="m.replace",
+                M_RTC_DECLINE="m.rtc.decline",
+                MSC4310_RTC_DECLINE="org.matrix.msc4310.rtc.decline",
             ),
             f"{PACKAGE_NAME}.plugin_config": _make_module(
                 f"{PACKAGE_NAME}.plugin_config",
@@ -3435,10 +3446,8 @@ class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
             captured["event"],
             captured["event"].event_type,
         )
-        self.assertEqual(
-            chain.chain[0].text,
-            "[消息已撤回：$target:example.org] duplicate",
-        )
+        self.assertEqual(chain.chain[0].id, "$target:example.org")
+        self.assertEqual(chain.chain[1].text, "[消息已撤回] duplicate")
 
     async def test_receiver_redaction_message_str_uses_rendered_text(self):
         _install_astrbot_stubs()
@@ -3483,8 +3492,9 @@ class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
 
             message = await receiver.convert_message(room, event)
 
-        self.assertEqual(message.message_str, "[消息已撤回：$target:example.org]")
-        self.assertEqual(message.message[0].text, "[消息已撤回：$target:example.org]")
+        self.assertEqual(message.message_str, "[消息已撤回]")
+        self.assertEqual(message.message[0].id, "$target:example.org")
+        self.assertEqual(message.message[1].text, "[消息已撤回]")
 
 
 class MatrixVoiceCompatTests(unittest.IsolatedAsyncioTestCase):
