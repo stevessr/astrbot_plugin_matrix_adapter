@@ -1,6 +1,8 @@
 # Changelog
 
-## unrelesed
+## Unreleased
+
+## 0.3.7 - 2026-07-19
 - 撤回事件不再把目标 event ID 暴露在 `[消息已撤回：...]` 文本中，现在会转换为 AstrBot `Reply` 引用组件指向被撤回的消息。
 - 新增 LLM 工具 `matrix_react_to_event` 与公共接口 `MatrixUtils.send_reaction()`，支持 LLM 或其他插件主动为当前/指定 Matrix 事件发送 Reaction。
 - 将按规则自动 React 的预回应逻辑拆分到独立插件 `astrbot_plugin_matrix_rule_react`，Matrix 适配器不再承载该配置和触发逻辑。

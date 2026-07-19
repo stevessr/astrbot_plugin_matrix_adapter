@@ -8,7 +8,12 @@ import io
 import secrets
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from .oauth2_core import _get_query_param, _get_request_query_params, _has_query_param, _log
+from .oauth2_core import (
+    _get_query_param,
+    _get_request_query_params,
+    _has_query_param,
+    _log,
+)
 
 
 def _build_terminal_qr(data: str) -> str | None:
@@ -64,9 +69,7 @@ class SSOCallbackServer:
 
             if _has_query_param(query_params, "error"):
                 error = _get_query_param(query_params, "error")
-                error_description = _get_query_param(
-                    query_params, "error_description"
-                )
+                error_description = _get_query_param(query_params, "error_description")
                 _log("error", f"SSO error: {error} - {error_description}")
                 if self.callback_future and not self.callback_future.done():
                     self.callback_future.set_exception(
@@ -74,9 +77,9 @@ class SSOCallbackServer:
                     )
                 return f"Authentication failed: {error}\n{error_description}", 400
 
-            login_token = _get_query_param(query_params, "loginToken") or _get_query_param(
-                query_params, "login_token"
-            )
+            login_token = _get_query_param(
+                query_params, "loginToken"
+            ) or _get_query_param(query_params, "login_token")
             if not login_token:
                 _log("error", "No loginToken in SSO callback")
                 if self.callback_future and not self.callback_future.done():

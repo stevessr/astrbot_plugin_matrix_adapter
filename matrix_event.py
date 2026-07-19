@@ -4,9 +4,10 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageChain
 from astrbot.api.platform import AstrBotMessage, PlatformMetadata
 
+from .constants import MSC4357_LIVE_MESSAGE_MARKER
+
 # 导入 Sticker 组件
 from .matrix_event_send import send_with_client_impl
-from .constants import MSC4357_LIVE_MESSAGE_MARKER
 from .streaming_crypto import (
     edit_message_encrypted,
     edit_message_plain,
@@ -121,9 +122,9 @@ class MatrixPlatformEvent(AstrMessageEvent):
             tracker_metadata = {
                 "proposal": "msc4357-live-messages",
                 "live_message": True,
-                "phase": "final" if final else (
-                    "initial" if current_event_id is None else "edit"
-                ),
+                "phase": "final"
+                if final
+                else ("initial" if current_event_id is None else "edit"),
             }
 
             try:
