@@ -5206,8 +5206,18 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
                 proactive_key_exchange=True,
                 key_share_check_interval=0,
             )
+            lazy_manager = manager_module.E2EEManager(
+                client=types.SimpleNamespace(),
+                user_id="@alice:example.org",
+                device_id="DEVLAZY",
+                store_path=store_path,
+                homeserver="https://example.org",
+                proactive_key_exchange=False,
+                key_share_check_interval=0,
+            )
 
             self.assertEqual(manager.key_share_check_interval, 30)
+            self.assertEqual(lazy_manager.key_share_check_interval, 0)
 
             checks = []
 
@@ -5223,6 +5233,42 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
             await task
 
         self.assertEqual(checks, ["checked"])
+
+    async def test_lazy_mode_shares_existing_key_on_device_list_change(self):
+        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+
+        class DummyOlm:
+            def get_megolm_outbound_room_ids(self):
+                return ["!room:example.org"]
+
+            def get_megolm_outbound_session_info(self, room_id):
+                return ("session-1", "session-key")
+
+        class DummyManager(sessions_module.E2EEManagerSessionsMixin):
+            def __init__(self):
+                self._olm = DummyOlm()
+                self._initialized = True
+                self.user_id = "@alice:example.org"
+                self.proactive_key_exchange = False
+                self.key_share_check_interval = 0
+                self.share_calls = []
+
+            async def _get_room_members(self, room_id, force_refresh=False):
+                return ["@alice:example.org", "@bob:example.org"]
+
+            async def ensure_room_keys_sent(self, **kwargs):
+                self.share_calls.append(kwargs)
+                return 1
+
+        manager = DummyManager()
+        await manager.on_device_list_changed(["@bob:example.org"])
+
+        self.assertEqual(len(manager.share_calls), 1)
+        self.assertEqual(
+            manager.share_calls[0]["target_users"],
+            ["@bob:example.org"],
+        )
+        self.assertEqual(manager.share_calls[0]["reason"], "device_list_changed")
 
     async def test_verified_device_request_creates_olm_session_and_forwards_key(self):
         requests_module = load_module("e2ee.e2ee_manager_requests")

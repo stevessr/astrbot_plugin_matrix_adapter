@@ -70,7 +70,10 @@ class MatrixEventProcessorStreams:
                 try:
                     await self.e2ee_manager.on_device_list_changed(changed)
                 except Exception as e:
-                    logger.warning(f"处理设备列表变更时主动密钥分发失败：{e}")
+                    logger.warning(
+                        "Event-driven room-key sharing after a device-list change "
+                        f"failed: {e}"
+                    )
         if isinstance(left, list):
             self.device_lists["left"].update(left)
         logger.debug(f"设备列表更新：changed={len(changed)} left={len(left)}")

@@ -145,7 +145,7 @@
   "matrix_e2ee_key_share_check_interval": {
     "description": "密钥分发检查间隔",
     "type": "int",
-    "hint": "定期主动检查并分发房间密钥的间隔（秒）。默认 0；主动密钥交换关闭时表示禁用，开启时自动使用 30 秒",
+    "hint": "定期主动检查并分发房间密钥的间隔（秒）。默认 0；主动交换关闭时使用 lazyload 模式，在加密发送或设备列表出现新设备时按需交换；主动交换开启时自动使用 30 秒",
     "condition": {"matrix_enable_e2ee": true}
   }
 }
