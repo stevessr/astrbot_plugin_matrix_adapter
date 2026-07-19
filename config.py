@@ -209,7 +209,8 @@ class MatrixConfig:
             minimum=1,
             maximum=100,
         )
-        # 定期主动检查并分发房间密钥的间隔（秒），默认 0（禁用）
+        # Periodic room-key distribution interval. With proactive exchange enabled,
+        # zero selects the built-in 30-second interval instead of disabling checks.
         self.e2ee_key_share_check_interval = self._parse_int(
             self.config.get("matrix_e2ee_key_share_check_interval"),
             0,

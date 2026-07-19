@@ -49,7 +49,9 @@ M_MARKED_UNREAD = "m.marked_unread"
 # MSC4140 Delayed Events (cancellable future events)
 MSC4140_DELAY_QUERY = "org.matrix.msc4140.delay"
 MSC4140_PARENT_DELAY_ID = "org.matrix.msc4140.parent_delay_id"
-MSC4140_DELAYED_EVENTS_PATH = "/_matrix/client/unstable/org.matrix.msc4140/delayed_events"
+MSC4140_DELAYED_EVENTS_PATH = (
+    "/_matrix/client/unstable/org.matrix.msc4140/delayed_events"
+)
 
 # MSC4144 Per-Message Profiles
 MSC4144_PROFILE_KEY = "com.beeper.per_message_profile"
@@ -99,6 +101,7 @@ PRESENCE_HINT_FORBID = "forbid"
 M_ROOM_ENCRYPTED = "m.room.encrypted"
 M_ROOM_KEY = "m.room_key"
 M_ROOM_KEY_REQUEST = "m.room_key_request"
+M_ROOM_KEY_WITHHELD = "m.room_key.withheld"
 M_FORWARDED_ROOM_KEY = "m.forwarded_room_key"
 M_ROOM_MEMBER = "m.room.member"
 MEMBERSHIP_JOIN = "join"

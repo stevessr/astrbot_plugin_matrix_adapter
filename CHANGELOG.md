@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 修复同账号其他设备请求房间密钥时，因双方尚无 Olm 会话而不回复的问题；现在会按需声明一次性密钥、建立 Olm 会话并加密发送 `m.forwarded_room_key`，拒绝或缺少密钥时返回 `m.room_key.withheld`。
+- 缺失房间密钥的请求现在会复用 request ID、5 秒节流重试，并在成功导入密钥后发送取消请求；主动密钥交换会在启动后立即检查，配置间隔为 `0` 时采用 30 秒周期。
+
 ## 0.3.7 - 2026-07-19
 - 撤回事件不再把目标 event ID 暴露在 `[消息已撤回：...]` 文本中，现在会转换为 AstrBot `Reply` 引用组件指向被撤回的消息。
 - 新增 LLM 工具 `matrix_react_to_event` 与公共接口 `MatrixUtils.send_reaction()`，支持 LLM 或其他插件主动为当前/指定 Matrix 事件发送 Reaction。

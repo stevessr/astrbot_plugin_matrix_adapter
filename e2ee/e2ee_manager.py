@@ -81,7 +81,9 @@ class E2EEManager(
             proactive_key_exchange: 是否启用主动密钥交换
             key_maintenance_interval: 一次性密钥自动补充的最小间隔（秒）
             otk_threshold_ratio: 触发一次性密钥补充的服务器密钥数量比例（百分比）
-            key_share_check_interval: 定期主动检查并分发房间密钥的间隔（秒），0 表示禁用
+            key_share_check_interval: Periodic room-key distribution interval in
+                seconds. Zero disables it unless proactive key exchange is enabled,
+                in which case a 30-second interval is used.
         """
         self.client = client
         self.user_id = user_id
@@ -109,7 +111,9 @@ class E2EEManager(
         self.proactive_key_exchange = proactive_key_exchange
         self.key_maintenance_interval = key_maintenance_interval
         self.otk_threshold_ratio = max(1, min(100, otk_threshold_ratio))
-        self.key_share_check_interval = key_share_check_interval
+        self.key_share_check_interval = max(0, key_share_check_interval)
+        if self.proactive_key_exchange and self.key_share_check_interval == 0:
+            self.key_share_check_interval = 30
         self.storage_backend_config = get_plugin_config().storage_backend_config
         self.data_storage_backend = self.storage_backend_config.backend
         self.pgsql_dsn = self.storage_backend_config.pgsql_dsn
@@ -132,6 +136,11 @@ class E2EEManager(
         # 定期密钥分发检查的任务和锁
         self._key_share_check_task: asyncio.Task | None = None
         self._key_share_check_lock = asyncio.Lock()
+        # Missing-session requests reuse their Matrix request ID and are throttled.
+        self._pending_room_key_requests: dict[tuple[str, str], dict] = {}
+        self._room_key_request_lock = asyncio.Lock()
+        self._room_key_request_retry_interval_sec = 5.0
+        self._room_key_request_expiry_sec = 300.0
 
     # 使用公共工具函数代替内联实现
     _mask_device_id = staticmethod(mask_device_id)
@@ -151,14 +160,17 @@ class E2EEManager(
         async def _check_loop():
             while self._initialized:
                 try:
-                    await asyncio.sleep(self.key_share_check_interval)
-                    if not self._initialized:
-                        break
                     await self._proactive_check_key_sharing()
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.warning(f"定期密钥分发检查失败：{e}")
+                    logger.warning(f"Periodic room-key distribution check failed: {e}")
+                if not self._initialized:
+                    break
+                try:
+                    await asyncio.sleep(self.key_share_check_interval)
+                except asyncio.CancelledError:
+                    break
 
         self._key_share_check_task = asyncio.create_task(
             _check_loop(),
@@ -202,6 +214,7 @@ class E2EEManager(
         self._verification = None
         self._key_backup = None
         self._cross_signing = None
+        self._pending_room_key_requests.clear()
         if store is not None and hasattr(store, "close"):
             try:
                 await asyncio.to_thread(store.close)
@@ -232,44 +245,16 @@ class E2EEManager(
                         continue
 
                     session_id, session_key = session_info
-
-                    # 检查缓存中已分享的设备数量
-                    shared_devices = self._room_key_share_cache.get(session_id, set())
-
-                    # 查询目标成员的设备密钥
-                    device_keys_query = {user_id: [] for user_id in members}
-                    response = await self.client.query_keys(device_keys_query)
-                    device_keys = response.get("device_keys", {})
-
-                    # 统计需要分发密钥的设备
-                    devices_to_send = []
-                    for user_id, user_devices in device_keys.items():
-                        for device_id, device_info in user_devices.items():
-                            keys = device_info.get("keys", {})
-                            curve_key = keys.get(f"ed25519:{device_id}") or keys.get(
-                                f"curve25519:{device_id}"
-                            )
-                            if not curve_key:
-                                continue
-
-                            cache_key = self._device_cache_key(
-                                user_id, device_id, curve_key
-                            )
-                            if cache_key not in shared_devices:
-                                devices_to_send.append(
-                                    (user_id, device_id, curve_key, device_info)
-                                )
-
-                    if devices_to_send:
-                        await self.ensure_room_keys_sent(
-                            room_id=room_id,
-                            members=members,
-                            session_id=session_id,
-                            session_key=session_key,
-                            reason="proactive_check",
-                        )
+                    sent_count = await self.ensure_room_keys_sent(
+                        room_id=room_id,
+                        members=members,
+                        session_id=session_id,
+                        session_key=session_key,
+                        reason="proactive_check",
+                    )
+                    if sent_count:
                         affected_rooms += 1
-                        affected_devices += len(devices_to_send)
+                        affected_devices += sent_count
 
                 if affected_rooms > 0:
                     logger.info(

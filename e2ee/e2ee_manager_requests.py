@@ -1,9 +1,13 @@
+import secrets
+import time
+
 from astrbot.api import logger
 
 from ..constants import (
     M_FORWARDED_ROOM_KEY,
     M_ROOM_ENCRYPTED,
     M_ROOM_KEY_REQUEST,
+    M_ROOM_KEY_WITHHELD,
     MEGOLM_ALGO,
     PREFIX_CURVE25519,
     PREFIX_ED25519,
@@ -209,7 +213,7 @@ class E2EEManagerRequestsMixin:
         session_id: str,
         sender_key: str | None,
         sender_user_id: str | None,
-    ):
+    ) -> bool:
         """
         发送 m.room_key_request 请求密钥
 
@@ -218,48 +222,165 @@ class E2EEManagerRequestsMixin:
             session_id: 会话 ID
             sender_key: 发送者的 curve25519 密钥
             sender_user_id: 发送者用户 ID（可能为空）
+
+        Returns:
+            Whether a request was sent. Throttled duplicate requests return False.
         """
-        import secrets
+        if not room_id or not session_id:
+            logger.warning("Skipping room-key request without room_id or session_id")
+            return False
 
-        try:
-            request_id = secrets.token_hex(16)
+        request_key = (room_id, session_id)
+        now = time.monotonic()
+        recipients = {self.user_id}
+        if sender_user_id and sender_user_id != self.user_id:
+            recipients.add(sender_user_id)
 
-            # 构造 m.room_key_request 内容
-            content = {
-                "action": "request",
-                "body": {
-                    "algorithm": MEGOLM_ALGO,
-                    "room_id": room_id,
-                    "sender_key": sender_key or "",
-                    "session_id": session_id,
-                },
+        async with self._room_key_request_lock:
+            expiry = self._room_key_request_expiry_sec
+            for pending_key, pending in list(self._pending_room_key_requests.items()):
+                if now - float(pending.get("created_at", now)) >= expiry:
+                    self._pending_room_key_requests.pop(pending_key, None)
+
+            pending = self._pending_room_key_requests.get(request_key)
+            if pending:
+                pending_recipients = pending.get("recipients")
+                if isinstance(pending_recipients, set):
+                    recipients.update(pending_recipients)
+                if (
+                    now - float(pending.get("last_sent_at", 0.0))
+                    < self._room_key_request_retry_interval_sec
+                ):
+                    return False
+                request_id = str(pending["request_id"])
+                created_at = float(pending.get("created_at", now))
+            else:
+                request_id = secrets.token_hex(16)
+                created_at = now
+
+            self._pending_room_key_requests[request_key] = {
                 "request_id": request_id,
-                "requesting_device_id": self.device_id,
+                "recipients": recipients,
+                "created_at": created_at,
+                "last_sent_at": now,
             }
 
-            # 发送给所有自己的设备
-            txn_id = secrets.token_hex(16)
+        content = {
+            "action": "request",
+            "body": {
+                "algorithm": MEGOLM_ALGO,
+                "room_id": room_id,
+                "sender_key": sender_key or "",
+                "session_id": session_id,
+            },
+            "request_id": request_id,
+            "requesting_device_id": self.device_id,
+        }
+        messages = {user_id: {"*": content} for user_id in sorted(recipients)}
+
+        try:
             await self.client.send_to_device(
                 M_ROOM_KEY_REQUEST,
-                {self.user_id: {"*": content}},  # * 表示所有设备
-                txn_id,
+                messages,
+                secrets.token_hex(16),
             )
-
-            # 也发送给消息发送者的设备
-            if sender_user_id and sender_user_id != self.user_id:
-                txn_id2 = secrets.token_hex(16)
-                await self.client.send_to_device(
-                    M_ROOM_KEY_REQUEST,
-                    {sender_user_id: {"*": content}},
-                    txn_id2,
-                )
-
             logger.info(
-                f"已发送密钥请求：room={(room_id or '')[:16]}... session={(session_id or '')[:8]}..."
+                f"Sent room-key request: room={room_id[:16]}... "
+                f"session={session_id[:8]}... recipients={len(recipients)}"
             )
-
+            return True
         except Exception as e:
-            logger.warning(f"发送密钥请求失败：{e}")
+            async with self._room_key_request_lock:
+                current = self._pending_room_key_requests.get(request_key)
+                if current and current.get("request_id") == request_id:
+                    current["last_sent_at"] = 0.0
+            logger.warning(f"Failed to send room-key request: {e}")
+            return False
+
+    async def _cancel_room_key_request(self, room_id: str, session_id: str) -> bool:
+        """Cancel a pending room-key request after the session is received.
+
+        Args:
+            room_id: Room containing the Megolm session.
+            session_id: Megolm session identifier.
+
+        Returns:
+            Whether a cancellation was sent successfully.
+        """
+        request_key = (room_id, session_id)
+        async with self._room_key_request_lock:
+            pending = self._pending_room_key_requests.get(request_key)
+        if not pending:
+            return False
+
+        recipients = pending.get("recipients")
+        if not isinstance(recipients, set) or not recipients:
+            return False
+        content = {
+            "action": "request_cancellation",
+            "request_id": str(pending["request_id"]),
+            "requesting_device_id": self.device_id,
+        }
+        try:
+            await self.client.send_to_device(
+                M_ROOM_KEY_REQUEST,
+                {user_id: {"*": content} for user_id in sorted(recipients)},
+                secrets.token_hex(16),
+            )
+            async with self._room_key_request_lock:
+                current = self._pending_room_key_requests.get(request_key)
+                if current and current.get("request_id") == pending.get("request_id"):
+                    self._pending_room_key_requests.pop(request_key, None)
+            logger.debug(f"Cancelled room-key request: session={session_id[:8]}...")
+            return True
+        except Exception as e:
+            logger.debug(f"Failed to cancel room-key request: {e}")
+            return False
+
+    async def _send_room_key_withheld(
+        self,
+        sender: str,
+        requesting_device_id: str,
+        room_id: str,
+        session_id: str,
+        sender_key: str,
+        code: str,
+        reason: str,
+    ) -> bool:
+        """Tell a requesting device why a Megolm session cannot be shared.
+
+        Args:
+            sender: Requesting user ID.
+            requesting_device_id: Requesting device ID.
+            room_id: Room containing the requested session.
+            session_id: Requested Megolm session ID.
+            sender_key: Original session sender Curve25519 key, when known.
+            code: Matrix room-key withholding code.
+            reason: Human-readable withholding reason.
+
+        Returns:
+            Whether the withholding event was sent successfully.
+        """
+        if not sender or not requesting_device_id or not room_id or not session_id:
+            return False
+        content = {
+            "algorithm": MEGOLM_ALGO,
+            "room_id": room_id,
+            "session_id": session_id,
+            "sender_key": sender_key or "",
+            "code": code,
+            "reason": reason,
+        }
+        try:
+            await self.client.send_to_device(
+                M_ROOM_KEY_WITHHELD,
+                {sender: {requesting_device_id: content}},
+                secrets.token_hex(16),
+            )
+            return True
+        except Exception as e:
+            logger.debug(f"Failed to send room-key withheld event: {e}")
+            return False
 
     async def respond_to_key_request(
         self,
@@ -268,7 +389,7 @@ class E2EEManagerRequestsMixin:
         room_id: str,
         session_id: str,
         sender_key: str,
-    ):
+    ) -> bool:
         """
         响应来自其他设备的密钥请求
 
@@ -280,21 +401,33 @@ class E2EEManagerRequestsMixin:
             room_id: 房间 ID
             session_id: 会话 ID
             sender_key: 发送者密钥
+
+        Returns:
+            Whether the requested session was forwarded successfully.
         """
         if not self._olm or not self._initialized:
             logger.warning("未初始化，无法响应密钥请求")
-            return
+            return False
 
         try:
             # 只响应同一用户的请求（安全限制）
             if sender != self.user_id:
                 logger.debug(f"忽略来自其他用户的密钥请求：{sender}")
-                return
+                await self._send_room_key_withheld(
+                    sender,
+                    requesting_device_id,
+                    room_id,
+                    session_id,
+                    sender_key,
+                    "m.unauthorised",
+                    "Room keys are only shared with this account's devices",
+                )
+                return False
 
             # 不响应自己设备的请求
             if requesting_device_id == self.device_id:
                 logger.debug("忽略来自自己的密钥请求")
-                return
+                return False
 
             # 获取请求者的设备密钥信息
             resp = await self.client.query_keys({sender: []})
@@ -307,11 +440,24 @@ class E2EEManagerRequestsMixin:
                 f"{PREFIX_ED25519}{requesting_device_id}"
             )
 
-            if not curve_key:
+            if not curve_key or not ed25519_key:
                 logger.warning(
-                    f"无法获取设备 {sender}/{requesting_device_id} 的 Curve25519 密钥"
+                    f"Missing identity keys for requesting device "
+                    f"{sender}/{requesting_device_id}"
                 )
-                return
+                await self._send_room_key_withheld(
+                    sender,
+                    requesting_device_id,
+                    room_id,
+                    session_id,
+                    sender_key,
+                    "m.unavailable",
+                    "The requesting device keys are unavailable",
+                )
+                return False
+
+            if self._store:
+                self._store.save_device_keys(sender, requesting_device_id, device_info)
 
             # 验证请求设备是否已被信任
             # 检查方式：1. 通过 SAS 验证存储 2. 通过交叉签名验证
@@ -351,13 +497,31 @@ class E2EEManagerRequestsMixin:
                     f"拒绝向未验证的设备 {requesting_device_id} 转发密钥 "
                     f"(session={(session_id or '')[:8]}...)"
                 )
-                return
+                await self._send_room_key_withheld(
+                    sender,
+                    requesting_device_id,
+                    room_id,
+                    session_id,
+                    sender_key,
+                    "m.unverified",
+                    "The requesting device is not verified",
+                )
+                return False
 
             # 获取请求的 Megolm 会话
             session = self._olm.get_megolm_inbound_session(session_id)
             if not session:
                 logger.debug(f"没有请求的会话：session={(session_id or '')[:8]}...")
-                return
+                await self._send_room_key_withheld(
+                    sender,
+                    requesting_device_id,
+                    room_id,
+                    session_id,
+                    sender_key,
+                    "m.unavailable",
+                    "The requested room key is not available on this device",
+                )
+                return False
 
             # 导出会话密钥
             try:
@@ -369,7 +533,16 @@ class E2EEManagerRequestsMixin:
                 )
             except Exception as e:
                 logger.warning(f"导出会话密钥失败：{e}")
-                return
+                await self._send_room_key_withheld(
+                    sender,
+                    requesting_device_id,
+                    room_id,
+                    session_id,
+                    sender_key,
+                    "m.unavailable",
+                    "The requested room key could not be exported",
+                )
+                return False
 
             # 构造 m.forwarded_room_key 内容
             # 根据 Matrix 规范，type 不应包含在内容中（它是事件类型）
@@ -383,15 +556,26 @@ class E2EEManagerRequestsMixin:
                 "forwarding_curve25519_key_chain": [],
             }
 
-            # 使用 Olm 加密并包装，指定事件类型为 m.forwarded_room_key
-            encrypted_content = self._olm.encrypt_olm(
-                curve_key,
-                forwarded_room_key,
-                recipient_user_id=sender,
+            # Establish an Olm session on demand and bind the wrapper to the
+            # requesting device's Ed25519 key before forwarding the session.
+            encrypted_content = await self._encrypt_to_device(
+                target_user=sender,
+                target_device=requesting_device_id,
                 event_type=M_FORWARDED_ROOM_KEY,
+                content=forwarded_room_key,
             )
 
-            import secrets
+            if not encrypted_content:
+                await self._send_room_key_withheld(
+                    sender,
+                    requesting_device_id,
+                    room_id,
+                    session_id,
+                    sender_key,
+                    "m.unavailable",
+                    "No Olm session could be established with the requesting device",
+                )
+                return False
 
             txn_id = secrets.token_hex(16)
             await self.client.send_to_device(
@@ -403,6 +587,17 @@ class E2EEManagerRequestsMixin:
             logger.info(
                 f"已加密转发密钥：session={(session_id or '')[:8]}... -> device={requesting_device_id}"
             )
+            return True
 
         except Exception as e:
             logger.warning(f"响应密钥请求失败：{e}")
+            await self._send_room_key_withheld(
+                sender,
+                requesting_device_id,
+                room_id,
+                session_id,
+                sender_key,
+                "m.unavailable",
+                "The room-key request could not be processed",
+            )
+            return False

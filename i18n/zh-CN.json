@@ -85,7 +85,7 @@
   },
   "matrix_e2ee_proactive_key_exchange": {
     "description": "主动密钥交换",
-    "hint": "启用后会更积极地补充一次性密钥和分发房间密钥（提升 E2EE 可用性，但略微增加网络请求）"
+    "hint": "启用后会在启动时立即检查房间密钥分发，并持续定期补发；当检查间隔为 0 时自动使用 30 秒（提升 E2EE 可用性，但略微增加网络请求）"
   },
   "matrix_e2ee_key_maintenance_interval": {
     "description": "密钥维护间隔",
@@ -97,6 +97,6 @@
   },
   "matrix_e2ee_key_share_check_interval": {
     "description": "密钥分发检查间隔",
-    "hint": "定期主动检查并分发房间密钥的间隔（秒），默认 0（禁用）。启用后会主动向所有成员设备分发密钥"
+    "hint": "定期主动检查并分发房间密钥的间隔（秒）。默认 0；主动密钥交换关闭时表示禁用，开启时自动使用 30 秒"
   }
 }

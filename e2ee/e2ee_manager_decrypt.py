@@ -164,10 +164,20 @@ class E2EEManagerDecryptMixin:
             logger.warning("m.room_key 事件缺少必要字段")
             return
 
-        self._olm.add_megolm_inbound_session(
+        imported = self._olm.add_megolm_inbound_session(
             room_id, session_id, session_key, sender_key
         )
+        if imported is False:
+            logger.warning(
+                f"Failed to import the Megolm key for room {room_id}; "
+                "keeping the room-key request pending"
+            )
+            return
         logger.info(f"收到房间 {room_id} 的 Megolm 密钥")
+
+        # Matrix requires the requester to cancel the outstanding request once
+        # any device supplies the session. This also prevents repeated replies.
+        await self._cancel_room_key_request(room_id, session_id)
 
         # 自动备份新接收到的密钥
         if self._key_backup and self.enable_key_backup:

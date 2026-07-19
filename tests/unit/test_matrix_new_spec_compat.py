@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import importlib
 import sys
@@ -5174,6 +5175,405 @@ class MatrixRoomKeyShareCompatTests(unittest.IsolatedAsyncioTestCase):
                 ("@alice:example.org", "DEVOTHER"),
                 ("@bob:example.org", "DEVBOB"),
             ],
+        )
+
+
+class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_proactive_exchange_uses_default_interval_and_runs_immediately(self):
+        manager_module = load_module("e2ee.e2ee_manager")
+        backend_config = types.SimpleNamespace(
+            backend="json",
+            pgsql_dsn="",
+            pgsql_schema="public",
+            pgsql_table_prefix="matrix_store",
+        )
+        plugin_config = types.SimpleNamespace(storage_backend_config=backend_config)
+
+        with (
+            tempfile.TemporaryDirectory() as store_path,
+            mock.patch.object(
+                manager_module,
+                "get_plugin_config",
+                return_value=plugin_config,
+            ),
+        ):
+            manager = manager_module.E2EEManager(
+                client=types.SimpleNamespace(),
+                user_id="@alice:example.org",
+                device_id="DEVSELF",
+                store_path=store_path,
+                homeserver="https://example.org",
+                proactive_key_exchange=True,
+                key_share_check_interval=0,
+            )
+
+            self.assertEqual(manager.key_share_check_interval, 30)
+
+            checks = []
+
+            async def check_key_sharing():
+                checks.append("checked")
+                manager._initialized = False
+
+            manager._initialized = True
+            manager._proactive_check_key_sharing = check_key_sharing
+            await manager._start_key_share_check_task()
+            task = manager._key_share_check_task
+            self.assertIsNotNone(task)
+            await task
+
+        self.assertEqual(checks, ["checked"])
+
+    async def test_verified_device_request_creates_olm_session_and_forwards_key(self):
+        requests_module = load_module("e2ee.e2ee_manager_requests")
+        secrets_module = load_module("e2ee.e2ee_manager_secrets")
+
+        class DummyClient:
+            def __init__(self):
+                self.claim_calls = []
+                self.send_calls = []
+
+            async def query_keys(self, query):
+                self.query = query
+                return {
+                    "device_keys": {
+                        "@alice:example.org": {
+                            "DEVOTHER": {
+                                "keys": {
+                                    "curve25519:DEVOTHER": "curve-other",
+                                    "ed25519:DEVOTHER": "ed-other",
+                                },
+                                "signatures": {
+                                    "@alice:example.org": {
+                                        "ed25519:self-signing": "signature"
+                                    }
+                                },
+                            }
+                        }
+                    }
+                }
+
+            async def claim_keys(self, claim):
+                self.claim_calls.append(claim)
+                return {
+                    "one_time_keys": {
+                        "@alice:example.org": {
+                            "DEVOTHER": {"signed_curve25519:AAAA": {"key": "otk-other"}}
+                        }
+                    }
+                }
+
+            async def send_to_device(self, event_type, messages, txn_id=None):
+                self.send_calls.append((event_type, messages, txn_id))
+                return {}
+
+        class DummyStore:
+            def __init__(self):
+                self.devices = {}
+
+            def save_device_keys(self, user_id, device_id, device_info):
+                self.devices[(user_id, device_id)] = device_info
+
+            def get_device_keys(self, user_id, device_id):
+                device_info = self.devices.get((user_id, device_id), {})
+                keys = device_info.get("keys", {})
+                return {
+                    "curve25519": keys.get(f"curve25519:{device_id}", ""),
+                    "ed25519": keys.get(f"ed25519:{device_id}", ""),
+                }
+
+        class DummyExportedKey:
+            def to_base64(self):
+                return "exported-session-key"
+
+        class DummyInboundSession:
+            def first_known_index(self):
+                return 7
+
+            def export_at(self, index):
+                self.exported_at = index
+                return DummyExportedKey()
+
+        class DummyOlm:
+            curve25519_key = "curve-self"
+            ed25519_key = "ed-self"
+
+            def __init__(self):
+                self.sessions = {}
+                self.created = []
+                self.encrypted = []
+                self.inbound = DummyInboundSession()
+
+            def get_megolm_inbound_session(self, session_id):
+                self.requested_session_id = session_id
+                return self.inbound
+
+            def get_olm_session(self, curve_key):
+                return self.sessions.get(curve_key)
+
+            def create_outbound_session(self, curve_key, one_time_key):
+                session = types.SimpleNamespace(
+                    curve_key=curve_key, one_time_key=one_time_key
+                )
+                self.sessions[curve_key] = session
+                self.created.append((curve_key, one_time_key))
+                return session
+
+            def encrypt_olm(self, **kwargs):
+                self.encrypted.append(kwargs)
+                return {
+                    "algorithm": "m.olm.v1.curve25519-aes-sha2",
+                    "sender_key": "curve-self",
+                    "ciphertext": {
+                        kwargs["their_identity_key"]: {
+                            "type": 0,
+                            "body": "ciphertext",
+                        }
+                    },
+                }
+
+        class DummyManager(
+            requests_module.E2EEManagerRequestsMixin,
+            secrets_module.E2EEManagerSecretsMixin,
+        ):
+            _mask_device_id = staticmethod(lambda device_id: device_id)
+
+            def __init__(self):
+                self.client = DummyClient()
+                self._store = DummyStore()
+                self._olm = DummyOlm()
+                self._initialized = True
+                self._verification = None
+                self._cross_signing = types.SimpleNamespace(
+                    self_signing_key="self-signing"
+                )
+                self.trust_on_first_use = False
+                self.user_id = "@alice:example.org"
+                self.device_id = "DEVSELF"
+
+        manager = DummyManager()
+        shared = await manager.respond_to_key_request(
+            sender="@alice:example.org",
+            requesting_device_id="DEVOTHER",
+            room_id="!room:example.org",
+            session_id="session-1",
+            sender_key="curve-self",
+        )
+
+        self.assertTrue(shared)
+        self.assertEqual(
+            manager.client.claim_calls,
+            [{"@alice:example.org": {"DEVOTHER": "signed_curve25519"}}],
+        )
+        self.assertEqual(manager._olm.created, [("curve-other", "otk-other")])
+        encrypted = manager._olm.encrypted[0]
+        self.assertEqual(encrypted["recipient_user_id"], "@alice:example.org")
+        self.assertEqual(encrypted["recipient_ed25519_key"], "ed-other")
+        self.assertEqual(encrypted["event_type"], "m.forwarded_room_key")
+        self.assertEqual(encrypted["content"]["session_key"], "exported-session-key")
+        self.assertEqual(manager.client.send_calls[0][0], "m.room.encrypted")
+
+        manager._cross_signing = None
+        denied = await manager.respond_to_key_request(
+            sender="@alice:example.org",
+            requesting_device_id="DEVOTHER",
+            room_id="!room:example.org",
+            session_id="session-1",
+            sender_key="curve-self",
+        )
+        self.assertFalse(denied)
+        self.assertEqual(manager.client.send_calls[-1][0], "m.room_key.withheld")
+        withheld = manager.client.send_calls[-1][1]["@alice:example.org"]["DEVOTHER"]
+        self.assertEqual(withheld["code"], "m.unverified")
+
+    async def test_room_key_requests_are_deduplicated_reused_and_cancelled(self):
+        requests_module = load_module("e2ee.e2ee_manager_requests")
+        decrypt_module = load_module("e2ee.e2ee_manager_decrypt")
+
+        class DummyClient:
+            def __init__(self):
+                self.send_calls = []
+
+            async def send_to_device(self, event_type, messages, txn_id=None):
+                self.send_calls.append((event_type, messages, txn_id))
+                return {}
+
+        class DummyOlm:
+            def add_megolm_inbound_session(self, *args):
+                self.added = args
+                return True
+
+        class DummyManager(
+            decrypt_module.E2EEManagerDecryptMixin,
+            requests_module.E2EEManagerRequestsMixin,
+        ):
+            def __init__(self):
+                self.client = DummyClient()
+                self.user_id = "@alice:example.org"
+                self.device_id = "DEVSELF"
+                self._olm = DummyOlm()
+                self._initialized = True
+                self._pending_room_key_requests = {}
+                self._room_key_request_lock = asyncio.Lock()
+                self._room_key_request_retry_interval_sec = 5.0
+                self._room_key_request_expiry_sec = 300.0
+                self._key_backup = None
+                self.enable_key_backup = False
+
+        manager = DummyManager()
+        first = await manager._request_room_key(
+            "!room:example.org",
+            "session-1",
+            "curve-sender",
+            "@bob:example.org",
+        )
+        duplicate = await manager._request_room_key(
+            "!room:example.org",
+            "session-1",
+            "curve-sender",
+            "@bob:example.org",
+        )
+
+        self.assertTrue(first)
+        self.assertFalse(duplicate)
+        self.assertEqual(len(manager.client.send_calls), 1)
+        request_messages = manager.client.send_calls[0][1]
+        self.assertEqual(
+            set(request_messages),
+            {"@alice:example.org", "@bob:example.org"},
+        )
+        request_id = request_messages["@alice:example.org"]["*"]["request_id"]
+
+        pending = manager._pending_room_key_requests[("!room:example.org", "session-1")]
+        pending["last_sent_at"] -= 6
+        retried = await manager._request_room_key(
+            "!room:example.org",
+            "session-1",
+            "curve-sender",
+            "@bob:example.org",
+        )
+        self.assertTrue(retried)
+        retry_content = manager.client.send_calls[1][1]["@alice:example.org"]["*"]
+        self.assertEqual(retry_content["request_id"], request_id)
+
+        await manager.handle_room_key(
+            {
+                "algorithm": "m.megolm.v1.aes-sha2",
+                "room_id": "!room:example.org",
+                "session_id": "session-1",
+                "session_key": "session-key",
+            },
+            "curve-sender",
+        )
+        cancellation = manager.client.send_calls[2][1]["@alice:example.org"]["*"]
+        self.assertEqual(cancellation["action"], "request_cancellation")
+        self.assertEqual(cancellation["request_id"], request_id)
+        self.assertNotIn(
+            ("!room:example.org", "session-1"),
+            manager._pending_room_key_requests,
+        )
+
+    async def test_to_device_key_imports_then_requests_precede_other_events(self):
+        event_processor = load_module("processors.event_processor")
+        call_order = []
+
+        class DummyE2EEManager:
+            device_id = "DEVSELF"
+
+            async def respond_to_key_request(self, **kwargs):
+                call_order.append(("request", kwargs["session_id"]))
+                return True
+
+            async def handle_room_key(self, content, sender_key):
+                call_order.append(("import", content["session_id"]))
+
+            async def handle_verification_event(self, event_type, sender, content):
+                call_order.append(("verification", event_type))
+
+        processor = event_processor.MatrixEventProcessor.__new__(
+            event_processor.MatrixEventProcessor
+        )
+        processor.e2ee_manager = DummyE2EEManager()
+        await processor.process_to_device_events(
+            [
+                {
+                    "type": "m.key.verification.done",
+                    "sender": "@alice:example.org",
+                    "content": {},
+                },
+                {
+                    "type": "m.room_key",
+                    "sender": "@alice:example.org",
+                    "content": {
+                        "algorithm": "m.megolm.v1.aes-sha2",
+                        "room_id": "!room:example.org",
+                        "session_id": "session-import",
+                        "session_key": "session-key",
+                    },
+                },
+                {
+                    "type": "m.room_key_request",
+                    "sender": "@alice:example.org",
+                    "content": {
+                        "action": "request",
+                        "request_id": "request-1",
+                        "requesting_device_id": "DEVOTHER",
+                        "body": {
+                            "algorithm": "m.megolm.v1.aes-sha2",
+                            "room_id": "!room:example.org",
+                            "session_id": "session-request",
+                            "sender_key": "curve-self",
+                        },
+                    },
+                },
+            ]
+        )
+
+        self.assertEqual(
+            call_order,
+            [
+                ("import", "session-import"),
+                ("request", "session-request"),
+                ("verification", "m.key.verification.done"),
+            ],
+        )
+
+    async def test_failed_room_key_import_keeps_request_pending(self):
+        requests_module = load_module("e2ee.e2ee_manager_requests")
+        decrypt_module = load_module("e2ee.e2ee_manager_decrypt")
+
+        class DummyOlm:
+            def add_megolm_inbound_session(self, *args):
+                return False
+
+        class DummyManager(
+            decrypt_module.E2EEManagerDecryptMixin,
+            requests_module.E2EEManagerRequestsMixin,
+        ):
+            def __init__(self):
+                self._olm = DummyOlm()
+                self._initialized = True
+                self._pending_room_key_requests = {
+                    ("!room:example.org", "session-1"): {"request_id": "request-1"}
+                }
+                self._room_key_request_lock = asyncio.Lock()
+                self._key_backup = None
+                self.enable_key_backup = False
+
+        manager = DummyManager()
+        await manager.handle_room_key(
+            {
+                "algorithm": "m.megolm.v1.aes-sha2",
+                "room_id": "!room:example.org",
+                "session_id": "session-1",
+                "session_key": "invalid-session-key",
+            },
+            "curve-sender",
+        )
+
+        self.assertIn(
+            ("!room:example.org", "session-1"),
+            manager._pending_room_key_requests,
         )
 
 

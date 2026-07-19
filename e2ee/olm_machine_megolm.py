@@ -38,7 +38,7 @@ def _convert_session_key_v2_to_v1(session_key_b64: str) -> str:
 class OlmMachineMegolmMixin:
     def add_megolm_inbound_session(
         self, room_id: str, session_id: str, session_key: str, sender_key: str
-    ):
+    ) -> bool:
         """
         添加 Megolm 入站会话 (从 m.room_key 事件或备份恢复)
 
@@ -47,6 +47,9 @@ class OlmMachineMegolmMixin:
             session_id: 会话 ID
             session_key: 会话密钥 (base64 编码的字符串)
             sender_key: 发送者的 curve25519 密钥
+
+        Returns:
+            Whether the session was imported and queued for persistence.
         """
         try:
             if isinstance(session_key, str):
@@ -67,8 +70,10 @@ class OlmMachineMegolmMixin:
                 self.store.save_megolm_inbound(
                     session_id, session.pickle(self._pickle_key)
                 )
+            return True
         except Exception as e:
             logger.error(f"添加 Megolm 入站会话失败：{e}")
+            return False
 
     def decrypt_megolm(self, session_id: str, ciphertext: str) -> dict | None:
         """

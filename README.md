@@ -132,6 +132,10 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 | `matrix_e2ee_trust_on_first_use` | bool | `false` | 是否自动信任首次使用的设备 |
 | `matrix_e2ee_key_backup` | bool | `false` | 是否启用密钥备份 |
 | `matrix_e2ee_recovery_key` | string | - | 恢复密钥（留空则自动生成） |
+| `matrix_e2ee_proactive_key_exchange` | bool | `false` | 启动后立即检查并定期补发房间密钥；检查间隔为 `0` 时自动使用 30 秒 |
+| `matrix_e2ee_key_maintenance_interval` | int | `60` | 一次性密钥自动补充的最小间隔（秒） |
+| `matrix_e2ee_otk_threshold_ratio` | int | `33` | 触发一次性密钥补充的服务器密钥数量比例（百分比） |
+| `matrix_e2ee_key_share_check_interval` | int | `0` | 房间密钥分发检查间隔（秒）；主动交换关闭时 `0` 表示禁用，开启时表示 30 秒 |
 
 ## 配置示例
 
@@ -187,7 +191,9 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
   "matrix_password": "your_password",
   "matrix_enable_e2ee": true,
   "matrix_e2ee_auto_verify": "auto_accept",
-  "matrix_e2ee_trust_on_first_use": true
+  "matrix_e2ee_trust_on_first_use": true,
+  "matrix_e2ee_proactive_key_exchange": true,
+  "matrix_e2ee_key_share_check_interval": 0
 }
 ```
 

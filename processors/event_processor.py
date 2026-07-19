@@ -54,9 +54,13 @@ LIVE_MESSAGING_STATE_EVENT_TYPES = frozenset(
 
 
 def _is_room_state_event_type(event_type: str) -> bool:
-    return isinstance(event_type, str) and bool(event_type) and (
-        event_type.startswith(("m.room.", "m.space."))
-        or event_type in LIVE_MESSAGING_STATE_EVENT_TYPES
+    return (
+        isinstance(event_type, str)
+        and bool(event_type)
+        and (
+            event_type.startswith(("m.room.", "m.space."))
+            or event_type in LIVE_MESSAGING_STATE_EVENT_TYPES
+        )
     )
 
 
@@ -383,10 +387,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             return
 
         # Handle other room state updates
-        if (
-            _is_room_state_event_type(event_type)
-            and "state_key" in event_data
-        ):
+        if _is_room_state_event_type(event_type) and "state_key" in event_data:
             self._apply_room_state_event(room, event_data)
             await self._persist_room_state(room)
 
@@ -826,6 +827,28 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         if events:
             logger.debug(f"收到 {len(events)} 个 to_device 事件")
 
+        # Import available room keys before answering sibling-device requests,
+        # then handle those requests before unrelated verification traffic.
+        key_event_types = {
+            "m.room_key",
+            "m.forwarded_room_key",
+            "m.room.encrypted",
+        }
+        events = sorted(
+            events,
+            key=lambda event: (
+                0
+                if isinstance(event, dict) and event.get("type") in key_event_types
+                else (
+                    1
+                    if isinstance(event, dict)
+                    and event.get("type") == "m.room_key_request"
+                    and (event.get("content") or {}).get("action") == "request"
+                    else 2
+                )
+            ),
+        )
+
         for event in events:
             event_type = event.get("type")
             sender = event.get("sender")
@@ -978,6 +1001,20 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                             room_id = body.get("room_id", "")
                             session_id = body.get("session_id", "")
                             sender_key = body.get("sender_key", "")
+
+                            if (
+                                body.get("algorithm") != "m.megolm.v1.aes-sha2"
+                                or not requesting_device_id
+                                or not room_id
+                                or not session_id
+                            ):
+                                logger.warning(
+                                    "Ignoring malformed room-key request: "
+                                    f"device={requesting_device_id or '<empty>'} "
+                                    f"room={room_id or '<empty>'} "
+                                    f"session={session_id or '<empty>'}"
+                                )
+                                continue
 
                             logger.debug(
                                 f"收到密钥请求：来自设备 {requesting_device_id}，"

@@ -85,7 +85,7 @@
   },
   "matrix_e2ee_proactive_key_exchange": {
     "description": "Proactive Key Exchange",
-    "hint": "When enabled, one-time keys are replenished and room keys are distributed more aggressively (improves E2EE availability at the cost of slightly more network requests)"
+    "hint": "Checks room-key distribution immediately at startup and periodically thereafter. An interval of 0 automatically uses 30 seconds (improves E2EE availability at the cost of slightly more network requests)"
   },
   "matrix_e2ee_key_maintenance_interval": {
     "description": "Key Maintenance Interval",
@@ -97,6 +97,6 @@
   },
   "matrix_e2ee_key_share_check_interval": {
     "description": "Key Share Check Interval",
-    "hint": "Interval (seconds) for proactive room-key distribution checks, default: 0 (disabled). When enabled, room keys are proactively shared to all member devices"
+    "hint": "Interval (seconds) for proactive room-key distribution checks. The default 0 disables checks when proactive exchange is off and selects 30 seconds when it is on"
   }
 }

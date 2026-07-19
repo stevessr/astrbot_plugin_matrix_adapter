@@ -223,7 +223,7 @@ class E2EEManagerSessionsMixin:
         session_key: str | None = None,
         target_users: list[str] | None = None,
         reason: str = "sync",
-    ) -> None:
+    ) -> int:
         """
         确保房间密钥已发送给所有成员的设备
 
@@ -234,15 +234,18 @@ class E2EEManagerSessionsMixin:
             session_key: 可选，指定会话密钥
             target_users: 可选，只分发给指定用户（其余成员跳过）
             reason: 日志用途，标记分发触发原因
+
+        Returns:
+            Number of devices that received the room key successfully.
         """
         if not self._olm or not members:
-            return
+            return 0
 
         normalized_members = list(
             dict.fromkeys(user_id for user_id in members if user_id)
         )
         if not normalized_members:
-            return
+            return 0
 
         if target_users is not None:
             target_set = {
@@ -251,19 +254,19 @@ class E2EEManagerSessionsMixin:
                 if user_id and isinstance(user_id, str)
             }
             if not target_set:
-                return
+                return 0
             normalized_members = [
                 user_id for user_id in normalized_members if user_id in target_set
             ]
             if not normalized_members:
-                return
+                return 0
 
         # 如果没有提供会话信息，获取当前出站会话
         if not session_id or not session_key:
             session_info = self._olm.get_megolm_outbound_session_info(room_id)
             if not session_info:
                 logger.warning(f"房间 {room_id} 没有出站会话")
-                return
+                return 0
             session_id, session_key = session_info
 
         shared_devices = self._room_key_share_cache.setdefault(session_id, set())
@@ -286,7 +289,7 @@ class E2EEManagerSessionsMixin:
                     keys = device_info.get("keys", {})
                     curve_key = keys.get(f"{PREFIX_CURVE25519}{device_id}")
                     ed_key = keys.get(f"{PREFIX_ED25519}{device_id}")
-                    if not curve_key:
+                    if not curve_key or not ed_key:
                         continue
 
                     if self._store:
@@ -296,15 +299,13 @@ class E2EEManagerSessionsMixin:
                     if cache_key in shared_devices:
                         continue
 
-                    devices_to_send.append(
-                        (user_id, device_id, curve_key, ed_key or "unknown")
-                    )
+                    devices_to_send.append((user_id, device_id, curve_key, ed_key))
 
             if not devices_to_send:
                 logger.debug(
                     f"没有需要发送密钥的设备：room={room_id} reason={reason} members={len(normalized_members)}"
                 )
-                return
+                return 0
 
             # 声明一次性密钥（只为没有现有会话的设备）
             one_time_claim = {}
@@ -407,6 +408,8 @@ class E2EEManagerSessionsMixin:
                 f"已向 {sent_count}/{len(devices_to_send)} 个设备分发房间 {room_id} 的密钥 "
                 f"(reason={reason})"
             )
+            return sent_count
 
         except Exception as e:
             logger.error(f"密钥分发失败：{e}")
+            return 0

@@ -262,7 +262,8 @@ class E2EEManagerSecretsMixin:
             device_keys = self._store.get_device_keys(target_user, target_device)
             if not device_keys:
                 logger.warning(
-                    f"[E2EE-Secrets] 未找到设备密钥：{target_user}/{target_device}"
+                    f"[E2EE-ToDevice] Device keys not found: "
+                    f"{target_user}/{target_device}"
                 )
                 return None
 
@@ -270,7 +271,12 @@ class E2EEManagerSecretsMixin:
             ed25519_key = device_keys.get("ed25519", "")
             if not curve25519_key:
                 logger.warning(
-                    f"[E2EE-Secrets] 设备没有 Curve25519 密钥：{target_device}"
+                    f"[E2EE-ToDevice] Device has no Curve25519 key: {target_device}"
+                )
+                return None
+            if not ed25519_key:
+                logger.warning(
+                    f"[E2EE-ToDevice] Device has no Ed25519 key: {target_device}"
                 )
                 return None
 
@@ -281,8 +287,8 @@ class E2EEManagerSecretsMixin:
                 # 使用现有会话
                 session = existing_session
                 logger.debug(
-                    "[E2EE-Secrets] 复用现有 Olm 会话向 "
-                    f"{self._mask_device_id(target_device)} 发送秘密"
+                    "[E2EE-ToDevice] Reusing an Olm session to encrypt an event "
+                    f"for {self._mask_device_id(target_device)}"
                 )
             else:
                 # 需要创建新会话，获取一次性密钥
@@ -297,7 +303,8 @@ class E2EEManagerSecretsMixin:
 
                 if not device_otks:
                     logger.warning(
-                        f"[E2EE-Secrets] 设备 {target_device} 没有可用的一次性密钥"
+                        f"[E2EE-ToDevice] Device {target_device} has no available "
+                        "one-time key"
                     )
                     return None
 
@@ -305,7 +312,8 @@ class E2EEManagerSecretsMixin:
                 otk_id, otk_data = next(iter(device_otks.items()), (None, None))
                 if not otk_id:
                     logger.warning(
-                        f"[E2EE-Secrets] 设备 {target_device} 未返回可用的一次性密钥条目"
+                        f"[E2EE-ToDevice] Device {target_device} returned no usable "
+                        "one-time key entry"
                     )
                     return None
                 one_time_key = (
@@ -313,7 +321,8 @@ class E2EEManagerSecretsMixin:
                 )
                 if not one_time_key:
                     logger.warning(
-                        f"[E2EE-Secrets] 设备 {target_device} 的一次性密钥内容为空"
+                        f"[E2EE-ToDevice] Device {target_device} returned an empty "
+                        "one-time key"
                     )
                     return None
 
@@ -322,8 +331,8 @@ class E2EEManagerSecretsMixin:
                     curve25519_key, one_time_key
                 )
                 logger.debug(
-                    "[E2EE-Secrets] 为 "
-                    f"{self._mask_device_id(target_device)} 创建新 Olm 会话"
+                    "[E2EE-ToDevice] Created a new Olm session for "
+                    f"{self._mask_device_id(target_device)}"
                 )
 
             # 使用 Olm 加密
@@ -339,7 +348,7 @@ class E2EEManagerSecretsMixin:
             return encrypted
 
         except Exception as e:
-            logger.error(f"[E2EE-Secrets] Olm 加密失败：{e}")
+            logger.error(f"[E2EE-ToDevice] Olm encryption failed: {e}")
             return None
 
     async def handle_secret_send(self, sender: str, content: dict):
