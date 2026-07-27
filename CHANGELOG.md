@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 接收普通 Markdown/HTML 引用块时不再当作 Matrix reply fallback 删除；只有声明了 `m.in_reply_to` 或线程关系的事件才会剥离引用 fallback。
+
 ## 0.3.8 - 2026-07-19
 
 - 修复同账号其他设备请求房间密钥时，因双方尚无 Olm 会话而不回复的问题；现在会按需声明一次性密钥、建立 Olm 会话并加密发送 `m.forwarded_room_key`，拒绝或缺少密钥时返回 `m.room_key.withheld`。

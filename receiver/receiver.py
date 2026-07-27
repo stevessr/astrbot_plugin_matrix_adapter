@@ -760,8 +760,23 @@ class MatrixReceiver:
         # 基础信息
         message.raw_message = event
 
-        # Strip reply fallback from body
-        message.message_str = MatrixUtils.strip_reply_fallback(event.body)
+        event_content = event.content if isinstance(event.content, dict) else {}
+        relates_to = event_content.get("m.relates_to", {})
+        reply_event_id = None
+        if isinstance(relates_to, dict):
+            in_reply_to = relates_to.get("m.in_reply_to")
+            if isinstance(in_reply_to, dict):
+                reply_event_id = in_reply_to.get("event_id")
+            if not reply_event_id and relates_to.get("rel_type") == REL_TYPE_THREAD:
+                reply_event_id = relates_to.get("event_id")
+
+        # A leading Markdown blockquote is ordinary message content unless the
+        # event explicitly declares a reply or thread relation.
+        message.message_str = (
+            MatrixUtils.strip_reply_fallback(event.body)
+            if reply_event_id
+            else (event.body or "")
+        )
         message.session_id = room.room_id
         message.message_id = event.event_id  # Set message ID for replies
         message.self_id = self.user_id  # Set bot's self ID
@@ -807,19 +822,6 @@ class MatrixReceiver:
         chain = MessageChain()
 
         # 处理回复
-        relates_to = event.content.get("m.relates_to", {})
-        reply_event_id = None
-
-        # 1. 检查标准的 m.in_reply_to
-        if "m.in_reply_to" in relates_to:
-            reply_event_id = relates_to["m.in_reply_to"].get("event_id")
-
-        # 2. 检查嘟文串 (Threading) 回复
-        if not reply_event_id and relates_to.get("rel_type") == REL_TYPE_THREAD:
-            # 在嘟文串中，如果没有显式的 m.in_reply_to，则视为回复根消息或上一条消息
-            # 这里简化处理，如果 rel_type 是 m.thread，我们将其视为回复
-            reply_event_id = relates_to.get("event_id")
-
         if reply_event_id:
             # 创建回复组件
             from astrbot.api.message_components import Reply

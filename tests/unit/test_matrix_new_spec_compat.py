@@ -627,6 +627,89 @@ class MatrixTextMentionCompatTests(unittest.TestCase):
 
 
 class MatrixTextMessageCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_receiver_strips_fallback_only_for_declared_reply(self):
+        _install_astrbot_stubs()
+        _install_aiohttp_stub()
+        _install_package_stubs()
+        sys.modules.pop(f"{PACKAGE_NAME}.receiver.handlers", None)
+        sys.modules.pop(f"{PACKAGE_NAME}.receiver.receiver", None)
+        receiver_module = importlib.import_module(f"{PACKAGE_NAME}.receiver.receiver")
+        event_types = load_module("client.event_types")
+        body = "> 你能看到这句话吗\n\n@[toushou.little.bot] "
+        plugin_config_stub = types.SimpleNamespace(
+            force_message_type="auto",
+            media_cache_dir=Path(tempfile.gettempdir()) / "matrix_media",
+            media_cache_index_persist=False,
+            quoted_media_background_download_concurrency=2,
+            is_media_auto_download_enabled=lambda _msgtype: True,
+        )
+        room = event_types.MatrixRoom(
+            room_id="!lbxGoYmHrLEpYKkTAs:matrix.org",
+            member_count=3,
+            members={"@steve:neko.aaca.eu.org": "Steve"},
+        )
+        blockquote_event = event_types.parse_event(
+            {
+                "type": "m.room.message",
+                "event_id": "$blockquote:example.org",
+                "sender": "@steve:neko.aaca.eu.org",
+                "origin_server_ts": 1785160209095,
+                "content": {
+                    "body": body,
+                    "format": "org.matrix.custom.html",
+                    "formatted_body": (
+                        "<blockquote><p>你能看到这句话吗</p></blockquote>"
+                        '<p><a href="https://matrix.to/#/@chatbot:neko.aaca.eu.org">'
+                        "@[toushou.little.bot]</a></p>"
+                    ),
+                    "m.mentions": {
+                        "user_ids": ["@chatbot:neko.aaca.eu.org"],
+                    },
+                    "msgtype": "m.text",
+                },
+            },
+            room.room_id,
+        )
+        reply_event = event_types.parse_event(
+            {
+                "type": "m.room.message",
+                "event_id": "$reply:example.org",
+                "sender": "@steve:neko.aaca.eu.org",
+                "origin_server_ts": 1785160209096,
+                "content": {
+                    "body": "> <@alice:example.org> quoted text\n\nreply body",
+                    "msgtype": "m.text",
+                    "m.relates_to": {
+                        "m.in_reply_to": {"event_id": "$original:example.org"},
+                    },
+                },
+            },
+            room.room_id,
+        )
+
+        with mock.patch(
+            f"{PACKAGE_NAME}.receiver.receiver.get_plugin_config",
+            return_value=plugin_config_stub,
+        ):
+            receiver = receiver_module.MatrixReceiver(
+                user_id="@chatbot:neko.aaca.eu.org",
+                bot_name="toushou.little.bot",
+                client=None,
+            )
+            blockquote_message = await receiver.convert_message(
+                room, blockquote_event
+            )
+            reply_message = await receiver.convert_message(room, reply_event)
+
+        self.assertEqual(blockquote_message.message_str, body)
+        self.assertEqual(blockquote_message.message[0].text, "你能看到这句话吗\n")
+        self.assertEqual(
+            blockquote_message.message[1].qq,
+            "@chatbot:neko.aaca.eu.org",
+        )
+        self.assertEqual(reply_message.message_str, "reply body")
+        self.assertEqual(reply_message.message[0].id, "$original:example.org")
+
     async def test_notice_message_does_not_rewrite_bang_command_prefix(self):
         text_handler = load_module("receiver.handlers.text")
 
