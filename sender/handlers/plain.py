@@ -63,12 +63,16 @@ async def send_plain(
     is_encrypted_room: bool,
     e2ee_manager,
     use_notice: bool,
+    thread_is_falling_back: bool | None = None,
 ) -> None:
     msg_type = "m.notice" if use_notice else "m.text"
     text = segment.text or ""
     content = {"msgtype": msg_type, "body": text}
 
-    if original_message_info and reply_to:
+    is_explicit_reply = bool(reply_to) and not (
+        use_thread and thread_is_falling_back
+    )
+    if original_message_info and is_explicit_reply:
         _merge_reply_mentions(content, client, original_message_info)
 
     if original_message_info and reply_to and not use_thread:
@@ -116,4 +120,5 @@ async def send_plain(
         use_thread,
         is_encrypted_room,
         e2ee_manager,
+        thread_is_falling_back=thread_is_falling_back,
     )

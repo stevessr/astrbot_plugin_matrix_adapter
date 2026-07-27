@@ -31,6 +31,7 @@ async def send_location(
     use_thread: bool,
     is_encrypted_room: bool,
     e2ee_manager,
+    thread_is_falling_back: bool | None = None,
 ) -> None:
     geo_uri = f"geo:{segment.lat},{segment.lon}"
     body = segment.title or segment.content or geo_uri
@@ -58,4 +59,5 @@ async def send_location(
         use_thread,
         is_encrypted_room,
         e2ee_manager,
+        thread_is_falling_back=thread_is_falling_back,
     )

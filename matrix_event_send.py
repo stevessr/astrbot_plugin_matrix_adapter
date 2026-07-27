@@ -169,6 +169,7 @@ async def send_with_client_impl(
     e2ee_manager=None,
     max_upload_size: int | None = None,
     use_notice: bool = False,
+    thread_is_falling_back: bool | None = None,
 ) -> int:
     """Send a message chain using the provided client."""
     upload_size_limit = max_upload_size or DEFAULT_MAX_UPLOAD_SIZE_BYTES
@@ -190,6 +191,11 @@ async def send_with_client_impl(
             if isinstance(seg, Reply) and getattr(seg, "id", None):
                 reply_to = str(seg.id)
                 break
+
+    if thread_is_falling_back is None:
+        thread_is_falling_back = bool(
+            use_thread and thread_root and reply_to is None
+        )
 
     merged_chain = []
     for segment in message_chain.chain:
@@ -220,6 +226,7 @@ async def send_with_client_impl(
                     is_encrypted_room,
                     e2ee_manager,
                     use_notice,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -237,6 +244,7 @@ async def send_with_client_impl(
                     is_encrypted_room,
                     e2ee_manager,
                     upload_size_limit,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except ValueError as e:
@@ -258,6 +266,7 @@ async def send_with_client_impl(
                     use_thread,
                     is_encrypted_room,
                     e2ee_manager,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -275,6 +284,7 @@ async def send_with_client_impl(
                     is_encrypted_room,
                     e2ee_manager,
                     upload_size_limit,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -291,6 +301,7 @@ async def send_with_client_impl(
                     use_thread,
                     is_encrypted_room,
                     e2ee_manager,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -307,6 +318,7 @@ async def send_with_client_impl(
                     use_thread,
                     is_encrypted_room,
                     e2ee_manager,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -324,6 +336,7 @@ async def send_with_client_impl(
                     is_encrypted_room,
                     e2ee_manager,
                     upload_size_limit,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -355,6 +368,7 @@ async def send_with_client_impl(
                     poll_key=getattr(segment, "poll_key", None) or "m.poll",
                     fallback_text=getattr(segment, "fallback_text", None),
                     fallback_html=getattr(segment, "fallback_html", None),
+                    thread_is_falling_back=thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -371,6 +385,7 @@ async def send_with_client_impl(
                     use_thread,
                     is_encrypted_room,
                     e2ee_manager,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -387,6 +402,7 @@ async def send_with_client_impl(
                     use_thread,
                     is_encrypted_room,
                     e2ee_manager,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -403,6 +419,7 @@ async def send_with_client_impl(
                     use_thread,
                     is_encrypted_room,
                     e2ee_manager,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -419,6 +436,7 @@ async def send_with_client_impl(
                     use_thread,
                     is_encrypted_room,
                     e2ee_manager,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -436,6 +454,7 @@ async def send_with_client_impl(
                     is_encrypted_room,
                     e2ee_manager,
                     upload_size_limit,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -457,6 +476,7 @@ async def send_with_client_impl(
                     is_encrypted_room,
                     e2ee_manager,
                     upload_size_limit,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -474,6 +494,7 @@ async def send_with_client_impl(
                     is_encrypted_room,
                     e2ee_manager,
                     upload_size_limit,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -490,6 +511,7 @@ async def send_with_client_impl(
                     use_thread,
                     is_encrypted_room,
                     e2ee_manager,
+                    thread_is_falling_back=thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:
@@ -520,6 +542,7 @@ async def send_with_client_impl(
                     is_encrypted_room,
                     e2ee_manager,
                     use_notice,
+                    thread_is_falling_back,
                 )
                 sent_count += 1
             except Exception as e:

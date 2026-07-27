@@ -14,6 +14,7 @@ async def send_share(
     use_thread: bool,
     is_encrypted_room: bool,
     e2ee_manager,
+    thread_is_falling_back: bool | None = None,
 ) -> None:
     title = segment.title or ""
     content = segment.content or ""
@@ -51,4 +52,5 @@ async def send_share(
         use_thread,
         is_encrypted_room,
         e2ee_manager,
+        thread_is_falling_back=thread_is_falling_back,
     )

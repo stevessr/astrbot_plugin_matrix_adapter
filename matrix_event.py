@@ -64,6 +64,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
         e2ee_manager=None,
         max_upload_size: int | None = None,
         use_notice: bool = False,
+        thread_is_falling_back: bool | None = None,
     ) -> int:
         """使用提供的 client 将指定消息链发送到指定房间。"""
         return await send_with_client_impl(
@@ -77,6 +78,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
             e2ee_manager=e2ee_manager,
             max_upload_size=max_upload_size,
             use_notice=use_notice,
+            thread_is_falling_back=thread_is_falling_back,
         )
 
     async def send_streaming(self, generator, use_fallback: bool = False) -> None:
@@ -280,6 +282,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
         reused_thread_context = False
         original_message_info = None
         has_reply_component = False
+        thread_is_falling_back = False
 
         # 尝试从消息链中提取 Reply 段
         try:
@@ -305,6 +308,9 @@ class MatrixPlatformEvent(AstrMessageEvent):
                 thread_root = context.get("thread_root")
                 use_thread = bool(thread_root)
                 original_message_info = context.get("original_message_info")
+                thread_is_falling_back = bool(
+                    context.get("thread_is_falling_back", False)
+                )
                 reused_thread_context = use_thread
 
         # 如果没有找到回复对象，但消息链中包含 Reply 组件（表示开启了回复模式）
@@ -358,6 +364,9 @@ class MatrixPlatformEvent(AstrMessageEvent):
                     source_event_id = getattr(raw_message, "event_id", None)
             if source_event_id:
                 reply_to = str(source_event_id)
+                # Keep the target for thread continuity without rendering it
+                # as an explicit reply when AstrBot quote mode is disabled.
+                thread_is_falling_back = True
 
         # 如果有回复，检查是否需要使用嘟文串模式
         if reply_to and not reused_thread_context:
@@ -408,6 +417,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                 "thread_root": thread_root,
                 "use_thread": True,
                 "original_message_info": original_message_info,
+                "thread_is_falling_back": thread_is_falling_back,
             }
         elif reply_to and not reused_thread_context:
             # 当前调用明确指定了普通回复时，不要把上一次线程上下文泄漏
@@ -424,6 +434,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
             original_message_info=original_message_info,
             e2ee_manager=self.e2ee_manager,
             use_notice=self.use_notice,
+            thread_is_falling_back=thread_is_falling_back,
         )
 
         return await super().send(message_chain)

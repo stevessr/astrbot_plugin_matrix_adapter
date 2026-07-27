@@ -15,6 +15,7 @@ async def send_contact(
     use_thread: bool,
     is_encrypted_room: bool,
     e2ee_manager,
+    thread_is_falling_back: bool | None = None,
 ) -> None:
     contact_type = getattr(segment, "_type", "") or ""
     contact_id = getattr(segment, "id", "") or ""
@@ -44,4 +45,5 @@ async def send_contact(
         use_thread,
         is_encrypted_room,
         e2ee_manager,
+        thread_is_falling_back=thread_is_falling_back,
     )

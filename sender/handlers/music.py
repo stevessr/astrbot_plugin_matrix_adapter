@@ -96,6 +96,7 @@ async def send_music(
     is_encrypted_room: bool,
     e2ee_manager,
     upload_size_limit: int | None = None,
+    thread_is_falling_back: bool | None = None,
 ) -> None:
     title = segment.title or ""
     url = segment.url or ""
@@ -145,6 +146,7 @@ async def send_music(
                 use_thread,
                 is_encrypted_room,
                 e2ee_manager,
+                thread_is_falling_back=thread_is_falling_back,
             )
 
             if url or image:
@@ -161,6 +163,7 @@ async def send_music(
                         use_thread,
                         is_encrypted_room,
                         e2ee_manager,
+                        thread_is_falling_back=thread_is_falling_back,
                     )
             return
 
@@ -176,4 +179,5 @@ async def send_music(
         use_thread,
         is_encrypted_room,
         e2ee_manager,
+        thread_is_falling_back=thread_is_falling_back,
     )

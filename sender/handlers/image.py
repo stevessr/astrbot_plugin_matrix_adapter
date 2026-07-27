@@ -26,6 +26,7 @@ async def send_image(
     is_encrypted_room: bool,
     e2ee_manager,
     upload_size_limit: int,
+    thread_is_falling_back: bool | None = None,
 ) -> None:
     img_path = await segment.convert_to_file_path()
     image_path = Path(img_path)
@@ -112,4 +113,5 @@ async def send_image(
         use_thread,
         is_encrypted_room,
         e2ee_manager,
+        thread_is_falling_back=thread_is_falling_back,
     )

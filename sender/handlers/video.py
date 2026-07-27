@@ -20,6 +20,7 @@ async def send_video(
     is_encrypted_room: bool,
     e2ee_manager,
     upload_size_limit: int,
+    thread_is_falling_back: bool | None = None,
 ) -> None:
     video_path = await segment.convert_to_file_path()
     filename = Path(video_path).name
@@ -95,4 +96,5 @@ async def send_video(
         use_thread,
         is_encrypted_room,
         e2ee_manager,
+        thread_is_falling_back=thread_is_falling_back,
     )

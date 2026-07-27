@@ -826,6 +826,7 @@ class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
             is_encrypted_room,
             e2ee_manager,
             msg_type="m.room.message",
+            thread_is_falling_back=None,
         ):
             captured["content"] = content
             captured["room_id"] = room_id
@@ -867,6 +868,7 @@ class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
             is_encrypted_room,
             e2ee_manager,
             msg_type="m.room.message",
+            thread_is_falling_back=None,
         ):
             captured["content"] = content
             captured["room_id"] = room_id
@@ -906,6 +908,7 @@ class MatrixLocationCompatTests(unittest.IsolatedAsyncioTestCase):
             is_encrypted_room,
             e2ee_manager,
             msg_type="m.room.message",
+            thread_is_falling_back=None,
         ):
             captured["content"] = content
             captured["room_id"] = room_id
@@ -3607,6 +3610,7 @@ class MatrixVoiceCompatTests(unittest.IsolatedAsyncioTestCase):
             is_encrypted_room,
             e2ee_manager,
             msg_type="m.room.message",
+            thread_is_falling_back=None,
         ):
             captured["content"] = content
             captured["msg_type"] = msg_type
@@ -3737,6 +3741,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             e2ee_manager=None,
             max_upload_size=None,
             use_notice=False,
+            thread_is_falling_back=None,
         ):
             captured.append(
                 {
@@ -3746,6 +3751,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
                     "thread_root": thread_root,
                     "use_thread": use_thread,
                     "original_message_info": original_message_info,
+                    "thread_is_falling_back": thread_is_falling_back,
                 }
             )
             return 1
@@ -3814,6 +3820,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(call["use_thread"])
             self.assertEqual(call["thread_root"], "$root:example.org")
             self.assertEqual(call["reply_to"], "$inbound:example.org")
+            self.assertFalse(call["thread_is_falling_back"])
 
     async def test_threading_uses_inbound_event_without_reply_component(self):
         matrix_event = self._load_matrix_event_for_test()
@@ -3836,6 +3843,36 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(call["use_thread"])
             self.assertEqual(call["thread_root"], "$inbound:example.org")
             self.assertEqual(call["reply_to"], "$inbound:example.org")
+            self.assertTrue(call["thread_is_falling_back"])
+
+    async def test_threading_without_quote_reuses_existing_root_as_fallback(self):
+        matrix_event = self._load_matrix_event_for_test()
+        components = sys.modules["astrbot.api.message_components"]
+        message_chain = sys.modules["astrbot.api.event"].MessageChain
+
+        captured = await self._send_two_segments(
+            event_module=matrix_event,
+            enable_threading=True,
+            event_content={
+                "msgtype": "m.text",
+                "body": "thread message",
+                "m.relates_to": {
+                    "rel_type": "m.thread",
+                    "event_id": "$root:example.org",
+                    "m.in_reply_to": {"event_id": "$previous:example.org"},
+                    "is_falling_back": True,
+                },
+            },
+            first_chain=message_chain([components.Plain("first")]),
+            second_chain=message_chain([components.Plain("second")]),
+        )
+
+        self.assertEqual(len(captured), 2)
+        for call in captured:
+            self.assertEqual(call["reply_to"], "$inbound:example.org")
+            self.assertEqual(call["thread_root"], "$root:example.org")
+            self.assertTrue(call["use_thread"])
+            self.assertTrue(call["thread_is_falling_back"])
 
     async def test_send_content_keeps_cleartext_relation_on_encrypted_events(self):
         common_sender = load_module("sender.handlers.common")
@@ -3970,6 +4007,79 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_send_content_keeps_thread_target_for_reply_fallback(self):
+        common_sender = load_module("sender.handlers.common")
+
+        class FakeClient:
+            async def send_message(self, **kwargs):
+                return kwargs
+
+        response = await common_sender.send_content(
+            client=FakeClient(),
+            content={"msgtype": "m.notice", "body": "thread response"},
+            room_id="!room:example.org",
+            reply_to="$latest:example.org",
+            thread_root="$root:example.org",
+            use_thread=True,
+            is_encrypted_room=False,
+            e2ee_manager=None,
+            thread_is_falling_back=True,
+        )
+
+        self.assertEqual(
+            response["content"]["m.relates_to"],
+            {
+                "rel_type": "m.thread",
+                "event_id": "$root:example.org",
+                "m.in_reply_to": {"event_id": "$latest:example.org"},
+                "is_falling_back": True,
+            },
+        )
+
+    async def test_plain_thread_fallback_does_not_add_reply_mention(self):
+        plain_sender = load_module("sender.handlers.plain")
+        plain_cls = sys.modules["astrbot.api.message_components"].Plain
+
+        class FakeClient:
+            user_id = "@chatbot:neko.aaca.eu.org"
+
+            async def send_message(self, **kwargs):
+                self.content = kwargs["content"]
+                return {"event_id": "$sent:example.org"}
+
+        client = FakeClient()
+        segment = plain_cls("你好呀～又在研究什么好玩的东西了🤔")
+        segment.format = "org.matrix.custom.html"
+        segment.formatted_body = "<p>你好呀～又在研究什么好玩的东西了🤔</p>\n"
+
+        await plain_sender.send_plain(
+            client=client,
+            segment=segment,
+            room_id="!room:example.org",
+            reply_to="$latest:example.org",
+            thread_root="$root:example.org",
+            use_thread=True,
+            original_message_info={
+                "sender": "@bigwindmill:matrix.org",
+                "body": "original message",
+            },
+            is_encrypted_room=False,
+            e2ee_manager=None,
+            use_notice=True,
+            thread_is_falling_back=True,
+        )
+
+        self.assertNotIn("m.mentions", client.content)
+        self.assertEqual(
+            client.content["m.relates_to"],
+            {
+                "rel_type": "m.thread",
+                "event_id": "$root:example.org",
+                "m.in_reply_to": {"event_id": "$latest:example.org"},
+                "is_falling_back": True,
+            },
+        )
+
     async def test_send_content_marks_explicit_root_thread_reply_as_non_fallback(self):
         common_sender = load_module("sender.handlers.common")
 
@@ -4036,6 +4146,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             is_encrypted_room,
             e2ee_manager,
             msg_type="m.room.message",
+            thread_is_falling_back=None,
         ):
             captured["content"] = content
             captured["reply_to"] = reply_to
@@ -4109,6 +4220,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             is_encrypted_room,
             e2ee_manager,
             msg_type="m.room.message",
+            thread_is_falling_back=None,
         ):
             captured["content"] = content
             return {"event_id": "$reply"}
@@ -4157,6 +4269,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             is_encrypted_room,
             e2ee_manager,
             msg_type="m.room.message",
+            thread_is_falling_back=None,
         ):
             captured["content"] = content
             return {"event_id": "$plain"}

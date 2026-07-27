@@ -52,6 +52,7 @@ async def send_poll(
     poll_key: str = "m.poll",
     fallback_text: str | None = None,
     fallback_html: str | None = None,
+    thread_is_falling_back: bool | None = None,
 ) -> dict | None:
     clean_question = (question or "").strip()
     if not clean_question:
@@ -141,6 +142,7 @@ async def send_poll(
         is_encrypted_room,
         e2ee_manager,
         msg_type=event_type,
+        thread_is_falling_back=thread_is_falling_back,
     )
 
 

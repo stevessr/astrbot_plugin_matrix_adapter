@@ -18,6 +18,7 @@ async def send_file(
     is_encrypted_room: bool,
     e2ee_manager,
     upload_size_limit: int | None = None,
+    thread_is_falling_back: bool | None = None,
 ) -> None:
     file_path = await segment.get_file()
     if not file_path:
@@ -60,4 +61,5 @@ async def send_file(
         use_thread,
         is_encrypted_room,
         e2ee_manager,
+        thread_is_falling_back=thread_is_falling_back,
     )

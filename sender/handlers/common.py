@@ -19,13 +19,17 @@ async def send_content(
     is_encrypted_room: bool,
     e2ee_manager,
     msg_type: str = "m.room.message",
+    thread_is_falling_back: bool | None = None,
 ) -> dict | None:
     if use_thread and thread_root:
-        is_reply_within_thread = reply_to is not None
+        # A thread fallback still points to the latest known event, so target
+        # presence alone cannot distinguish it from an explicit thread reply.
+        if thread_is_falling_back is None:
+            thread_is_falling_back = reply_to is None
         content["m.relates_to"] = {
             "rel_type": "m.thread",
             "event_id": thread_root,
-            "is_falling_back": not is_reply_within_thread,
+            "is_falling_back": bool(thread_is_falling_back),
             "m.in_reply_to": {"event_id": reply_to or thread_root},
         }
     elif reply_to:

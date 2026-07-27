@@ -16,6 +16,7 @@ async def send_sticker(
     is_encrypted_room: bool,
     e2ee_manager,
     upload_size_limit: int,
+    thread_is_falling_back: bool | None = None,
 ) -> None:
     filename = "sticker.png"
     content_type = segment.info.mimetype or "image/png"
@@ -86,4 +87,5 @@ async def send_sticker(
         is_encrypted_room,
         e2ee_manager,
         msg_type="m.sticker",
+        thread_is_falling_back=thread_is_falling_back,
     )

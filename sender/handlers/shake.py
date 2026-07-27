@@ -12,6 +12,7 @@ async def send_shake(
     use_thread: bool,
     is_encrypted_room: bool,
     e2ee_manager,
+    thread_is_falling_back: bool | None = None,
 ) -> None:
     content_data = {"msgtype": "m.emote", "body": "shakes the chat"}
 
@@ -24,4 +25,5 @@ async def send_shake(
         use_thread,
         is_encrypted_room,
         e2ee_manager,
+        thread_is_falling_back=thread_is_falling_back,
     )
