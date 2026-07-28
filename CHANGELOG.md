@@ -4,6 +4,9 @@
 
 - 补齐 Matrix Client-Server v1.19 所需能力：新增 stable `GET /_matrix/client/v1/mutual_rooms`、`m.key_backup` 账户偏好、`unsigned.replaces_state` 访问和 stable `m.room.image_pack` / `m.image_pack.rooms` 同步。
 - E2EE 现在按房间历史可见性在 `m.room_key` 与 Key Backup 中保留 `shared_history`；共享类别变化、新成员遇到不可共享会话或成员离开时会安全轮换 Megolm，避免泄露旧密钥或后续消息。
+- E2EE 补齐 Matrix v1.19 与最新 unstable 澄清要求：严格验证 Olm 明文和 `sender_device_keys`、设备/一次性密钥签名、fallback key 使用状态、Megolm 低索引替换与重放检测，并按时间、消息数、成员和设备变化轮换出站会话。
+- 房间密钥与秘密共享现在只接受已验证的同账号设备，正确维护 `m.forwarded_room_key` 转发链和 `withheld`，拒绝未加密 room key，支持同批请求取消、`m.no_olm` 去重及一小时 Olm 恢复限流。
+- OAuth2 发现显式跟随 `/.well-known/matrix/client` 的 30x 跳转；Matrix API 访问令牌继续只通过 `Authorization: Bearer` 头发送，不依赖已移除的查询参数方式。
 - 修正 SAS `m.key.verification.accept` commitment 校验：由 start 发送方校验响应方公钥，使用完整 start content 的 canonical JSON 和无填充 Base64。
 - 移除 `matrix_enable_live_messages` 总开关；流式输出由独立的 `send_streaming()` 接口自动使用 MSC4357，普通 `send()` 不受影响，仅在房间状态明确设置 `enabled: false` 时退化。
 - MSC4357 Live Messages 现在遵循 `org.matrix.msc4357.live_messaging` 房间状态的显式禁用值，默认按提案建议每 2 秒合并更新（可配置），流式 Markdown 会同步更新 HTML fallback，并在开启消息串时保留初始 `m.thread` 关系。

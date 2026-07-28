@@ -14,6 +14,13 @@ from ..plugin_config import get_plugin_config
 from ..storage_backend import build_folder_namespace
 from ..storage_paths import MatrixStoragePaths
 from ..utils.utils import mask_device_id
+from .constants import (
+    DEFAULT_OLM_RECOVERY_RETRY_SEC,
+    DEFAULT_PROACTIVE_KEY_SHARE_INTERVAL_SEC,
+    DEFAULT_ROOM_KEY_REQUEST_EXPIRY_SEC,
+    DEFAULT_ROOM_KEY_REQUEST_RETRY_SEC,
+    DEFAULT_ROOM_MEMBER_CACHE_TTL_SEC,
+)
 from .crypto_store import CryptoStore
 from .e2ee_manager_decrypt import E2EEManagerDecryptMixin
 from .e2ee_manager_keys import E2EEManagerKeysMixin
@@ -113,7 +120,7 @@ class E2EEManager(
         self.otk_threshold_ratio = max(1, min(100, otk_threshold_ratio))
         self.key_share_check_interval = max(0, key_share_check_interval)
         if self.proactive_key_exchange and self.key_share_check_interval == 0:
-            self.key_share_check_interval = 30
+            self.key_share_check_interval = DEFAULT_PROACTIVE_KEY_SHARE_INTERVAL_SEC
         self.storage_backend_config = get_plugin_config().storage_backend_config
         self.data_storage_backend = self.storage_backend_config.backend
         self.pgsql_dsn = self.storage_backend_config.pgsql_dsn
@@ -128,10 +135,14 @@ class E2EEManager(
         self._initialized = False
         # session_id -> {"@user:server|DEVICEID", ...}
         self._room_key_share_cache: dict[str, set[str]] = {}
+        # A single distribution pass per Megolm session prevents duplicate
+        # /keys/claim and to-device sends from periodic and event-driven paths.
+        self._room_key_share_locks: dict[str, asyncio.Lock] = {}
         # room_id -> (members, monotonic timestamp)
         self._room_members_cache: dict[str, tuple[list[str], float]] = {}
-        self._room_members_cache_ttl_sec = 30.0
+        self._room_members_cache_ttl_sec = DEFAULT_ROOM_MEMBER_CACHE_TTL_SEC
         self._room_history_visibility: dict[str, str] = {}
+        self._room_encryption_config: dict[str, dict] = {}
         # throttle one-time key maintenance to avoid frequent uploads
         self._last_otk_maintenance_ts = 0.0
         # 定期密钥分发检查的任务和锁
@@ -140,8 +151,14 @@ class E2EEManager(
         # Missing-session requests reuse their Matrix request ID and are throttled.
         self._pending_room_key_requests: dict[tuple[str, str], dict] = {}
         self._room_key_request_lock = asyncio.Lock()
-        self._room_key_request_retry_interval_sec = 5.0
-        self._room_key_request_expiry_sec = 300.0
+        self._room_key_request_retry_interval_sec = DEFAULT_ROOM_KEY_REQUEST_RETRY_SEC
+        self._room_key_request_expiry_sec = DEFAULT_ROOM_KEY_REQUEST_EXPIRY_SEC
+        # m.no_olm MUST be emitted only once per failed peer until an Olm send
+        # succeeds. Incoming recovery attempts are independently rate-limited.
+        self._no_olm_withheld_sent: set[tuple[str, str]] = set()
+        self._olm_recovery_attempts: dict[tuple[str, str], float] = {}
+        self._olm_recovery_retry_interval_sec = DEFAULT_OLM_RECOVERY_RETRY_SEC
+        self._room_key_withheld: dict[tuple[str, str, str], dict] = {}
 
     # 使用公共工具函数代替内联实现
     _mask_device_id = staticmethod(mask_device_id)
@@ -216,6 +233,11 @@ class E2EEManager(
         self._key_backup = None
         self._cross_signing = None
         self._pending_room_key_requests.clear()
+        self._room_key_share_locks.clear()
+        self._room_encryption_config.clear()
+        self._no_olm_withheld_sent.clear()
+        self._olm_recovery_attempts.clear()
+        self._room_key_withheld.clear()
         if store is not None and hasattr(store, "close"):
             try:
                 await asyncio.to_thread(store.close)

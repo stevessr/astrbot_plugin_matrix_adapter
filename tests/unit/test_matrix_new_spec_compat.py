@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import copy
 import hashlib
 import importlib
 import sys
@@ -207,7 +208,9 @@ def _install_astrbot_stubs() -> None:
     platform_module.AstrBotMessage = AstrBotMessage
     platform_module.PlatformMetadata = PlatformMetadata
 
-    core_module = sys.modules.setdefault("astrbot.core", types.ModuleType("astrbot.core"))
+    core_module = sys.modules.setdefault(
+        "astrbot.core", types.ModuleType("astrbot.core")
+    )
     utils_module = sys.modules.setdefault(
         "astrbot.core.utils", types.ModuleType("astrbot.core.utils")
     )
@@ -322,6 +325,7 @@ def _install_package_stubs() -> None:
         utils_pkg.MatrixUtils = utils_mod.MatrixUtils
         utils_pkg.markdown_to_html = markdown_mod.markdown_to_html
     except Exception:
+
         def _parse_bool(value, default=False):
             if isinstance(value, bool):
                 return value
@@ -358,15 +362,11 @@ class MatrixReactionApiCompatTests(unittest.IsolatedAsyncioTestCase):
 
         platforms = [
             types.SimpleNamespace(
-                meta=lambda: types.SimpleNamespace(
-                    name="matrix", id="matrix-first"
-                ),
+                meta=lambda: types.SimpleNamespace(name="matrix", id="matrix-first"),
                 sender=first_sender,
             ),
             types.SimpleNamespace(
-                meta=lambda: types.SimpleNamespace(
-                    name="matrix", id="matrix-selected"
-                ),
+                meta=lambda: types.SimpleNamespace(name="matrix", id="matrix-selected"),
                 sender=selected_sender,
             ),
         ]
@@ -433,9 +433,7 @@ class MatrixReactionApiCompatTests(unittest.IsolatedAsyncioTestCase):
             return_value={"event_id": "$reaction:example.org"}
         )
 
-        with mock.patch.object(
-            main_module.MatrixUtils, "send_reaction", send_reaction
-        ):
+        with mock.patch.object(main_module.MatrixUtils, "send_reaction", send_reaction):
             result = await plugin.matrix_react_to_event(event, " 👍 ")
 
         self.assertIn("Sent Matrix reaction", result)
@@ -515,8 +513,7 @@ class MatrixTextMentionCompatTests(unittest.TestCase):
             "body": "Alice says hi",
             "format": "org.matrix.custom.html",
             "formatted_body": (
-                '<a href="https://matrix.to/#/%40alice%3Aexample.org">'
-                "Alice</a> says hi"
+                '<a href="https://matrix.to/#/%40alice%3Aexample.org">Alice</a> says hi'
             ),
         }
 
@@ -697,9 +694,7 @@ class MatrixTextMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                 bot_name="toushou.little.bot",
                 client=None,
             )
-            blockquote_message = await receiver.convert_message(
-                room, blockquote_event
-            )
+            blockquote_message = await receiver.convert_message(room, blockquote_event)
             reply_message = await receiver.convert_message(room, reply_event)
 
         self.assertEqual(blockquote_message.message_str, body)
@@ -849,7 +844,9 @@ class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
 
         content = captured["content"]
         self.assertEqual(captured["msg_type"], "m.poll.start")
-        self.assertEqual(content["m.poll"]["question"]["m.text"], [{"body": "喝什么？"}])
+        self.assertEqual(
+            content["m.poll"]["question"]["m.text"], [{"body": "喝什么？"}]
+        )
         self.assertEqual(content["m.poll"]["answers"][0]["m.id"], "answer_1")
         self.assertEqual(content["m.poll"]["answers"][0]["m.text"], [{"body": "茶"}])
         self.assertEqual(content["m.text"][0]["body"], "喝什么？\n1. 茶\n2. 咖啡")
@@ -957,7 +954,9 @@ class MatrixLiveLocationCompatTests(unittest.IsolatedAsyncioTestCase):
                 raise AssertionError(f"beacon_info must be a state event: {kwargs}")
 
         sender = sender_module.MatrixSender(FakeClient())
-        with mock.patch.object(sender_module.MatrixSender, "_now_ms", return_value=123456):
+        with mock.patch.object(
+            sender_module.MatrixSender, "_now_ms", return_value=123456
+        ):
             response = await sender.send_live_location_beacon_info(
                 "!room:example.org",
                 description="出差中",
@@ -998,7 +997,9 @@ class MatrixLiveLocationCompatTests(unittest.IsolatedAsyncioTestCase):
                 return {"event_id": "$beacon:example.org"}
 
         sender = sender_module.MatrixSender(FakeClient())
-        with mock.patch.object(sender_module.MatrixSender, "_now_ms", return_value=654321):
+        with mock.patch.object(
+            sender_module.MatrixSender, "_now_ms", return_value=654321
+        ):
             response = await sender.send_live_location_beacon(
                 "!room:example.org",
                 "$beacon-info:example.org",
@@ -1176,9 +1177,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
             client.calls[0][2],
             {
                 "messages": {
-                    "@alice:example.org": {
-                        "DEVICE/1": {"transaction_id": "t1"}
-                    }
+                    "@alice:example.org": {"DEVICE/1": {"transaction_id": "t1"}}
                 }
             },
         )
@@ -2288,7 +2287,9 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
                 self.urls = []
                 self.responses = [
                     FakeResponse(429, json_payload={"retry_after_ms": 1}),
-                    FakeResponse(200, payload=b"thumb", headers={"Content-Length": "5"}),
+                    FakeResponse(
+                        200, payload=b"thumb", headers={"Content-Length": "5"}
+                    ),
                 ]
 
             def get(self, url, **kwargs):
@@ -2374,7 +2375,9 @@ class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
         message_components = sys.modules["astrbot.api.message_components"]
         for component_name in ("Dice", "RPS", "Music"):
             if not hasattr(message_components, component_name):
-                setattr(message_components, component_name, type(component_name, (), {}))
+                setattr(
+                    message_components, component_name, type(component_name, (), {})
+                )
 
         cases = [
             (
@@ -2391,6 +2394,7 @@ class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
 
         for handler, segment in cases:
             with self.subTest(handler=handler.__name__):
+
                 class FakeClient:
                     async def send_message(self, **kwargs):
                         self.content = kwargs["content"]
@@ -2468,7 +2472,9 @@ class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
         content = client.calls[0][2]
         self.assertEqual(content["msgtype"], "m.notice")
         self.assertEqual(content["body"], "@Alice <Admin>")
-        self.assertIn("https://matrix.to/#/%40alice%3Aexample.org", content["formatted_body"])
+        self.assertIn(
+            "https://matrix.to/#/%40alice%3Aexample.org", content["formatted_body"]
+        )
         self.assertIn('data-mxid="@alice:example.org"', content["formatted_body"])
         self.assertIn("@Alice &lt;Admin&gt;", content["formatted_body"])
         self.assertNotIn("<Admin>", content["formatted_body"])
@@ -2548,9 +2554,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
     ):
         adapter_message = load_module("adapter_message")
 
-        runtime_state = types.SimpleNamespace(
-            mark_live_message_inbound=mock.Mock()
-        )
+        runtime_state = types.SimpleNamespace(mark_live_message_inbound=mock.Mock())
         receiver = types.SimpleNamespace(
             convert_message=mock.AsyncMock(
                 return_value=types.SimpleNamespace(
@@ -2586,9 +2590,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         await adapter_message.MatrixAdapterMessageMixin.message_callback(
             adapter, room, draft_event
         )
-        runtime_state.mark_live_message_inbound.assert_called_once_with(
-            is_edit=False
-        )
+        runtime_state.mark_live_message_inbound.assert_called_once_with(is_edit=False)
         handle_msg.assert_not_awaited()
 
         runtime_state.mark_live_message_inbound.reset_mock()
@@ -2611,9 +2613,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         await adapter_message.MatrixAdapterMessageMixin.message_callback(
             adapter, room, final_event
         )
-        runtime_state.mark_live_message_inbound.assert_called_once_with(
-            is_edit=True
-        )
+        runtime_state.mark_live_message_inbound.assert_called_once_with(is_edit=True)
         receiver.convert_message.assert_awaited_once()
         handle_msg.assert_awaited_once()
         self.assertIs(
@@ -2673,7 +2673,9 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
         await location_handler.handle_location(None, chain, event, "m.location")
-        self.assertEqual(chain.chain[0].text, "[位置] Big Ben, London, UK geo:51.5008,0.1247")
+        self.assertEqual(
+            chain.chain[0].text, "[位置] Big Ben, London, UK geo:51.5008,0.1247"
+        )
 
     async def test_location_handler_accepts_unstable_asset_and_pin_type(self):
         location_handler = load_module("receiver.handlers.location")
@@ -2721,6 +2723,12 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                 f"{PACKAGE_NAME}.constants",
                 MAX_PROCESSED_MESSAGES_1000=1000,
                 TIMESTAMP_BUFFER_MS_1000=1000,
+                M_FORWARDED_ROOM_KEY="m.forwarded_room_key",
+                M_ROOM_ENCRYPTED="m.room.encrypted",
+                M_ROOM_KEY="m.room_key",
+                M_ROOM_KEY_REQUEST="m.room_key_request",
+                M_ROOM_KEY_WITHHELD="m.room_key.withheld",
+                MEGOLM_ALGO="m.megolm.v1.aes-sha2",
                 GROUP_CHAT_MIN_MEMBERS_2=2,
                 REL_TYPE_REPLACE="m.replace",
                 M_RTC_DECLINE="m.rtc.decline",
@@ -2819,6 +2827,12 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                 f"{PACKAGE_NAME}.constants",
                 MAX_PROCESSED_MESSAGES_1000=1000,
                 TIMESTAMP_BUFFER_MS_1000=1000,
+                M_FORWARDED_ROOM_KEY="m.forwarded_room_key",
+                M_ROOM_ENCRYPTED="m.room.encrypted",
+                M_ROOM_KEY="m.room_key",
+                M_ROOM_KEY_REQUEST="m.room_key_request",
+                M_ROOM_KEY_WITHHELD="m.room_key.withheld",
+                MEGOLM_ALGO="m.megolm.v1.aes-sha2",
                 GROUP_CHAT_MIN_MEMBERS_2=2,
             ),
             f"{PACKAGE_NAME}.plugin_config": _make_module(
@@ -2903,7 +2917,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         class DummyE2EEManager:
             device_id = "BOT123"
 
-            async def decrypt_event(self, content, sender, room_id):
+            async def decrypt_event(self, content, sender, room_id, event_id=None):
                 return {
                     "type": "m.room.message",
                     "content": {
@@ -3004,6 +3018,12 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                 f"{PACKAGE_NAME}.constants",
                 MAX_PROCESSED_MESSAGES_1000=1000,
                 TIMESTAMP_BUFFER_MS_1000=1000,
+                M_FORWARDED_ROOM_KEY="m.forwarded_room_key",
+                M_ROOM_ENCRYPTED="m.room.encrypted",
+                M_ROOM_KEY="m.room_key",
+                M_ROOM_KEY_REQUEST="m.room_key_request",
+                M_ROOM_KEY_WITHHELD="m.room_key.withheld",
+                MEGOLM_ALGO="m.megolm.v1.aes-sha2",
                 GROUP_CHAT_MIN_MEMBERS_2=2,
                 REL_TYPE_REPLACE="m.replace",
                 M_RTC_DECLINE="m.rtc.decline",
@@ -3297,6 +3317,12 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                 f"{PACKAGE_NAME}.constants",
                 MAX_PROCESSED_MESSAGES_1000=1000,
                 TIMESTAMP_BUFFER_MS_1000=1000,
+                M_FORWARDED_ROOM_KEY="m.forwarded_room_key",
+                M_ROOM_ENCRYPTED="m.room.encrypted",
+                M_ROOM_KEY="m.room_key",
+                M_ROOM_KEY_REQUEST="m.room_key_request",
+                M_ROOM_KEY_WITHHELD="m.room_key.withheld",
+                MEGOLM_ALGO="m.megolm.v1.aes-sha2",
                 GROUP_CHAT_MIN_MEMBERS_2=2,
                 REL_TYPE_REPLACE="m.replace",
                 M_RTC_DECLINE="m.rtc.decline",
@@ -3388,6 +3414,12 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                 f"{PACKAGE_NAME}.constants",
                 MAX_PROCESSED_MESSAGES_1000=1000,
                 TIMESTAMP_BUFFER_MS_1000=1000,
+                M_FORWARDED_ROOM_KEY="m.forwarded_room_key",
+                M_ROOM_ENCRYPTED="m.room.encrypted",
+                M_ROOM_KEY="m.room_key",
+                M_ROOM_KEY_REQUEST="m.room_key_request",
+                M_ROOM_KEY_WITHHELD="m.room_key.withheld",
+                MEGOLM_ALGO="m.megolm.v1.aes-sha2",
                 GROUP_CHAT_MIN_MEMBERS_2=2,
                 REL_TYPE_REPLACE="m.replace",
                 M_RTC_DECLINE="m.rtc.decline",
@@ -3528,7 +3560,10 @@ class MatrixMemberEventCompatTests(unittest.IsolatedAsyncioTestCase):
 
             message = await receiver.convert_system_event(room, event)
 
-        self.assertEqual(message.message_str, "[Room Member] Alice (@alice:example.org) joined the room")
+        self.assertEqual(
+            message.message_str,
+            "[Room Member] Alice (@alice:example.org) joined the room",
+        )
         self.assertEqual(message.message[0].text, message.message_str)
 
     async def test_room_member_handler_renders_moderation_reason(self):
@@ -3579,6 +3614,12 @@ class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
                 f"{PACKAGE_NAME}.constants",
                 MAX_PROCESSED_MESSAGES_1000=1000,
                 TIMESTAMP_BUFFER_MS_1000=1000,
+                M_FORWARDED_ROOM_KEY="m.forwarded_room_key",
+                M_ROOM_ENCRYPTED="m.room.encrypted",
+                M_ROOM_KEY="m.room_key",
+                M_ROOM_KEY_REQUEST="m.room_key_request",
+                M_ROOM_KEY_WITHHELD="m.room_key.withheld",
+                MEGOLM_ALGO="m.megolm.v1.aes-sha2",
                 GROUP_CHAT_MIN_MEMBERS_2=2,
                 REL_TYPE_REPLACE="m.replace",
                 M_RTC_DECLINE="m.rtc.decline",
@@ -4075,7 +4116,9 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         await event.send(second_chain)
         return captured
 
-    async def test_segmented_thread_reply_reuses_thread_context_after_reply_header(self):
+    async def test_segmented_thread_reply_reuses_thread_context_after_reply_header(
+        self,
+    ):
         matrix_event = self._load_matrix_event_for_test()
         components = sys.modules["astrbot.api.message_components"]
         message_chain = sys.modules["astrbot.api.event"].MessageChain
@@ -4771,6 +4814,88 @@ class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
             "https://issuer.example.org/auth",
         )
 
+    async def test_well_known_discovery_explicitly_follows_redirects(self):
+        discovery_module = load_module("auth.oauth2_discovery")
+
+        class DummyDiscovery(discovery_module.MatrixOAuth2Discovery):
+            def __init__(self):
+                self.homeserver = "https://example.org"
+                self.issuer = None
+                self.authorization_endpoint = None
+                self.token_endpoint = None
+                self.registration_endpoint = None
+                self.account_management_uri = None
+
+        class FakeResponse:
+            def __init__(self, status, payload):
+                self.status = status
+                self._payload = payload
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def json(self):
+                return self._payload
+
+            async def text(self):
+                return str(self._payload)
+
+        class FakeSession:
+            def __init__(self, routes, calls, *args, **kwargs):
+                self.routes = routes
+                self.calls = calls
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            def get(self, url, **kwargs):
+                self.calls.append((url, kwargs))
+                status, payload = self.routes[url]
+                return FakeResponse(status, payload)
+
+        auth_metadata_url = "https://example.org/_matrix/client/v1/auth_metadata"
+        well_known_url = "https://example.org/.well-known/matrix/client"
+        oidc_url = "https://issuer.example.org/.well-known/openid-configuration"
+        calls = []
+        routes = {
+            auth_metadata_url: (404, {}),
+            well_known_url: (
+                200,
+                {"m.authentication": {"issuer": "https://issuer.example.org"}},
+            ),
+            oidc_url: (
+                200,
+                {
+                    "issuer": "https://issuer.example.org",
+                    "authorization_endpoint": "https://issuer.example.org/auth",
+                    "token_endpoint": "https://issuer.example.org/token",
+                },
+            ),
+        }
+
+        with mock.patch.object(
+            discovery_module.aiohttp,
+            "ClientSession",
+            side_effect=lambda timeout=None: FakeSession(routes, calls),
+        ):
+            result = await DummyDiscovery()._discover_oauth_endpoints()
+
+        self.assertEqual(
+            calls,
+            [
+                (auth_metadata_url, {}),
+                (well_known_url, {"allow_redirects": True}),
+                (oidc_url, {}),
+            ],
+        )
+        self.assertEqual(result["issuer"], "https://issuer.example.org")
+
     async def test_oauth2_callback_controller_handles_unified_webhook_request(self):
         oauth2_core = load_module("auth.oauth2_core")
 
@@ -4780,9 +4905,7 @@ class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
         controller.prepare_callback("state-123")
 
         response = await controller.handle_callback(
-            types.SimpleNamespace(
-                args={"state": "state-123", "code": "oauth-code-xyz"}
-            )
+            types.SimpleNamespace(args={"state": "state-123", "code": "oauth-code-xyz"})
         )
         code = await controller.wait_for_callback()
 
@@ -4944,7 +5067,9 @@ class MatrixDehydratedDeviceCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.get_dehydrated_calls += 1
                 return {"should": "not-be-read"}
 
-            async def read_secret_from_secret_storage(self, secret_name, key_bytes=None):
+            async def read_secret_from_secret_storage(
+                self, secret_name, key_bytes=None
+            ):
                 self.read_secret_calls += 1
                 return b"should-not-be-read"
 
@@ -5331,7 +5456,9 @@ class MatrixAuthCompatTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
-    async def test_restored_account_reuploads_device_keys_when_server_missing_device(self):
+    async def test_restored_account_reuploads_device_keys_when_server_missing_device(
+        self,
+    ):
         keys_module = load_module("e2ee.e2ee_manager_keys")
 
         class DummyClient:
@@ -5339,7 +5466,9 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.upload_calls = []
                 self.query_calls = []
 
-            async def upload_keys(self, device_keys=None, one_time_keys=None, fallback_keys=None):
+            async def upload_keys(
+                self, device_keys=None, one_time_keys=None, fallback_keys=None
+            ):
                 self.upload_calls.append(
                     {
                         "device_keys": device_keys,
@@ -5363,7 +5492,10 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
                 return {
                     "user_id": "@alice:example.org",
                     "device_id": "DEV123",
-                    "algorithms": ["m.olm.v1.curve25519-aes-sha2", "m.megolm.v1.aes-sha2"],
+                    "algorithms": [
+                        "m.olm.v1.curve25519-aes-sha2",
+                        "m.megolm.v1.aes-sha2",
+                    ],
                     "keys": {
                         "curve25519:DEV123": "curve",
                         "ed25519:DEV123": "ed",
@@ -5393,12 +5525,17 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
         manager = DummyManager()
         await manager._upload_device_keys()
 
-        self.assertEqual(manager.client.query_calls, [{"@alice:example.org": []}, {"@alice:example.org": []}])
+        self.assertEqual(
+            manager.client.query_calls,
+            [{"@alice:example.org": []}, {"@alice:example.org": []}],
+        )
         self.assertEqual(len(manager.client.upload_calls), 1)
         self.assertIsNotNone(manager.client.upload_calls[0]["device_keys"])
         self.assertTrue(manager._olm.marked)
 
-    async def test_restored_account_skips_device_key_upload_when_server_has_device(self):
+    async def test_restored_account_skips_device_key_upload_when_server_has_device(
+        self,
+    ):
         keys_module = load_module("e2ee.e2ee_manager_keys")
 
         class DummyClient:
@@ -5406,7 +5543,9 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.upload_calls = []
                 self.query_calls = []
 
-            async def upload_keys(self, device_keys=None, one_time_keys=None, fallback_keys=None):
+            async def upload_keys(
+                self, device_keys=None, one_time_keys=None, fallback_keys=None
+            ):
                 self.upload_calls.append(
                     {
                         "device_keys": device_keys,
@@ -5438,7 +5577,9 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.marked = False
 
             def get_device_keys(self):
-                raise AssertionError("should not build device keys when already present")
+                raise AssertionError(
+                    "should not build device keys when already present"
+                )
 
             def get_identity_keys(self):
                 return {
@@ -5472,7 +5613,9 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manager.client.upload_calls, [])
         self.assertFalse(manager._olm.marked)
 
-    async def test_restored_account_reuploads_device_keys_when_server_keys_mismatch(self):
+    async def test_restored_account_reuploads_device_keys_when_server_keys_mismatch(
+        self,
+    ):
         keys_module = load_module("e2ee.e2ee_manager_keys")
 
         class DummyClient:
@@ -5480,7 +5623,9 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.upload_calls = []
                 self.query_calls = []
 
-            async def upload_keys(self, device_keys=None, one_time_keys=None, fallback_keys=None):
+            async def upload_keys(
+                self, device_keys=None, one_time_keys=None, fallback_keys=None
+            ):
                 self.upload_calls.append(
                     {
                         "device_keys": device_keys,
@@ -5528,7 +5673,10 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
                 return {
                     "user_id": "@alice:example.org",
                     "device_id": "DEV123",
-                    "algorithms": ["m.olm.v1.curve25519-aes-sha2", "m.megolm.v1.aes-sha2"],
+                    "algorithms": [
+                        "m.olm.v1.curve25519-aes-sha2",
+                        "m.megolm.v1.aes-sha2",
+                    ],
                     "keys": {
                         "curve25519:DEV123": "local-curve",
                         "ed25519:DEV123": "local-ed",
@@ -5564,7 +5712,10 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
         manager = DummyManager()
         await manager._upload_device_keys()
 
-        self.assertEqual(manager.client.query_calls, [{"@alice:example.org": []}, {"@alice:example.org": []}])
+        self.assertEqual(
+            manager.client.query_calls,
+            [{"@alice:example.org": []}, {"@alice:example.org": []}],
+        )
         self.assertEqual(len(manager.client.upload_calls), 1)
         self.assertIsNotNone(manager.client.upload_calls[0]["device_keys"])
         self.assertTrue(manager._olm.marked)
@@ -5578,6 +5729,11 @@ class MatrixRoomKeyShareCompatTests(unittest.IsolatedAsyncioTestCase):
             async def get_room_state(self, room_id):
                 self.room_id = room_id
                 return [
+                    {
+                        "type": "m.room.history_visibility",
+                        "state_key": "",
+                        "content": {"history_visibility": "shared"},
+                    },
                     {
                         "type": "m.room.member",
                         "state_key": "@alice:example.org",
@@ -5607,7 +5763,9 @@ class MatrixRoomKeyShareCompatTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(members, ["@alice:example.org", "@bob:example.org"])
 
-    async def test_room_key_share_includes_own_other_devices_but_skips_current_device(self):
+    async def test_room_key_share_includes_own_other_devices_but_skips_current_device(
+        self,
+    ):
         sessions_module = load_module("e2ee.e2ee_manager_sessions")
 
         class DummyClient:
@@ -5628,10 +5786,12 @@ class MatrixRoomKeyShareCompatTests(unittest.IsolatedAsyncioTestCase):
                                 }
                             },
                             "DEVOTHER": {
+                                "user_id": "@alice:example.org",
+                                "device_id": "DEVOTHER",
                                 "keys": {
                                     "curve25519:DEVOTHER": "curve-other",
                                     "ed25519:DEVOTHER": "ed-other",
-                                }
+                                },
                             },
                         },
                         "@bob:example.org": {
@@ -5650,14 +5810,10 @@ class MatrixRoomKeyShareCompatTests(unittest.IsolatedAsyncioTestCase):
                 return {
                     "one_time_keys": {
                         "@alice:example.org": {
-                            "DEVOTHER": {
-                                "signed_curve25519:AAAA": {"key": "otk-other"}
-                            }
+                            "DEVOTHER": {"signed_curve25519:AAAA": {"key": "otk-other"}}
                         },
                         "@bob:example.org": {
-                            "DEVBOB": {
-                                "signed_curve25519:BBBB": {"key": "otk-bob"}
-                            }
+                            "DEVBOB": {"signed_curve25519:BBBB": {"key": "otk-bob"}}
                         },
                     }
                 }
@@ -5673,6 +5829,15 @@ class MatrixRoomKeyShareCompatTests(unittest.IsolatedAsyncioTestCase):
 
             def get_olm_session(self, curve_key):
                 return self.sessions.get(curve_key)
+
+            def verify_device_keys(self, user_id, device_id, device_info):
+                return True
+
+            def select_verified_one_time_key(
+                self, user_id, device_id, ed25519_key, one_time_keys
+            ):
+                key_id, key_data = next(iter(one_time_keys.items()))
+                return key_id, key_data["key"]
 
             def create_outbound_session(self, curve_key, one_time_key):
                 session = types.SimpleNamespace(curve_key=curve_key, otk=one_time_key)
@@ -5810,6 +5975,23 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_lazy_mode_shares_existing_key_on_device_list_change(self):
         sessions_module = load_module("e2ee.e2ee_manager_sessions")
 
+        class DummyClient:
+            async def query_keys(self, query):
+                return {
+                    "device_keys": {
+                        "@bob:example.org": {
+                            "BOB": {
+                                "user_id": "@bob:example.org",
+                                "device_id": "BOB",
+                                "keys": {
+                                    "curve25519:BOB": "curve-bob",
+                                    "ed25519:BOB": "ed-bob",
+                                },
+                            }
+                        }
+                    }
+                }
+
         class DummyOlm:
             def get_megolm_outbound_room_ids(self):
                 return ["!room:example.org"]
@@ -5817,9 +5999,14 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
             def get_megolm_outbound_session_info(self, room_id):
                 return ("session-1", "session-key")
 
+            def verify_device_keys(self, user_id, device_id, device_info):
+                return True
+
         class DummyManager(sessions_module.E2EEManagerSessionsMixin):
             def __init__(self):
                 self._olm = DummyOlm()
+                self.client = DummyClient()
+                self._store = None
                 self._initialized = True
                 self.user_id = "@alice:example.org"
                 self.proactive_key_exchange = False
@@ -5901,6 +6088,20 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
                     "ed25519": keys.get(f"ed25519:{device_id}", ""),
                 }
 
+            def get_all_device_keys(self):
+                result = {}
+                for (user_id, device_id), device_info in self.devices.items():
+                    result.setdefault(user_id, {})[device_id] = device_info
+                return result
+
+            def get_megolm_inbound_metadata(self, session_id):
+                return {
+                    "room_id": "!room:example.org",
+                    "sender_key": "curve-original",
+                    "sender_claimed_keys": {"ed25519": "ed-original"},
+                    "forwarding_curve25519_key_chain": [],
+                }
+
         class DummyExportedKey:
             def to_base64(self):
                 return "exported-session-key"
@@ -5927,8 +6128,22 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.requested_session_id = session_id
                 return self.inbound
 
+            @staticmethod
+            def get_megolm_first_known_index(session):
+                value = session.first_known_index
+                return value() if callable(value) else value
+
             def get_olm_session(self, curve_key):
                 return self.sessions.get(curve_key)
+
+            def verify_device_keys(self, user_id, device_id, device_info):
+                return True
+
+            def select_verified_one_time_key(
+                self, user_id, device_id, ed25519_key, one_time_keys
+            ):
+                key_id, key_data = next(iter(one_time_keys.items()))
+                return key_id, key_data["key"]
 
             def create_outbound_session(self, curve_key, one_time_key):
                 session = types.SimpleNamespace(
@@ -5962,10 +6177,12 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
                 self._store = DummyStore()
                 self._olm = DummyOlm()
                 self._initialized = True
-                self._verification = None
-                self._cross_signing = types.SimpleNamespace(
-                    self_signing_key="self-signing"
+                self._verification = types.SimpleNamespace(
+                    device_store=types.SimpleNamespace(
+                        is_trusted=lambda user_id, device_id, fingerprint: True
+                    )
                 )
+                self._cross_signing = None
                 self.trust_on_first_use = False
                 self.user_id = "@alice:example.org"
                 self.device_id = "DEVSELF"
@@ -5976,7 +6193,6 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
             requesting_device_id="DEVOTHER",
             room_id="!room:example.org",
             session_id="session-1",
-            sender_key="curve-self",
         )
 
         self.assertTrue(shared)
@@ -5990,15 +6206,18 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(encrypted["recipient_ed25519_key"], "ed-other")
         self.assertEqual(encrypted["event_type"], "m.forwarded_room_key")
         self.assertEqual(encrypted["content"]["session_key"], "exported-session-key")
+        self.assertEqual(
+            encrypted["content"]["forwarding_curve25519_key_chain"],
+            [],
+        )
         self.assertEqual(manager.client.send_calls[0][0], "m.room.encrypted")
 
-        manager._cross_signing = None
+        manager._verification = None
         denied = await manager.respond_to_key_request(
             sender="@alice:example.org",
             requesting_device_id="DEVOTHER",
             room_id="!room:example.org",
             session_id="session-1",
-            sender_key="curve-self",
         )
         self.assertFalse(denied)
         self.assertEqual(manager.client.send_calls[-1][0], "m.room_key.withheld")
@@ -6044,13 +6263,11 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
             "!room:example.org",
             "session-1",
             "curve-sender",
-            "@bob:example.org",
         )
         duplicate = await manager._request_room_key(
             "!room:example.org",
             "session-1",
             "curve-sender",
-            "@bob:example.org",
         )
 
         self.assertTrue(first)
@@ -6059,7 +6276,7 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
         request_messages = manager.client.send_calls[0][1]
         self.assertEqual(
             set(request_messages),
-            {"@alice:example.org", "@bob:example.org"},
+            {"@alice:example.org"},
         )
         request_id = request_messages["@alice:example.org"]["*"]["request_id"]
 
@@ -6069,7 +6286,6 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
             "!room:example.org",
             "session-1",
             "curve-sender",
-            "@bob:example.org",
         )
         self.assertTrue(retried)
         retry_content = manager.client.send_calls[1][1]["@alice:example.org"]["*"]
@@ -6083,6 +6299,8 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
                 "session_key": "session-key",
             },
             "curve-sender",
+            sender_claimed_keys={"ed25519": "ed-sender"},
+            sender_user_id="@alice:example.org",
         )
         cancellation = manager.client.send_calls[2][1]["@alice:example.org"]["*"]
         self.assertEqual(cancellation["action"], "request_cancellation")
@@ -6103,7 +6321,19 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
                 call_order.append(("request", kwargs["session_id"]))
                 return True
 
-            async def handle_room_key(self, content, sender_key):
+            async def decrypt_event(self, content, sender, room_id):
+                return {
+                    "type": "m.room_key",
+                    "content": {
+                        "algorithm": "m.megolm.v1.aes-sha2",
+                        "room_id": "!room:example.org",
+                        "session_id": "session-import",
+                        "session_key": "session-key",
+                    },
+                    "keys": {"ed25519": "ed-alice"},
+                }
+
+            async def handle_room_key(self, content, sender_key, **kwargs):
                 call_order.append(("import", content["session_id"]))
 
             async def handle_verification_event(self, event_type, sender, content):
@@ -6121,13 +6351,12 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
                     "content": {},
                 },
                 {
-                    "type": "m.room_key",
+                    "type": "m.room.encrypted",
                     "sender": "@alice:example.org",
                     "content": {
-                        "algorithm": "m.megolm.v1.aes-sha2",
-                        "room_id": "!room:example.org",
-                        "session_id": "session-import",
-                        "session_key": "session-key",
+                        "algorithm": "m.olm.v1.curve25519-aes-sha2",
+                        "sender_key": "curve-alice",
+                        "ciphertext": {"curve-self": {"type": 1, "body": "x"}},
                     },
                 },
                 {
@@ -6188,6 +6417,8 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
                 "session_key": "invalid-session-key",
             },
             "curve-sender",
+            sender_claimed_keys={"ed25519": "ed-sender"},
+            sender_user_id="@alice:example.org",
         )
 
         self.assertIn(
@@ -6247,15 +6478,11 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                 return {
                     "device_keys": {
                         "@bot:example.org": {
-                            "WEB456": {
-                                "keys": {"ed25519:WEB456": "fingerprint-web"}
-                            }
+                            "WEB456": {"keys": {"ed25519:WEB456": "fingerprint-web"}}
                         }
                     },
                     "master_keys": {
-                        "@bot:example.org": {
-                            "keys": {"ed25519:MASTER": "MASTER"}
-                        }
+                        "@bot:example.org": {"keys": {"ed25519:MASTER": "MASTER"}}
                     },
                 }
 
@@ -6326,14 +6553,20 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             async def _maybe_prepare_self_verification_qr(
                 self, sender, peer_device, methods, transaction_id
             ):
-                self.qr_calls.append((sender, peer_device, tuple(methods), transaction_id))
+                self.qr_calls.append(
+                    (sender, peer_device, tuple(methods), transaction_id)
+                )
                 return True
 
             async def _send_start(self, sender, device_id, transaction_id):
                 self.start_calls.append((sender, device_id, transaction_id))
 
-            async def _send_cancel(self, sender, device_id, transaction_id, code, reason):
-                self.cancel_calls.append((sender, device_id, transaction_id, code, reason))
+            async def _send_cancel(
+                self, sender, device_id, transaction_id, code, reason
+            ):
+                self.cancel_calls.append(
+                    (sender, device_id, transaction_id, code, reason)
+                )
 
         verifier = DummyVerifier()
         await verifier._handle_ready(
@@ -6486,7 +6719,9 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         flow_module = load_module("e2ee.verification_handlers_flow")
         constants = load_module("constants")
 
-        shared_secret = base64.b64encode(b"secret-qr-123456").decode("ascii").rstrip("=")
+        shared_secret = (
+            base64.b64encode(b"secret-qr-123456").decode("ascii").rstrip("=")
+        )
 
         class DummyVerifier(flow_module.SASVerificationFlowMixin):
             def __init__(self):
@@ -6506,8 +6741,12 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             async def _send_done(self, sender, device_id, transaction_id):
                 self.done_calls.append((sender, device_id, transaction_id))
 
-            async def _send_cancel(self, sender, device_id, transaction_id, code, reason):
-                self.cancel_calls.append((sender, device_id, transaction_id, code, reason))
+            async def _send_cancel(
+                self, sender, device_id, transaction_id, code, reason
+            ):
+                self.cancel_calls.append(
+                    (sender, device_id, transaction_id, code, reason)
+                )
 
         verifier = DummyVerifier()
         await verifier._handle_start(
@@ -6577,7 +6816,9 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(verifier.e2ee_manager.secret_requests, ["@bot:example.org"])
 
-    async def test_handle_done_for_qr_scan_sends_done_back_before_marking_verified(self):
+    async def test_handle_done_for_qr_scan_sends_done_back_before_marking_verified(
+        self,
+    ):
         flow_module = load_module("e2ee.verification_handlers_flow")
 
         class DummyDeviceStore:
@@ -6675,7 +6916,9 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(verifier.e2ee_manager.secret_requests, ["@bot:example.org"])
 
-    async def test_handle_done_publishes_cross_signing_for_same_user_devices_we_started(self):
+    async def test_handle_done_publishes_cross_signing_for_same_user_devices_we_started(
+        self,
+    ):
         flow_module = load_module("e2ee.verification_handlers_flow")
 
         class DummyDeviceStore:
@@ -6822,7 +7065,9 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             ["@bot:example.org"],
         )
 
-    async def test_publish_trusted_device_republishes_current_device_keys_for_peer_verification(self):
+    async def test_publish_trusted_device_republishes_current_device_keys_for_peer_verification(
+        self,
+    ):
         verification_module = load_module("e2ee.e2ee_manager_verification")
 
         class DummyCrossSigning:
@@ -6857,7 +7102,9 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manager._cross_signing.master_calls, ["@bot:example.org"])
         self.assertEqual(manager._cross_signing.republish_calls, 1)
 
-    async def test_verify_untrusted_own_devices_does_not_treat_device_self_signature_as_owner_signed(self):
+    async def test_verify_untrusted_own_devices_does_not_treat_device_self_signature_as_owner_signed(
+        self,
+    ):
         verification_module = load_module("e2ee.e2ee_manager_verification")
 
         class DummyManager(verification_module.E2EEManagerVerificationMixin):
@@ -6898,7 +7145,9 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             {"owner_signed": False, "master_signed": False},
         )
 
-    async def test_verify_untrusted_own_devices_does_not_auto_request_same_user_verification(self):
+    async def test_verify_untrusted_own_devices_does_not_auto_request_same_user_verification(
+        self,
+    ):
         verification_module = load_module("e2ee.e2ee_manager_verification")
 
         class DummyClient:
@@ -6916,9 +7165,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                             },
                             "DEV456": {
                                 "signatures": {
-                                    "@bot:example.org": {
-                                        "ed25519:DEV456": "self"
-                                    }
+                                    "@bot:example.org": {"ed25519:DEV456": "self"}
                                 }
                             },
                             "DEV789": {
@@ -6932,9 +7179,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                         }
                     },
                     "self_signing_keys": {
-                        "@bot:example.org": {
-                            "keys": {"ed25519:SELFKEY": "SELFKEY"}
-                        }
+                        "@bot:example.org": {"keys": {"ed25519:SELFKEY": "SELFKEY"}}
                     },
                     "master_keys": {
                         "@bot:example.org": {
@@ -6954,14 +7199,18 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                 self._cross_signing = types.SimpleNamespace(has_master_key=True)
                 self.calls = []
 
-            async def _initiate_verification_for_device(self, target_device_id, methods=None):
+            async def _initiate_verification_for_device(
+                self, target_device_id, methods=None
+            ):
                 self.calls.append((target_device_id, methods))
 
         manager = DummyManager()
         await manager._verify_untrusted_own_devices()
         self.assertEqual(manager.calls, [])
 
-    async def test_request_missing_secrets_after_verification_requests_cross_signing_and_backup(self):
+    async def test_request_missing_secrets_after_verification_requests_cross_signing_and_backup(
+        self,
+    ):
         verification_module = load_module("e2ee.e2ee_manager_verification")
         constants = load_module("constants")
 
@@ -7013,7 +7262,9 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             [constants.SECRET_MEGOLM_BACKUP_V1],
         )
 
-    async def test_request_missing_secrets_after_verification_skips_when_backup_key_exists(self):
+    async def test_request_missing_secrets_after_verification_skips_when_backup_key_exists(
+        self,
+    ):
         verification_module = load_module("e2ee.e2ee_manager_verification")
 
         class DummyCrossSigning:
@@ -7044,7 +7295,9 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         await manager.request_missing_secrets_after_verification("@bot:example.org")
         self.assertEqual(manager.secret_names, [])
 
-    async def test_initiate_verification_for_device_includes_qr_show_and_reciprocate(self):
+    async def test_initiate_verification_for_device_includes_qr_show_and_reciprocate(
+        self,
+    ):
         verification_module = load_module("e2ee.e2ee_manager_verification")
         constants = load_module("constants")
 
@@ -7142,7 +7395,9 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         plugin_config_stub.get_plugin_config = lambda: types.SimpleNamespace(
             storage_backend_config=types.SimpleNamespace(backend="json")
         )
-        with mock.patch.dict(sys.modules, {f"{PACKAGE_NAME}.plugin_config": plugin_config_stub}):
+        with mock.patch.dict(
+            sys.modules, {f"{PACKAGE_NAME}.plugin_config": plugin_config_stub}
+        ):
             verification_module = importlib.import_module(module_name)
         constants = load_module("constants")
 
@@ -7284,7 +7539,9 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
 
         class DummyClient:
             async def query_keys(self, _device_keys):
-                raise AssertionError("query_keys should not be called for other-user MACs")
+                raise AssertionError(
+                    "query_keys should not be called for other-user MACs"
+                )
 
         class DummyVerifier(send_module.SASVerificationSendDeviceMixin):
             def __init__(self):
@@ -7325,7 +7582,9 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-    async def test_send_mac_for_same_user_when_peer_lacks_master_trust_includes_master_key(self):
+    async def test_send_mac_for_same_user_when_peer_lacks_master_trust_includes_master_key(
+        self,
+    ):
         send_module = load_module("e2ee.verification_send_device")
 
         class DummyEstablishedSas:
@@ -7391,7 +7650,9 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-    async def test_send_in_room_mac_for_same_user_when_peer_has_master_trust_excludes_master_key(self):
+    async def test_send_in_room_mac_for_same_user_when_peer_has_master_trust_excludes_master_key(
+        self,
+    ):
         send_module = load_module("e2ee.verification_send_device")
         room_module = load_module("e2ee.verification_send_room")
 
@@ -7490,8 +7751,12 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             async def _send_done(self, sender, device_id, transaction_id):
                 self.done_calls.append((sender, device_id, transaction_id))
 
-            async def _send_cancel(self, sender, device_id, transaction_id, code, reason):
-                self.cancel_calls.append((sender, device_id, transaction_id, code, reason))
+            async def _send_cancel(
+                self, sender, device_id, transaction_id, code, reason
+            ):
+                self.cancel_calls.append(
+                    (sender, device_id, transaction_id, code, reason)
+                )
 
         verifier = DummyVerifier()
         device_key_id = "ed25519:DEV456"
@@ -7545,8 +7810,12 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             async def _send_done(self, sender, device_id, transaction_id):
                 self.done_calls.append((sender, device_id, transaction_id))
 
-            async def _send_cancel(self, sender, device_id, transaction_id, code, reason):
-                self.cancel_calls.append((sender, device_id, transaction_id, code, reason))
+            async def _send_cancel(
+                self, sender, device_id, transaction_id, code, reason
+            ):
+                self.cancel_calls.append(
+                    (sender, device_id, transaction_id, code, reason)
+                )
 
         verifier = DummyVerifier()
         await verifier._handle_mac(
@@ -7604,8 +7873,12 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             async def _send_done(self, sender, device_id, transaction_id):
                 self.done_calls.append((sender, device_id, transaction_id))
 
-            async def _send_cancel(self, sender, device_id, transaction_id, code, reason):
-                self.cancel_calls.append((sender, device_id, transaction_id, code, reason))
+            async def _send_cancel(
+                self, sender, device_id, transaction_id, code, reason
+            ):
+                self.cancel_calls.append(
+                    (sender, device_id, transaction_id, code, reason)
+                )
 
         verifier = DummyVerifier()
         await verifier._handle_mac(
@@ -7814,12 +8087,10 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                                 "usage": ["master"],
                                 "keys": {"ed25519:MASTERKEY": "MASTERKEY"},
                                 "signatures": {
-                                    "@bot:example.org": {
-                                        "ed25519:OLD": "old-signature"
-                                    }
+                                    "@bot:example.org": {"ed25519:OLD": "old-signature"}
                                 },
                             }
-                        }
+                        },
                     }
                 return {
                     "device_keys": {
@@ -7840,11 +8111,11 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                             "signatures": {
                                 "@bot:example.org": {
                                     "ed25519:OLD": "old-signature",
-                                    "ed25519:BOT123": "device-signature"
+                                    "ed25519:BOT123": "device-signature",
                                 }
                             },
                         }
-                    }
+                    },
                 }
 
             async def upload_signatures(self, signatures):
@@ -7886,9 +8157,7 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                         "usage": ["master"],
                         "keys": {"ed25519:MASTERKEY": "MASTERKEY"},
                         "signatures": {
-                            "@bot:example.org": {
-                                "ed25519:BOT123": "device-signature"
-                            }
+                            "@bot:example.org": {"ed25519:BOT123": "device-signature"}
                         },
                     }
                 }
@@ -7946,7 +8215,9 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         self.assertEqual(cross_signing.client.upload_payloads, [])
 
-    async def test_republish_current_device_keys_skips_when_owner_signature_already_exists(self):
+    async def test_republish_current_device_keys_skips_when_owner_signature_already_exists(
+        self,
+    ):
         cross_signing_module = self._load_cross_signing_module()
 
         class DummyClient:
@@ -7976,7 +8247,9 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                     }
                 }
 
-            async def upload_keys(self, device_keys=None, one_time_keys=None, fallback_keys=None):
+            async def upload_keys(
+                self, device_keys=None, one_time_keys=None, fallback_keys=None
+            ):
                 self.upload_payloads.append(device_keys)
                 return {"one_time_key_counts": {}}
 
@@ -7992,7 +8265,9 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(cross_signing.client.upload_payloads, [])
 
-    async def test_sign_master_key_with_device_skips_upload_when_signature_already_present(self):
+    async def test_sign_master_key_with_device_skips_upload_when_signature_already_present(
+        self,
+    ):
         cross_signing_module = self._load_cross_signing_module()
 
         class DummyClient:
@@ -8114,7 +8389,9 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
         ok = await cross_signing.sign_device("BOT123")
         self.assertFalse(ok)
 
-    async def test_sign_master_key_with_device_returns_false_when_current_device_keys_mismatch(self):
+    async def test_sign_master_key_with_device_returns_false_when_current_device_keys_mismatch(
+        self,
+    ):
         cross_signing_module = self._load_cross_signing_module()
 
         class DummyClient:
@@ -8139,9 +8416,7 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                             "usage": ["master"],
                             "keys": {"ed25519:MASTERKEY": "MASTERKEY"},
                             "signatures": {
-                                "@bot:example.org": {
-                                    "ed25519:OLD": "old-signature"
-                                }
+                                "@bot:example.org": {"ed25519:OLD": "old-signature"}
                             },
                         }
                     },
@@ -8198,23 +8473,29 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                         }
                     },
                     "self_signing_keys": {
-                        "@bot:example.org": {
-                            "keys": {f"ed25519:{self_pub}": self_pub}
-                        }
+                        "@bot:example.org": {"keys": {f"ed25519:{self_pub}": self_pub}}
                     },
                     "user_signing_keys": {
-                        "@bot:example.org": {
-                            "keys": {f"ed25519:{user_pub}": user_pub}
-                        }
+                        "@bot:example.org": {"keys": {f"ed25519:{user_pub}": user_pub}}
                     },
                 }
 
         class DummySecretStorage:
             def __init__(self):
                 self.payloads = {
-                    constants.SECRET_CROSS_SIGNING_MASTER: base64.b64encode(master_priv).decode("utf-8").encode("utf-8"),
-                    constants.SECRET_CROSS_SIGNING_SELF_SIGNING: base64.b64encode(self_priv).decode("utf-8").encode("utf-8"),
-                    constants.SECRET_CROSS_SIGNING_USER_SIGNING: base64.b64encode(user_priv).decode("utf-8").encode("utf-8"),
+                    constants.SECRET_CROSS_SIGNING_MASTER: base64.b64encode(master_priv)
+                    .decode("utf-8")
+                    .encode("utf-8"),
+                    constants.SECRET_CROSS_SIGNING_SELF_SIGNING: base64.b64encode(
+                        self_priv
+                    )
+                    .decode("utf-8")
+                    .encode("utf-8"),
+                    constants.SECRET_CROSS_SIGNING_USER_SIGNING: base64.b64encode(
+                        user_priv
+                    )
+                    .decode("utf-8")
+                    .encode("utf-8"),
                 }
 
             async def read_ssss_secret(self, secret_name):
@@ -8253,19 +8534,13 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
             async def query_keys(self, device_keys, timeout=10000):
                 return {
                     "master_keys": {
-                        "@bot:example.org": {
-                            "keys": {f"ed25519:{'M' * 43}": "M" * 43}
-                        }
+                        "@bot:example.org": {"keys": {f"ed25519:{'M' * 43}": "M" * 43}}
                     },
                     "self_signing_keys": {
-                        "@bot:example.org": {
-                            "keys": {f"ed25519:{'S' * 43}": "S" * 43}
-                        }
+                        "@bot:example.org": {"keys": {f"ed25519:{'S' * 43}": "S" * 43}}
                     },
                     "user_signing_keys": {
-                        "@bot:example.org": {
-                            "keys": {f"ed25519:{'U' * 43}": "U" * 43}
-                        }
+                        "@bot:example.org": {"keys": {f"ed25519:{'U' * 43}": "U" * 43}}
                     },
                 }
 
@@ -8337,7 +8612,9 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
             [mock.call(constants.SECRET_CROSS_SIGNING_USER_SIGNING)],
         )
 
-    async def test_generate_and_upload_keys_stores_private_keys_in_ssss_after_public_upload(self):
+    async def test_generate_and_upload_keys_stores_private_keys_in_ssss_after_public_upload(
+        self,
+    ):
         cross_signing_module = self._load_cross_signing_module()
         constants = load_module("constants")
 
@@ -8498,9 +8775,7 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                     }
                 signatures = {}
                 if self.signature_visible:
-                    signatures = {
-                        "@bot:example.org": {"ed25519:SELFKEY": "sig"}
-                    }
+                    signatures = {"@bot:example.org": {"ed25519:SELFKEY": "sig"}}
                 return {
                     "device_keys": {
                         "@bot:example.org": {
@@ -8548,7 +8823,9 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         self.assertEqual(len(client.upload_payloads), 1)
 
-    async def test_sign_device_skips_republish_when_server_device_keys_are_unchanged(self):
+    async def test_sign_device_skips_republish_when_server_device_keys_are_unchanged(
+        self,
+    ):
         cross_signing_module = self._load_cross_signing_module()
 
         class DummyClient:
@@ -8588,7 +8865,9 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.upload_payloads.append(signatures)
                 return {"failures": {}}
 
-            async def upload_keys(self, device_keys=None, one_time_keys=None, fallback_keys=None):
+            async def upload_keys(
+                self, device_keys=None, one_time_keys=None, fallback_keys=None
+            ):
                 self.republish_calls.append(device_keys)
                 return {"one_time_key_counts": {"signed_curve25519": 50}}
 
@@ -8616,7 +8895,9 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(client.upload_payloads), 1)
         self.assertEqual(len(client.republish_calls), 0)
 
-    async def test_sign_master_key_with_device_repairs_current_device_key_mismatch_once(self):
+    async def test_sign_master_key_with_device_repairs_current_device_key_mismatch_once(
+        self,
+    ):
         cross_signing_module = self._load_cross_signing_module()
 
         class DummyClient:
@@ -8632,15 +8913,15 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                             "local-ed25519" if self.repaired else "server-ed25519"
                         ),
                         "curve25519:BOT123": (
-                            "local-curve25519"
-                            if self.repaired
-                            else "server-curve25519"
+                            "local-curve25519" if self.repaired else "server-curve25519"
                         ),
                     }
                 }
                 master_signatures = {"@bot:example.org": {"ed25519:OLD": "old"}}
                 if self.signature_visible:
-                    master_signatures["@bot:example.org"]["ed25519:BOT123"] = "device-signature"
+                    master_signatures["@bot:example.org"]["ed25519:BOT123"] = (
+                        "device-signature"
+                    )
                 return {
                     "device_keys": {"@bot:example.org": {"BOT123": device_payload}},
                     "master_keys": {
@@ -8661,9 +8942,7 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
         class DummyOlm:
             class _Account:
                 def sign(self, payload):
-                    return types.SimpleNamespace(
-                        to_base64=lambda: "device-signature"
-                    )
+                    return types.SimpleNamespace(to_base64=lambda: "device-signature")
 
             def __init__(self):
                 self._account = self._Account()
@@ -8696,7 +8975,9 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
-    async def test_initialize_prefers_configured_key_for_dehydrated_restore_before_ssss(self):
+    async def test_initialize_prefers_configured_key_for_dehydrated_restore_before_ssss(
+        self,
+    ):
         backup_module = load_module("e2ee.key_backup_backup")
 
         expected_key = b"D" * 32
@@ -8858,11 +9139,15 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         self.assertEqual(backup.store.saved, [("sess1", "legacy-session")])
 
-    async def test_upload_single_key_uses_matrix_backup_v1_format_when_public_key_exists(self):
+    async def test_upload_single_key_uses_matrix_backup_v1_format_when_public_key_exists(
+        self,
+    ):
         backup_module = load_module("e2ee.key_backup_backup")
         key_backup_client_mod = load_module("client.key_backup_mixin")
 
-        if not getattr(load_module("e2ee.key_backup_crypto"), "CRYPTO_AVAILABLE", False):
+        if not getattr(
+            load_module("e2ee.key_backup_crypto"), "CRYPTO_AVAILABLE", False
+        ):
             self.skipTest("cryptography unavailable")
 
         from cryptography.hazmat.primitives import serialization
@@ -8888,7 +9173,9 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
                 self._backup_version = "1"
                 self._encryption_key = b"1" * 32
                 self._backup_auth_data = {
-                    "public_key": base64.b64encode(backup_public_key).decode().rstrip("="),
+                    "public_key": base64.b64encode(backup_public_key)
+                    .decode()
+                    .rstrip("="),
                 }
 
         backup = DummyBackup()
@@ -8946,7 +9233,11 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(backup.client.calls[0][3], {"params": {"version": "1"}})
         self.assertEqual(backup.client.calls[1][3], {"params": {"version": "1"}})
         self.assertEqual(
-            set(backup.client.calls[1][2]["rooms"]["!room:example.org"]["sessions"].keys()),
+            set(
+                backup.client.calls[1][2]["rooms"]["!room:example.org"][
+                    "sessions"
+                ].keys()
+            ),
             {"sess1"},
         )
 
@@ -9163,6 +9454,9 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
             def get_olm_session(self, curve_key):
                 return object()
 
+            def verify_device_keys(self, user_id, device_id, device_info):
+                return True
+
             def get_megolm_outbound_shared_history(self, room_id):
                 return True
 
@@ -9213,9 +9507,18 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
             "!room:example.org", "shared", "world_readable"
         )
         await manager.on_history_visibility_changed("!new:example.org", None, "joined")
+        await manager.on_history_visibility_changed(
+            "!invites:example.org",
+            "joined",
+            "invited",
+        )
         self.assertEqual(
             manager._olm.discarded,
-            ["!room:example.org", "!new:example.org"],
+            [
+                "!room:example.org",
+                "!new:example.org",
+                "!invites:example.org",
+            ],
         )
         self.assertEqual(
             manager._room_history_visibility["!room:example.org"],
@@ -9285,9 +9588,19 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
                 self._initialized = True
                 self._key_backup = FakeBackup()
                 self.enable_key_backup = True
+                self.user_id = "@alice:example.org"
 
             async def _cancel_room_key_request(self, *args):
                 return None
+
+            async def _find_device_by_sender_key(self, *args):
+                return self.user_id, "FORWARDER"
+
+            async def _get_validated_device_info(self, *args):
+                return {"device_id": "FORWARDER"}
+
+            async def _is_own_device_trusted(self, *args):
+                return True
 
         manager = DummyManager()
         await manager.handle_room_key(
@@ -9300,8 +9613,11 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
             },
             "curve-original",
             sender_claimed_keys={"ed25519": "ed-original"},
+            sender_user_id="@alice:example.org",
         )
-        self.assertIs(manager._olm.imports[0][-1], True)
+        self.assertIs(manager._olm.imports[0][-3], True)
+        self.assertEqual(manager._olm.imports[0][-2], "@alice:example.org")
+        self.assertEqual(manager._olm.imports[0][-1], {})
         self.assertIs(manager._key_backup.uploads[0]["shared_history"], True)
 
         await manager.handle_room_key(
@@ -9316,9 +9632,11 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
                 "shared_history": True,
             },
             "curve-forwarder",
+            sender_user_id="@alice:example.org",
+            forwarded=True,
         )
-        self.assertEqual(manager._olm.imports[1][-2], ["curve-forwarder"])
-        self.assertIs(manager._olm.imports[1][-1], False)
+        self.assertEqual(manager._olm.imports[1][-4], ["curve-forwarder"])
+        self.assertIs(manager._olm.imports[1][-3], False)
 
     def test_key_backup_plaintext_carries_shared_history(self):
         backup_module = load_module("e2ee.key_backup_backup")
@@ -9423,6 +9741,819 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(sender._sessions["txn"]["start_content"], sender.sent[0][3])
         self.assertIs(sender._sessions["txn"]["we_are_initiator"], True)
+
+
+class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
+    def test_real_device_and_one_time_key_signatures_are_verified(self):
+        keys_module = load_module("e2ee.olm_machine_keys")
+        types_module = load_module("e2ee.olm_machine_types")
+
+        class KeyMachine(keys_module.OlmMachineKeysMixin):
+            def __init__(self):
+                self.user_id = "@alice:example.org"
+                self.device_id = "ALICE"
+                self._account = types_module.Account()
+
+        machine = KeyMachine()
+        device_keys = machine.get_device_keys()
+        self.assertTrue(
+            machine.verify_device_keys(
+                machine.user_id,
+                machine.device_id,
+                device_keys,
+            )
+        )
+
+        tampered_device = copy.deepcopy(device_keys)
+        tampered_device["keys"]["curve25519:ALICE"] = "tampered"
+        self.assertFalse(
+            machine.verify_device_keys(
+                machine.user_id,
+                machine.device_id,
+                tampered_device,
+            )
+        )
+
+        one_time_keys = machine.generate_one_time_keys(1)
+        selected = machine.select_verified_one_time_key(
+            machine.user_id,
+            machine.device_id,
+            device_keys["keys"]["ed25519:ALICE"],
+            one_time_keys,
+        )
+        self.assertIsNotNone(selected)
+
+        tampered_otks = copy.deepcopy(one_time_keys)
+        next(iter(tampered_otks.values()))["key"] = "tampered"
+        self.assertIsNone(
+            machine.select_verified_one_time_key(
+                machine.user_id,
+                machine.device_id,
+                device_keys["keys"]["ed25519:ALICE"],
+                tampered_otks,
+            )
+        )
+
+    async def test_incoming_olm_payload_is_bound_to_signed_device_keys(self):
+        decrypt_module = load_module("e2ee.e2ee_manager_decrypt")
+        keys_module = load_module("e2ee.olm_machine_keys")
+        types_module = load_module("e2ee.olm_machine_types")
+
+        class KeyMachine(keys_module.OlmMachineKeysMixin):
+            def __init__(self, user_id, device_id):
+                self.user_id = user_id
+                self.device_id = device_id
+                self._account = types_module.Account()
+
+            @property
+            def ed25519_key(self):
+                return self.get_identity_keys()[f"ed25519:{self.device_id}"]
+
+        sender = KeyMachine("@alice:example.org", "ALICE")
+        receiver = KeyMachine("@bot:example.org", "BOT")
+
+        class Store:
+            def __init__(self):
+                self.saved = []
+
+            def save_device_keys(self, *args):
+                self.saved.append(args)
+
+        class Manager(decrypt_module.E2EEManagerDecryptMixin):
+            def __init__(self):
+                self.user_id = receiver.user_id
+                self._olm = receiver
+                self._store = Store()
+
+        payload = {
+            "sender": sender.user_id,
+            "keys": {"ed25519": sender.ed25519_key},
+            "recipient": receiver.user_id,
+            "recipient_keys": {"ed25519": receiver.ed25519_key},
+            "type": "m.dummy",
+            "content": {},
+            "sender_device_keys": sender.get_device_keys(),
+        }
+        manager = Manager()
+        sender_curve = sender.get_identity_keys()["curve25519:ALICE"]
+        self.assertTrue(
+            await manager._validate_incoming_olm_plaintext(
+                copy.deepcopy(payload),
+                sender.user_id,
+                sender_curve,
+            )
+        )
+        self.assertEqual(len(manager._store.saved), 1)
+
+        wrong_recipient = copy.deepcopy(payload)
+        wrong_recipient["recipient_keys"]["ed25519"] = "wrong"
+        self.assertFalse(
+            await manager._validate_incoming_olm_plaintext(
+                wrong_recipient,
+                sender.user_id,
+                sender_curve,
+            )
+        )
+
+        tampered_device = copy.deepcopy(payload)
+        tampered_device["sender_device_keys"]["keys"]["curve25519:ALICE"] = "wrong"
+        self.assertFalse(
+            await manager._validate_incoming_olm_plaintext(
+                tampered_device,
+                sender.user_id,
+                sender_curve,
+            )
+        )
+
+    def test_megolm_import_checks_session_id_and_only_accepts_lower_index(self):
+        megolm_module = load_module("e2ee.olm_machine_megolm")
+        types_module = load_module("e2ee.olm_machine_types")
+
+        class Store:
+            def __init__(self):
+                self.inbound = {}
+                self.metadata = {}
+
+            def get_megolm_inbound(self, session_id):
+                return self.inbound.get(session_id)
+
+            def save_megolm_inbound(self, session_id, value):
+                self.inbound[session_id] = value
+
+            def get_megolm_inbound_metadata(self, session_id):
+                return self.metadata.get(session_id)
+
+            def save_megolm_inbound_metadata(self, session_id, **metadata):
+                self.metadata[session_id] = dict(metadata)
+
+        class Machine(megolm_module.OlmMachineMegolmMixin):
+            def __init__(self):
+                self.store = Store()
+                self._pickle_key = b"p" * 32
+                self._megolm_inbound = {}
+
+        outbound = types_module.GroupSession()
+        full = types_module.InboundGroupSession(outbound.session_key)
+        session_id = outbound.session_id
+        later = full.export_at(5).to_base64()
+        machine = Machine()
+
+        self.assertFalse(
+            machine.add_megolm_inbound_session(
+                "!room:example.org",
+                "wrong-session-id",
+                later,
+                "curve",
+            )
+        )
+        self.assertTrue(
+            machine.add_megolm_inbound_session(
+                "!room:example.org",
+                session_id,
+                later,
+                "curve",
+            )
+        )
+        self.assertEqual(
+            machine.get_megolm_first_known_index(
+                machine.get_megolm_inbound_session(session_id)
+            ),
+            5,
+        )
+
+        self.assertTrue(
+            machine.add_megolm_inbound_session(
+                "!room:example.org",
+                session_id,
+                outbound.session_key.to_base64(),
+                "curve",
+            )
+        )
+        self.assertEqual(
+            machine.get_megolm_first_known_index(
+                machine.get_megolm_inbound_session(session_id)
+            ),
+            0,
+        )
+        best_pickle = machine.store.inbound[session_id]
+
+        self.assertFalse(
+            machine.add_megolm_inbound_session(
+                "!room:example.org",
+                session_id,
+                later,
+                "curve",
+            )
+        )
+        self.assertEqual(machine.store.inbound[session_id], best_pickle)
+        self.assertFalse(
+            machine.add_megolm_inbound_session(
+                "!other:example.org",
+                session_id,
+                outbound.session_key.to_base64(),
+                "curve",
+            )
+        )
+        self.assertEqual(machine.store.inbound[session_id], best_pickle)
+
+    async def test_megolm_room_sender_and_replay_binding(self):
+        decrypt_module = load_module("e2ee.e2ee_manager_decrypt")
+        constants_module = load_module("e2ee.constants")
+
+        class Store:
+            def __init__(self):
+                self.replay = {}
+
+            def get_megolm_inbound_metadata(self, session_id):
+                return {
+                    "room_id": "!room:example.org",
+                    "sender_user_id": "@alice:example.org",
+                }
+
+            def check_and_record_megolm_message_index(
+                self, session_id, index, event_id
+            ):
+                key = (session_id, index)
+                previous = self.replay.get(key)
+                if previous is not None:
+                    return previous == event_id
+                self.replay[key] = event_id
+                return True
+
+        class Manager(decrypt_module.E2EEManagerDecryptMixin):
+            def __init__(self):
+                self._store = Store()
+
+        def plaintext(room_id="!room:example.org"):
+            return {
+                "room_id": room_id,
+                "type": "m.room.message",
+                "content": {"msgtype": "m.text", "body": "hello"},
+                constants_module.MEGOLM_MESSAGE_INDEX_FIELD: 7,
+            }
+
+        manager = Manager()
+        kwargs = {
+            "sender": "@alice:example.org",
+            "room_id": "!room:example.org",
+            "session_id": "session",
+            "ciphertext": "ciphertext",
+        }
+        self.assertTrue(
+            await manager._validate_incoming_megolm_plaintext(
+                plaintext(),
+                event_id="$event-one",
+                **kwargs,
+            )
+        )
+        self.assertTrue(
+            await manager._validate_incoming_megolm_plaintext(
+                plaintext(),
+                event_id="$event-one",
+                **kwargs,
+            )
+        )
+        self.assertFalse(
+            await manager._validate_incoming_megolm_plaintext(
+                plaintext(),
+                event_id="$event-two",
+                **kwargs,
+            )
+        )
+        self.assertFalse(
+            await manager._validate_incoming_megolm_plaintext(
+                plaintext("!other:example.org"),
+                event_id="$event-three",
+                **kwargs,
+            )
+        )
+
+    async def test_megolm_rotation_policy_discards_expired_session(self):
+        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+
+        class Store:
+            def get_megolm_outbound_metadata(self, room_id):
+                return {
+                    "session_id": "old",
+                    "shared_history": False,
+                    "created_at_ms": 0,
+                    "message_count": 2,
+                }
+
+        class Olm:
+            def __init__(self):
+                self.session = ("old", "old-key")
+                self.discarded = []
+
+            def get_megolm_outbound_session_info(self, room_id):
+                return self.session
+
+            def discard_megolm_outbound_session(self, room_id):
+                self.discarded.append(room_id)
+                self.session = None
+                return True
+
+            def encrypt_megolm(self, room_id, event_type, content):
+                return {"session_id": self.session[0]}
+
+        class Manager(sessions_module.E2EEManagerSessionsMixin):
+            def __init__(self):
+                self._olm = Olm()
+                self._store = Store()
+                self._initialized = True
+                self._room_encryption_config = {
+                    "!room:example.org": {
+                        "rotation_period_ms": 2**63 - 1,
+                        "rotation_period_msgs": 2,
+                    }
+                }
+                self._room_key_share_cache = {}
+                self._room_key_share_locks = {}
+
+            async def _get_room_shared_history(self, room_id):
+                return False
+
+            async def _create_and_share_session(self, room_id, **kwargs):
+                self._olm.session = ("new", "new-key")
+
+        manager = Manager()
+        encrypted = await manager.encrypt_message(
+            "!room:example.org",
+            "m.room.message",
+            {"msgtype": "m.text", "body": "hello"},
+        )
+        self.assertEqual(manager._olm.discarded, ["!room:example.org"])
+        self.assertEqual(encrypted["session_id"], "new")
+
+    async def test_fallback_key_is_replaced_from_required_sync_state(self):
+        keys_module = load_module("e2ee.e2ee_manager_keys")
+
+        class Client:
+            def __init__(self):
+                self.uploads = []
+
+            async def upload_keys(self, **kwargs):
+                self.uploads.append(kwargs)
+                return {"one_time_key_counts": {"signed_curve25519": 50}}
+
+        class Olm:
+            def __init__(self):
+                self.fallbacks = 0
+                self.published = 0
+
+            def generate_one_time_keys(self, count):
+                raise AssertionError("healthy OTK inventory must not be refilled")
+
+            def generate_fallback_key(self):
+                self.fallbacks += 1
+                return {"signed_curve25519:key": {"key": "fallback"}}
+
+            def mark_keys_as_published(self):
+                self.published += 1
+
+        class Manager(keys_module.E2EEManagerKeysMixin):
+            def __init__(self):
+                self.client = Client()
+                self._olm = Olm()
+                self._initialized = True
+                self.otk_threshold_ratio = 33
+                self.key_maintenance_interval = 0
+                self._last_otk_maintenance_ts = 0.0
+
+        manager = Manager()
+        await manager.ensure_sufficient_one_time_keys(
+            {"signed_curve25519": 50},
+            [],
+        )
+        self.assertEqual(manager._olm.fallbacks, 1)
+        self.assertEqual(len(manager.client.uploads), 1)
+        self.assertIsNotNone(manager.client.uploads[0]["fallback_keys"])
+
+        healthy = Manager()
+        await healthy.ensure_sufficient_one_time_keys(
+            {"signed_curve25519": 50},
+            ["signed_curve25519"],
+        )
+        self.assertEqual(healthy.client.uploads, [])
+
+    async def test_joined_history_visibility_excludes_invited_members(self):
+        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+
+        class Client:
+            async def get_room_state(self, room_id):
+                return [
+                    {
+                        "type": "m.room.history_visibility",
+                        "state_key": "",
+                        "content": {"history_visibility": "joined"},
+                    },
+                    {
+                        "type": "m.room.member",
+                        "state_key": "@joined:example.org",
+                        "content": {"membership": "join"},
+                    },
+                    {
+                        "type": "m.room.member",
+                        "state_key": "@invited:example.org",
+                        "content": {"membership": "invite"},
+                    },
+                ]
+
+        class Manager(sessions_module.E2EEManagerSessionsMixin):
+            def __init__(self):
+                self.client = Client()
+                self._room_members_cache = {}
+                self._room_history_visibility = {}
+                self._room_encryption_config = {}
+
+        manager = Manager()
+        self.assertEqual(
+            await manager._get_room_members("!room:example.org"),
+            ["@joined:example.org"],
+        )
+
+    async def test_limited_sync_non_join_membership_rotates_megolm(self):
+        members_module = load_module("processors.event_processor_members")
+
+        class E2EEManager:
+            def __init__(self):
+                self.rotations = []
+
+            async def on_room_member_left(self, room_id, user_id):
+                self.rotations.append((room_id, user_id))
+
+        processor = members_module.MatrixEventProcessorMembers.__new__(
+            members_module.MatrixEventProcessorMembers
+        )
+        processor.user_id = "@bot:example.org"
+        processor.e2ee_manager = E2EEManager()
+        room = types.SimpleNamespace(
+            room_id="!room:example.org",
+            timeline_limited=True,
+            members={},
+            member_avatars={},
+        )
+
+        await processor._handle_member_event(
+            room,
+            {
+                "type": "m.room.member",
+                "state_key": "@alice:example.org",
+                "content": {"membership": "knock"},
+            },
+        )
+
+        self.assertEqual(
+            processor.e2ee_manager.rotations,
+            [("!room:example.org", "@alice:example.org")],
+        )
+
+    async def test_no_olm_notice_is_deduplicated_until_success(self):
+        requests_module = load_module("e2ee.e2ee_manager_requests")
+
+        class Manager(requests_module.E2EEManagerRequestsMixin):
+            def __init__(self):
+                self._no_olm_withheld_sent = set()
+                self.sent = []
+
+            async def _send_room_key_withheld(self, *args):
+                self.sent.append(args)
+                return True
+
+        manager = Manager()
+        self.assertTrue(await manager._send_no_olm_withheld("@alice:x", "DEV"))
+        self.assertFalse(await manager._send_no_olm_withheld("@alice:x", "DEV"))
+        self.assertEqual(len(manager.sent), 1)
+        manager._mark_olm_send_succeeded("@alice:x", "DEV")
+        self.assertTrue(await manager._send_no_olm_withheld("@alice:x", "DEV"))
+        self.assertEqual(len(manager.sent), 2)
+
+    async def test_olm_recovery_session_creation_stays_rate_limited_after_success(self):
+        requests_module = load_module("e2ee.e2ee_manager_requests")
+
+        class Client:
+            def __init__(self):
+                self.claims = []
+                self.sent = []
+
+            async def claim_keys(self, request):
+                self.claims.append(request)
+                return {
+                    "one_time_keys": {
+                        "@alice:example.org": {
+                            "ALICE": {"signed_curve25519:key": {"key": "one-time-key"}}
+                        }
+                    }
+                }
+
+            async def send_to_device(self, *args):
+                self.sent.append(args)
+
+        class Olm:
+            @staticmethod
+            def select_verified_one_time_key(*args):
+                return "signed_curve25519:key", "one-time-key"
+
+            @staticmethod
+            def create_outbound_session(*args):
+                return object()
+
+            @staticmethod
+            def encrypt_olm(*args, **kwargs):
+                return {"algorithm": "m.olm.v1.curve25519-aes-sha2"}
+
+        class Manager(requests_module.E2EEManagerRequestsMixin):
+            def __init__(self):
+                self.client = Client()
+                self._olm = Olm()
+                self._olm_recovery_attempts = {}
+                self._olm_recovery_retry_interval_sec = 3600.0
+
+            async def _find_device_by_sender_key(self, *args):
+                return "@alice:example.org", "ALICE"
+
+            async def _get_validated_device_info(self, *args, **kwargs):
+                return {
+                    "keys": {
+                        "curve25519:ALICE": "curve-alice",
+                        "ed25519:ALICE": "ed-alice",
+                    }
+                }
+
+        manager = Manager()
+        self.assertTrue(
+            await manager._request_new_session(
+                "curve-alice",
+                "@alice:example.org",
+            )
+        )
+        self.assertFalse(
+            await manager._request_new_session(
+                "curve-alice",
+                "@alice:example.org",
+            )
+        )
+        self.assertEqual(len(manager.client.claims), 1)
+        self.assertEqual(len(manager.client.sent), 1)
+
+    async def test_sync_processes_to_device_before_peer_and_fallback_keys(self):
+        sync_module = load_module("sync.sync_manager")
+
+        class Client:
+            async def sync(self, **kwargs):
+                return {
+                    "next_batch": "next",
+                    "to_device": {
+                        "events": [
+                            {
+                                "type": "m.room.encrypted",
+                                "sender": "@alice:example.org",
+                                "content": {},
+                            }
+                        ]
+                    },
+                    "device_lists": {"changed": ["@alice:example.org"]},
+                    "device_one_time_keys_count": {"signed_curve25519": 1},
+                    "device_unused_fallback_key_types": [],
+                }
+
+        manager = sync_module.MatrixSyncManager.__new__(sync_module.MatrixSyncManager)
+        manager.client = Client()
+        manager.sync_timeout = 0
+        manager.auto_join_rooms = False
+        manager._next_batch = None
+        manager._first_sync = True
+        manager._running = False
+        manager._sync_request_task = None
+        manager._active_callback_tasks = set()
+        manager._sync_success_count = 0
+        manager._sync_failure_count = 0
+        manager._sync_consecutive_failures = 0
+        manager._last_sync_success_at = None
+        manager._last_sync_failure_at = None
+        manager._last_sync_error = None
+        manager._reconnect_requested = False
+        manager.on_token_invalid = None
+        manager.on_room_event = None
+        manager.on_invite = None
+        manager.on_leave = None
+        manager.on_ephemeral_event = None
+        manager.on_room_account_data = None
+        manager.on_account_data = None
+        manager.on_presence_event = None
+        manager.on_sync = None
+        manager._save_sync_token = mock.AsyncMock()
+        order = []
+
+        async def on_to_device(events):
+            order.append("to_device")
+
+        async def on_device_lists(device_lists):
+            order.append("device_lists")
+
+        async def on_key_counts(counts, fallback_types):
+            order.append("key_counts")
+            manager._running = False
+
+        manager.on_to_device_event = on_to_device
+        manager.on_device_lists = on_device_lists
+        manager.on_device_one_time_keys_count = on_key_counts
+
+        await manager.sync_forever()
+
+        self.assertEqual(order[0], "to_device")
+        self.assertCountEqual(order[1:], ["device_lists", "key_counts"])
+
+    async def test_secret_request_and_send_require_verified_own_devices(self):
+        secrets_module = load_module("e2ee.e2ee_manager_secrets")
+
+        class Manager(secrets_module.E2EEManagerSecretsMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT"
+                self.trusted = False
+                self.sent = []
+                self.processed = []
+                self.pending = {"incoming-request": {"name": "m.megolm_backup.v1"}}
+
+            async def _get_validated_device_info(self, *args, **kwargs):
+                return {"device_id": "SIBLING"}
+
+            async def _is_own_device_trusted(self, *args):
+                return self.trusted
+
+            async def _get_secret_for_sharing(self, name):
+                return "shared-secret"
+
+            async def _send_secret(self, **kwargs):
+                self.sent.append(kwargs)
+
+            async def _find_device_by_sender_key(self, *args):
+                return self.user_id, "SIBLING"
+
+            def _get_pending_secret_request(self, request_id):
+                return self.pending.get(request_id)
+
+            async def _process_received_secret(self, name, secret):
+                self.processed.append((name, secret))
+
+            def _remove_pending_secret_request(self, request_id):
+                self.pending.pop(request_id, None)
+
+        manager = Manager()
+        request = {
+            "action": "request",
+            "name": "m.megolm_backup.v1",
+            "request_id": "outgoing-request",
+            "requesting_device_id": "SIBLING",
+        }
+        await manager.handle_secret_request(
+            manager.user_id,
+            request,
+            "SIBLING",
+        )
+        self.assertEqual(manager.sent, [])
+
+        await manager.handle_secret_send(
+            manager.user_id,
+            {"request_id": "incoming-request", "secret": "incoming-secret"},
+            "curve-sibling",
+        )
+        self.assertEqual(manager.processed, [])
+
+        manager.trusted = True
+        await manager.handle_secret_request(
+            manager.user_id,
+            request,
+            "SIBLING",
+        )
+        self.assertEqual(manager.sent[0]["target_device"], "SIBLING")
+
+        await manager.handle_secret_send(
+            manager.user_id,
+            {"request_id": "incoming-request", "secret": "incoming-secret"},
+            "curve-sibling",
+        )
+        self.assertEqual(
+            manager.processed,
+            [("m.megolm_backup.v1", "incoming-secret")],
+        )
+        self.assertNotIn("incoming-request", manager.pending)
+
+    async def test_direct_room_key_ignores_spoofed_content_sender_key(self):
+        decrypt_module = load_module("e2ee.e2ee_manager_decrypt")
+
+        class Olm:
+            def __init__(self):
+                self.imports = []
+
+            def add_megolm_inbound_session(self, *args):
+                self.imports.append(args)
+                return True
+
+        class Manager(decrypt_module.E2EEManagerDecryptMixin):
+            def __init__(self):
+                self._olm = Olm()
+                self._initialized = True
+                self._key_backup = None
+                self.enable_key_backup = False
+
+            async def _cancel_room_key_request(self, *args):
+                return None
+
+        manager = Manager()
+        await manager.handle_room_key(
+            {
+                "algorithm": "m.megolm.v1.aes-sha2",
+                "room_id": "!room:example.org",
+                "session_id": "session",
+                "session_key": "key",
+                "sender_key": "spoofed-curve",
+                "sender_claimed_ed25519_key": "spoofed-ed",
+            },
+            "authenticated-curve",
+            sender_claimed_keys={"ed25519": "authenticated-ed"},
+            sender_user_id="@alice:example.org",
+            forwarded=False,
+        )
+        imported = manager._olm.imports[0]
+        self.assertEqual(imported[3], "authenticated-curve")
+        self.assertEqual(imported[4], {"ed25519": "authenticated-ed"})
+        self.assertEqual(imported[5], [])
+
+    async def test_forwarded_room_key_requires_verified_own_device(self):
+        decrypt_module = load_module("e2ee.e2ee_manager_decrypt")
+
+        class Olm:
+            def __init__(self):
+                self.imports = []
+
+            def add_megolm_inbound_session(self, *args):
+                self.imports.append(args)
+                return True
+
+        class Manager(decrypt_module.E2EEManagerDecryptMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self._olm = Olm()
+                self._initialized = True
+                self._key_backup = None
+                self.enable_key_backup = False
+                self.trusted = False
+
+            async def _cancel_room_key_request(self, *args):
+                return None
+
+            async def _find_device_by_sender_key(self, *args):
+                return self.user_id, "SIBLING"
+
+            async def _get_validated_device_info(self, *args):
+                return {"device_id": "SIBLING"}
+
+            async def _is_own_device_trusted(self, *args):
+                return self.trusted
+
+        content = {
+            "algorithm": "m.megolm.v1.aes-sha2",
+            "room_id": "!room:example.org",
+            "session_id": "session",
+            "session_key": "key",
+            "sender_key": "original-curve",
+            "sender_claimed_ed25519_key": "original-ed",
+            "forwarding_curve25519_key_chain": [],
+            "withheld": {"code": "m.unverified", "reason": "Initially withheld"},
+        }
+        manager = Manager()
+        await manager.handle_room_key(
+            content,
+            "sibling-curve",
+            sender_user_id="@mallory:example.org",
+            forwarded=True,
+        )
+        self.assertEqual(manager._olm.imports, [])
+
+        await manager.handle_room_key(
+            content,
+            "sibling-curve",
+            sender_user_id=manager.user_id,
+            forwarded=True,
+        )
+        self.assertEqual(manager._olm.imports, [])
+
+        manager.trusted = True
+        await manager.handle_room_key(
+            content,
+            "sibling-curve",
+            sender_user_id=manager.user_id,
+            forwarded=True,
+        )
+        imported = manager._olm.imports[0]
+        self.assertEqual(imported[3], "original-curve")
+        self.assertEqual(imported[5], ["sibling-curve"])
+        self.assertEqual(
+            imported[-1],
+            {"code": "m.unverified", "reason": "Initially withheld"},
+        )
 
 
 if __name__ == "__main__":

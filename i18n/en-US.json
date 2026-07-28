@@ -93,7 +93,7 @@
   },
   "matrix_e2ee_otk_threshold_ratio": {
     "description": "One-Time Key Threshold Ratio",
-    "hint": "Server key-count ratio (%) that triggers one-time key replenishment, default: 33. Lower values trigger replenishment earlier"
+    "hint": "Server key-count ratio (%) that triggers one-time key replenishment, default: 33. Higher values trigger replenishment earlier"
   },
   "matrix_e2ee_key_share_check_interval": {
     "description": "Key Share Check Interval",

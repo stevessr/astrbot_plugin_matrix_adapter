@@ -2,9 +2,16 @@
 E2EE Manager key upload helpers.
 """
 
+import time
+
 from astrbot.api import logger
 
-from ..constants import MEGOLM_ALGO, OLM_ALGO, SIGNED_CURVE25519
+from ..constants import (
+    DEFAULT_ONE_TIME_KEYS_COUNT,
+    MEGOLM_ALGO,
+    OLM_ALGO,
+    SIGNED_CURVE25519,
+)
 
 
 class E2EEManagerKeysMixin:
@@ -79,8 +86,6 @@ class E2EEManagerKeysMixin:
                 else:
                     logger.debug("设备密钥包含所有必要的加密算法")
 
-            from ..constants import DEFAULT_ONE_TIME_KEYS_COUNT
-
             keys_to_generate = max(0, DEFAULT_ONE_TIME_KEYS_COUNT - server_otk_count)
             one_time_keys = {}
             if keys_to_generate > 0:
@@ -92,7 +97,11 @@ class E2EEManagerKeysMixin:
                 )
 
             fallback_keys = {}
-            if self._olm.get_unpublished_fallback_key_count() == 0:
+            # A new account needs its initial fallback key immediately. For an
+            # existing account, /sync's device_unused_fallback_key_types is the
+            # authoritative signal that replacement is needed; rotating on
+            # every process start would defeat fallback replay mitigation.
+            if self._olm.is_new_account:
                 fallback_keys = self._olm.generate_fallback_key()
                 if fallback_keys:
                     logger.debug("生成了 fallback key")
@@ -184,9 +193,11 @@ class E2EEManagerKeysMixin:
             return {}
 
     async def ensure_sufficient_one_time_keys(
-        self, server_counts: dict | None = None
+        self,
+        server_counts: dict | None = None,
+        unused_fallback_key_types: list[str] | None = None,
     ) -> None:
-        """Proactively top up one-time keys when server count is low."""
+        """Top up OTKs and replace a fallback key after the server uses it."""
         if not self._olm or not self._initialized:
             return
 
@@ -197,15 +208,16 @@ class E2EEManagerKeysMixin:
 
             server_otk_count = int(counts.get(SIGNED_CURVE25519, 0))
 
-            from ..constants import DEFAULT_ONE_TIME_KEYS_COUNT
-
             # 使用配置的阈值比例
             threshold_ratio = getattr(self, "otk_threshold_ratio", 33) / 100.0
             min_threshold = max(1, int(DEFAULT_ONE_TIME_KEYS_COUNT * threshold_ratio))
-            if server_otk_count >= min_threshold:
+            needs_otk_refill = server_otk_count < min_threshold
+            fallback_state_known = isinstance(unused_fallback_key_types, list)
+            needs_fallback_replacement = fallback_state_known and (
+                SIGNED_CURVE25519 not in unused_fallback_key_types
+            )
+            if not needs_otk_refill and not needs_fallback_replacement:
                 return
-
-            import time
 
             now = time.monotonic()
             last_ts = getattr(self, "_last_otk_maintenance_ts", 0.0)
@@ -217,11 +229,11 @@ class E2EEManagerKeysMixin:
 
             keys_to_generate = max(0, DEFAULT_ONE_TIME_KEYS_COUNT - server_otk_count)
             one_time_keys = {}
-            if keys_to_generate > 0:
+            if needs_otk_refill and keys_to_generate > 0:
                 one_time_keys = self._olm.generate_one_time_keys(keys_to_generate)
 
             fallback_keys = {}
-            if self._olm.get_unpublished_fallback_key_count() == 0:
+            if needs_fallback_replacement:
                 fallback_keys = self._olm.generate_fallback_key()
 
             if not one_time_keys and not fallback_keys:
@@ -238,9 +250,14 @@ class E2EEManagerKeysMixin:
 
             self._olm.mark_keys_as_published()
             updated_counts = response.get("one_time_key_counts", {})
-            logger.info(
-                f"已主动补充一次性密钥：{server_otk_count} -> "
-                f"{updated_counts.get(SIGNED_CURVE25519, server_otk_count)}"
-            )
+            actions = []
+            if one_time_keys:
+                actions.append(
+                    f"OTK {server_otk_count} -> "
+                    f"{updated_counts.get(SIGNED_CURVE25519, server_otk_count)}"
+                )
+            if fallback_keys:
+                actions.append("fallback key replaced")
+            logger.info(f"Completed E2EE key maintenance: {', '.join(actions)}")
         except Exception as e:
             logger.warning(f"主动补充一次性密钥失败：{e}")

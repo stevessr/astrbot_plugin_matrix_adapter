@@ -115,6 +115,20 @@ class MatrixEventProcessorMembers:
         membership = content.get("membership")
         display_name = content.get("displayname") or room.members.get(user_id, user_id)
         avatar_url = content.get("avatar_url") or room.member_avatars.get(user_id)
+        rotated_for_limited_gap = False
+        if (
+            e2ee_manager
+            and getattr(room, "timeline_limited", False)
+            and membership != "join"
+            and user_id != self.user_id
+        ):
+            # A non-join membership event after a limited timeline may hide an
+            # intervening join/leave. Matrix v1.19 requires session rotation.
+            try:
+                await e2ee_manager.on_room_member_left(room.room_id, user_id)
+                rotated_for_limited_gap = True
+            except Exception as e:
+                logger.debug(f"Limited-sync Megolm rotation failed: {e}")
 
         if membership == "join":
             is_new_member = user_id not in room.members
@@ -165,6 +179,25 @@ class MatrixEventProcessorMembers:
                             )
                     except Exception as e:
                         logger.debug(f"成员加入后的主动密钥分发失败：{e}")
+        elif membership == "invite":
+            if display_name or avatar_url:
+                await asyncio.to_thread(
+                    self.user_store.upsert,
+                    user_id,
+                    display_name,
+                    avatar_url,
+                )
+            if e2ee_manager and user_id != self.user_id:
+                try:
+                    on_member_invited = getattr(
+                        e2ee_manager,
+                        "on_room_member_invited",
+                        None,
+                    )
+                    if callable(on_member_invited):
+                        await on_member_invited(room.room_id, user_id)
+                except Exception as e:
+                    logger.debug(f"Post-invite room-key sharing failed: {e}")
         elif membership in ("leave", "ban"):
             was_member = user_id in room.members
             room.members.pop(user_id, None)
@@ -201,7 +234,7 @@ class MatrixEventProcessorMembers:
                     third_party_invites=room.third_party_invites,
                     state_events=room.state_events,
                 )
-            if e2ee_manager:
+            if e2ee_manager and not rotated_for_limited_gap:
                 try:
                     e2ee_manager.invalidate_room_members_cache(room.room_id)
                     if user_id != self.user_id:

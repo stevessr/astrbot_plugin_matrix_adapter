@@ -85,7 +85,9 @@ class MatrixOAuth2Discovery:
                 well_known_url = f"{self.homeserver}/.well-known/matrix/client"
                 _log("debug", f"Fetching {well_known_url}")
 
-                async with session.get(well_known_url) as response:
+                async with session.get(
+                    well_known_url, allow_redirects=True
+                ) as response:
                     if response.status == 404:
                         raise Exception(
                             "Server does not have /.well-known/matrix/client endpoint. "

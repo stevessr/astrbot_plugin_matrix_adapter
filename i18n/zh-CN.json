@@ -93,7 +93,7 @@
   },
   "matrix_e2ee_otk_threshold_ratio": {
     "description": "一次性密钥阈值比例",
-    "hint": "触发一次性密钥补充的服务器密钥数量比例（百分比），默认 33。值越小越早补充密钥"
+    "hint": "触发一次性密钥补充的服务器密钥数量比例（百分比），默认 33。值越大越早补充密钥"
   },
   "matrix_e2ee_key_share_check_interval": {
     "description": "密钥分发检查间隔",

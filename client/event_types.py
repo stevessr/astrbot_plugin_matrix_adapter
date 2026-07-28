@@ -152,6 +152,7 @@ class MatrixRoom:
     third_party_invites: dict[str, dict[str, Any]] = field(default_factory=dict)
     state_events: dict[str, dict[str, Any]] = field(default_factory=dict)
     live_messaging_enabled: bool | None = None
+    timeline_limited: bool = False
     member_count: int = 0
     is_direct: bool | None = None
     members: dict[str, str] = field(default_factory=dict)  # user_id -> display_name

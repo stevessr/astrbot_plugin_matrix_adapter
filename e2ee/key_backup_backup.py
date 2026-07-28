@@ -122,9 +122,9 @@ class KeyBackupBackupMixin:
             )
             return None
 
-        expected_mac = hmac.new(self._encryption_key, ciphertext, hashlib.sha256).digest()[
-            :RECOVERY_KEY_MAC_TRUNCATED_LEN
-        ]
+        expected_mac = hmac.new(
+            self._encryption_key, ciphertext, hashlib.sha256
+        ).digest()[:RECOVERY_KEY_MAC_TRUNCATED_LEN]
         if mac != expected_mac:
             logger.warning("旧版备份 MAC 校验失败，跳过该会话")
             return None
@@ -402,7 +402,7 @@ class KeyBackupBackupMixin:
                 session = self.olm.get_megolm_inbound_session(session_id)
                 if not session:
                     continue
-                first_message_index = session.first_known_index()
+                first_message_index = self.olm.get_megolm_first_known_index(session)
                 exported_key = session.export_at(first_message_index).to_base64()
                 backed_up_session = self._build_backed_up_session_data(
                     exported_key,
@@ -528,8 +528,12 @@ class KeyBackupBackupMixin:
                         # 尝试使用 Matrix 标准备份解密 (m.megolm_backup.v1.curve25519-aes-sha2)
                         if ephemeral_b64 and mac_b64:
                             try:
-                                ciphertext = self._decode_unpadded_base64(ciphertext_b64)
-                                ephemeral_key = self._decode_unpadded_base64(ephemeral_b64)
+                                ciphertext = self._decode_unpadded_base64(
+                                    ciphertext_b64
+                                )
+                                ephemeral_key = self._decode_unpadded_base64(
+                                    ephemeral_b64
+                                )
                                 mac = self._decode_unpadded_base64(mac_b64)
 
                                 if len(ephemeral_key) == CRYPTO_KEY_SIZE_32:
@@ -560,7 +564,7 @@ class KeyBackupBackupMixin:
 
                             if session_key:
                                 # 使用 OlmMachine 添加入站会话
-                                self.olm.add_megolm_inbound_session(
+                                imported = self.olm.add_megolm_inbound_session(
                                     room_id,
                                     session_id,
                                     session_key,
@@ -575,7 +579,10 @@ class KeyBackupBackupMixin:
                                         session_json.get("shared_history") is True
                                     ),
                                 )
-                                restored += 1
+                                if imported:
+                                    restored += 1
+                                else:
+                                    skipped += 1
                             else:
                                 skipped += 1
                         except json.JSONDecodeError:

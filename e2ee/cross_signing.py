@@ -14,19 +14,15 @@ from ..constants import (
     SECRET_CROSS_SIGNING_USER_SIGNING,
 )
 from ..plugin_config import get_plugin_config
+from .constants import (
+    DEVICE_SECRET_REQUEST_FAILED,
+    DEVICE_SECRET_REQUEST_NOT_NEEDED,
+    DEVICE_SECRET_REQUEST_PENDING,
+    DEVICE_SECRET_REQUEST_UNAVAILABLE,
+    FORCE_OVERWRITE_SERVER_KEYS,
+)
 from .key_backup_crypto import CRYPTO_AVAILABLE
 from .storage import build_e2ee_data_store
-
-# 是否尝试在本地密钥与服务器不一致时强行覆盖服务器的交叉签名密钥。
-# 设置为 True 将在以下情况下重新生成并上传新密钥：
-#   1. 服务器已有交叉签名密钥，但本地缺少私钥
-#   2. 本地私钥推导的公钥与服务器公钥不匹配
-# 设置为 False 则仅记录警告，不覆盖服务器密钥。
-FORCE_OVERWRITE_SERVER_KEYS = True
-DEVICE_SECRET_REQUEST_PENDING = "pending"
-DEVICE_SECRET_REQUEST_FAILED = "failed"
-DEVICE_SECRET_REQUEST_NOT_NEEDED = "not_needed"
-DEVICE_SECRET_REQUEST_UNAVAILABLE = "unavailable"
 
 
 class CrossSigning:

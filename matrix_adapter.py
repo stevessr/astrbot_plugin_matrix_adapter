@@ -299,15 +299,6 @@ class MatrixPlatformAdapter(
             self.event_processor.process_device_one_time_keys_count
         )
         self.sync_manager.on_sync = self._on_sync_response
-        self.sync_manager.set_presence_callback(
-            self.event_processor.process_presence_events
-        )
-        self.sync_manager.set_device_lists_callback(
-            self.event_processor.process_device_lists
-        )
-        self.sync_manager.set_device_one_time_keys_count_callback(
-            self.event_processor.process_device_one_time_keys_count
-        )
         self.event_processor.set_message_callback(self.message_callback)
 
         # 最大上传文件大小（将在 run 时从服务器获取）

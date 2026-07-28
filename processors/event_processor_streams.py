@@ -76,15 +76,32 @@ class MatrixEventProcessorStreams:
                     )
         if isinstance(left, list):
             self.device_lists["left"].update(left)
+            if left and self.e2ee_manager:
+                try:
+                    await self.e2ee_manager.on_device_list_left(left)
+                except Exception as e:
+                    logger.warning(f"Failed to remove departed user device keys: {e}")
         logger.debug(f"设备列表更新：changed={len(changed)} left={len(left)}")
 
-    async def process_device_one_time_keys_count(self, counts: dict):
-        """Process one-time keys count updates from /sync."""
+    async def process_device_one_time_keys_count(
+        self,
+        counts: dict,
+        unused_fallback_key_types: list[str] | None = None,
+    ):
+        """Process one-time and fallback key state from /sync."""
         if isinstance(counts, dict):
             self.one_time_keys_count = counts
+            self.unused_fallback_key_types = (
+                list(unused_fallback_key_types)
+                if isinstance(unused_fallback_key_types, list)
+                else None
+            )
             if self.e2ee_manager:
                 try:
-                    await self.e2ee_manager.ensure_sufficient_one_time_keys(counts)
+                    await self.e2ee_manager.ensure_sufficient_one_time_keys(
+                        counts,
+                        self.unused_fallback_key_types,
+                    )
                 except Exception as e:
                     logger.warning(f"自动补充一次性密钥失败：{e}")
             logger.debug(f"更新 device_one_time_keys_count: {list(counts.keys())}")

@@ -12,13 +12,16 @@ import base64
 from astrbot.api import logger
 
 from ..constants import (
+    M_ROOM_ENCRYPTED,
     M_SECRET_REQUEST,
     M_SECRET_SEND,
     SECRET_CROSS_SIGNING_MASTER,
     SECRET_CROSS_SIGNING_SELF_SIGNING,
     SECRET_CROSS_SIGNING_USER_SIGNING,
     SECRET_MEGOLM_BACKUP_V1,
+    SIGNED_CURVE25519,
 )
+from .constants import SUPPORTED_SECRET_NAMES
 
 
 class E2EEManagerSecretsMixin:
@@ -56,6 +59,8 @@ class E2EEManagerSecretsMixin:
             content: 事件内容
             sender_device: 发送设备 ID
         """
+        if not isinstance(content, dict):
+            return
         action = content.get("action")
         requesting_device_id = content.get("requesting_device_id", sender_device)
         request_id = content.get("request_id", "")
@@ -83,21 +88,35 @@ class E2EEManagerSecretsMixin:
             )
             return
 
+        if not all(
+            isinstance(value, str) and value
+            for value in (requesting_device_id, request_id, name)
+        ):
+            logger.warning("[E2EE-Secrets] Rejecting malformed secret request")
+            return
+
         # 安全检查：不响应自己设备的请求
         if requesting_device_id == self.device_id:
             logger.debug("[E2EE-Secrets] 忽略来自自己设备的秘密请求")
             return
 
-        # 检查请求的秘密类型是否支持
-        supported_secrets = {
-            SECRET_MEGOLM_BACKUP_V1,
-            SECRET_CROSS_SIGNING_MASTER,
-            SECRET_CROSS_SIGNING_SELF_SIGNING,
-            SECRET_CROSS_SIGNING_USER_SIGNING,
-        }
-
-        if name not in supported_secrets:
+        if name not in SUPPORTED_SECRET_NAMES:
             logger.warning(f"[E2EE-Secrets] 不支持的秘密类型：{name}")
+            return
+
+        device_info = await self._get_validated_device_info(
+            sender,
+            requesting_device_id,
+            force_query=True,
+        )
+        if not device_info or not await self._is_own_device_trusted(
+            requesting_device_id,
+            device_info,
+        ):
+            logger.warning(
+                "[E2EE-Secrets] Rejecting secret request from unverified device: "
+                f"{self._mask_device_id(requesting_device_id)}"
+            )
             return
 
         # 获取请求的秘密
@@ -223,9 +242,12 @@ class E2EEManagerSecretsMixin:
             if encrypted_content:
                 # 发送加密的 to-device 消息
                 await self.client.send_to_device(
-                    event_type="m.room.encrypted",
+                    event_type=M_ROOM_ENCRYPTED,
                     messages={target_user: {target_device: encrypted_content}},
                 )
+                mark_succeeded = getattr(self, "_mark_olm_send_succeeded", None)
+                if callable(mark_succeeded):
+                    mark_succeeded(target_user, target_device)
                 logger.info(
                     "[E2EE-Secrets] 已发送秘密 "
                     f"{secret_name} 到设备 {self._mask_device_id(target_device)}"
@@ -254,21 +276,27 @@ class E2EEManagerSecretsMixin:
         Returns:
             加密后的内容，或 None
         """
-        if not self._olm or not self._store:
+        if not self._olm:
             return None
 
         try:
-            # 获取目标设备的密钥
-            device_keys = self._store.get_device_keys(target_user, target_device)
-            if not device_keys:
+            # Only use a complete, self-signed device-keys object.  The
+            # stripped convenience view in CryptoStore is insufficient for
+            # authenticating one-time keys.
+            device_info = await self._get_validated_device_info(
+                target_user,
+                target_device,
+            )
+            if not device_info:
                 logger.warning(
                     f"[E2EE-ToDevice] Device keys not found: "
                     f"{target_user}/{target_device}"
                 )
                 return None
 
-            curve25519_key = device_keys.get("curve25519")
-            ed25519_key = device_keys.get("ed25519", "")
+            keys = device_info.get("keys", {})
+            curve25519_key = keys.get(f"curve25519:{target_device}")
+            ed25519_key = keys.get(f"ed25519:{target_device}")
             if not curve25519_key:
                 logger.warning(
                     f"[E2EE-ToDevice] Device has no Curve25519 key: {target_device}"
@@ -292,8 +320,6 @@ class E2EEManagerSecretsMixin:
                 )
             else:
                 # 需要创建新会话，获取一次性密钥
-                from ..constants import SIGNED_CURVE25519
-
                 one_time_claim = {target_user: {target_device: SIGNED_CURVE25519}}
                 claimed = await self.client.claim_keys(one_time_claim)
                 one_time_keys = claimed.get("one_time_keys", {})
@@ -308,23 +334,19 @@ class E2EEManagerSecretsMixin:
                     )
                     return None
 
-                # 取一个可用的一次性密钥
-                otk_id, otk_data = next(iter(device_otks.items()), (None, None))
-                if not otk_id:
-                    logger.warning(
-                        f"[E2EE-ToDevice] Device {target_device} returned no usable "
-                        "one-time key entry"
-                    )
-                    return None
-                one_time_key = (
-                    otk_data.get("key") if isinstance(otk_data, dict) else otk_data
+                selected = self._olm.select_verified_one_time_key(
+                    target_user,
+                    target_device,
+                    ed25519_key,
+                    device_otks,
                 )
-                if not one_time_key:
+                if not selected:
                     logger.warning(
-                        f"[E2EE-ToDevice] Device {target_device} returned an empty "
-                        "one-time key"
+                        f"[E2EE-ToDevice] Device {target_device} returned no valid "
+                        "signed one-time key"
                     )
                     return None
+                _, one_time_key = selected
 
                 # 创建 Olm 会话
                 session = self._olm.create_outbound_session(
@@ -351,7 +373,57 @@ class E2EEManagerSecretsMixin:
             logger.error(f"[E2EE-ToDevice] Olm encryption failed: {e}")
             return None
 
-    async def handle_secret_send(self, sender: str, content: dict):
+    async def _get_validated_device_info(
+        self,
+        user_id: str,
+        device_id: str,
+        *,
+        force_query: bool = False,
+    ) -> dict | None:
+        """Return a complete device object after verifying its self-signature."""
+        if not self._olm or not user_id or not device_id:
+            return None
+
+        if not force_query and self._store:
+            get_all = getattr(self._store, "get_all_device_keys", None)
+            if callable(get_all):
+                all_keys = get_all()
+                cached = (
+                    (all_keys.get(user_id) or {}).get(device_id)
+                    if isinstance(all_keys, dict)
+                    else None
+                )
+                if self._olm.verify_device_keys(user_id, device_id, cached):
+                    return cached
+
+        try:
+            response = await self.client.query_keys({user_id: [device_id]})
+        except Exception as e:
+            logger.warning(
+                f"[E2EE-ToDevice] Device-key query failed for {user_id}/{device_id}: {e}"
+            )
+            return None
+        device_info = (
+            ((response.get("device_keys") or {}).get(user_id) or {}).get(device_id)
+            if isinstance(response, dict)
+            else None
+        )
+        if not self._olm.verify_device_keys(user_id, device_id, device_info):
+            logger.warning(
+                "[E2EE-ToDevice] Rejecting invalid signed device keys for "
+                f"{user_id}/{device_id}"
+            )
+            return None
+        if self._store:
+            self._store.save_device_keys(user_id, device_id, device_info)
+        return device_info
+
+    async def handle_secret_send(
+        self,
+        sender: str,
+        content: dict,
+        sender_key: str,
+    ):
         """
         处理 m.secret.send 事件
 
@@ -360,13 +432,17 @@ class E2EEManagerSecretsMixin:
         Args:
             sender: 发送者用户 ID
             content: 事件内容（已解密）
+            sender_key: Outer authenticated Olm Curve25519 sender key.
         """
+        if not isinstance(content, dict):
+            return
         request_id = content.get("request_id", "")
         secret = content.get("secret", "")
 
         logger.info(
-            f"[E2EE-Secrets] 收到秘密：request_id={(request_id or '')[:8]}... "
-            f"secret_len={len(secret)}"
+            "[E2EE-Secrets] Received secret: "
+            f"request_id={self._mask_request_id(request_id)} "
+            f"secret_len={len(secret) if isinstance(secret, str) else 0}"
         )
 
         # 安全检查：只接受来自同一用户的秘密
@@ -376,8 +452,27 @@ class E2EEManagerSecretsMixin:
             )
             return
 
-        if not secret:
-            logger.warning("[E2EE-Secrets] 收到的秘密为空")
+        if not all(
+            isinstance(value, str) and value
+            for value in (request_id, secret, sender_key)
+        ):
+            logger.warning("[E2EE-Secrets] Rejecting malformed secret message")
+            return
+
+        source = await self._find_device_by_sender_key(sender_key, sender)
+        if not source or source[0] != self.user_id:
+            logger.warning("[E2EE-Secrets] Rejecting secret from unknown source device")
+            return
+        source_device = source[1]
+        device_info = await self._get_validated_device_info(
+            self.user_id,
+            source_device,
+        )
+        if not device_info or not await self._is_own_device_trusted(
+            source_device,
+            device_info,
+        ):
+            logger.warning("[E2EE-Secrets] Rejecting secret from unverified device")
             return
 
         # 查找对应的待处理请求

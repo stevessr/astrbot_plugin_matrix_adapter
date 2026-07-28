@@ -713,7 +713,12 @@ await adapter.sender.client.delete_extended_profile_field("us.cloke.msc4175.tz")
 - `MatrixSender.get_mutual_rooms()` 支持 stable mutual-rooms 分页；`MatrixEvent.replaces_state` 暴露 `unsigned.replaces_state`。
 - Sticker 同步器支持 stable `m.room.image_pack` / `m.image_pack.rooms`，并继续兼容 `im.ponies.*`。
 - `get_key_backup_preference()` / `set_key_backup_preference()` 读写账户级 `m.key_backup`；账户已启用时，headless Bot 启动会同步启用 Key Backup。
+- Olm 入站明文会校验外层发送者、接收者、本机 Ed25519、发送设备 Curve25519/Ed25519 绑定及 `sender_device_keys` 自签名；出站 Olm 会携带签名设备对象，声明的一次性密钥也必须通过目标设备签名校验。
+- `/sync` 的 `device_unused_fallback_key_types` 现在作为 fallback key 是否已使用的权威状态，并在处理同批 to-device 消息后补充；Olm 损坏恢复改用加密 `m.dummy`，且每个设备一小时内最多新建一次恢复会话。
+- Megolm 会执行房间/发送者绑定、持久化消息索引防重放、低索引可信会话替换，以及默认 7 天或 100 条消息和成员/设备离开时的出站轮换。
+- 房间密钥请求仅面向本账号设备；只与已验证的同账号设备交换 `m.forwarded_room_key` 和 E2EE secrets，保留 forwarding chain / `withheld`，并实现请求取消与 `m.no_olm` 去重恢复。
 - MSC4268 的 `shared_history` 会持久化到入站/出站会话和 Key Backup，并在历史可见性分类改变、不可共享会话遇到新成员或成员离开时轮换 Megolm。当前不主动生成可选的完整 `m.room_key_bundle` 历史迁移，避免在缺少加密附件和严格 cross-signing 校验时部分实现该高风险流程。
+- 当前 unstable 规范的 HTTP 变更也已落实：OAuth2 发现显式跟随 `/.well-known/matrix/client` 30x 跳转，Matrix API 访问令牌仅通过 Bearer 头发送。
 
 ## E2EE 端到端加密
 

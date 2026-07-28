@@ -11,13 +11,24 @@ from ..constants import (
     MEGOLM_ALGO,
     PREFIX_CURVE25519,
     PREFIX_ED25519,
+    SIGNED_CURVE25519,
+)
+from .constants import (
+    DEFAULT_OLM_RECOVERY_RETRY_SEC,
+    M_DUMMY,
+    VALID_TO_DEVICE_WITHHELD_CODES,
+    VALID_WITHHELD_CODES,
+    WITHHELD_NO_OLM,
+    WITHHELD_UNAUTHORISED,
+    WITHHELD_UNAVAILABLE,
+    WITHHELD_UNVERIFIED,
 )
 
 
 class E2EEManagerRequestsMixin:
     async def _request_new_session(
         self, sender_key: str, sender_user_id: str | None = None
-    ):
+    ) -> bool:
         """
         当检测到未知一次性密钥时，主动建立新的 Olm 会话
 
@@ -28,191 +39,107 @@ class E2EEManagerRequestsMixin:
             sender_key: 发送者的 curve25519 密钥
             sender_user_id: 可选的发送者用户 ID（如果已知，可用于查询设备）
         """
-        import secrets
-
-        result: tuple[str, str] | None = None
         masked_sender_key = (sender_key or "")[:8]
+        if not self._olm or not sender_user_id or not sender_key:
+            logger.warning(
+                f"Cannot recover Olm session: sender={sender_user_id or '<empty>'} "
+                f"key={masked_sender_key}..."
+            )
+            return False
+
+        result = await self._find_device_by_sender_key(sender_key, sender_user_id)
+        if not result:
+            # Never pick an arbitrary device. It would not repair the session
+            # associated with the sender Curve25519 identity key.
+            logger.warning(
+                f"No signed device matches sender_key {masked_sender_key}..."
+            )
+            return False
+        target_user, target_device = result
+
+        attempts = getattr(self, "_olm_recovery_attempts", None)
+        if not isinstance(attempts, dict):
+            attempts = {}
+            self._olm_recovery_attempts = attempts
+        attempt_key = (target_user, target_device)
+        now = time.monotonic()
+        retry_interval = float(
+            getattr(
+                self,
+                "_olm_recovery_retry_interval_sec",
+                DEFAULT_OLM_RECOVERY_RETRY_SEC,
+            )
+        )
+        last_attempt = attempts.get(attempt_key)
+        if last_attempt is not None and now - float(last_attempt) < retry_interval:
+            return False
+        attempts[attempt_key] = now
 
         try:
-            if not sender_user_id:
-                logger.warning(
-                    f"缺少 sender_user_id，无法查询 sender_key {masked_sender_key}... 对应设备"
-                )
-                return
-
-            # 查找拥有这个 sender_key 的用户和设备
-            result = await self._find_device_by_sender_key(sender_key, sender_user_id)
-
-            if not result:
-                logger.warning(
-                    f"无法找到 sender_key {masked_sender_key}... 对应的设备，"
-                    "将回退使用 sender_user_id 的任一设备建立会话"
-                )
-
-                # 回退：使用 sender_user_id 的任一设备尝试建立新会话
-                resp = await self.client.query_keys({sender_user_id: []})
-                devices = (resp.get("device_keys") or {}).get(sender_user_id) or {}
-                if not devices:
-                    logger.warning(
-                        f"用户 {sender_user_id} 没有可用设备，无法请求新会话"
-                    )
-                    return
-
-                target_device = next(iter(devices.keys()))
-                result = (sender_user_id, target_device)
-
-            target_user, target_device = result
-            logger.info(f"尝试与 {target_user}/{target_device} 建立新的 Olm 会话")
-
-            # 1. 获取对方设备的身份密钥
-            resp = await self.client.query_keys({target_user: []})
-            devices = (resp.get("device_keys") or {}).get(target_user) or {}
-            device_info = devices.get(target_device, {})
-            their_curve_key = device_info.get("keys", {}).get(
-                f"{PREFIX_CURVE25519}{target_device}"
+            device_info = await self._get_validated_device_info(
+                target_user,
+                target_device,
+                force_query=True,
             )
+            if not device_info:
+                return False
+            keys = device_info.get("keys", {})
+            their_curve_key = keys.get(f"{PREFIX_CURVE25519}{target_device}")
+            their_ed25519_key = keys.get(f"{PREFIX_ED25519}{target_device}")
+            if their_curve_key != sender_key or not their_ed25519_key:
+                logger.warning("Olm recovery device identity changed during lookup")
+                return False
 
-            if not their_curve_key:
-                logger.warning(
-                    f"无法获取 {target_user}/{target_device} 的 curve25519 密钥"
-                )
-                # 回退到发送未加密的 m.dummy
-                txn_id = secrets.token_hex(16)
-                await self.client.send_to_device(
-                    "m.dummy",
-                    {target_user: {target_device: {}}},
-                    txn_id,
-                )
-                logger.info(f"已向 {target_user}/{target_device} 发送未加密的 m.dummy")
-                return
-
-            # 2. Claim 对方的一次性密钥
             claim_resp = await self.client.claim_keys(
-                {target_user: {target_device: "signed_curve25519"}}
+                {target_user: {target_device: SIGNED_CURVE25519}}
             )
-            one_time_keys = (
-                claim_resp.get("one_time_keys", {})
-                .get(target_user, {})
-                .get(target_device, {})
+            device_otks = (
+                (claim_resp.get("one_time_keys") or {}).get(target_user) or {}
+            ).get(target_device) or {}
+            selected = self._olm.select_verified_one_time_key(
+                target_user,
+                target_device,
+                their_ed25519_key,
+                device_otks,
             )
-
-            if not one_time_keys:
-                logger.warning(f"无法获取 {target_user}/{target_device} 的一次性密钥")
-                # 回退到发送未加密的 m.dummy
-                txn_id = secrets.token_hex(16)
-                await self.client.send_to_device(
-                    "m.dummy",
-                    {target_user: {target_device: {}}},
-                    txn_id,
-                )
-                logger.info(
-                    f"已向 {target_user}/{target_device} 发送未加密的 m.dummy（无可用一次性密钥）"
-                )
-                return
-
-            # 获取一个可用的一次性密钥
-            otk_key_id, otk_data = next(iter(one_time_keys.items()), (None, None))
-            if not otk_key_id:
-                logger.warning(f"未找到 {target_user}/{target_device} 的一次性密钥条目")
-                txn_id = secrets.token_hex(16)
-                await self.client.send_to_device(
-                    "m.dummy",
-                    {target_user: {target_device: {}}},
-                    txn_id,
-                )
-                return
-            their_one_time_key = (
-                otk_data.get("key") if isinstance(otk_data, dict) else otk_data
-            )
-            if not their_one_time_key:
+            if not selected:
                 logger.warning(
-                    f"{target_user}/{target_device} 的一次性密钥内容为空，回退发送 m.dummy"
+                    f"No valid signed one-time key for {target_user}/{target_device}"
                 )
-                txn_id = secrets.token_hex(16)
-                await self.client.send_to_device(
-                    "m.dummy",
-                    {target_user: {target_device: {}}},
-                    txn_id,
-                )
-                return
-
-            logger.debug(f"获取到一次性密钥：{otk_key_id}")
-
-            # 3. 创建新的出站 Olm 会话
-            try:
-                session = self._olm.create_outbound_session(
-                    their_curve_key, their_one_time_key
-                )
-                logger.info(f"成功创建与 {target_user}/{target_device} 的新 Olm 会话")
-            except Exception as session_e:
-                logger.error(f"创建 Olm 会话失败：{session_e}")
-                # 回退到发送未加密的 m.dummy
-                txn_id = secrets.token_hex(16)
-                await self.client.send_to_device(
-                    "m.dummy",
-                    {target_user: {target_device: {}}},
-                    txn_id,
-                )
-                return
-
-            # 4. 使用新会话发送加密的 m.dummy 消息
-            try:
-                # m.dummy 内容为空
-                dummy_content = {}
-                encrypted = self._olm.encrypt_olm(
-                    their_curve_key,
-                    dummy_content,
-                    session=session,
-                    recipient_user_id=target_user,
-                    event_type="m.dummy",
-                )
-
-                txn_id = secrets.token_hex(16)
-                await self.client.send_to_device(
-                    "m.room.encrypted",
-                    {target_user: {target_device: encrypted}},
-                    txn_id,
-                )
-
-                logger.info(
-                    f"已向 {target_user}/{target_device} 发送加密的 m.dummy，新会话已建立"
-                )
-                logger.info("提示：对方客户端应该会自动使用新会话重新发送消息")
-
-            except Exception as encrypt_e:
-                logger.error(f"发送加密 m.dummy 失败：{encrypt_e}")
-                # 回退到发送未加密的 m.dummy
-                txn_id = secrets.token_hex(16)
-                await self.client.send_to_device(
-                    "m.dummy",
-                    {target_user: {target_device: {}}},
-                    txn_id,
-                )
-
+                return False
+            _, their_one_time_key = selected
+            session = self._olm.create_outbound_session(
+                their_curve_key,
+                their_one_time_key,
+            )
+            encrypted = self._olm.encrypt_olm(
+                their_curve_key,
+                {},
+                session=session,
+                recipient_user_id=target_user,
+                recipient_ed25519_key=their_ed25519_key,
+                event_type=M_DUMMY,
+            )
+            await self.client.send_to_device(
+                M_ROOM_ENCRYPTED,
+                {target_user: {target_device: encrypted}},
+                secrets.token_hex(16),
+            )
+            self._mark_olm_send_succeeded(target_user, target_device)
+            logger.info(
+                f"Sent encrypted m.dummy and established a new Olm session "
+                f"with {target_user}/{target_device}"
+            )
+            return True
         except Exception as e:
-            logger.warning(f"建立新会话失败：{e}")
-            # 最后尝试发送未加密的 m.dummy
-            try:
-                if result:
-                    target_user, target_device = result
-                    txn_id = secrets.token_hex(16)
-                    await self.client.send_to_device(
-                        "m.dummy",
-                        {target_user: {target_device: {}}},
-                        txn_id,
-                    )
-                    logger.info(
-                        f"已向 {target_user}/{target_device} 发送未加密的 m.dummy（回退）"
-                    )
-            except Exception:
-                pass
+            logger.warning(f"Failed to establish a new Olm session: {e}")
+            return False
 
     async def _request_room_key(
         self,
         room_id: str,
         session_id: str,
         sender_key: str | None,
-        sender_user_id: str | None,
     ) -> bool:
         """
         发送 m.room_key_request 请求密钥
@@ -221,7 +148,6 @@ class E2EEManagerRequestsMixin:
             room_id: 房间 ID
             session_id: 会话 ID
             sender_key: 发送者的 curve25519 密钥
-            sender_user_id: 发送者用户 ID（可能为空）
 
         Returns:
             Whether a request was sent. Throttled duplicate requests return False.
@@ -232,9 +158,9 @@ class E2EEManagerRequestsMixin:
 
         request_key = (room_id, session_id)
         now = time.monotonic()
+        # Matrix key requests are restricted to verified devices of our own
+        # user. The deprecated sender fields are not an authorization source.
         recipients = {self.user_id}
-        if sender_user_id and sender_user_id != self.user_id:
-            recipients.add(sender_user_id)
 
         async with self._room_key_request_lock:
             expiry = self._room_key_request_expiry_sec
@@ -341,9 +267,8 @@ class E2EEManagerRequestsMixin:
         self,
         sender: str,
         requesting_device_id: str,
-        room_id: str,
-        session_id: str,
-        sender_key: str,
+        room_id: str | None,
+        session_id: str | None,
         code: str,
         reason: str,
     ) -> bool:
@@ -354,23 +279,39 @@ class E2EEManagerRequestsMixin:
             requesting_device_id: Requesting device ID.
             room_id: Room containing the requested session.
             session_id: Requested Megolm session ID.
-            sender_key: Original session sender Curve25519 key, when known.
             code: Matrix room-key withholding code.
             reason: Human-readable withholding reason.
 
         Returns:
             Whether the withholding event was sent successfully.
         """
-        if not sender or not requesting_device_id or not room_id or not session_id:
+        if (
+            not all(
+                isinstance(value, str) and value
+                for value in (sender, requesting_device_id)
+            )
+            or code not in VALID_TO_DEVICE_WITHHELD_CODES
+            or not isinstance(reason, str)
+            or not reason
+        ):
+            return False
+        if code != WITHHELD_NO_OLM and not all(
+            isinstance(value, str) and value for value in (room_id, session_id)
+        ):
+            return False
+        if not self._olm:
             return False
         content = {
             "algorithm": MEGOLM_ALGO,
-            "room_id": room_id,
-            "session_id": session_id,
-            "sender_key": sender_key or "",
+            # This is the sender of the withheld event, not the device which
+            # originally created the requested Megolm session.
+            "sender_key": str(self._olm.curve25519_key),
             "code": code,
             "reason": reason,
         }
+        if code != WITHHELD_NO_OLM:
+            content["room_id"] = room_id
+            content["session_id"] = session_id
         try:
             await self.client.send_to_device(
                 M_ROOM_KEY_WITHHELD,
@@ -382,13 +323,153 @@ class E2EEManagerRequestsMixin:
             logger.debug(f"Failed to send room-key withheld event: {e}")
             return False
 
+    def _mark_olm_send_succeeded(self, user_id: str, device_id: str) -> None:
+        """Allow a future m.no_olm after a successful Olm communication."""
+        sent = getattr(self, "_no_olm_withheld_sent", None)
+        if isinstance(sent, set):
+            sent.discard((user_id, device_id))
+
+    async def _send_no_olm_withheld(self, user_id: str, device_id: str) -> bool:
+        """Send the single mailbox-safe m.no_olm signal required by Matrix."""
+        if not all(isinstance(value, str) and value for value in (user_id, device_id)):
+            return False
+        sent = getattr(self, "_no_olm_withheld_sent", None)
+        if not isinstance(sent, set):
+            sent = set()
+            self._no_olm_withheld_sent = sent
+        peer = (user_id, device_id)
+        if peer in sent:
+            return False
+        if await self._send_room_key_withheld(
+            user_id,
+            device_id,
+            None,
+            None,
+            WITHHELD_NO_OLM,
+            "An Olm session could not be established",
+        ):
+            sent.add(peer)
+            return True
+        return False
+
+    async def handle_room_key_withheld(self, sender: str, content: dict) -> bool:
+        """Record an incoming withheld notice and recover from m.no_olm."""
+        if not isinstance(content, dict) or content.get("algorithm") != MEGOLM_ALGO:
+            return False
+        code = content.get("code")
+        sender_key = content.get("sender_key")
+        reason = content.get("reason")
+        if (
+            code not in VALID_WITHHELD_CODES
+            or not isinstance(sender_key, str)
+            or not sender_key
+            or (reason is not None and not isinstance(reason, str))
+        ):
+            return False
+        room_id = content.get("room_id")
+        session_id = content.get("session_id")
+        if code == WITHHELD_NO_OLM:
+            if room_id is not None or session_id is not None:
+                return False
+        elif not all(
+            isinstance(value, str) and value for value in (room_id, session_id)
+        ):
+            return False
+
+        records = getattr(self, "_room_key_withheld", None)
+        if not isinstance(records, dict):
+            records = {}
+            self._room_key_withheld = records
+        records[(sender, str(room_id or ""), str(session_id or ""))] = dict(content)
+        if code == WITHHELD_NO_OLM:
+            return await self._request_new_session(sender_key, sender)
+        return True
+
+    async def _is_own_device_trusted(
+        self,
+        device_id: str,
+        device_info: dict,
+        key_query_response: dict | None = None,
+    ) -> bool:
+        """Verify an own-user device via SAS, cross-signing, or configured TOFU."""
+        if (
+            not self._olm
+            or not isinstance(device_id, str)
+            or not device_id
+            or not self._olm.verify_device_keys(
+                self.user_id,
+                device_id,
+                device_info,
+            )
+        ):
+            return False
+        ed25519_key = (device_info.get("keys") or {}).get(
+            f"{PREFIX_ED25519}{device_id}"
+        )
+        if not isinstance(ed25519_key, str) or not ed25519_key:
+            return False
+
+        verification = getattr(self, "_verification", None)
+        if verification:
+            device_store = getattr(verification, "device_store", None)
+            if device_store and device_store.is_trusted(
+                self.user_id,
+                device_id,
+                ed25519_key,
+            ):
+                return True
+
+        cross_signing = getattr(self, "_cross_signing", None)
+        if (
+            cross_signing
+            and cross_signing.self_signing_key
+            and cross_signing.master_key
+        ):
+            response = key_query_response
+            if not isinstance(response, dict):
+                try:
+                    response = await self.client.query_keys({self.user_id: []})
+                except Exception as e:
+                    logger.warning(f"Unable to query cross-signing keys: {e}")
+                    response = {}
+            master_key = str(cross_signing.master_key)
+            self_signing_key = str(cross_signing.self_signing_key)
+            master_info = (response.get("master_keys") or {}).get(self.user_id)
+            self_signing_info = (response.get("self_signing_keys") or {}).get(
+                self.user_id
+            )
+            if (
+                isinstance(master_info, dict)
+                and (master_info.get("keys") or {}).get(f"ed25519:{master_key}")
+                == master_key
+                and isinstance(self_signing_info, dict)
+                and (self_signing_info.get("keys") or {}).get(
+                    f"ed25519:{self_signing_key}"
+                )
+                == self_signing_key
+                and self._olm.verify_json_signature(
+                    self_signing_info,
+                    self.user_id,
+                    f"ed25519:{master_key}",
+                    master_key,
+                )
+                and self._olm.verify_json_signature(
+                    device_info,
+                    self.user_id,
+                    f"ed25519:{self_signing_key}",
+                    self_signing_key,
+                )
+            ):
+                return True
+
+        return bool(getattr(self, "trust_on_first_use", False))
+
     async def respond_to_key_request(
         self,
         sender: str,
         requesting_device_id: str,
         room_id: str,
         session_id: str,
-        sender_key: str,
     ) -> bool:
         """
         响应来自其他设备的密钥请求
@@ -400,13 +481,17 @@ class E2EEManagerRequestsMixin:
             requesting_device_id: 请求者设备 ID
             room_id: 房间 ID
             session_id: 会话 ID
-            sender_key: 发送者密钥
 
         Returns:
             Whether the requested session was forwarded successfully.
         """
         if not self._olm or not self._initialized:
             logger.warning("未初始化，无法响应密钥请求")
+            return False
+        if not all(
+            isinstance(value, str) and value
+            for value in (sender, requesting_device_id, room_id, session_id)
+        ):
             return False
 
         try:
@@ -418,8 +503,7 @@ class E2EEManagerRequestsMixin:
                     requesting_device_id,
                     room_id,
                     session_id,
-                    sender_key,
-                    "m.unauthorised",
+                    WITHHELD_UNAUTHORISED,
                     "Room keys are only shared with this account's devices",
                 )
                 return False
@@ -440,9 +524,17 @@ class E2EEManagerRequestsMixin:
                 f"{PREFIX_ED25519}{requesting_device_id}"
             )
 
-            if not curve_key or not ed25519_key:
+            if (
+                not curve_key
+                or not ed25519_key
+                or not self._olm.verify_device_keys(
+                    sender,
+                    requesting_device_id,
+                    device_info,
+                )
+            ):
                 logger.warning(
-                    f"Missing identity keys for requesting device "
+                    f"Missing or invalid signed identity keys for requesting device "
                     f"{sender}/{requesting_device_id}"
                 )
                 await self._send_room_key_withheld(
@@ -450,8 +542,7 @@ class E2EEManagerRequestsMixin:
                     requesting_device_id,
                     room_id,
                     session_id,
-                    sender_key,
-                    "m.unavailable",
+                    WITHHELD_UNAVAILABLE,
                     "The requesting device keys are unavailable",
                 )
                 return False
@@ -459,40 +550,11 @@ class E2EEManagerRequestsMixin:
             if self._store:
                 self._store.save_device_keys(sender, requesting_device_id, device_info)
 
-            # 验证请求设备是否已被信任
-            # 检查方式：1. 通过 SAS 验证存储 2. 通过交叉签名验证
-            device_verified = False
-
-            # 1. 检查 SAS 验证存储
-            if self._verification and ed25519_key:
-                device_store = getattr(self._verification, "device_store", None)
-                if device_store and device_store.is_trusted(
-                    sender, requesting_device_id, ed25519_key
-                ):
-                    device_verified = True
-                    logger.debug(f"设备 {requesting_device_id} 已通过 SAS 验证")
-
-            # 2. 检查交叉签名验证
-            if (
-                not device_verified
-                and self._cross_signing
-                and self._cross_signing.self_signing_key
+            if not await self._is_own_device_trusted(
+                requesting_device_id,
+                device_info,
+                resp,
             ):
-                signatures = device_info.get("signatures", {}).get(sender, {})
-                # 检查是否有自签名密钥的签名（使用完整公钥作为 key ID）
-                self_signing_key_id = f"ed25519:{self._cross_signing.self_signing_key}"
-                if self_signing_key_id in signatures:
-                    device_verified = True
-                    logger.debug(f"设备 {requesting_device_id} 已通过交叉签名验证")
-
-            # 3. 如果启用了 TOFU（首次使用信任），可以放宽验证要求
-            if not device_verified and self.trust_on_first_use:
-                logger.info(
-                    f"设备 {requesting_device_id} 未验证，但 TOFU 已启用，允许转发密钥"
-                )
-                device_verified = True
-
-            if not device_verified:
                 logger.warning(
                     f"拒绝向未验证的设备 {requesting_device_id} 转发密钥 "
                     f"(session={(session_id or '')[:8]}...)"
@@ -502,8 +564,7 @@ class E2EEManagerRequestsMixin:
                     requesting_device_id,
                     room_id,
                     session_id,
-                    sender_key,
-                    "m.unverified",
+                    WITHHELD_UNVERIFIED,
                     "The requesting device is not verified",
                 )
                 return False
@@ -517,15 +578,14 @@ class E2EEManagerRequestsMixin:
                     requesting_device_id,
                     room_id,
                     session_id,
-                    sender_key,
-                    "m.unavailable",
+                    WITHHELD_UNAVAILABLE,
                     "The requested room key is not available on this device",
                 )
                 return False
 
             # 导出会话密钥
             try:
-                first_index = session.first_known_index()
+                first_index = self._olm.get_megolm_first_known_index(session)
                 exported_key = session.export_at(first_index)
                 logger.info(
                     f"导出会话密钥：session={(session_id or '')[:8]}..., "
@@ -538,8 +598,7 @@ class E2EEManagerRequestsMixin:
                     requesting_device_id,
                     room_id,
                     session_id,
-                    sender_key,
-                    "m.unavailable",
+                    WITHHELD_UNAVAILABLE,
                     "The requested room key could not be exported",
                 )
                 return False
@@ -552,26 +611,53 @@ class E2EEManagerRequestsMixin:
             )
             if callable(get_metadata):
                 metadata = get_metadata(session_id)
-            if not isinstance(metadata, dict):
-                metadata = {}
+            if not isinstance(metadata, dict) or metadata.get("room_id") != room_id:
+                logger.warning(
+                    "Refusing room-key forwarding without matching authenticated "
+                    "session metadata"
+                )
+                await self._send_room_key_withheld(
+                    sender,
+                    requesting_device_id,
+                    room_id,
+                    session_id,
+                    WITHHELD_UNAVAILABLE,
+                    "The requested room key has no validated provenance metadata",
+                )
+                return False
 
-            original_sender_key = metadata.get("sender_key") or sender_key
+            # RequestedKeyInfo.sender_key is deprecated and MUST NOT be used to
+            # locate or establish provenance for a session.
+            original_sender_key = metadata.get("sender_key")
+            if not isinstance(original_sender_key, str) or not original_sender_key:
+                await self._send_room_key_withheld(
+                    sender,
+                    requesting_device_id,
+                    room_id,
+                    session_id,
+                    WITHHELD_UNAVAILABLE,
+                    "The requested room key has incomplete provenance metadata",
+                )
+                return False
             claimed_keys = metadata.get("sender_claimed_keys")
             if not isinstance(claimed_keys, dict):
                 claimed_keys = {}
             original_ed25519 = claimed_keys.get("ed25519")
             if not isinstance(original_ed25519, str) or not original_ed25519:
-                original_ed25519 = str(self._olm.ed25519_key)
+                await self._send_room_key_withheld(
+                    sender,
+                    requesting_device_id,
+                    room_id,
+                    session_id,
+                    WITHHELD_UNAVAILABLE,
+                    "The requested room key has incomplete claimed-key metadata",
+                )
+                return False
 
             forwarding_chain = metadata.get("forwarding_curve25519_key_chain")
             if not isinstance(forwarding_chain, list):
                 forwarding_chain = []
             forwarding_chain = [key for key in forwarding_chain if isinstance(key, str)]
-            our_curve25519 = str(self._olm.curve25519_key)
-            if original_sender_key != our_curve25519 and not forwarding_chain:
-                # First forward after a direct room key: the original creator
-                # was the previous sender and starts the forwarding chain.
-                forwarding_chain.append(original_sender_key)
 
             # 构造 m.forwarded_room_key 内容
             # 根据 Matrix 规范，type 不应包含在内容中（它是事件类型）
@@ -584,6 +670,16 @@ class E2EEManagerRequestsMixin:
                 "sender_claimed_ed25519_key": original_ed25519,
                 "forwarding_curve25519_key_chain": forwarding_chain,
             }
+            withheld = metadata.get("withheld")
+            if (
+                isinstance(withheld, dict)
+                and isinstance(withheld.get("code"), str)
+                and isinstance(withheld.get("reason"), str)
+            ):
+                forwarded_room_key["withheld"] = {
+                    "code": withheld["code"],
+                    "reason": withheld["reason"],
+                }
 
             # Establish an Olm session on demand and bind the wrapper to the
             # requesting device's Ed25519 key before forwarding the session.
@@ -595,15 +691,7 @@ class E2EEManagerRequestsMixin:
             )
 
             if not encrypted_content:
-                await self._send_room_key_withheld(
-                    sender,
-                    requesting_device_id,
-                    room_id,
-                    session_id,
-                    sender_key,
-                    "m.unavailable",
-                    "No Olm session could be established with the requesting device",
-                )
+                await self._send_no_olm_withheld(sender, requesting_device_id)
                 return False
 
             txn_id = secrets.token_hex(16)
@@ -612,6 +700,7 @@ class E2EEManagerRequestsMixin:
                 {sender: {requesting_device_id: encrypted_content}},
                 txn_id,
             )
+            self._mark_olm_send_succeeded(sender, requesting_device_id)
 
             logger.info(
                 f"已加密转发密钥：session={(session_id or '')[:8]}... -> device={requesting_device_id}"
@@ -625,8 +714,7 @@ class E2EEManagerRequestsMixin:
                 requesting_device_id,
                 room_id,
                 session_id,
-                sender_key,
-                "m.unavailable",
+                WITHHELD_UNAVAILABLE,
                 "The room-key request could not be processed",
             )
             return False

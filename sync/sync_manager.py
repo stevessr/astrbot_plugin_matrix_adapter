@@ -398,7 +398,7 @@ class MatrixSyncManager:
         Set callback for one-time keys count updates
 
         Args:
-            callback: Async function(counts) -> None
+            callback: Async function(counts, unused_fallback_key_types) -> None
         """
         self.on_device_one_time_keys_count = callback
 
@@ -464,7 +464,22 @@ class MatrixSyncManager:
                             presence_events,
                         )
 
-                    # Process device list updates
+                    # Decrypt to-device traffic before applying device-list
+                    # changes or generating replacement keys. A message in
+                    # this sync can rely on the previous peer identity or
+                    # consume the previous local fallback key.
+                    to_device_events = sync_response.get("to_device", {}).get(
+                        "events", []
+                    )
+                    if to_device_events and self.on_to_device_event:
+                        await self._run_callback_with_guard(
+                            "on_to_device_event",
+                            self.on_to_device_event,
+                            to_device_events,
+                        )
+
+                    # Device-list changes may replace cached peer identities,
+                    # so apply them only after older to-device traffic above.
                     device_lists = sync_response.get("device_lists", {})
                     if device_lists:
                         self._schedule_callback_task(
@@ -474,26 +489,23 @@ class MatrixSyncManager:
                             device_lists,
                         )
 
-                    # Process one-time keys count updates
+                    # Process one-time/fallback key state together. The
+                    # fallback list is required by modern servers and an empty
+                    # list is meaningful: the previous fallback was consumed.
                     otk_counts = sync_response.get("device_one_time_keys_count", {})
-                    if otk_counts:
+                    fallback_types = sync_response.get(
+                        "device_unused_fallback_key_types"
+                    )
+                    if (
+                        "device_one_time_keys_count" in sync_response
+                        or "device_unused_fallback_key_types" in sync_response
+                    ):
                         self._schedule_callback_task(
                             callback_tasks,
                             "on_device_one_time_keys_count",
                             self.on_device_one_time_keys_count,
                             otk_counts,
-                        )
-
-                    # Process to-device messages
-                    to_device_events = sync_response.get("to_device", {}).get(
-                        "events", []
-                    )
-                    if to_device_events:
-                        self._schedule_callback_task(
-                            callback_tasks,
-                            "on_to_device_event",
-                            self.on_to_device_event,
-                            to_device_events,
+                            fallback_types,
                         )
 
                     if self.on_sync:

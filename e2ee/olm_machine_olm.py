@@ -126,6 +126,9 @@ class OlmMachineOlmMixin:
             "sender": self.user_id,
             "sender_device": self.device_id,
             "keys": {"ed25519": self.ed25519_key},
+            # Matrix v1.15+ (MSC4147): carrying the signed device object lets
+            # the receiver validate the sender without a racy /keys/query.
+            "sender_device_keys": self.get_device_keys(),
             "recipient": recipient_user_id,
             "recipient_keys": {"ed25519": recipient_ed25519_key},
             "type": event_type,
@@ -141,8 +144,6 @@ class OlmMachineOlmMixin:
         message_type, ciphertext_bytes = ciphertext.to_parts()
 
         # 将密文转换为 base64 字符串
-        import base64
-
         ciphertext_b64 = base64.b64encode(ciphertext_bytes).decode()
 
         logger.debug(
@@ -198,37 +199,37 @@ class OlmMachineOlmMixin:
 
         # 尝试使用现有会话解密
         sessions = self._olm_sessions.get(sender_key, [])
-        mac_length_error = False
-        for i, session in enumerate(sessions):
+        for i in range(len(sessions) - 1, -1, -1):
+            session = sessions[i]
             try:
                 # 使用 AnyOlmMessage.from_parts 创建消息对象
                 message = AnyOlmMessage.from_parts(message_type, ciphertext_bytes)
                 plaintext = session.decrypt(message)
                 logger.debug(f"使用现有会话 {i} 解密成功")
-                # 更新会话
-                self.store.update_olm_session(
-                    sender_key, i, session.pickle(self._pickle_key)
+                # Matrix selects the session which most recently received a
+                # valid message. Keep that session last for outgoing traffic.
+                if i != len(sessions) - 1:
+                    sessions.append(sessions.pop(i))
+                replace_sessions = getattr(
+                    self.store,
+                    "replace_olm_sessions",
+                    None,
                 )
+                if callable(replace_sessions):
+                    replace_sessions(
+                        sender_key,
+                        [item.pickle(self._pickle_key) for item in sessions],
+                    )
+                else:
+                    self.store.update_olm_session(
+                        sender_key,
+                        len(sessions) - 1,
+                        session.pickle(self._pickle_key),
+                    )
                 return plaintext
             except Exception as e:
-                error_msg = str(e).lower()
                 logger.debug(f"会话 {i} 解密失败：{e}")
-                # 检测 MAC 长度不匹配错误（vodozemac 与 libolm 兼容性问题）
-                if "mac length" in error_msg or "invalid mac" in error_msg:
-                    mac_length_error = True
-                    logger.warning(
-                        f"检测到 MAC 长度不匹配（vodozemac/libolm 兼容性问题）：{e}"
-                    )
                 continue
-
-        # 如果 MAC 长度错误，清除该发送者的旧会话并等待新的 PreKey 消息
-        if mac_length_error and sender_key in self._olm_sessions:
-            logger.warning(
-                f"清除与 {masked_sender_key}... 的旧 Olm 会话（MAC 格式不兼容）"
-            )
-            self._olm_sessions[sender_key] = []
-            # 同时清除存储中的会话
-            self.store.clear_olm_sessions(sender_key)
 
         # 如果是 prekey 消息，创建新的入站会话
         if message_type == 0:

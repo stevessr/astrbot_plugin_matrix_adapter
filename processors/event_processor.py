@@ -11,7 +11,13 @@ from typing import TYPE_CHECKING
 from astrbot.api import logger
 
 from ..constants import (
+    M_FORWARDED_ROOM_KEY,
+    M_ROOM_ENCRYPTED,
+    M_ROOM_KEY,
+    M_ROOM_KEY_REQUEST,
+    M_ROOM_KEY_WITHHELD,
     MAX_PROCESSED_MESSAGES_1000,
+    MEGOLM_ALGO,
     TIMESTAMP_BUFFER_MS_1000,
 )
 from ..plugin_config import get_plugin_config
@@ -110,6 +116,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         self.receipts: dict[str, dict] = {}
         self.device_lists: dict[str, set[str]] = {"changed": set(), "left": set()}
         self.one_time_keys_count: dict[str, int] = {}
+        self.unused_fallback_key_types: list[str] | None = None
         self._init_member_storage()
 
     def set_message_callback(self, callback: Callable):
@@ -249,6 +256,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
         # Build simplified room object
         room = MatrixRoom(room_id=room_id)
+        room.timeline_limited = timeline.get("limited") is True
 
         # Flag direct rooms from account data (m.direct)
         direct_data = self.global_account_data.get("m.direct")
@@ -344,18 +352,43 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
         # Process state events to get room information (for other state types)
         state_events = room_data.get("state", {}).get("events", [])
+        e2ee_manager = getattr(self, "e2ee_manager", None)
         for event in state_events:
             if event.get("type") == "m.room.member":
-                user_id = event.get("state_key")
-                content = event.get("content", {})
-                if content.get("membership") == "join":
-                    display_name = content.get("displayname", user_id)
-                    room.members[user_id] = display_name
-                    avatar_url = content.get("avatar_url")
-                    if avatar_url:
-                        room.member_avatars[user_id] = avatar_url
+                # State deltas can contain joins/leaves hidden by a limited
+                # timeline. Apply the crypto/member transition without
+                # rendering it as a timeline system message.
+                await self._handle_member_event(room, event)
             elif _is_room_state_event_type(event.get("type", "")):
+                event_type = event.get("type")
+                previous_history_visibility = room.history_visibility
                 self._apply_room_state_event(room, event)
+                if event_type == "m.room.history_visibility" and e2ee_manager:
+                    on_visibility_changed = getattr(
+                        e2ee_manager,
+                        "on_history_visibility_changed",
+                        None,
+                    )
+                    if callable(on_visibility_changed):
+                        try:
+                            await on_visibility_changed(
+                                room.room_id,
+                                previous_history_visibility,
+                                room.history_visibility,
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to update encrypted-history sharing: {e}"
+                            )
+
+        if e2ee_manager and isinstance(room.encryption, dict):
+            set_encryption_config = getattr(
+                e2ee_manager,
+                "set_room_encryption_config",
+                None,
+            )
+            if callable(set_encryption_config):
+                set_encryption_config(room.room_id, room.encryption)
 
         # Persist room state/members after initial state processing
         await self._persist_room_state(room)
@@ -406,6 +439,14 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                         )
                     except Exception as e:
                         logger.warning(f"更新加密历史共享状态失败：{e}")
+            elif event_type == "m.room.encryption" and e2ee_manager:
+                set_encryption_config = getattr(
+                    e2ee_manager,
+                    "set_room_encryption_config",
+                    None,
+                )
+                if callable(set_encryption_config):
+                    set_encryption_config(room.room_id, room.encryption or {})
             await self._persist_room_state(room)
 
             # Process notable state changes as system events for user visibility
@@ -641,7 +682,10 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
                     # 尝试解密
                     decrypted = await self.e2ee_manager.decrypt_event(
-                        event_content, sender, room.room_id
+                        event_content,
+                        sender,
+                        room.room_id,
+                        event_id=getattr(event, "event_id", None),
                     )
                     if decrypted:
                         decrypted_content = dict(decrypted.get("content", {}) or {})
@@ -846,11 +890,26 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
         # Import available room keys before answering sibling-device requests,
         # then handle those requests before unrelated verification traffic.
-        key_event_types = {
-            "m.room_key",
-            "m.forwarded_room_key",
-            "m.room.encrypted",
-        }
+        key_event_types = {M_ROOM_ENCRYPTED}
+        cancelled_requests: set[tuple[str, str, str]] = set()
+        for event in events:
+            if not isinstance(event, dict) or event.get("type") != M_ROOM_KEY_REQUEST:
+                continue
+            sender = event.get("sender")
+            event_content = event.get("content")
+            if not isinstance(sender, str) or not isinstance(event_content, dict):
+                continue
+            if event_content.get("action") != "request_cancellation":
+                continue
+            device_id = event_content.get("requesting_device_id")
+            request_id = event_content.get("request_id")
+            if (
+                isinstance(device_id, str)
+                and device_id
+                and isinstance(request_id, str)
+                and request_id
+            ):
+                cancelled_requests.add((sender, device_id, request_id))
         events = sorted(
             events,
             key=lambda event: (
@@ -859,7 +918,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 else (
                     1
                     if isinstance(event, dict)
-                    and event.get("type") == "m.room_key_request"
+                    and event.get("type") == M_ROOM_KEY_REQUEST
                     and (event.get("content") or {}).get("action") == "request"
                     else 2
                 )
@@ -869,10 +928,16 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         for event in events:
             event_type = event.get("type")
             sender = event.get("sender")
+            if not isinstance(event_type, str) or not event_type:
+                logger.warning("Skipping to-device event without a type")
+                continue
             if not isinstance(sender, str) or not sender:
                 logger.warning(f"to_device 事件缺少 sender，跳过：type={event_type}")
                 continue
             content = event.get("content", {})
+            if not isinstance(content, dict):
+                logger.warning(f"Invalid to-device content for type={event_type}")
+                continue
 
             logger.debug(f"处理 to_device 事件：type={event_type} sender={sender}")
 
@@ -890,29 +955,15 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 continue
 
             # 处理 m.room_key 事件 (Megolm 密钥分发)
-            if event_type == "m.room_key":
-                if self.e2ee_manager:
-                    try:
-                        sender_key = content.get("sender_key", "")
-                        # 如果是加密的，需要先解密
-                        if "ciphertext" in content:
-                            decrypted = await self.e2ee_manager.decrypt_event(
-                                content, sender, ""
-                            )
-                            if decrypted:
-                                await self.e2ee_manager.handle_room_key(
-                                    decrypted, sender_key
-                                )
-                        else:
-                            await self.e2ee_manager.handle_room_key(content, sender_key)
-                    except Exception as e:
-                        logger.error(f"处理 m.room_key 事件失败：{e}")
-                else:
-                    logger.debug("E2EE 未启用，忽略 m.room_key 事件")
+            if event_type == M_ROOM_KEY:
+                # m.room_key is an Olm plaintext event type. Accepting a raw
+                # to-device copy lets the homeserver inject arbitrary Megolm
+                # sessions, so it must always be discarded here.
+                logger.warning("Ignoring m.room_key event not encrypted with Olm")
                 continue
 
             # 处理 m.room.encrypted to_device 消息 (通常包含 m.room_key)
-            if event_type == "m.room.encrypted":
+            if event_type == M_ROOM_ENCRYPTED:
                 if self.e2ee_manager:
                     try:
                         algorithm = content.get("algorithm", "unknown")
@@ -933,20 +984,24 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                             inner_type = decrypted.get("type", "")
                             inner_content = decrypted.get("content", decrypted)
                             logger.debug(f"解密后的事件类型：{inner_type}")
-                            if inner_type == "m.room_key":
+                            if inner_type == M_ROOM_KEY:
                                 sender_key = content.get("sender_key", "")
                                 await self.e2ee_manager.handle_room_key(
                                     inner_content,
                                     sender_key,
                                     sender_claimed_keys=decrypted.get("keys"),
+                                    sender_user_id=sender,
+                                    forwarded=False,
                                 )
                                 logger.debug("成功处理加密的 m.room_key 事件")
-                            elif inner_type == "m.forwarded_room_key":
+                            elif inner_type == M_FORWARDED_ROOM_KEY:
                                 sender_key = content.get("sender_key", "")
                                 await self.e2ee_manager.handle_room_key(
                                     inner_content,
                                     sender_key,
                                     sender_claimed_keys=decrypted.get("keys"),
+                                    sender_user_id=sender,
+                                    forwarded=True,
                                 )
                                 logger.debug("成功处理加密的 m.forwarded_room_key 事件")
                             elif inner_type and inner_type.startswith(
@@ -959,7 +1014,9 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                             elif inner_type == "m.secret.send":
                                 logger.debug("收到加密的 m.secret.send 事件")
                                 await self.e2ee_manager.handle_secret_send(
-                                    sender, inner_content
+                                    sender,
+                                    inner_content,
+                                    content.get("sender_key", ""),
                                 )
                             elif inner_type == "m.secret.request":
                                 logger.debug("收到加密的 m.secret.request 事件")
@@ -988,26 +1045,30 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 continue
 
             # 处理 m.forwarded_room_key 事件 (转发的 Megolm 密钥)
-            if event_type == "m.forwarded_room_key":
+            if event_type == M_FORWARDED_ROOM_KEY:
+                logger.warning(
+                    "Ignoring m.forwarded_room_key event not encrypted with Olm"
+                )
+                continue
+
+            if event_type == M_ROOM_KEY_WITHHELD:
                 if self.e2ee_manager:
                     try:
-                        sender_key = content.get("sender_key", "")
-                        # 直接处理转发的密钥（格式与 m.room_key 相同）
-                        await self.e2ee_manager.handle_room_key(content, sender_key)
-                        logger.debug(
-                            "成功处理转发的房间密钥："
-                            f"{(content.get('session_id') or '')[:8]}..."
+                        await self.e2ee_manager.handle_room_key_withheld(
+                            sender,
+                            content,
                         )
                     except Exception as e:
-                        logger.error(f"处理 m.forwarded_room_key 事件失败：{e}")
+                        logger.error(f"Failed to process m.room_key.withheld: {e}")
                 continue
 
             # 处理 m.room_key_request 事件 (来自其他设备的密钥请求)
-            if event_type == "m.room_key_request":
+            if event_type == M_ROOM_KEY_REQUEST:
                 if self.e2ee_manager:
                     try:
                         action = content.get("action", "")
                         requesting_device_id = content.get("requesting_device_id", "")
+                        request_id = content.get("request_id", "")
                         body = content.get("body", {})
 
                         if action == "request":
@@ -1019,15 +1080,33 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                                 logger.debug("忽略来自自己设备的密钥请求")
                                 continue
 
+                            if (
+                                not isinstance(request_id, str)
+                                or not request_id
+                                or not isinstance(body, dict)
+                                or (
+                                    sender,
+                                    requesting_device_id,
+                                    request_id,
+                                )
+                                in cancelled_requests
+                            ):
+                                logger.debug(
+                                    "Ignoring cancelled room-key request or one "
+                                    "without a request_id"
+                                )
+                                continue
+
                             room_id = body.get("room_id", "")
                             session_id = body.get("session_id", "")
-                            sender_key = body.get("sender_key", "")
 
-                            if (
-                                body.get("algorithm") != "m.megolm.v1.aes-sha2"
-                                or not requesting_device_id
-                                or not room_id
-                                or not session_id
+                            if body.get("algorithm") != MEGOLM_ALGO or not all(
+                                isinstance(value, str) and value
+                                for value in (
+                                    requesting_device_id,
+                                    room_id,
+                                    session_id,
+                                )
                             ):
                                 logger.warning(
                                     "Ignoring malformed room-key request: "
@@ -1048,9 +1127,16 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                                 requesting_device_id=requesting_device_id,
                                 room_id=room_id,
                                 session_id=session_id,
-                                sender_key=sender_key,
                             )
                         elif action == "request_cancellation":
+                            if not all(
+                                isinstance(value, str) and value
+                                for value in (request_id, requesting_device_id)
+                            ):
+                                logger.warning(
+                                    "Ignoring malformed room-key request cancellation"
+                                )
+                                continue
                             logger.debug(
                                 f"密钥请求已取消：device={requesting_device_id}"
                             )

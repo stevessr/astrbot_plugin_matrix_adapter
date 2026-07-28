@@ -6,6 +6,8 @@ try:
         Account,
         AnyOlmMessage,
         Curve25519PublicKey,
+        Ed25519PublicKey,
+        Ed25519Signature,
         ExportedSessionKey,  # 构造函数接受 base64 字符串
         GroupSession,  # 出站会话 (vodozemac 中称为 GroupSession)
         InboundGroupSession,
@@ -19,6 +21,8 @@ except ImportError:
     Account = None
     AnyOlmMessage = None
     Curve25519PublicKey = None
+    Ed25519PublicKey = None
+    Ed25519Signature = None
     ExportedSessionKey = None
     GroupSession = None
     InboundGroupSession = None
