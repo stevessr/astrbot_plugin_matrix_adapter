@@ -7,6 +7,7 @@ This package provides a modular Matrix HTTP client composed of:
 - AuthMixin: Authentication and sync
 - RoomMixin: Room operations
 - MessageMixin: Message sending and manipulation
+- MessageOverrideMixin: Overridable hooks around message send/fetch
 - MediaMixin: File upload and download
 - ProfileMixin: User profile and presence
 - DeviceMixin: Device management
@@ -28,6 +29,7 @@ from .http_client import (
     MatrixHTTPClient,
     MediaMixin,
     MessageMixin,
+    MessageOverrideMixin,
     ProfileMixin,
     PushMixin,
     RoomMixin,
@@ -48,6 +50,7 @@ __all__ = [
     "AuthMixin",
     "RoomMixin",
     "MessageMixin",
+    "MessageOverrideMixin",
     "MediaMixin",
     "ProfileMixin",
     "DeviceMixin",

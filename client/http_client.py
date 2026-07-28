@@ -4,6 +4,7 @@ Implements the Matrix Client-Server API using aiohttp
 
 This module provides a modular HTTP client for Matrix, composed of:
 - MatrixClientBase: Core HTTP request functionality
+- MessageOverrideMixin: Overridable hooks around message send/fetch
 - AuthMixin: Authentication and sync
 - RoomMixin: Room operations
 - MessageMixin: Message sending and manipulation
@@ -24,6 +25,7 @@ from .e2ee_mixin import E2EEMixin
 from .key_backup_mixin import KeyBackupMixin
 from .media_mixin import MediaMixin
 from .message_mixin import MessageMixin
+from .message_override_mixin import MessageOverrideMixin
 from .profile_mixin import ProfileMixin
 from .push_mixin import PushMixin
 from .room_mixin import RoomMixin
@@ -36,6 +38,9 @@ from .widget_mixin import WidgetMixin
 
 class MatrixHTTPClient(
     MatrixClientBase,
+    # 必须排在 RoomMixin / MessageMixin 之前，才能拦截 send_message、
+    # get_event 与 room_messages，并让 super() 沿 MRO 落到真实实现上。
+    MessageOverrideMixin,
     AccountMixin,
     AuthMixin,
     RoomMixin,
@@ -79,6 +84,7 @@ __all__ = [
     "AuthMixin",
     "RoomMixin",
     "MessageMixin",
+    "MessageOverrideMixin",
     "MediaMixin",
     "ProfileMixin",
     "DeviceMixin",

@@ -380,6 +380,56 @@ await adapter.sender.send_custom_event(
 )
 ```
 
+### 覆写获取/发送消息（MessageOverrideMixin）
+
+`MatrixHTTPClient` 组合了 `MessageOverrideMixin`，在**发送消息**与**获取消息**
+两条链路的前后提供统一钩子，用于改写 content、命中本地缓存或旁路埋点，
+无需改动散落各处的调用点。被包装的方法：
+
+| 方法 | 前置钩子 | 后置钩子 |
+|------|----------|----------|
+| `send_message` | `before_send_message(room_id, msg_type, content)` | `after_send_message(room_id, msg_type, content, response)` |
+| `get_event` | `before_get_event(room_id, event_id)` | `after_get_event(room_id, event_id, event)` |
+| `room_messages` | `before_room_messages(room_id, params)` | `after_room_messages(room_id, params, response)` |
+
+约定：
+
+- 后置钩子与 `before_send_message` 返回非 `None` 即**替换**当前值，返回 `None` 表示不改动；多个钩子按注册顺序串联。
+- `before_get_event` / `before_room_messages` 返回非 `None` 即作为最终结果**短路**掉 HTTP 请求；若只想改写查询参数，请就地修改传入的 `params` 字典并返回 `None`。
+- 钩子可以是同步或异步方法，只需实现上表中的任意子集。
+- 钩子抛出的异常会被吞掉并记录告警，不会打断消息收发。
+
+运行时注册（推荐，不必改动客户端实例化点）：
+
+```python
+class NoticeRewriteHook:
+    async def before_send_message(self, room_id, msg_type, content):
+        if content.get("msgtype") == "m.text":
+            return {**content, "msgtype": "m.notice"}
+        return None
+
+    async def before_get_event(self, room_id, event_id):
+        return self._cache.get((room_id, event_id))  # 命中则短路
+
+adapter.client.register_message_hook(NoticeRewriteHook())
+# 注销：adapter.client.unregister_message_hook(hook)
+```
+
+也可以直接子类化覆写钩子方法（调用 `super()` 可保留注册式钩子的行为）：
+
+```python
+from .client import MessageOverrideMixin
+
+class MyClient(MatrixHTTPClient):
+    async def before_send_message(self, room_id, msg_type, content):
+        content = await super().before_send_message(room_id, msg_type, content)
+        return {**content, "org.example.tag": True}
+```
+
+> 注意：`MessageOverrideMixin` 在 `MatrixHTTPClient` 中必须排在 `RoomMixin` 与
+> `MessageMixin` 之前，`super()` 才能沿 MRO 落到真正发起 HTTP 的实现上。
+> `send_room_event` 未被包装 —— 它承载 SAS 验证、通话信令等事件，改写风险高。
+
 ### Live Messages / 流式输出
 
 流式输出与普通发送是两个独立接口：AstrBot 产生流式结果时，Matrix

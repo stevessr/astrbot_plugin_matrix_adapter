@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 新增 `MessageOverrideMixin`：`MatrixHTTPClient` 现在在 `send_message` / `get_event` / `room_messages` 前后提供统一钩子，支持改写 content、短路命中缓存与旁路埋点；可运行时 `register_message_hook()` 注册，也可子类覆写。钩子异常会被吞掉并告警，不影响消息收发。
 - 移除接收消息时把 `!` 前缀自动改写为 `/` 的行为；`!` 开头的文本现在原样传给上层。
 - 新增插件级开关 `matrix_adaptive_thread_reply`（回复自适应，默认开启）：唤醒机器人的消息位于消息列（Thread）内时，普通回复与流式回复都会留在同一消息列，而不是回落到房间时间线。该开关只跟随已有消息列，不会新建消息列（新建仍由 `matrix_enable_threading` 控制）。
 - 补齐 Matrix Client-Server v1.19 所需能力：新增 stable `GET /_matrix/client/v1/mutual_rooms`、`m.key_backup` 账户偏好、`unsigned.replaces_state` 访问和 stable `m.room.image_pack` / `m.image_pack.rooms` 同步。
