@@ -10,6 +10,7 @@ from astrbot.api import logger
 from ..constants import (
     AES_GCM_NONCE_LEN,
     CRYPTO_KEY_SIZE_32,
+    MEGOLM_ALGO,
     MEGOLM_BACKUP_ALGO,
     RECOVERY_KEY_MAC_TRUNCATED_LEN,
 )
@@ -25,6 +26,7 @@ from .key_backup_crypto import (
     _encode_recovery_key,
     _encrypt_backup_data,
 )
+from .olm_machine_megolm import _convert_session_key_v2_to_v1
 
 
 class KeyBackupBackupMixin:
@@ -79,6 +81,33 @@ class KeyBackupBackupMixin:
                 ]
             ).decode(),
             "ephemeral": base64.b64encode(nonce).decode(),
+        }
+
+    @staticmethod
+    def _build_backed_up_session_data(
+        session_key: str,
+        *,
+        sender_key: str = "",
+        sender_claimed_keys: dict[str, str] | None = None,
+        forwarding_curve25519_key_chain: list[str] | None = None,
+        shared_history: bool = False,
+    ) -> dict:
+        """Build the plaintext ``BackedUpSessionData`` structure."""
+        claimed_keys = sender_claimed_keys or {}
+        forwarding_chain = forwarding_curve25519_key_chain or []
+        return {
+            "algorithm": MEGOLM_ALGO,
+            "forwarding_curve25519_key_chain": [
+                key for key in forwarding_chain if isinstance(key, str)
+            ],
+            "sender_claimed_keys": {
+                str(algorithm): key
+                for algorithm, key in claimed_keys.items()
+                if isinstance(key, str)
+            },
+            "sender_key": sender_key if isinstance(sender_key, str) else "",
+            "session_key": _convert_session_key_v2_to_v1(session_key),
+            "shared_history": shared_history is True,
         }
 
     def _decrypt_legacy_backup_data(
@@ -351,35 +380,68 @@ class KeyBackupBackupMixin:
             return
 
         try:
-            sessions = self.store._megolm_inbound
-            if not sessions:
+            session_ids = list(self.store._megolm_inbound)
+            if not session_ids:
                 logger.debug("没有可上传的会话密钥")
                 return
 
             rooms: dict[str, dict[str, dict]] = {}
+            uploaded = 0
 
-            for session_id, pickle in sessions.items():
-                # 加密会话数据
-                plaintext = pickle.encode() if isinstance(pickle, str) else pickle
+            for session_id in session_ids:
+                metadata = self.store.get_megolm_inbound_metadata(session_id) or {}
+                target_room = room_id or metadata.get("room_id")
+                if not isinstance(target_room, str) or not target_room:
+                    logger.debug(
+                        f"跳过缺少 room_id 的会话：{(session_id or '')[:8]}..."
+                    )
+                    continue
+                if room_id and metadata.get("room_id") not in (None, room_id):
+                    continue
+
+                session = self.olm.get_megolm_inbound_session(session_id)
+                if not session:
+                    continue
+                first_message_index = session.first_known_index()
+                exported_key = session.export_at(first_message_index).to_base64()
+                backed_up_session = self._build_backed_up_session_data(
+                    exported_key,
+                    sender_key=metadata.get("sender_key", ""),
+                    sender_claimed_keys=metadata.get("sender_claimed_keys"),
+                    forwarding_curve25519_key_chain=metadata.get(
+                        "forwarding_curve25519_key_chain"
+                    ),
+                    shared_history=metadata.get("shared_history") is True,
+                )
+                plaintext = json.dumps(
+                    backed_up_session,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
 
                 session_data = {
-                    "first_message_index": 0,
-                    "forwarded_count": 0,
+                    "first_message_index": first_message_index,
+                    "forwarded_count": len(
+                        backed_up_session["forwarding_curve25519_key_chain"]
+                    ),
                     "is_verified": True,
                     "session_data": self._build_encrypted_session_data(plaintext),
                 }
 
-                target_room = room_id or "unknown"
-                if target_room not in rooms:
-                    rooms[target_room] = {}
-                rooms[target_room][session_id] = session_data
+                room_sessions = rooms.setdefault(target_room, {"sessions": {}})
+                room_sessions["sessions"][session_id] = session_data
+                uploaded += 1
+
+            if not uploaded:
+                logger.debug("没有可上传的完整会话数据")
+                return
 
             await self.client.store_room_keys(
                 self._backup_version,
                 {"rooms": rooms},
             )
 
-            logger.info(f"已上传 {len(sessions)} 个会话密钥")
+            logger.info(f"已上传 {uploaded} 个会话密钥")
 
         except Exception as e:
             logger.error(f"上传密钥失败：{e}")
@@ -499,7 +561,19 @@ class KeyBackupBackupMixin:
                             if session_key:
                                 # 使用 OlmMachine 添加入站会话
                                 self.olm.add_megolm_inbound_session(
-                                    room_id, session_id, session_key, ""
+                                    room_id,
+                                    session_id,
+                                    session_key,
+                                    session_json.get("sender_key", ""),
+                                    sender_claimed_keys=session_json.get(
+                                        "sender_claimed_keys"
+                                    ),
+                                    forwarding_curve25519_key_chain=session_json.get(
+                                        "forwarding_curve25519_key_chain"
+                                    ),
+                                    shared_history=(
+                                        session_json.get("shared_history") is True
+                                    ),
                                 )
                                 restored += 1
                             else:
@@ -528,7 +602,12 @@ class KeyBackupBackupMixin:
         room_id: str,
         session_id: str,
         session_key: str,
-        algorithm: str = MEGOLM_BACKUP_ALGO,
+        algorithm: str = MEGOLM_ALGO,
+        *,
+        sender_key: str = "",
+        sender_claimed_keys: dict[str, str] | None = None,
+        forwarding_curve25519_key_chain: list[str] | None = None,
+        shared_history: bool = False,
     ) -> bool:
         """
         上传当个会话密钥到备份
@@ -537,19 +616,38 @@ class KeyBackupBackupMixin:
             room_id: 房间 ID
             session_id: 会话 ID
             session_key: 会话密钥
-            algorithm: 算法 (默认 m.megolm_backup.v1.curve25519-aes-sha2)
+            algorithm: 会话算法（仅支持 m.megolm.v1.aes-sha2）
+            sender_key: 创建会话的设备 Curve25519 密钥
+            sender_claimed_keys: 创建设备声明的签名密钥
+            forwarding_curve25519_key_chain: 会话密钥转发链
+            shared_history: Matrix v1.19 会话可共享标记
 
         Returns:
             bool: 是否成功
         """
         if not self._backup_version:
             return False
+        if algorithm != MEGOLM_ALGO:
+            logger.warning(f"[KeyBackup] 不支持的会话算法：{algorithm}")
+            return False
 
         try:
-            plaintext = session_key.encode()
+            backed_up_session = self._build_backed_up_session_data(
+                session_key,
+                sender_key=sender_key,
+                sender_claimed_keys=sender_claimed_keys,
+                forwarding_curve25519_key_chain=forwarding_curve25519_key_chain,
+                shared_history=shared_history,
+            )
+            plaintext = json.dumps(
+                backed_up_session,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+            forwarding_count = len(backed_up_session["forwarding_curve25519_key_chain"])
             session_data = {
                 "first_message_index": 0,
-                "forwarded_count": 0,
+                "forwarded_count": forwarding_count,
                 "is_verified": True,
                 "session_data": self._build_encrypted_session_data(plaintext),
             }

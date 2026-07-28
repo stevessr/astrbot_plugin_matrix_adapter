@@ -388,7 +388,24 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
         # Handle other room state updates
         if _is_room_state_event_type(event_type) and "state_key" in event_data:
+            previous_history_visibility = getattr(room, "history_visibility", None)
             self._apply_room_state_event(room, event_data)
+            e2ee_manager = getattr(self, "e2ee_manager", None)
+            if event_type == "m.room.history_visibility" and e2ee_manager:
+                on_visibility_changed = getattr(
+                    e2ee_manager,
+                    "on_history_visibility_changed",
+                    None,
+                )
+                if callable(on_visibility_changed):
+                    try:
+                        await on_visibility_changed(
+                            room.room_id,
+                            previous_history_visibility,
+                            room.history_visibility,
+                        )
+                    except Exception as e:
+                        logger.warning(f"更新加密历史共享状态失败：{e}")
             await self._persist_room_state(room)
 
             # Process notable state changes as system events for user visibility
@@ -919,13 +936,17 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                             if inner_type == "m.room_key":
                                 sender_key = content.get("sender_key", "")
                                 await self.e2ee_manager.handle_room_key(
-                                    inner_content, sender_key
+                                    inner_content,
+                                    sender_key,
+                                    sender_claimed_keys=decrypted.get("keys"),
                                 )
                                 logger.debug("成功处理加密的 m.room_key 事件")
                             elif inner_type == "m.forwarded_room_key":
                                 sender_key = content.get("sender_key", "")
                                 await self.e2ee_manager.handle_room_key(
-                                    inner_content, sender_key
+                                    inner_content,
+                                    sender_key,
+                                    sender_claimed_keys=decrypted.get("keys"),
                                 )
                                 logger.debug("成功处理加密的 m.forwarded_room_key 事件")
                             elif inner_type and inner_type.startswith(

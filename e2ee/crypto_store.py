@@ -26,7 +26,9 @@ class CryptoStore:
     _RECORD_ACCOUNT = "olm_account"
     _RECORD_SESSIONS = "olm_sessions"
     _RECORD_MEGOLM_INBOUND = "megolm_inbound"
+    _RECORD_MEGOLM_INBOUND_META = "megolm_inbound_meta"
     _RECORD_MEGOLM_OUTBOUND = "megolm_outbound"
+    _RECORD_MEGOLM_OUTBOUND_META = "megolm_outbound_meta"
     _RECORD_DEVICE_KEYS = "device_keys"
     _RECORD_STORED_DEVICE_ID = "stored_device_id"
     _PERSIST_QUEUE_WAIT_TIMEOUT_SECONDS = 15.0
@@ -35,7 +37,9 @@ class CryptoStore:
         _RECORD_ACCOUNT: "olm_account.json",
         _RECORD_SESSIONS: "olm_sessions.json",
         _RECORD_MEGOLM_INBOUND: "megolm_inbound.json",
+        _RECORD_MEGOLM_INBOUND_META: "megolm_inbound_meta.json",
         _RECORD_MEGOLM_OUTBOUND: "megolm_outbound.json",
+        _RECORD_MEGOLM_OUTBOUND_META: "megolm_outbound_meta.json",
         _RECORD_DEVICE_KEYS: "device_keys.json",
         _RECORD_STORED_DEVICE_ID: "stored_device_id.json",
     }
@@ -92,7 +96,9 @@ class CryptoStore:
         self._account_pickle: str | None = None
         self._olm_sessions: dict[str, list[str]] = {}  # sender_key -> [session_pickles]
         self._megolm_inbound: dict[str, str] = {}  # session_id -> pickle
+        self._megolm_inbound_meta: dict[str, dict[str, Any]] = {}
         self._megolm_outbound: dict[str, str] = {}  # room_id -> pickle
+        self._megolm_outbound_meta: dict[str, dict[str, Any]] = {}
         self._device_keys: dict[str, dict] = {}  # user_id -> {device_id: keys}
 
         # 检查 device_id 是否变化
@@ -296,6 +302,8 @@ class CryptoStore:
             # 但需要删除出站会话，因为需要为新设备创建新的
             self._delete_record(self._RECORD_MEGOLM_OUTBOUND)
             self._megolm_outbound = {}
+            self._delete_record(self._RECORD_MEGOLM_OUTBOUND_META)
+            self._megolm_outbound_meta = {}
             logger.info("已删除旧的 Megolm 出站会话")
 
         except Exception as e:
@@ -326,10 +334,18 @@ class CryptoStore:
                 self._megolm_inbound = megolm_inbound_data
                 logger.debug(f"加载了 {len(self._megolm_inbound)} 个 Megolm 入站会话")
 
+            megolm_inbound_meta = self._read_record(self._RECORD_MEGOLM_INBOUND_META)
+            if isinstance(megolm_inbound_meta, dict):
+                self._megolm_inbound_meta = megolm_inbound_meta
+
             megolm_outbound_data = self._read_record(self._RECORD_MEGOLM_OUTBOUND)
             if isinstance(megolm_outbound_data, dict):
                 self._megolm_outbound = megolm_outbound_data
                 logger.debug(f"加载了 {len(self._megolm_outbound)} 个 Megolm 出站会话")
+
+            megolm_outbound_meta = self._read_record(self._RECORD_MEGOLM_OUTBOUND_META)
+            if isinstance(megolm_outbound_meta, dict):
+                self._megolm_outbound_meta = megolm_outbound_meta
 
             device_keys_data = self._read_record(self._RECORD_DEVICE_KEYS)
             if isinstance(device_keys_data, dict):
@@ -393,6 +409,58 @@ class CryptoStore:
         self._megolm_inbound[session_id] = session_pickle
         self._save_record(self._RECORD_MEGOLM_INBOUND, self._megolm_inbound)
 
+    def save_megolm_inbound_metadata(
+        self,
+        session_id: str,
+        *,
+        room_id: str,
+        sender_key: str,
+        sender_claimed_keys: dict[str, str] | None = None,
+        forwarding_curve25519_key_chain: list[str] | None = None,
+        shared_history: bool = False,
+    ) -> None:
+        """Persist provenance and Matrix v1.19 shareability for an inbound key."""
+        previous = self._megolm_inbound_meta.get(session_id)
+        was_shareable = (
+            isinstance(previous, dict) and previous.get("shared_history") is True
+        )
+        claimed_keys = (
+            {
+                str(algorithm): key
+                for algorithm, key in sender_claimed_keys.items()
+                if isinstance(key, str)
+            }
+            if isinstance(sender_claimed_keys, dict)
+            else {}
+        )
+        forwarding_chain = (
+            [
+                key
+                for key in forwarding_curve25519_key_chain
+                if isinstance(key, str)
+            ]
+            if isinstance(forwarding_curve25519_key_chain, list)
+            else []
+        )
+        self._megolm_inbound_meta[session_id] = {
+            "room_id": room_id,
+            "sender_key": sender_key,
+            "sender_claimed_keys": claimed_keys,
+            "forwarding_curve25519_key_chain": forwarding_chain,
+            # A session is shareable when any trusted import source says so;
+            # re-importing an older copy must never downgrade that decision.
+            "shared_history": was_shareable or shared_history is True,
+        }
+        self._save_record(
+            self._RECORD_MEGOLM_INBOUND_META,
+            self._megolm_inbound_meta,
+        )
+
+    def get_megolm_inbound_metadata(self, session_id: str) -> dict[str, Any] | None:
+        """Return a defensive copy of stored inbound-session metadata."""
+        metadata = self._megolm_inbound_meta.get(session_id)
+        return copy.deepcopy(metadata) if isinstance(metadata, dict) else None
+
     def has_megolm_inbound(self, session_id: str) -> bool:
         """检查是否存在指定 Megolm 入站会话"""
         return session_id in self._megolm_inbound
@@ -411,6 +479,38 @@ class CryptoStore:
         """保存房间的 Megolm 出站会话"""
         self._megolm_outbound[room_id] = session_pickle
         self._save_record(self._RECORD_MEGOLM_OUTBOUND, self._megolm_outbound)
+
+    def save_megolm_outbound_metadata(
+        self,
+        room_id: str,
+        session_id: str,
+        *,
+        shared_history: bool,
+    ) -> None:
+        """Persist MSC4268 metadata for a room's current outbound session."""
+        self._megolm_outbound_meta[room_id] = {
+            "session_id": session_id,
+            "shared_history": bool(shared_history),
+        }
+        self._save_record(
+            self._RECORD_MEGOLM_OUTBOUND_META,
+            self._megolm_outbound_meta,
+        )
+
+    def get_megolm_outbound_metadata(self, room_id: str) -> dict[str, Any] | None:
+        """Return a defensive copy of outbound-session metadata."""
+        metadata = self._megolm_outbound_meta.get(room_id)
+        return dict(metadata) if isinstance(metadata, dict) else None
+
+    def delete_megolm_outbound(self, room_id: str) -> None:
+        """Discard a room's outbound session while retaining inbound history."""
+        self._megolm_outbound.pop(room_id, None)
+        self._megolm_outbound_meta.pop(room_id, None)
+        self._save_record(self._RECORD_MEGOLM_OUTBOUND, self._megolm_outbound)
+        self._save_record(
+            self._RECORD_MEGOLM_OUTBOUND_META,
+            self._megolm_outbound_meta,
+        )
 
     def get_megolm_outbound_rooms(self) -> list[str]:
         """获取所有已持久化的 Megolm 出站会话房间 ID"""

@@ -26,17 +26,127 @@ class E2EEManagerSessionsMixin:
         if isinstance(cache, dict):
             cache.pop(room_id, None)
 
+    @staticmethod
+    def _normalize_history_visibility(value: object) -> str:
+        if isinstance(value, str) and value in {
+            "invited",
+            "joined",
+            "shared",
+            "world_readable",
+        }:
+            return value
+        # Matrix defines a missing/invalid history visibility as ``shared``.
+        return "shared"
+
+    @classmethod
+    def _history_visibility_is_shareable(cls, value: object) -> bool:
+        return cls._normalize_history_visibility(value) in {
+            "shared",
+            "world_readable",
+        }
+
+    async def _get_room_shared_history(
+        self,
+        room_id: str,
+        *,
+        force_refresh: bool = False,
+    ) -> bool:
+        """Resolve whether new Megolm sessions may be shared with invitees.
+
+        Matrix treats an absent/unknown ``m.room.history_visibility`` event as
+        ``shared``. Transient request failures are handled conservatively and
+        are not cached, so a later send can retry.
+        """
+        cache = getattr(self, "_room_history_visibility", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._room_history_visibility = cache
+        if not force_refresh and room_id in cache:
+            return self._history_visibility_is_shareable(cache[room_id])
+
+        try:
+            content = await self.client.get_room_state_event(
+                room_id,
+                "m.room.history_visibility",
+                "",
+            )
+        except Exception as e:
+            if getattr(e, "status", None) == 404:
+                cache[room_id] = "shared"
+                return True
+            logger.warning(
+                f"读取房间历史可见性失败，按不可共享处理：room={room_id} error={e}"
+            )
+            return False
+
+        visibility = (
+            content.get("history_visibility") if isinstance(content, dict) else None
+        )
+        visibility = self._normalize_history_visibility(visibility)
+        cache[room_id] = visibility
+        return self._history_visibility_is_shareable(visibility)
+
+    async def on_history_visibility_changed(
+        self,
+        room_id: str,
+        previous: object,
+        current: object,
+    ) -> None:
+        """Rotate Megolm when MSC4268 shareability changes."""
+        normalized_previous = self._normalize_history_visibility(previous)
+        normalized_current = self._normalize_history_visibility(current)
+        cache = getattr(self, "_room_history_visibility", None)
+        if isinstance(cache, dict):
+            cache[room_id] = normalized_current
+
+        if self._history_visibility_is_shareable(
+            normalized_previous
+        ) == self._history_visibility_is_shareable(normalized_current):
+            return
+
+        discard = getattr(self._olm, "discard_megolm_outbound_session", None)
+        if callable(discard) and discard(room_id):
+            logger.info(
+                "房间历史可见性改变，已轮换 Megolm 出站会话："
+                f"room={room_id} previous={previous} current={normalized_current}"
+            )
+
     async def on_room_member_joined(self, room_id: str, user_id: str) -> None:
-        """Proactively share existing room key to a newly joined member."""
+        """Share allowed history, or rotate before encrypting for a new member."""
         if user_id == self.user_id:
             return
         self.invalidate_room_members_cache(room_id)
+
+        metadata_getter = getattr(
+            self._olm,
+            "get_megolm_outbound_shared_history",
+            None,
+        )
+        shared_history = metadata_getter(room_id) if callable(metadata_getter) else None
+        if shared_history is not True:
+            # A non-shareable (or legacy/unknown) session must not be handed to
+            # a user who joined after it was created. The next send creates and
+            # distributes a fresh session to the current membership instead.
+            discard = getattr(self._olm, "discard_megolm_outbound_session", None)
+            if callable(discard):
+                discard(room_id)
+            return
+
         await self._share_existing_room_key(
             room_id=room_id,
             target_users=[user_id],
             reason="member_join",
             force_members_refresh=True,
         )
+
+    async def on_room_member_left(self, room_id: str, user_id: str) -> None:
+        """Rotate so a departed or banned member cannot decrypt future events."""
+        self.invalidate_room_members_cache(room_id)
+        if user_id == self.user_id:
+            return
+        discard = getattr(self._olm, "discard_megolm_outbound_session", None)
+        if callable(discard):
+            discard(room_id)
 
     async def on_device_list_changed(self, changed_users: list[str]) -> None:
         """Re-check key sharing when users publish device-list changes.
@@ -139,11 +249,38 @@ class E2EEManagerSessionsMixin:
             return None
 
         try:
+            shared_history = await self._get_room_shared_history(room_id)
+
             # 检查是否有出站会话
             session_info = self._olm.get_megolm_outbound_session_info(room_id)
+            if session_info:
+                metadata_getter = getattr(
+                    self._olm,
+                    "get_megolm_outbound_shared_history",
+                    None,
+                )
+                session_shared_history = (
+                    metadata_getter(room_id) if callable(metadata_getter) else None
+                )
+                # Legacy sessions have no MSC4268 metadata. Rotate them rather
+                # than incorrectly claiming that their history is shareable.
+                if session_shared_history is None or (
+                    session_shared_history != shared_history
+                ):
+                    discard = getattr(
+                        self._olm,
+                        "discard_megolm_outbound_session",
+                        None,
+                    )
+                    if callable(discard):
+                        discard(room_id)
+                        session_info = None
             if not session_info:
                 # 创建新会话并分发密钥
-                await self._create_and_share_session(room_id)
+                await self._create_and_share_session(
+                    room_id,
+                    shared_history=shared_history,
+                )
             else:
                 # 会话已存在，确保密钥已分发给所有成员
                 session_id, session_key = session_info
@@ -155,6 +292,7 @@ class E2EEManagerSessionsMixin:
                         session_id,
                         session_key,
                         reason="send_message",
+                        shared_history=shared_history,
                     )
 
             # 加密消息
@@ -164,13 +302,21 @@ class E2EEManagerSessionsMixin:
             logger.error(f"加密消息失败：{e}")
             return None
 
-    async def _create_and_share_session(self, room_id: str):
+    async def _create_and_share_session(
+        self,
+        room_id: str,
+        *,
+        shared_history: bool = False,
+    ):
         """创建 Megolm 出站会话并分发密钥"""
         if not self._olm:
             return
 
         # 创建会话
-        session_id, session_key = self._olm.create_megolm_outbound_session(room_id)
+        session_id, session_key = self._olm.create_megolm_outbound_session(
+            room_id,
+            shared_history=shared_history,
+        )
         logger.info(f"为房间 {room_id} 创建了 Megolm 会话")
 
         # 获取房间成员
@@ -183,6 +329,7 @@ class E2EEManagerSessionsMixin:
                     session_id,
                     session_key,
                     reason="new_session",
+                    shared_history=shared_history,
                 )
         except Exception as e:
             logger.error(f"分发密钥失败：{e}")
@@ -230,6 +377,7 @@ class E2EEManagerSessionsMixin:
         session_key: str | None = None,
         target_users: list[str] | None = None,
         reason: str = "sync",
+        shared_history: bool | None = None,
     ) -> int:
         """
         确保房间密钥已发送给所有成员的设备
@@ -241,6 +389,7 @@ class E2EEManagerSessionsMixin:
             session_key: 可选，指定会话密钥
             target_users: 可选，只分发给指定用户（其余成员跳过）
             reason: 日志用途，标记分发触发原因
+            shared_history: MSC4268 会话是否允许与未来成员共享
 
         Returns:
             Number of devices that received the room key successfully.
@@ -277,6 +426,18 @@ class E2EEManagerSessionsMixin:
             session_id, session_key = session_info
 
         shared_devices = self._room_key_share_cache.setdefault(session_id, set())
+
+        if shared_history is None:
+            metadata_getter = getattr(
+                self._olm,
+                "get_megolm_outbound_shared_history",
+                None,
+            )
+            shared_history = (
+                metadata_getter(room_id) if callable(metadata_getter) else None
+            )
+        # Unknown/legacy metadata must not be promoted to shareable.
+        shared_history = shared_history is True
 
         try:
             # 查询目标成员的设备密钥
@@ -384,6 +545,7 @@ class E2EEManagerSessionsMixin:
                         "room_id": room_id,
                         "session_id": session_id,
                         "session_key": session_key,
+                        "shared_history": shared_history,
                     }
 
                     # 使用 Olm 加密并包装

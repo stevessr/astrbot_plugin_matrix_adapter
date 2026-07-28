@@ -37,7 +37,14 @@ def _convert_session_key_v2_to_v1(session_key_b64: str) -> str:
 
 class OlmMachineMegolmMixin:
     def add_megolm_inbound_session(
-        self, room_id: str, session_id: str, session_key: str, sender_key: str
+        self,
+        room_id: str,
+        session_id: str,
+        session_key: str,
+        sender_key: str,
+        sender_claimed_keys: dict[str, str] | None = None,
+        forwarding_curve25519_key_chain: list[str] | None = None,
+        shared_history: bool = False,
     ) -> bool:
         """
         添加 Megolm 入站会话 (从 m.room_key 事件或备份恢复)
@@ -47,6 +54,9 @@ class OlmMachineMegolmMixin:
             session_id: 会话 ID
             session_key: 会话密钥 (base64 编码的字符串)
             sender_key: 发送者的 curve25519 密钥
+            sender_claimed_keys: 发送设备声明的签名密钥
+            forwarding_curve25519_key_chain: 会话密钥转发链
+            shared_history: 该会话是否允许与未来成员共享
 
         Returns:
             Whether the session was imported and queued for persistence.
@@ -69,6 +79,18 @@ class OlmMachineMegolmMixin:
                 self._megolm_inbound[session_id] = session
                 self.store.save_megolm_inbound(
                     session_id, session.pickle(self._pickle_key)
+                )
+            save_metadata = getattr(self.store, "save_megolm_inbound_metadata", None)
+            if callable(save_metadata):
+                save_metadata(
+                    session_id,
+                    room_id=room_id,
+                    sender_key=sender_key,
+                    sender_claimed_keys=sender_claimed_keys,
+                    forwarding_curve25519_key_chain=(
+                        forwarding_curve25519_key_chain
+                    ),
+                    shared_history=shared_history,
                 )
             return True
         except Exception as e:
@@ -146,7 +168,12 @@ class OlmMachineMegolmMixin:
 
         return None
 
-    def create_megolm_outbound_session(self, room_id: str) -> tuple[str, str]:
+    def create_megolm_outbound_session(
+        self,
+        room_id: str,
+        *,
+        shared_history: bool = False,
+    ) -> tuple[str, str]:
         """
         创建 Megolm 出站会话
 
@@ -162,6 +189,15 @@ class OlmMachineMegolmMixin:
 
         session_id = session.session_id
         session_key = session.session_key
+        save_outbound_metadata = getattr(
+            self.store, "save_megolm_outbound_metadata", None
+        )
+        if callable(save_outbound_metadata):
+            save_outbound_metadata(
+                room_id,
+                session_id,
+                shared_history=shared_history,
+            )
 
         # 同时创建入站会话，以便能解密自己发送的消息
         try:
@@ -170,11 +206,45 @@ class OlmMachineMegolmMixin:
             self.store.save_megolm_inbound(
                 session_id, inbound_session.pickle(self._pickle_key)
             )
+            save_inbound_metadata = getattr(
+                self.store, "save_megolm_inbound_metadata", None
+            )
+            if callable(save_inbound_metadata):
+                save_inbound_metadata(
+                    session_id,
+                    room_id=room_id,
+                    sender_key=str(self.curve25519_key),
+                    sender_claimed_keys={"ed25519": str(self.ed25519_key)},
+                    shared_history=shared_history,
+                )
             logger.debug(f"为自己创建了入站会话：{(session_id or '')[:8]}...")
         except Exception as e:
             logger.warning(f"创建自己的入站会话失败：{e}")
 
         return session_id, session_key.to_base64()
+
+    def get_megolm_outbound_shared_history(self, room_id: str) -> bool | None:
+        """Return the MSC4268 flag for the room's current outbound session."""
+        session_info = self.get_megolm_outbound_session_info(room_id)
+        get_metadata = getattr(self.store, "get_megolm_outbound_metadata", None)
+        metadata = get_metadata(room_id) if callable(get_metadata) else None
+        if not session_info or not metadata:
+            return None
+        if metadata.get("session_id") != session_info[0]:
+            return None
+        value = metadata.get("shared_history")
+        return value if isinstance(value, bool) else None
+
+    def discard_megolm_outbound_session(self, room_id: str) -> bool:
+        """Discard an outbound session so the next send rotates it."""
+        existed = room_id in self._megolm_outbound or bool(
+            self.store.get_megolm_outbound(room_id)
+        )
+        self._megolm_outbound.pop(room_id, None)
+        delete_outbound = getattr(self.store, "delete_megolm_outbound", None)
+        if callable(delete_outbound):
+            delete_outbound(room_id)
+        return existed
 
     def get_megolm_outbound_session_info(self, room_id: str) -> tuple[str, str] | None:
         """

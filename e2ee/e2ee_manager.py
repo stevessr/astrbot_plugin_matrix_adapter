@@ -131,6 +131,7 @@ class E2EEManager(
         # room_id -> (members, monotonic timestamp)
         self._room_members_cache: dict[str, tuple[list[str], float]] = {}
         self._room_members_cache_ttl_sec = 30.0
+        self._room_history_visibility: dict[str, str] = {}
         # throttle one-time key maintenance to avoid frequent uploads
         self._last_otk_maintenance_ts = 0.0
         # 定期密钥分发检查的任务和锁
@@ -281,6 +282,37 @@ class E2EEManager(
             f"device_signed={device_signed} master_signed={master_signed}"
         )
 
+    async def _apply_key_backup_preference(self) -> None:
+        """Resolve the Matrix v1.19 account-wide key-backup preference.
+
+        An existing account preference enables backup on this headless client.
+        An explicit local enablement is treated as the user's latest choice and
+        is persisted for other clients. We deliberately do not write ``false``
+        merely because the adapter's opt-in config uses its default value.
+        """
+        getter = getattr(self.client, "get_key_backup_preference", None)
+        setter = getattr(self.client, "set_key_backup_preference", None)
+        if not callable(getter):
+            return
+
+        try:
+            preference = await getter()
+        except Exception as e:
+            logger.debug(f"读取 m.key_backup 偏好失败，沿用本地配置：{e}")
+            return
+
+        if preference is True and not self.enable_key_backup:
+            self.enable_key_backup = True
+            logger.info("已根据账户 m.key_backup 偏好启用密钥备份")
+            return
+
+        if self.enable_key_backup and preference is not True and callable(setter):
+            try:
+                await setter(True)
+                logger.info("已同步账户 m.key_backup 偏好：enabled=true")
+            except Exception as e:
+                logger.warning(f"同步 m.key_backup 偏好失败：{e}")
+
     async def initialize(self):
         """初始化 E2EE 组件"""
         if not VODOZEMAC_AVAILABLE:
@@ -341,6 +373,7 @@ class E2EEManager(
                 namespace_key=self._store_namespace,
             )
 
+            await self._apply_key_backup_preference()
             await self._key_backup.initialize()
             await self._cross_signing.initialize()
 

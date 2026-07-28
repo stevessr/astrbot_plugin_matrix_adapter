@@ -140,13 +140,20 @@ class E2EEManagerDecryptMixin:
         logger.warning(f"不支持的加密算法：{algorithm}")
         return None
 
-    async def handle_room_key(self, event: dict, sender_key: str):
+    async def handle_room_key(
+        self,
+        event: dict,
+        sender_key: str,
+        *,
+        sender_claimed_keys: dict[str, str] | None = None,
+    ):
         """
         处理 m.room_key 事件 (接收 Megolm 会话密钥)
 
         Args:
             event: 解密后的 m.room_key 事件内容
             sender_key: 发送者的 curve25519 密钥
+            sender_claimed_keys: Olm 载荷中发送设备声明的签名密钥
         """
         if not self._olm or not self._initialized:
             return
@@ -164,8 +171,51 @@ class E2EEManagerDecryptMixin:
             logger.warning("m.room_key 事件缺少必要字段")
             return
 
+        forwarded_chain = event.get("forwarding_curve25519_key_chain")
+        if not isinstance(forwarded_chain, list) or not all(
+            isinstance(key, str) for key in forwarded_chain
+        ):
+            forwarded_chain = []
+        original_sender_key = event.get("sender_key")
+        if not isinstance(original_sender_key, str) or not original_sender_key:
+            original_sender_key = sender_key
+
+        claimed_keys = sender_claimed_keys
+        forwarded_ed25519 = event.get("sender_claimed_ed25519_key")
+        if isinstance(forwarded_ed25519, str) and forwarded_ed25519:
+            claimed_keys = {"ed25519": forwarded_ed25519}
+        if not isinstance(claimed_keys, dict):
+            claimed_keys = {}
+        else:
+            claimed_keys = {
+                str(algorithm): key
+                for algorithm, key in claimed_keys.items()
+                if isinstance(key, str)
+            }
+
+        # Only a direct m.room_key can declare shareability. A forwarded key
+        # lacks this authenticated assertion and is therefore conservative.
+        is_forwarded = "sender_claimed_ed25519_key" in event or bool(forwarded_chain)
+        shared_history = not is_forwarded and event.get("shared_history") is True
+        stored_forwarding_chain = list(forwarded_chain)
+        if (
+            is_forwarded
+            and isinstance(sender_key, str)
+            and sender_key
+            and (not stored_forwarding_chain or stored_forwarding_chain[-1] != sender_key)
+        ):
+            # The content omits its current Olm sender. Persist that device as
+            # the newest hop so a subsequent forward retains full provenance.
+            stored_forwarding_chain.append(sender_key)
+
         imported = self._olm.add_megolm_inbound_session(
-            room_id, session_id, session_key, sender_key
+            room_id,
+            session_id,
+            session_key,
+            original_sender_key,
+            claimed_keys,
+            stored_forwarding_chain,
+            shared_history,
         )
         if imported is False:
             logger.warning(
@@ -186,6 +236,10 @@ class E2EEManagerDecryptMixin:
                     room_id=room_id,
                     session_id=session_id,
                     session_key=session_key,
+                    sender_key=original_sender_key,
+                    sender_claimed_keys=claimed_keys,
+                    forwarding_curve25519_key_chain=stored_forwarding_chain,
+                    shared_history=shared_history,
                 )
             except Exception as e:
                 logger.warning(f"自动备份密钥失败：{e}")

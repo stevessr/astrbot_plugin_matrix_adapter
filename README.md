@@ -497,6 +497,14 @@ members = await adapter.sender.get_room_members("!roomid:example.org")
 history = await adapter.sender.get_room_messages("!roomid:example.org", limit=20)
 event = await adapter.sender.get_event("!roomid:example.org", "$event_id:example.org")
 
+# Matrix v1.19：分页查询与指定用户共同加入的房间
+mutual = await adapter.sender.get_mutual_rooms("@alice:example.org")
+if mutual.get("next_batch"):
+    next_page = await adapter.sender.get_mutual_rooms(
+        "@alice:example.org",
+        from_token=mutual["next_batch"],
+    )
+
 # 通用状态读写 / 搜索
 state = await adapter.sender.get_room_state("!roomid:example.org")
 name = await adapter.sender.get_room_state_event("!roomid:example.org", "m.room.name")
@@ -700,6 +708,13 @@ await adapter.sender.client.delete_extended_profile_field("us.cloke.msc4175.tz")
 | MSC4144 | Per-Message Profiles | 发 | `send_with_per_message_profile` 单条消息携带 displayname/avatar |
 | MSC4357 | Live Messages（流式编辑） | 发 | 见下方"流式输出"章节 |
 
+### Matrix v1.19 稳定能力
+
+- `MatrixSender.get_mutual_rooms()` 支持 stable mutual-rooms 分页；`MatrixEvent.replaces_state` 暴露 `unsigned.replaces_state`。
+- Sticker 同步器支持 stable `m.room.image_pack` / `m.image_pack.rooms`，并继续兼容 `im.ponies.*`。
+- `get_key_backup_preference()` / `set_key_backup_preference()` 读写账户级 `m.key_backup`；账户已启用时，headless Bot 启动会同步启用 Key Backup。
+- MSC4268 的 `shared_history` 会持久化到入站/出站会话和 Key Backup，并在历史可见性分类改变、不可共享会话遇到新成员或成员离开时轮换 Megolm。当前不主动生成可选的完整 `m.room_key_bundle` 历史迁移，避免在缺少加密附件和严格 cross-signing 校验时部分实现该高风险流程。
+
 ## E2EE 端到端加密
 
 ### 概述
@@ -719,6 +734,13 @@ E2EE（End-to-End Encryption）功能允许 Bot 在加密房间中接收和发�
 ### 密钥备份
 
 启用 `matrix_e2ee_key_backup` 后，E2EE 密钥会被备份到服务器。如果需要恢复密钥，可以使用 `matrix_e2ee_recovery_key` 配置恢复密钥。
+
+Matrix v1.19 的账户偏好可以显式读写：
+
+```python
+enabled = await adapter.sender.get_key_backup_preference()
+await adapter.sender.set_key_backup_preference(True)
+```
 
 ## 故障排除
 

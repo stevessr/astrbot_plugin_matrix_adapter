@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import hashlib
 import importlib
 import sys
 import tempfile
@@ -8982,6 +8983,446 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(ok)
         self.assertEqual(len(backup.client.calls), 1)
+
+
+class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_mutual_rooms_uses_stable_v1_endpoint_and_pagination(self):
+        user_module = load_module("client.user_mixin")
+
+        class DummyClient(user_module.UserMixin):
+            def __init__(self):
+                self.calls = []
+
+            async def _request(self, method, endpoint, **kwargs):
+                self.calls.append((method, endpoint, kwargs))
+                return {
+                    "count": 2,
+                    "joined": ["!one:example.org"],
+                    "next_batch": "next-page",
+                }
+
+        client = DummyClient()
+        response = await client.get_mutual_rooms(
+            " @alice:example.org ", from_token=" page-1 "
+        )
+
+        self.assertEqual(response["count"], 2)
+        self.assertEqual(
+            client.calls,
+            [
+                (
+                    "GET",
+                    "/_matrix/client/v1/mutual_rooms",
+                    {
+                        "params": {
+                            "user_id": "@alice:example.org",
+                            "from": "page-1",
+                        }
+                    },
+                )
+            ],
+        )
+        with self.assertRaises(ValueError):
+            await client.get_mutual_rooms("  ")
+
+    async def test_key_backup_preference_validates_account_data(self):
+        backup_module = load_module("client.key_backup_mixin")
+
+        class DummyClient(backup_module.KeyBackupMixin):
+            def __init__(self):
+                self.content = {"enabled": True}
+                self.writes = []
+
+            async def get_global_account_data(self, event_type):
+                self.assert_event_type = event_type
+                return self.content
+
+            async def set_global_account_data(self, event_type, content):
+                self.writes.append((event_type, content))
+                return {}
+
+        client = DummyClient()
+        self.assertIs(await client.get_key_backup_preference(), True)
+        self.assertEqual(client.assert_event_type, "m.key_backup")
+
+        client.content = {"enabled": 1}
+        self.assertIsNone(await client.get_key_backup_preference())
+        await client.set_key_backup_preference(False)
+        self.assertEqual(client.writes, [("m.key_backup", {"enabled": False})])
+        with self.assertRaises(TypeError):
+            await client.set_key_backup_preference(1)
+
+    def test_event_exposes_unsigned_replaces_state(self):
+        event_types = load_module("client.event_types")
+        event = event_types.MatrixEvent.from_dict(
+            {
+                "event_id": "$new:example.org",
+                "sender": "@alice:example.org",
+                "type": "m.room.topic",
+                "state_key": "",
+                "content": {"topic": "new"},
+                "unsigned": {"replaces_state": "$old:example.org"},
+            },
+            "!room:example.org",
+        )
+        self.assertEqual(event.replaces_state, "$old:example.org")
+
+        event.unsigned = {"replaces_state": 123}
+        self.assertIsNone(event.replaces_state)
+
+    async def test_stable_image_packs_and_global_references_are_synced(self):
+        syncer_module = load_module("sticker.syncer")
+
+        class FakeStorage:
+            def __init__(self):
+                self.saved = []
+
+            async def save_sticker(self, *, sticker, **kwargs):
+                self.saved.append((sticker, kwargs))
+                return types.SimpleNamespace(sticker_id=sticker.generate_sticker_id())
+
+        room_pack = {
+            "pack": {"display_name": "Cats", "usage": ["sticker"]},
+            "images": {
+                "cat_wave": {
+                    "body": "a waving cat",
+                    "url": "mxc://example.org/cat",
+                    "info": {"mimetype": "image/png", "w": 512, "h": 512},
+                }
+            },
+        }
+        emoticon_only = {
+            "pack": {"display_name": "Inline", "usage": ["emoticon"]},
+            "images": {"inline": {"url": "mxc://example.org/inline"}},
+        }
+
+        class FakeClient:
+            async def get_room_state(self, room_id):
+                return [
+                    {
+                        "type": "m.room.image_pack",
+                        "state_key": "cats",
+                        "content": room_pack,
+                    },
+                    {
+                        "type": "m.room.image_pack",
+                        "state_key": "inline",
+                        "content": emoticon_only,
+                    },
+                ]
+
+            async def get_global_account_data(self, event_type):
+                if event_type == "m.image_pack.rooms":
+                    return {"rooms": {"!packs:example.org": {"cats": {}}}}
+                return {}
+
+            async def get_room_state_event(self, room_id, event_type, state_key):
+                self.state_event_call = (room_id, event_type, state_key)
+                return room_pack
+
+        storage = FakeStorage()
+        client = FakeClient()
+        syncer = syncer_module.StickerPackSyncer(storage, client)
+
+        self.assertEqual(
+            await syncer.sync_room_stickers("!room:example.org"),
+            1,
+        )
+        self.assertEqual(await syncer.sync_user_stickers(), 1)
+        self.assertEqual(
+            client.state_event_call,
+            ("!packs:example.org", "m.room.image_pack", "cats"),
+        )
+        self.assertIn("user", storage.saved[-1][1]["tags"])
+
+    async def test_room_keys_carry_msc4268_shared_history_flag(self):
+        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+
+        class FakeClient:
+            async def query_keys(self, query):
+                return {
+                    "device_keys": {
+                        "@alice:example.org": {
+                            "OTHER": {
+                                "keys": {
+                                    "curve25519:OTHER": "curve-other",
+                                    "ed25519:OTHER": "ed-other",
+                                }
+                            }
+                        }
+                    }
+                }
+
+            async def send_to_device(self, *args):
+                return None
+
+        class FakeOlm:
+            def __init__(self):
+                self.room_key_content = None
+
+            def get_olm_session(self, curve_key):
+                return object()
+
+            def get_megolm_outbound_shared_history(self, room_id):
+                return True
+
+            def encrypt_olm(self, curve_key, content, **kwargs):
+                self.room_key_content = dict(content)
+                return {"ciphertext": {curve_key: {"type": 1, "body": "x"}}}
+
+        class DummyManager(sessions_module.E2EEManagerSessionsMixin):
+            def __init__(self):
+                self.client = FakeClient()
+                self._olm = FakeOlm()
+                self._initialized = True
+                self._store = None
+                self.user_id = "@alice:example.org"
+                self.device_id = "SELF"
+                self._room_key_share_cache = {}
+
+        manager = DummyManager()
+        await manager.ensure_room_keys_sent(
+            "!room:example.org",
+            ["@alice:example.org"],
+            session_id="session",
+            session_key="key",
+        )
+        self.assertIs(manager._olm.room_key_content["shared_history"], True)
+
+    async def test_history_visibility_shareability_change_rotates_megolm(self):
+        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+
+        class FakeOlm:
+            def __init__(self):
+                self.discarded = []
+
+            def discard_megolm_outbound_session(self, room_id):
+                self.discarded.append(room_id)
+                return True
+
+        class DummyManager(sessions_module.E2EEManagerSessionsMixin):
+            def __init__(self):
+                self._olm = FakeOlm()
+                self._room_history_visibility = {}
+
+        manager = DummyManager()
+        await manager.on_history_visibility_changed(
+            "!room:example.org", "joined", "shared"
+        )
+        await manager.on_history_visibility_changed(
+            "!room:example.org", "shared", "world_readable"
+        )
+        await manager.on_history_visibility_changed("!new:example.org", None, "joined")
+        self.assertEqual(
+            manager._olm.discarded,
+            ["!room:example.org", "!new:example.org"],
+        )
+        self.assertEqual(
+            manager._room_history_visibility["!room:example.org"],
+            "world_readable",
+        )
+
+    async def test_membership_changes_respect_session_shareability(self):
+        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+
+        class FakeOlm:
+            def __init__(self):
+                self.shared_history = False
+                self.discarded = []
+
+            def get_megolm_outbound_shared_history(self, room_id):
+                return self.shared_history
+
+            def discard_megolm_outbound_session(self, room_id):
+                self.discarded.append(room_id)
+                return True
+
+        class DummyManager(sessions_module.E2EEManagerSessionsMixin):
+            def __init__(self):
+                self.user_id = "@bot:example.org"
+                self._olm = FakeOlm()
+                self._room_members_cache = {}
+                self.shared = []
+
+            async def _share_existing_room_key(self, **kwargs):
+                self.shared.append(kwargs)
+
+        manager = DummyManager()
+        await manager.on_room_member_joined(
+            "!private:example.org", "@alice:example.org"
+        )
+        self.assertEqual(manager._olm.discarded, ["!private:example.org"])
+        self.assertEqual(manager.shared, [])
+
+        manager._olm.shared_history = True
+        await manager.on_room_member_joined("!shared:example.org", "@bob:example.org")
+        self.assertEqual(manager.shared[0]["target_users"], ["@bob:example.org"])
+
+        await manager.on_room_member_left("!shared:example.org", "@bob:example.org")
+        self.assertEqual(manager._olm.discarded[-1], "!shared:example.org")
+
+    async def test_received_shared_history_is_retained_for_backup(self):
+        decrypt_module = load_module("e2ee.e2ee_manager_decrypt")
+
+        class FakeOlm:
+            def __init__(self):
+                self.imports = []
+
+            def add_megolm_inbound_session(self, *args):
+                self.imports.append(args)
+                return True
+
+        class FakeBackup:
+            def __init__(self):
+                self.uploads = []
+
+            async def upload_single_key(self, **kwargs):
+                self.uploads.append(kwargs)
+
+        class DummyManager(decrypt_module.E2EEManagerDecryptMixin):
+            def __init__(self):
+                self._olm = FakeOlm()
+                self._initialized = True
+                self._key_backup = FakeBackup()
+                self.enable_key_backup = True
+
+            async def _cancel_room_key_request(self, *args):
+                return None
+
+        manager = DummyManager()
+        await manager.handle_room_key(
+            {
+                "algorithm": "m.megolm.v1.aes-sha2",
+                "room_id": "!room:example.org",
+                "session_id": "direct",
+                "session_key": "session-key",
+                "shared_history": True,
+            },
+            "curve-original",
+            sender_claimed_keys={"ed25519": "ed-original"},
+        )
+        self.assertIs(manager._olm.imports[0][-1], True)
+        self.assertIs(manager._key_backup.uploads[0]["shared_history"], True)
+
+        await manager.handle_room_key(
+            {
+                "algorithm": "m.megolm.v1.aes-sha2",
+                "room_id": "!room:example.org",
+                "session_id": "forwarded",
+                "session_key": "session-key",
+                "sender_key": "curve-original",
+                "sender_claimed_ed25519_key": "ed-original",
+                "forwarding_curve25519_key_chain": [],
+                "shared_history": True,
+            },
+            "curve-forwarder",
+        )
+        self.assertEqual(manager._olm.imports[1][-2], ["curve-forwarder"])
+        self.assertIs(manager._olm.imports[1][-1], False)
+
+    def test_key_backup_plaintext_carries_shared_history(self):
+        backup_module = load_module("e2ee.key_backup_backup")
+        session_key = base64.b64encode(b"\x02" + b"k" * 32).decode().rstrip("=")
+        payload = backup_module.KeyBackupBackupMixin._build_backed_up_session_data(
+            session_key,
+            sender_key="curve-original",
+            sender_claimed_keys={"ed25519": "ed-original"},
+            shared_history=True,
+        )
+
+        self.assertEqual(payload["algorithm"], "m.megolm.v1.aes-sha2")
+        self.assertIs(payload["shared_history"], True)
+        encoded = payload["session_key"]
+        restored = base64.b64decode(encoded + "=" * (-len(encoded) % 4))
+        self.assertEqual(restored[0], 1)
+
+    async def test_account_key_backup_preference_enables_headless_client(self):
+        manager_module = load_module("e2ee.e2ee_manager")
+
+        class FakeClient:
+            async def get_key_backup_preference(self):
+                return True
+
+        class DummyManager:
+            _apply_key_backup_preference = (
+                manager_module.E2EEManager._apply_key_backup_preference
+            )
+
+            def __init__(self):
+                self.client = FakeClient()
+                self.enable_key_backup = False
+
+        manager = DummyManager()
+        await manager._apply_key_backup_preference()
+        self.assertIs(manager.enable_key_backup, True)
+
+    async def test_sas_commitment_is_checked_by_start_sender_unpadded(self):
+        flow_module = load_module("e2ee.verification_handlers_flow")
+        utils_module = load_module("e2ee.verification_utils")
+
+        start_content = {
+            "from_device": "BOT",
+            "method": "m.sas.v1",
+            "transaction_id": "txn",
+        }
+        peer_key = "peer-unpadded-public-key"
+        commitment = (
+            base64.b64encode(
+                hashlib.sha256(
+                    (peer_key + utils_module._canonical_json(start_content)).encode()
+                ).digest()
+            )
+            .decode()
+            .rstrip("=")
+        )
+
+        class DummyFlow(flow_module.SASVerificationFlowMixin):
+            def __init__(self, expected):
+                self.auto_verify_mode = "auto_reject"
+                self.user_id = "@bot:example.org"
+                self.device_id = "BOT"
+                self.cancelled = []
+                self._sessions = {
+                    "txn": {
+                        "we_are_initiator": True,
+                        "start_content": start_content,
+                        "their_commitment": expected,
+                        "their_device": "PEER",
+                        "our_public_key": "our-key",
+                        "established_sas": object(),
+                    }
+                }
+
+            async def _send_cancel(self, *args):
+                self.cancelled.append(args)
+
+        valid = DummyFlow(commitment)
+        await valid._handle_key("@peer:example.org", {"key": peer_key}, "txn")
+        self.assertEqual(valid.cancelled, [])
+        self.assertEqual(valid._sessions["txn"]["state"], "key_exchanged")
+
+        invalid = DummyFlow("wrong")
+        await invalid._handle_key("@peer:example.org", {"key": peer_key}, "txn")
+        self.assertEqual(invalid.cancelled[0][3], "m.mismatched_commitment")
+
+    async def test_sas_start_keeps_exact_content_for_commitment_check(self):
+        send_module = load_module("e2ee.verification_send_device")
+
+        class DummySender(send_module.SASVerificationSendDeviceMixin):
+            def __init__(self):
+                self.device_id = "BOT"
+                self._sessions = {"txn": {}}
+                self.sent = []
+
+            async def _send_to_device(self, event_type, user_id, device_id, content):
+                self.sent.append((event_type, user_id, device_id, dict(content)))
+
+        sender = DummySender()
+        with mock.patch.object(send_module, "VODOZEMAC_SAS_AVAILABLE", False):
+            await sender._send_start("@peer:example.org", "PEER", "txn")
+
+        self.assertEqual(sender._sessions["txn"]["start_content"], sender.sent[0][3])
+        self.assertIs(sender._sessions["txn"]["we_are_initiator"], True)
 
 
 if __name__ == "__main__":

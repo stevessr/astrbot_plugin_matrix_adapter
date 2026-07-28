@@ -1,7 +1,6 @@
 import base64
 import hashlib
 import hmac
-import json
 import secrets
 
 from astrbot.api import logger
@@ -26,7 +25,7 @@ from .verification_constants import (
     Curve25519PublicKey,
     Sas,
 )
-from .verification_utils import _compute_hkdf
+from .verification_utils import _canonical_json, _compute_hkdf
 
 
 class SASVerificationFlowMixin:
@@ -561,27 +560,12 @@ class SASVerificationFlowMixin:
         # 参考：https://spec.matrix.org/latest/client-server-api/#sas-verification
         their_commitment = session.get("their_commitment")
         start_content = session.get("start_content")
-        if their_commitment and start_content and not session.get("we_are_initiator"):
-            # 只有非发起方需要验证 commitment（发起方发送 start，接收方发送 accept）
-            # start_content 需要去掉可能的签名等不稳定字段
-            content_to_hash = {
-                k: v
-                for k, v in start_content.items()
-                if k not in ("signatures", "unsigned")
-            }
-
-            canonical_start = json.dumps(
-                content_to_hash,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            )
-            # commitment = base64(SHA256(公钥 + canonical_json))
-
-            combined = their_key.encode("utf-8") + canonical_start.encode("utf-8")
-            computed = base64.b64encode(hashlib.sha256(combined).digest()).decode(
-                "utf-8"
-            )
+        if their_commitment and start_content and session.get("we_are_initiator"):
+            # The start sender validates the accept sender's commitment once it
+            # receives that sender's public key. Hash the exact start *content*
+            # object and encode the digest as unpadded Base64 (Matrix v1.19).
+            combined = (their_key + _canonical_json(start_content)).encode("utf-8")
+            computed = self._encode_unpadded_base64(hashlib.sha256(combined).digest())
 
             if computed != their_commitment:
                 logger.warning(
@@ -590,16 +574,24 @@ class SASVerificationFlowMixin:
                     f"computed={(computed or '')[:16]}..."
                 )
                 # 根据规范，commitment 不匹配应该取消验证
-                their_device = session.get(
-                    "from_device", session.get("their_device", "")
-                )
-                await self._send_cancel(
-                    sender,
-                    their_device,
-                    transaction_id,
-                    "m.mismatched_commitment",
-                    "Commitment verification failed",
-                )
+                if session.get("is_in_room") and session.get("room_id"):
+                    await self._send_in_room_cancel(
+                        session["room_id"],
+                        transaction_id,
+                        "m.mismatched_commitment",
+                        "Commitment verification failed",
+                    )
+                else:
+                    their_device = session.get(
+                        "from_device", session.get("their_device", "")
+                    )
+                    await self._send_cancel(
+                        sender,
+                        their_device,
+                        transaction_id,
+                        "m.mismatched_commitment",
+                        "Commitment verification failed",
+                    )
                 return
             else:
                 logger.info("[E2EE-Verify] ✅ Commitment 验证通过")

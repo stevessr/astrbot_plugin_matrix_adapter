@@ -20,6 +20,11 @@ MSC4357_LIVE_MESSAGE_MARKER = "org.matrix.msc4357.live"
 M_ROOM_LIVE_MESSAGING = "m.room.live_messaging"
 MSC4357_LIVE_MESSAGING_STATE = "org.matrix.msc4357.live_messaging"
 
+# Matrix v1.19 stable event types
+M_KEY_BACKUP = "m.key_backup"
+M_ROOM_IMAGE_PACK = "m.room.image_pack"
+M_IMAGE_PACK_ROOMS = "m.image_pack.rooms"
+
 # MSC1767 Extensible Events
 MSC1767_TEXT_KEY = "org.matrix.msc1767.text"
 MSC1767_HTML_KEY = "org.matrix.msc1767.html"

@@ -188,6 +188,10 @@ class SASVerificationSendDeviceMixin:
             "short_authentication_string": SHORT_AUTHENTICATION_STRING,
             "transaction_id": transaction_id,
         }
+        # The accept-side commitment hashes this exact content object. Keep a
+        # byte-for-byte semantic copy for validation when the peer key arrives.
+        session["start_content"] = dict(content)
+        session["we_are_initiator"] = True
 
         # 3. 计算 commitment (注意：start 消息本身不包含 commitment，
         # 而是 accept 消息包含。但是等等，根据 Matrix 流程：

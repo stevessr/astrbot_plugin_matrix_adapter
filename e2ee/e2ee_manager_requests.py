@@ -544,16 +544,45 @@ class E2EEManagerRequestsMixin:
                 )
                 return False
 
+            metadata = None
+            get_metadata = getattr(
+                self._store,
+                "get_megolm_inbound_metadata",
+                None,
+            )
+            if callable(get_metadata):
+                metadata = get_metadata(session_id)
+            if not isinstance(metadata, dict):
+                metadata = {}
+
+            original_sender_key = metadata.get("sender_key") or sender_key
+            claimed_keys = metadata.get("sender_claimed_keys")
+            if not isinstance(claimed_keys, dict):
+                claimed_keys = {}
+            original_ed25519 = claimed_keys.get("ed25519")
+            if not isinstance(original_ed25519, str) or not original_ed25519:
+                original_ed25519 = str(self._olm.ed25519_key)
+
+            forwarding_chain = metadata.get("forwarding_curve25519_key_chain")
+            if not isinstance(forwarding_chain, list):
+                forwarding_chain = []
+            forwarding_chain = [key for key in forwarding_chain if isinstance(key, str)]
+            our_curve25519 = str(self._olm.curve25519_key)
+            if original_sender_key != our_curve25519 and not forwarding_chain:
+                # First forward after a direct room key: the original creator
+                # was the previous sender and starts the forwarding chain.
+                forwarding_chain.append(original_sender_key)
+
             # 构造 m.forwarded_room_key 内容
             # 根据 Matrix 规范，type 不应包含在内容中（它是事件类型）
             forwarded_room_key = {
                 "algorithm": MEGOLM_ALGO,
                 "room_id": room_id,
-                "sender_key": sender_key,
+                "sender_key": original_sender_key,
                 "session_id": session_id,
                 "session_key": exported_key.to_base64(),
-                "sender_claimed_ed25519_key": str(self._olm.ed25519_key),
-                "forwarding_curve25519_key_chain": [],
+                "sender_claimed_ed25519_key": original_ed25519,
+                "forwarding_curve25519_key_chain": forwarding_chain,
             }
 
             # Establish an Olm session on demand and bind the wrapper to the

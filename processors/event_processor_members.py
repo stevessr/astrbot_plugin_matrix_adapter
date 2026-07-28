@@ -201,11 +201,19 @@ class MatrixEventProcessorMembers:
                     third_party_invites=room.third_party_invites,
                     state_events=room.state_events,
                 )
-                if e2ee_manager:
-                    try:
-                        e2ee_manager.invalidate_room_members_cache(room.room_id)
-                    except Exception as e:
-                        logger.debug(f"成员离开后刷新成员缓存失败：{e}")
+            if e2ee_manager:
+                try:
+                    e2ee_manager.invalidate_room_members_cache(room.room_id)
+                    if user_id != self.user_id:
+                        on_member_left = getattr(
+                            e2ee_manager,
+                            "on_room_member_left",
+                            None,
+                        )
+                        if callable(on_member_left):
+                            await on_member_left(room.room_id, user_id)
+                except Exception as e:
+                    logger.debug(f"成员离开后轮换加密会话失败：{e}")
         else:
             # Membership changes without join/leave still update profile fields if present.
             if content.get("displayname") or content.get("avatar_url"):

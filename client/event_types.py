@@ -21,6 +21,18 @@ class MatrixEvent:
     state_key: str | None = None
     unsigned: dict[str, Any] | None = None
 
+    @property
+    def replaces_state(self) -> str | None:
+        """Event ID replaced by this state event (Matrix v1.19).
+
+        Homeservers expose this as ``unsigned.replaces_state`` even when
+        ``unsigned.prev_content`` is hidden by history visibility.
+        """
+        if not isinstance(self.unsigned, dict):
+            return None
+        event_id = self.unsigned.get("replaces_state")
+        return event_id if isinstance(event_id, str) and event_id else None
+
     @classmethod
     def from_dict(cls, data: dict[str, Any], room_id: str):
         """Create event from dictionary"""
