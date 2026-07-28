@@ -64,8 +64,10 @@ class MatrixPlatformEvent(AstrMessageEvent):
         )
         self.e2ee_manager = e2ee_manager
         self.use_notice = use_notice  # 使用 m.notice 而不是 m.text
-        # 是否向房间发送「正在输入」状态（插件级开关，默认关闭）
-        self.send_typing = send_typing
+        # 是否向房间发送「正在输入」状态（插件级开关，默认关闭）。
+        # 不能命名为 ``send_typing``：AstrBot 4.26+ 会调用同名的异步
+        # 生命周期方法，实例布尔属性会将方法遮蔽成不可调用对象。
+        self._send_typing_enabled = bool(send_typing)
 
         # AstrBot 的分段回复会把 Reply/At 头部组件只放在第一段，之后的
         # ``event.send`` 调用只带 Plain（见 RespondStage）。Matrix 的线程关系
@@ -187,10 +189,28 @@ class MatrixPlatformEvent(AstrMessageEvent):
             except Exception as e:
                 logger.debug(f"刷新输入通知失败：{e}")
 
+    async def send_typing(self) -> None:
+        """Handle AstrBot's pre-request typing lifecycle hook."""
+
+        if not self._send_typing_enabled:
+            return
+        await self.client.set_typing(
+            self.session_id,
+            typing=True,
+            timeout=STREAMING_TYPING_TIMEOUT_MS,
+        )
+
+    async def stop_typing(self) -> None:
+        """Handle AstrBot's post-request typing lifecycle hook."""
+
+        if not self._send_typing_enabled:
+            return
+        await self.client.set_typing(self.session_id, typing=False)
+
     async def _start_typing_keepalive(self, room_id: str):
         """按插件开关声明 typing 并启动续期任务；关闭时返回 ``None``。"""
 
-        if not self.send_typing:
+        if not self._send_typing_enabled:
             return None
         # 先直接声明一次，保证指示器立刻出现，不依赖任务调度时机
         # （极短的流可能在续期任务首次运行前就结束了）。

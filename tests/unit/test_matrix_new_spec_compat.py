@@ -4644,6 +4644,40 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         # 结束后必须显式清除，否则指示器会一直挂到超时
         self.assertEqual(client.typing_calls[-1], ("!room:example.org", False, None))
 
+    async def test_core_typing_hooks_remain_callable_when_enabled(self):
+        matrix_event = self._load_matrix_event_for_test()
+        client = self._make_typing_client()
+        event = self._make_streaming_event(matrix_event, client, send_typing=True)
+
+        # AstrBot 4.26+ invokes these lifecycle methods around every LLM request.
+        # The configuration flag must not shadow ``send_typing`` on the instance.
+        self.assertTrue(callable(event.send_typing))
+        await event.send_typing()
+        await event.stop_typing()
+
+        self.assertEqual(
+            client.typing_calls,
+            [
+                (
+                    "!room:example.org",
+                    True,
+                    matrix_event.STREAMING_TYPING_TIMEOUT_MS,
+                ),
+                ("!room:example.org", False, None),
+            ],
+        )
+
+    async def test_core_typing_hooks_are_noop_when_disabled(self):
+        matrix_event = self._load_matrix_event_for_test()
+        client = self._make_typing_client()
+        event = self._make_streaming_event(matrix_event, client, send_typing=False)
+
+        self.assertTrue(callable(event.send_typing))
+        await event.send_typing()
+        await event.stop_typing()
+
+        self.assertEqual(client.typing_calls, [])
+
     async def test_streaming_does_not_send_typing_by_default(self):
         matrix_event = self._load_matrix_event_for_test()
         components = sys.modules["astrbot.api.message_components"]

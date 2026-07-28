@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 修复 `matrix_send_typing` 布尔状态覆盖 AstrBot 4.26+ 同名 `send_typing()` 生命周期方法、导致 LLM 请求前报 `TypeError: 'bool' object is not callable` 的问题；现在同时正确实现请求前开启和请求后清除 typing 的平台钩子。
 - 修复开启流式回复时不发送「正在输入」状态的问题：`send_streaming()` 现在在消费生成器期间声明 typing，并因 Matrix typing 约 5 秒过期而按固定间隔续期，生成结束或抛异常时都会显式清除。
 - 新增插件级开关 `matrix_send_typing`（默认关闭）与 `matrix_send_read_receipt`（默认开启）。注意 `matrix_send_typing` 默认关闭后，原先无条件发送 typing 的主动发送路径（`send_by_session`）也会一并停止发送，需要时请显式开启。
 - 改造 LLM 工具 `matrix_react_to_event`：入参改为 `message_content` + `reaction` + 可选 `time`（Unix 秒/毫秒或 ISO-8601）。按锚点时间查找最近消息，优先全文匹配，再回落到包含匹配；`time` 省略时默认使用工具触发时间/入站消息时间。
