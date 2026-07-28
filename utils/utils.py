@@ -418,6 +418,13 @@ class MatrixUtils:
         return unregister_reaction_key_resolver(resolver)
 
     @staticmethod
+    def list_reaction_key_resolvers() -> list:
+        """Return currently registered reaction-key resolvers."""
+        from .reaction_helpers import list_reaction_key_resolvers
+
+        return list_reaction_key_resolvers()
+
+    @staticmethod
     async def find_event_for_reaction(
         context,
         room_id: str,
