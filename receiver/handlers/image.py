@@ -66,5 +66,4 @@ async def handle_image(receiver, chain, event, _: str):
             chain,
             content.get("body") or "",
             content,
-            allow_command_rewrite=False,
         )

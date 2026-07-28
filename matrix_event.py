@@ -37,10 +37,14 @@ class MatrixPlatformEvent(AstrMessageEvent):
         live_message_update_interval_ms: int = 2000,
         e2ee_manager=None,
         use_notice: bool = False,
+        adaptive_thread_reply: bool = True,
     ):
         super().__init__(message_str, message_obj, platform_meta, session_id)
         self.client = client  # MatrixHTTPClient instance
         self.enable_threading = enable_threading  # 试验性：是否默认开启嘟文串模式
+        # 回复自适应：入站（唤醒）消息位于消息列内时，回复也留在同一消息列。
+        # 只跟随已存在的消息列，不会替 enable_threading 新建消息列。
+        self.adaptive_thread_reply = adaptive_thread_reply
         # 流式是独立发送接口，无需额外总开关。仅当房间通过
         # MSC4357 状态明确声明 ``enabled: false`` 时退化为普通回复。
         self.live_messages_allowed = room_live_messaging_enabled is not False
@@ -67,6 +71,36 @@ class MatrixPlatformEvent(AstrMessageEvent):
         if not self.live_messages_allowed:
             self.set_extra("enable_streaming", False)
 
+    def _inbound_event_id(self) -> str | None:
+        """本次入站（唤醒）事件的 ``event_id``。"""
+
+        source_event_id = getattr(self.message_obj, "message_id", None)
+        if not source_event_id:
+            raw_message = getattr(self.message_obj, "raw_message", None)
+            if isinstance(raw_message, dict):
+                source_event_id = raw_message.get("event_id")
+            else:
+                source_event_id = getattr(raw_message, "event_id", None)
+        return str(source_event_id) if source_event_id else None
+
+    def _inbound_thread_root(self) -> str | None:
+        """入站事件所在消息列的根事件；不在消息列内时返回 ``None``。"""
+
+        raw_message = getattr(self.message_obj, "raw_message", None)
+        if isinstance(raw_message, dict):
+            content = raw_message.get("content", {})
+        else:
+            content = getattr(raw_message, "content", {})
+        if not isinstance(content, dict):
+            return None
+        relation = content.get("m.relates_to")
+        if not isinstance(relation, dict):
+            return None
+        if relation.get("rel_type") != "m.thread":
+            return None
+        thread_root = relation.get("event_id")
+        return str(thread_root) if thread_root else None
+
     def _build_stream_thread_relation(self) -> dict | None:
         """Build the initial message relation for a streamed thread reply.
 
@@ -74,38 +108,26 @@ class MatrixPlatformEvent(AstrMessageEvent):
         Matrix keeps the initial event's thread relation when applying edits.
         """
 
-        if not self.enable_threading:
-            return None
-
-        source_event_id = getattr(self.message_obj, "message_id", None)
-        raw_message = getattr(self.message_obj, "raw_message", None)
-        if not source_event_id:
-            if isinstance(raw_message, dict):
-                source_event_id = raw_message.get("event_id")
-            else:
-                source_event_id = getattr(raw_message, "event_id", None)
+        source_event_id = self._inbound_event_id()
         if not source_event_id:
             return None
 
-        if isinstance(raw_message, dict):
-            source_content = raw_message.get("content", {})
+        thread_root = self._inbound_thread_root()
+        if thread_root:
+            # 回复自适应：入站消息已在消息列内，流式回复必须留在同一消息列。
+            if not (self.adaptive_thread_reply or self.enable_threading):
+                return None
         else:
-            source_content = getattr(raw_message, "content", {})
-        if not isinstance(source_content, dict):
-            source_content = {}
-        source_relation = source_content.get("m.relates_to", {})
-        if not isinstance(source_relation, dict):
-            source_relation = {}
-
-        thread_root = str(source_event_id)
-        if source_relation.get("rel_type") == "m.thread":
-            thread_root = str(source_relation.get("event_id") or source_event_id)
+            # 入站消息不在消息列内，只有显式开启线程回复才新建消息列。
+            if not self.enable_threading:
+                return None
+            thread_root = source_event_id
 
         return {
             "rel_type": "m.thread",
             "event_id": thread_root,
             "is_falling_back": True,
-            "m.in_reply_to": {"event_id": str(source_event_id)},
+            "m.in_reply_to": {"event_id": source_event_id},
         }
 
     @staticmethod
@@ -418,19 +440,19 @@ class MatrixPlatformEvent(AstrMessageEvent):
             except Exception as e:
                 logger.debug(f"处理回复模式时出错：{e}")
 
+        # 回复自适应：入站（唤醒）消息位于消息列内时，本次回复必须留在同一
+        # 消息列，而不是回落到房间时间线。
+        inbound_thread_root = (
+            self._inbound_thread_root() if self.adaptive_thread_reply else None
+        )
+
         # 没有 Reply 组件时（例如关闭 AstrBot 全局引用）直接使用入站事件
         # 作为线程目标。放在上面的兼容查询之后，保留空 Reply 组件原有的
         # “尝试回复最近一条 bot 消息”行为。
-        if not reply_to and self.enable_threading:
-            source_event_id = getattr(self.message_obj, "message_id", None)
-            if not source_event_id:
-                raw_message = getattr(self.message_obj, "raw_message", None)
-                if isinstance(raw_message, dict):
-                    source_event_id = raw_message.get("event_id")
-                else:
-                    source_event_id = getattr(raw_message, "event_id", None)
+        if not reply_to and (self.enable_threading or inbound_thread_root):
+            source_event_id = self._inbound_event_id()
             if source_event_id:
-                reply_to = str(source_event_id)
+                reply_to = source_event_id
                 # Keep the target for thread continuity without rendering it
                 # as an explicit reply when AstrBot quote mode is disabled.
                 thread_is_falling_back = True
@@ -474,6 +496,22 @@ class MatrixPlatformEvent(AstrMessageEvent):
                             thread_root = None
             except Exception as e:
                 logger.warning(f"Failed to get event for threading: {e}")
+
+        # 回复自适应最终裁定：入站消息在消息列内时，锁定该消息列作为线程根，
+        # 覆盖上面按回复目标推导出的结果（包括查询失败或目标不在消息列内）。
+        if inbound_thread_root and reply_to and not reused_thread_context:
+            inbound_event_id = self._inbound_event_id()
+            if (
+                inbound_event_id
+                and reply_to != inbound_event_id
+                and thread_root != inbound_thread_root
+            ):
+                # 回复目标位于本消息列之外，Matrix 不允许跨消息列引用，
+                # 因此把引用目标退回到入站消息本身。
+                reply_to = inbound_event_id
+                thread_is_falling_back = True
+            thread_root = inbound_thread_root
+            use_thread = True
 
         # 发送前记住线程上下文。第一段可能带 Reply，后续分段没有 Reply，
         # 但每一段仍必须携带 m.thread 关系。只缓存真正的线程关系，普通

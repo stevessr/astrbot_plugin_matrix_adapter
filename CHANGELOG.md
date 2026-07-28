@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 移除接收消息时把 `!` 前缀自动改写为 `/` 的行为；`!` 开头的文本现在原样传给上层。
+- 新增插件级开关 `matrix_adaptive_thread_reply`（回复自适应，默认开启）：唤醒机器人的消息位于消息列（Thread）内时，普通回复与流式回复都会留在同一消息列，而不是回落到房间时间线。该开关只跟随已有消息列，不会新建消息列（新建仍由 `matrix_enable_threading` 控制）。
 - 补齐 Matrix Client-Server v1.19 所需能力：新增 stable `GET /_matrix/client/v1/mutual_rooms`、`m.key_backup` 账户偏好、`unsigned.replaces_state` 访问和 stable `m.room.image_pack` / `m.image_pack.rooms` 同步。
 - E2EE 现在按房间历史可见性在 `m.room_key` 与 Key Backup 中保留 `shared_history`；共享类别变化、新成员遇到不可共享会话或成员离开时会安全轮换 Megolm，避免泄露旧密钥或后续消息。
 - E2EE 补齐 Matrix v1.19 与最新 unstable 澄清要求：严格验证 Olm 明文和 `sender_device_keys`、设备/一次性密钥签名、fallback key 使用状态、Megolm 低索引替换与重放检测，并按时间、消息数、成员和设备变化轮换出站会话。

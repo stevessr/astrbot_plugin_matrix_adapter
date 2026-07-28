@@ -77,6 +77,42 @@ class MatrixOutboundTrackerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.outbound_tracker.summary()["sent"], 1)
 
 
+class MatrixAdaptiveThreadReplyConfigTests(unittest.TestCase):
+    def setUp(self):
+        utils_mod = load_module("utils.utils")
+        utils_pkg = sys.modules["astrbot_plugin_matrix_adapter.utils"]
+        utils_pkg.parse_bool = utils_mod.parse_bool
+        utils_pkg.MatrixUtils = utils_mod.MatrixUtils
+        utils_pkg.mask_device_id = utils_mod.mask_device_id
+        self.plugin_config = load_module("plugin_config")
+        self.temp_dir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _init(self, config: dict):
+        self.plugin_config.init_plugin_config(
+            {"data_dir": self.temp_dir.name, **config}
+        )
+        return self.plugin_config.get_plugin_config()
+
+    def test_adaptive_thread_reply_defaults_to_enabled(self):
+        self.assertTrue(self._init({}).adaptive_thread_reply)
+
+    def test_adaptive_thread_reply_can_be_disabled(self):
+        self.assertFalse(
+            self._init({"matrix_adaptive_thread_reply": False}).adaptive_thread_reply
+        )
+
+    def test_adaptive_thread_reply_accepts_string_values(self):
+        self.assertFalse(
+            self._init({"matrix_adaptive_thread_reply": "false"}).adaptive_thread_reply
+        )
+        self.assertTrue(
+            self._init({"matrix_adaptive_thread_reply": "true"}).adaptive_thread_reply
+        )
+
+
 class MatrixSyncReconnectTests(unittest.IsolatedAsyncioTestCase):
     async def test_request_reconnect_cancels_inflight_sync_and_recovers(self):
         utils_mod = load_module("utils.utils")

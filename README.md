@@ -109,9 +109,11 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 | `matrix_e2ee_store_max_pending_writes` | int | `256` | E2EE 异步持久化待处理写任务队列上限（最小为 1） |
 | `matrix_data_storage_backend` | string | `json` | 数据存储后端（users/rooms/auth/sync/device_info + E2EE 本地状态）：`json` / `sqlite` / `pgsql` |
 | `matrix_pgsql` | object | 见下方 | 当后端为 `pgsql` 时使用的 PostgreSQL 配置对象 |
+| `matrix_adaptive_thread_reply` | bool | `true` | 回复自适应：唤醒机器人的消息位于消息列（Thread）内时，回复也发送到同一消息列 |
 
 说明：
 - Emoji 短码转换与 Sticker 自动同步配置已迁移到 `astrbot_plugin_matrix_sticker` 插件。
+- `matrix_adaptive_thread_reply` 只跟随**已存在**的消息列，不会主动新建消息列；若需要让每次回复都开启新消息列，请使用适配器级的 `matrix_enable_threading`。关闭该开关后，消息列内的消息会像旧版一样回落到房间时间线。
 
 `matrix_pgsql` 对象字段：
 - `dsn`：例如 `postgresql://user:pass@127.0.0.1:5432/dbname`

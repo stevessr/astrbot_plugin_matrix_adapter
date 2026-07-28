@@ -4052,6 +4052,8 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         event_content: dict,
         first_chain,
         second_chain,
+        inbound_content: dict | None = None,
+        adaptive_thread_reply: bool = True,
     ):
         matrix_event = event_module or self._load_matrix_event_for_test()
         captured = []
@@ -4099,6 +4101,10 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         message_obj = types.SimpleNamespace(
             message_id="$inbound:example.org",
             sender=types.SimpleNamespace(user_id="@alice:example.org"),
+            raw_message=types.SimpleNamespace(
+                event_id="$inbound:example.org",
+                content=inbound_content or {},
+            ),
         )
         platform_meta = sys.modules["astrbot.api.platform"].PlatformMetadata(
             name="matrix", id="matrix"
@@ -4110,6 +4116,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             session_id="!room:example.org",
             client=FakeClient(),
             enable_threading=enable_threading,
+            adaptive_thread_reply=adaptive_thread_reply,
         )
 
         await event.send(first_chain)
@@ -4201,6 +4208,182 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(call["thread_root"], "$root:example.org")
             self.assertTrue(call["use_thread"])
             self.assertTrue(call["thread_is_falling_back"])
+
+    @staticmethod
+    def _threaded_inbound_content() -> dict:
+        return {
+            "msgtype": "m.text",
+            "body": "thread message",
+            "m.relates_to": {
+                "rel_type": "m.thread",
+                "event_id": "$root:example.org",
+                "m.in_reply_to": {"event_id": "$previous:example.org"},
+                "is_falling_back": True,
+            },
+        }
+
+    async def test_adaptive_reply_follows_inbound_thread_without_threading(self):
+        matrix_event = self._load_matrix_event_for_test()
+        components = sys.modules["astrbot.api.message_components"]
+        message_chain = sys.modules["astrbot.api.event"].MessageChain
+        inbound_content = self._threaded_inbound_content()
+
+        captured = await self._send_two_segments(
+            event_module=matrix_event,
+            enable_threading=False,
+            adaptive_thread_reply=True,
+            inbound_content=inbound_content,
+            event_content=inbound_content,
+            first_chain=message_chain([components.Plain("first")]),
+            second_chain=message_chain([components.Plain("second")]),
+        )
+
+        self.assertEqual(len(captured), 2)
+        for call in captured:
+            self.assertTrue(call["use_thread"])
+            self.assertEqual(call["thread_root"], "$root:example.org")
+            self.assertEqual(call["reply_to"], "$inbound:example.org")
+            self.assertTrue(call["thread_is_falling_back"])
+
+    async def test_adaptive_reply_pins_thread_when_event_lookup_fails(self):
+        matrix_event = self._load_matrix_event_for_test()
+        components = sys.modules["astrbot.api.message_components"]
+        message_chain = sys.modules["astrbot.api.event"].MessageChain
+
+        captured = await self._send_two_segments(
+            event_module=matrix_event,
+            enable_threading=False,
+            adaptive_thread_reply=True,
+            inbound_content=self._threaded_inbound_content(),
+            # The server hides the relation (e.g. an encrypted event body), so
+            # only the inbound event itself proves the thread membership.
+            event_content={"msgtype": "m.text", "body": "opaque"},
+            first_chain=message_chain([components.Plain("first")]),
+            second_chain=message_chain([components.Plain("second")]),
+        )
+
+        self.assertEqual(len(captured), 2)
+        for call in captured:
+            self.assertTrue(call["use_thread"])
+            self.assertEqual(call["thread_root"], "$root:example.org")
+
+    async def test_adaptive_reply_disabled_falls_back_to_room_timeline(self):
+        matrix_event = self._load_matrix_event_for_test()
+        components = sys.modules["astrbot.api.message_components"]
+        message_chain = sys.modules["astrbot.api.event"].MessageChain
+        inbound_content = self._threaded_inbound_content()
+
+        captured = await self._send_two_segments(
+            event_module=matrix_event,
+            enable_threading=False,
+            adaptive_thread_reply=False,
+            inbound_content=inbound_content,
+            event_content=inbound_content,
+            first_chain=message_chain([components.Plain("first")]),
+            second_chain=message_chain([components.Plain("second")]),
+        )
+
+        self.assertEqual(len(captured), 2)
+        for call in captured:
+            self.assertFalse(call["use_thread"])
+            self.assertIsNone(call["thread_root"])
+            self.assertIsNone(call["reply_to"])
+
+    async def test_adaptive_reply_does_not_create_new_thread(self):
+        matrix_event = self._load_matrix_event_for_test()
+        components = sys.modules["astrbot.api.message_components"]
+        message_chain = sys.modules["astrbot.api.event"].MessageChain
+        inbound_content = {"msgtype": "m.text", "body": "ordinary message"}
+
+        captured = await self._send_two_segments(
+            event_module=matrix_event,
+            enable_threading=False,
+            adaptive_thread_reply=True,
+            inbound_content=inbound_content,
+            event_content=inbound_content,
+            first_chain=message_chain([components.Plain("first")]),
+            second_chain=message_chain([components.Plain("second")]),
+        )
+
+        self.assertEqual(len(captured), 2)
+        for call in captured:
+            self.assertFalse(call["use_thread"])
+            self.assertIsNone(call["thread_root"])
+            self.assertIsNone(call["reply_to"])
+
+    def _build_event_for_stream_relation(
+        self,
+        matrix_event,
+        *,
+        enable_threading: bool,
+        adaptive_thread_reply: bool,
+        inbound_content: dict,
+    ):
+        platform_meta = sys.modules["astrbot.api.platform"].PlatformMetadata(
+            name="matrix", id="matrix"
+        )
+        message_obj = types.SimpleNamespace(
+            message_id="$inbound:example.org",
+            sender=types.SimpleNamespace(user_id="@alice:example.org"),
+            raw_message=types.SimpleNamespace(
+                event_id="$inbound:example.org",
+                content=inbound_content,
+            ),
+        )
+        return matrix_event.MatrixPlatformEvent(
+            message_str="input",
+            message_obj=message_obj,
+            platform_meta=platform_meta,
+            session_id="!room:example.org",
+            client=types.SimpleNamespace(user_id="@bot:example.org"),
+            enable_threading=enable_threading,
+            adaptive_thread_reply=adaptive_thread_reply,
+        )
+
+    async def test_adaptive_streaming_relation_follows_inbound_thread(self):
+        matrix_event = self._load_matrix_event_for_test()
+
+        event = self._build_event_for_stream_relation(
+            matrix_event,
+            enable_threading=False,
+            adaptive_thread_reply=True,
+            inbound_content=self._threaded_inbound_content(),
+        )
+
+        relation = event._build_stream_thread_relation()
+        self.assertEqual(
+            relation,
+            {
+                "rel_type": "m.thread",
+                "event_id": "$root:example.org",
+                "is_falling_back": True,
+                "m.in_reply_to": {"event_id": "$inbound:example.org"},
+            },
+        )
+
+    async def test_adaptive_streaming_relation_skips_untreaded_inbound(self):
+        matrix_event = self._load_matrix_event_for_test()
+
+        event = self._build_event_for_stream_relation(
+            matrix_event,
+            enable_threading=False,
+            adaptive_thread_reply=True,
+            inbound_content={"msgtype": "m.text", "body": "ordinary message"},
+        )
+
+        self.assertIsNone(event._build_stream_thread_relation())
+
+    async def test_adaptive_streaming_relation_disabled_keeps_timeline(self):
+        matrix_event = self._load_matrix_event_for_test()
+
+        event = self._build_event_for_stream_relation(
+            matrix_event,
+            enable_threading=False,
+            adaptive_thread_reply=False,
+            inbound_content=self._threaded_inbound_content(),
+        )
+
+        self.assertIsNone(event._build_stream_thread_relation())
 
     async def test_send_content_keeps_cleartext_relation_on_encrypted_events(self):
         common_sender = load_module("sender.handlers.common")

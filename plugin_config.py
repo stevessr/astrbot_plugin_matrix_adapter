@@ -237,6 +237,8 @@ class PluginConfig:
         )
         # 消息类型配置
         self._force_message_type: str = "auto"
+        # 回复自适应：入站消息位于消息列（Thread）内时，回复也留在同一消息列
+        self._adaptive_thread_reply: bool = True
         # 数据存储后端（users/rooms/auth/sync/device_info + E2EE 本地状态）
         self._data_storage_backend: str = "json"
         self._pgsql_dsn: str = ""
@@ -544,6 +546,11 @@ class PluginConfig:
                     reason="invalid or legacy message type value",
                 )
 
+        # 回复自适应配置
+        self._adaptive_thread_reply = _normalize_bool(
+            config.get("matrix_adaptive_thread_reply"), True
+        )
+
         # 数据存储后端配置
         self._data_storage_backend = normalize_storage_backend(
             config.get("matrix_data_storage_backend", "json")
@@ -688,6 +695,11 @@ class PluginConfig:
     def force_message_type(self) -> str:
         """强制消息类型（auto / private / group / stalk）"""
         return self._force_message_type
+
+    @property
+    def adaptive_thread_reply(self) -> bool:
+        """回复自适应：入站消息在消息列内时，回复也留在同一消息列"""
+        return self._adaptive_thread_reply
 
     @property
     def force_private_message(self) -> bool:

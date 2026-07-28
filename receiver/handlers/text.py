@@ -48,7 +48,6 @@ def append_formatted_text(
     chain,
     text: str,
     content: dict,
-    allow_command_rewrite: bool = True,
 ) -> None:
     text = text or ""
     content = content or {}
@@ -57,10 +56,6 @@ def append_formatted_text(
     formatted_body = content.get("formatted_body") or ""
     if format_type != "org.matrix.custom.html":
         formatted_body = ""
-
-    # 豁免 ! 开头的命令，自动转换为 / 开头
-    if allow_command_rewrite and text.startswith("!"):
-        text = "/" + text[1:]
 
     seen_mentions: set[str] = set()
 
@@ -230,19 +225,7 @@ async def handle_text(receiver, chain, event, msgtype: str):
     if resolved_msgtype == "m.emote":
         sender = getattr(event, "sender", "") or "Someone"
         chain.chain.append(Plain(f"* {sender} "))
-        append_formatted_text(
-            receiver,
-            chain,
-            body,
-            content,
-            allow_command_rewrite=False,
-        )
+        append_formatted_text(receiver, chain, body, content)
         return
 
-    append_formatted_text(
-        receiver,
-        chain,
-        body,
-        content,
-        allow_command_rewrite=resolved_msgtype != "m.notice",
-    )
+    append_formatted_text(receiver, chain, body, content)

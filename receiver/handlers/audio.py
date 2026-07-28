@@ -145,5 +145,4 @@ async def handle_audio(receiver, chain, event, _: str):
             chain,
             content.get("body") or "",
             content,
-            allow_command_rewrite=False,
         )

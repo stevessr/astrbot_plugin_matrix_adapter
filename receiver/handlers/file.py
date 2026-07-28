@@ -67,5 +67,4 @@ async def handle_file(receiver, chain, event, _: str):
             chain,
             content.get("body") or "",
             content,
-            allow_command_rewrite=False,
         )

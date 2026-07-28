@@ -168,6 +168,12 @@
     "options": ["auto", "private", "group", "stalk"],
     "default": "auto"
   },
+  "matrix_adaptive_thread_reply": {
+    "description": "回复自适应",
+    "type": "bool",
+    "hint": "唤醒机器人的消息位于消息列（Thread）内时，回复也发送到同一消息列，而不是回落到房间时间线。仅跟随已有消息列，不会新建消息列",
+    "default": true
+  },
   "matrix_e2ee_store_max_pending_writes": {
     "description": "E2EE 存储待写队列上限",
     "type": "int",

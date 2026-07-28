@@ -71,5 +71,4 @@ async def handle_video(receiver, chain, event, _: str):
             chain,
             content.get("body") or "",
             content,
-            allow_command_rewrite=False,
         )
