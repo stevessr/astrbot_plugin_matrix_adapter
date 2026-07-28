@@ -112,6 +112,25 @@ class MatrixAdaptiveThreadReplyConfigTests(unittest.TestCase):
             self._init({"matrix_adaptive_thread_reply": "true"}).adaptive_thread_reply
         )
 
+    def test_typing_defaults_to_disabled_and_read_receipt_to_enabled(self):
+        config = self._init({})
+        self.assertFalse(config.send_typing)
+        self.assertTrue(config.send_read_receipt)
+
+    def test_typing_and_read_receipt_switches_can_be_flipped(self):
+        config = self._init(
+            {"matrix_send_typing": True, "matrix_send_read_receipt": False}
+        )
+        self.assertTrue(config.send_typing)
+        self.assertFalse(config.send_read_receipt)
+
+    def test_typing_and_read_receipt_accept_string_values(self):
+        config = self._init(
+            {"matrix_send_typing": "true", "matrix_send_read_receipt": "false"}
+        )
+        self.assertTrue(config.send_typing)
+        self.assertFalse(config.send_read_receipt)
+
 
 class MatrixSyncReconnectTests(unittest.IsolatedAsyncioTestCase):
     async def test_request_reconnect_cancels_inflight_sync_and_recovers(self):

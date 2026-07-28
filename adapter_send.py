@@ -7,6 +7,7 @@ from astrbot.api.event import MessageChain
 from astrbot.api.message_components import Plain, Reply
 
 from .constants import DEFAULT_TYPING_TIMEOUT_MS, MATRIX_HTML_FORMAT
+from .plugin_config import get_plugin_config
 from .utils.markdown_utils import markdown_to_html
 
 _MARKDOWN_MARKERS = ("**", "*", "`", "#", "- ", "> ", "[", "](")
@@ -26,13 +27,15 @@ class MatrixAdapterSendMixin:
             thread_root = None
             use_thread = False
             original_message_info = None
+            send_typing = get_plugin_config().send_typing
 
-            try:
-                await self.client.set_typing(
-                    room_id, typing=True, timeout=DEFAULT_TYPING_TIMEOUT_MS
-                )
-            except Exception as e:
-                logger.debug(f"发送输入通知失败：{e}")
+            if send_typing:
+                try:
+                    await self.client.set_typing(
+                        room_id, typing=True, timeout=DEFAULT_TYPING_TIMEOUT_MS
+                    )
+                except Exception as e:
+                    logger.debug(f"发送输入通知失败：{e}")
 
             if reply_to is None:
                 try:
@@ -119,10 +122,11 @@ class MatrixAdapterSendMixin:
                     use_notice=self._matrix_config.use_notice,
                 )
 
-            try:
-                await self.client.set_typing(room_id, typing=False)
-            except Exception as e:
-                logger.debug(f"停止输入通知失败：{e}")
+            if send_typing:
+                try:
+                    await self.client.set_typing(room_id, typing=False)
+                except Exception as e:
+                    logger.debug(f"停止输入通知失败：{e}")
         except Exception as e:
             logger.error(f"通过会话发送消息失败：{e}")
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 修复开启流式回复时不发送「正在输入」状态的问题：`send_streaming()` 现在在消费生成器期间声明 typing，并因 Matrix typing 约 5 秒过期而按固定间隔续期，生成结束或抛异常时都会显式清除。
+- 新增插件级开关 `matrix_send_typing`（默认关闭）与 `matrix_send_read_receipt`（默认开启）。注意 `matrix_send_typing` 默认关闭后，原先无条件发送 typing 的主动发送路径（`send_by_session`）也会一并停止发送，需要时请显式开启。
 - 改造 LLM 工具 `matrix_react_to_event`：入参改为 `message_content` + `reaction` + 可选 `time`（Unix 秒/毫秒或 ISO-8601）。按锚点时间查找最近消息，优先全文匹配，再回落到包含匹配；`time` 省略时默认使用工具触发时间/入站消息时间。
 - Reaction key 支持短码解析：可自动把 emoji 短码转成 Unicode，并暴露 `MatrixUtils.register_reaction_key_resolver()` / `resolve_reaction_key()` 供 `astrbot_plugin_matrix_sticker` 注入 shortcode→`mxc://` 解析。
 - 新增 `MessageOverrideMixin`：`MatrixHTTPClient` 现在在 `send_message` / `get_event` / `room_messages` 前后提供统一钩子，支持改写 content、短路命中缓存与旁路埋点；可运行时 `register_message_hook()` 注册，也可子类覆写。钩子异常会被吞掉并告警，不影响消息收发。

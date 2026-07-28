@@ -265,6 +265,7 @@ class MatrixAdapterMessageMixin:
                 e2ee_manager=self.e2ee_manager,
                 use_notice=self._matrix_config.use_notice,
                 adaptive_thread_reply=get_plugin_config().adaptive_thread_reply,
+                send_typing=get_plugin_config().send_typing,
             )
 
             self.commit_event(message_event)

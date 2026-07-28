@@ -1,3 +1,4 @@
+import asyncio
 import html
 import time
 
@@ -5,7 +6,11 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageChain
 from astrbot.api.platform import AstrBotMessage, PlatformMetadata
 
-from .constants import MSC4357_LIVE_MESSAGE_MARKER
+from .constants import (
+    MSC4357_LIVE_MESSAGE_MARKER,
+    STREAMING_TYPING_REFRESH_SECONDS,
+    STREAMING_TYPING_TIMEOUT_MS,
+)
 
 # 导入 Sticker 组件
 from .matrix_event_send import send_with_client_impl
@@ -38,6 +43,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
         e2ee_manager=None,
         use_notice: bool = False,
         adaptive_thread_reply: bool = True,
+        send_typing: bool = False,
     ):
         super().__init__(message_str, message_obj, platform_meta, session_id)
         self.client = client  # MatrixHTTPClient instance
@@ -58,6 +64,8 @@ class MatrixPlatformEvent(AstrMessageEvent):
         )
         self.e2ee_manager = e2ee_manager
         self.use_notice = use_notice  # 使用 m.notice 而不是 m.text
+        # 是否向房间发送「正在输入」状态（插件级开关，默认关闭）
+        self.send_typing = send_typing
 
         # AstrBot 的分段回复会把 Reply/At 头部组件只放在第一段，之后的
         # ``event.send`` 调用只带 Plain（见 RespondStage）。Matrix 的线程关系
@@ -158,6 +166,64 @@ class MatrixPlatformEvent(AstrMessageEvent):
             use_notice=use_notice,
             thread_is_falling_back=thread_is_falling_back,
         )
+
+    async def _typing_keepalive(self, room_id: str) -> None:
+        """流式生成期间周期性续期 typing 状态，直到任务被取消。
+
+        Matrix 的 typing 状态会在 ``timeout`` 后自动过期，而流式回复通常远长于
+        此，只声明一次会让指示器中途消失，因此需要在过期前重新声明。
+        """
+
+        while True:
+            await asyncio.sleep(STREAMING_TYPING_REFRESH_SECONDS)
+            try:
+                await self.client.set_typing(
+                    room_id,
+                    typing=True,
+                    timeout=STREAMING_TYPING_TIMEOUT_MS,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.debug(f"刷新输入通知失败：{e}")
+
+    async def _start_typing_keepalive(self, room_id: str):
+        """按插件开关声明 typing 并启动续期任务；关闭时返回 ``None``。"""
+
+        if not self.send_typing:
+            return None
+        # 先直接声明一次，保证指示器立刻出现，不依赖任务调度时机
+        # （极短的流可能在续期任务首次运行前就结束了）。
+        try:
+            await self.client.set_typing(
+                room_id,
+                typing=True,
+                timeout=STREAMING_TYPING_TIMEOUT_MS,
+            )
+        except Exception as e:
+            logger.debug(f"发送输入通知失败：{e}")
+        try:
+            return asyncio.create_task(self._typing_keepalive(room_id))
+        except Exception as e:
+            logger.debug(f"启动输入通知任务失败：{e}")
+            return None
+
+    async def _stop_typing_keepalive(self, task, room_id: str) -> None:
+        """停止保活任务并显式清除 typing 状态。"""
+
+        if task is None:
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.debug(f"停止输入通知任务失败：{e}")
+        try:
+            await self.client.set_typing(room_id, typing=False)
+        except Exception as e:
+            logger.debug(f"停止输入通知失败：{e}")
 
     async def send_streaming(self, generator, use_fallback: bool = False) -> None:
         """发送流式消息。
@@ -277,65 +343,71 @@ class MatrixPlatformEvent(AstrMessageEvent):
             last_flush_at = time.monotonic()
             return True
 
-        if not self.live_messages_allowed:
+        # 流式生成期间持续声明 typing。生成器可能提前 return 或抛错，
+        # 因此统一在 finally 中停止保活并清除状态。
+        typing_task = await self._start_typing_keepalive(room_id)
+        try:
+            if not self.live_messages_allowed:
+                async for chain in generator:
+                    if not isinstance(chain, MessageChain):
+                        continue
+                    if chain.type == "break":
+                        if buffer:
+                            await self.send(MessageChain().message(buffer))
+                            used_self_send = True
+                            buffer = ""
+                        continue
+                    text = chain.get_plain_text()
+                    if text:
+                        buffer += text
+                if buffer:
+                    await self.send(MessageChain().message(buffer))
+                    used_self_send = True
+                if not used_self_send:
+                    await _mark_stream_operation()
+                return
+
             async for chain in generator:
                 if not isinstance(chain, MessageChain):
                     continue
                 if chain.type == "break":
-                    if buffer:
-                        await self.send(MessageChain().message(buffer))
-                        used_self_send = True
-                        buffer = ""
+                    if current_event_id is None:
+                        if buffer:
+                            await self.send(MessageChain().message(buffer))
+                            used_self_send = True
+                    else:
+                        await _send_live_payload(buffer, final=True)
+                    buffer = ""
+                    current_event_id = None
+                    last_sent_text = ""
+                    last_flush_at = 0.0
                     continue
+
                 text = chain.get_plain_text()
-                if text:
-                    buffer += text
-            if buffer:
-                await self.send(MessageChain().message(buffer))
-                used_self_send = True
-            if not used_self_send:
-                await _mark_stream_operation()
-            return
+                if not text:
+                    continue
+                buffer += text
 
-        async for chain in generator:
-            if not isinstance(chain, MessageChain):
-                continue
-            if chain.type == "break":
-                if current_event_id is None:
-                    if buffer:
-                        await self.send(MessageChain().message(buffer))
-                        used_self_send = True
-                else:
-                    await _send_live_payload(buffer, final=True)
-                buffer = ""
-                current_event_id = None
-                last_sent_text = ""
-                last_flush_at = 0.0
-                continue
+                should_flush = current_event_id is None or (
+                    buffer != last_sent_text
+                    and (time.monotonic() - last_flush_at) >= flush_interval
+                )
+                if should_flush:
+                    await _send_live_payload(buffer, final=False)
 
-            text = chain.get_plain_text()
-            if not text:
-                continue
-            buffer += text
+            if current_event_id is None:
+                if buffer:
+                    await self.send(MessageChain().message(buffer))
+                    used_self_send = True
+                if not used_self_send:
+                    await _mark_stream_operation()
+                return
 
-            should_flush = current_event_id is None or (
-                buffer != last_sent_text
-                and (time.monotonic() - last_flush_at) >= flush_interval
-            )
-            if should_flush:
-                await _send_live_payload(buffer, final=False)
-
-        if current_event_id is None:
-            if buffer:
-                await self.send(MessageChain().message(buffer))
-                used_self_send = True
-            if not used_self_send:
-                await _mark_stream_operation()
-            return
-
-        if buffer != last_sent_text or last_sent_text:
-            await _send_live_payload(buffer, final=True)
-        await _mark_stream_operation()
+            if buffer != last_sent_text or last_sent_text:
+                await _send_live_payload(buffer, final=True)
+            await _mark_stream_operation()
+        finally:
+            await self._stop_typing_keepalive(typing_task, room_id)
 
     async def send(self, message_chain: MessageChain):
         """发送消息"""

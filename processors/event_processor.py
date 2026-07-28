@@ -810,11 +810,14 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 await self.on_message(room, event)
 
                 # Send read receipt after successful processing
-                try:
-                    await self.client.send_read_receipt(room.room_id, event.event_id)
-                    logger.debug(f"已发送事件 {event.event_id} 的已读回执")
-                except Exception as e:
-                    logger.debug(f"发送已读回执失败：{e}")
+                if get_plugin_config().send_read_receipt:
+                    try:
+                        await self.client.send_read_receipt(
+                            room.room_id, event.event_id
+                        )
+                        logger.debug(f"已发送事件 {event.event_id} 的已读回执")
+                    except Exception as e:
+                        logger.debug(f"发送已读回执失败：{e}")
 
         except Exception as e:
             logger.error(f"处理消息事件时出错：{e}")

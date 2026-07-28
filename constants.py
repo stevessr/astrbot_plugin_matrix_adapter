@@ -152,6 +152,11 @@ AES_CBC_IV_LEN = 16
 DEFAULT_ONE_TIME_KEYS_COUNT = 50
 DEFAULT_TYPING_TIMEOUT_MS = 5000
 
+# 流式回复期间的 typing 保活。Matrix 的 typing 状态会在 timeout 后自动过期，
+# 而流式生成通常远长于此，因此需要在过期前重新声明。
+STREAMING_TYPING_TIMEOUT_MS = 15000
+STREAMING_TYPING_REFRESH_SECONDS = 10.0
+
 # 验证相关
 KEY_AGREEMENT_PROTOCOLS = ["curve25519-hkdf-sha256"]
 M_KEY_VERIFICATION_REQUEST = "m.key.verification.request"

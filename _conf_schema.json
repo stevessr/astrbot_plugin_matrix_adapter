@@ -174,6 +174,18 @@
     "hint": "唤醒机器人的消息位于消息列（Thread）内时，回复也发送到同一消息列，而不是回落到房间时间线。仅跟随已有消息列，不会新建消息列",
     "default": true
   },
+  "matrix_send_typing": {
+    "description": "发送输入中状态",
+    "type": "bool",
+    "hint": "是否向房间发送「正在输入」（typing）状态。开启后流式回复期间会持续保活该状态，回复结束或出错时清除",
+    "default": false
+  },
+  "matrix_send_read_receipt": {
+    "description": "发送已读回执",
+    "type": "bool",
+    "hint": "消息处理完成后是否发送已读回执（m.read）。关闭后机器人不会把消息标记为已读",
+    "default": true
+  },
   "matrix_e2ee_store_max_pending_writes": {
     "description": "E2EE 存储待写队列上限",
     "type": "int",

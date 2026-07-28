@@ -110,10 +110,13 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 | `matrix_data_storage_backend` | string | `json` | 数据存储后端（users/rooms/auth/sync/device_info + E2EE 本地状态）：`json` / `sqlite` / `pgsql` |
 | `matrix_pgsql` | object | 见下方 | 当后端为 `pgsql` 时使用的 PostgreSQL 配置对象 |
 | `matrix_adaptive_thread_reply` | bool | `true` | 回复自适应：唤醒机器人的消息位于消息列（Thread）内时，回复也发送到同一消息列 |
+| `matrix_send_typing` | bool | `false` | 是否发送「正在输入」（typing）状态；开启后流式回复期间会持续保活，结束或出错时清除 |
+| `matrix_send_read_receipt` | bool | `true` | 消息处理完成后是否发送已读回执（`m.read`） |
 
 说明：
 - Emoji 短码转换与 Sticker 自动同步配置已迁移到 `astrbot_plugin_matrix_sticker` 插件。
 - `matrix_adaptive_thread_reply` 只跟随**已存在**的消息列，不会主动新建消息列；若需要让每次回复都开启新消息列，请使用适配器级的 `matrix_enable_threading`。关闭该开关后，消息列内的消息会像旧版一样回落到房间时间线。
+- `matrix_send_typing` 默认关闭，开启前主动发送（`send_by_session`）路径是无条件发 typing 的，现已统一受该开关控制。Matrix 的 typing 状态约 5 秒过期，因此流式回复期间会按固定间隔续期，并在生成结束或抛异常时显式清除。
 
 `matrix_pgsql` 对象字段：
 - `dsn`：例如 `postgresql://user:pass@127.0.0.1:5432/dbname`

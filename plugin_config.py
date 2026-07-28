@@ -239,6 +239,9 @@ class PluginConfig:
         self._force_message_type: str = "auto"
         # 回复自适应：入站消息位于消息列（Thread）内时，回复也留在同一消息列
         self._adaptive_thread_reply: bool = True
+        # 是否发送「正在输入」状态与已读回执
+        self._send_typing: bool = False
+        self._send_read_receipt: bool = True
         # 数据存储后端（users/rooms/auth/sync/device_info + E2EE 本地状态）
         self._data_storage_backend: str = "json"
         self._pgsql_dsn: str = ""
@@ -551,6 +554,12 @@ class PluginConfig:
             config.get("matrix_adaptive_thread_reply"), True
         )
 
+        # 输入状态与已读回执配置
+        self._send_typing = _normalize_bool(config.get("matrix_send_typing"), False)
+        self._send_read_receipt = _normalize_bool(
+            config.get("matrix_send_read_receipt"), True
+        )
+
         # 数据存储后端配置
         self._data_storage_backend = normalize_storage_backend(
             config.get("matrix_data_storage_backend", "json")
@@ -700,6 +709,16 @@ class PluginConfig:
     def adaptive_thread_reply(self) -> bool:
         """回复自适应：入站消息在消息列内时，回复也留在同一消息列"""
         return self._adaptive_thread_reply
+
+    @property
+    def send_typing(self) -> bool:
+        """是否发送「正在输入」（typing）状态"""
+        return self._send_typing
+
+    @property
+    def send_read_receipt(self) -> bool:
+        """是否在消息处理完成后发送已读回执"""
+        return self._send_read_receipt
 
     @property
     def force_private_message(self) -> bool:

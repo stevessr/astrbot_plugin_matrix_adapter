@@ -2904,6 +2904,104 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                         "[位置标记] Big Ben, London, UK geo:51.5008,0.1247",
                     )
 
+    async def test_read_receipt_follows_plugin_switch(self):
+        module_name = f"{PACKAGE_NAME}.processors.event_processor"
+
+        def _make_module(name: str, **attrs):
+            module = types.ModuleType(name)
+            for key, value in attrs.items():
+                setattr(module, key, value)
+            return module
+
+        class _MatrixEventProcessorMembers:
+            pass
+
+        class _MatrixEventProcessorStreams:
+            pass
+
+        for enabled in (True, False):
+            with self.subTest(send_read_receipt=enabled):
+                sys.modules.pop(module_name, None)
+                stubs = {
+                    f"{PACKAGE_NAME}.constants": _make_module(
+                        f"{PACKAGE_NAME}.constants",
+                        MAX_PROCESSED_MESSAGES_1000=1000,
+                        TIMESTAMP_BUFFER_MS_1000=1000,
+                        M_FORWARDED_ROOM_KEY="m.forwarded_room_key",
+                        M_ROOM_ENCRYPTED="m.room.encrypted",
+                        M_ROOM_KEY="m.room_key",
+                        M_ROOM_KEY_REQUEST="m.room_key_request",
+                        M_ROOM_KEY_WITHHELD="m.room_key.withheld",
+                        MEGOLM_ALGO="m.megolm.v1.aes-sha2",
+                        GROUP_CHAT_MIN_MEMBERS_2=2,
+                        REL_TYPE_REPLACE="m.replace",
+                        M_RTC_DECLINE="m.rtc.decline",
+                        MSC4310_RTC_DECLINE="org.matrix.msc4310.rtc.decline",
+                    ),
+                    f"{PACKAGE_NAME}.plugin_config": _make_module(
+                        f"{PACKAGE_NAME}.plugin_config",
+                        get_plugin_config=lambda enabled=enabled: types.SimpleNamespace(
+                            storage_backend_config=None,
+                            send_read_receipt=enabled,
+                        ),
+                    ),
+                    f"{PACKAGE_NAME}.processors.event_processor_members": _make_module(
+                        f"{PACKAGE_NAME}.processors.event_processor_members",
+                        MatrixEventProcessorMembers=_MatrixEventProcessorMembers,
+                    ),
+                    f"{PACKAGE_NAME}.processors.event_processor_streams": _make_module(
+                        f"{PACKAGE_NAME}.processors.event_processor_streams",
+                        MatrixEventProcessorStreams=_MatrixEventProcessorStreams,
+                    ),
+                    f"{PACKAGE_NAME}.utils": _make_module(
+                        f"{PACKAGE_NAME}.utils",
+                        parse_bool=lambda value, default=False: default,
+                    ),
+                }
+
+                with mock.patch.dict(sys.modules, stubs):
+                    event_processor = importlib.import_module(module_name)
+
+                    receipts = []
+
+                    class FakeClient:
+                        async def send_read_receipt(self, room_id, event_id):
+                            receipts.append((room_id, event_id))
+                            return {}
+
+                    processor = event_processor.MatrixEventProcessor.__new__(
+                        event_processor.MatrixEventProcessor
+                    )
+                    processor.user_id = "@bot:example.org"
+                    processor.startup_ts = 0
+                    processor.e2ee_manager = None
+                    processor.client = FakeClient()
+                    processor._is_message_processed = lambda _event_id: False
+                    processor._mark_message_processed = lambda _event_id: None
+                    processor._persist_interacted_user = mock.AsyncMock()
+                    processor.on_message = mock.AsyncMock()
+
+                    room = types.SimpleNamespace(room_id="!room:example.org")
+                    event = types.SimpleNamespace(
+                        sender="@alice:example.org",
+                        event_id="$msg:example.org",
+                        event_type="m.room.message",
+                        content={"msgtype": "m.text", "body": "hi"},
+                        origin_server_ts=10_000,
+                    )
+
+                    await event_processor.MatrixEventProcessor._process_message_event(
+                        processor, room, event
+                    )
+
+                    processor.on_message.assert_awaited_once()
+                    if enabled:
+                        self.assertEqual(
+                            receipts, [("!room:example.org", "$msg:example.org")]
+                        )
+                    else:
+                        self.assertEqual(receipts, [])
+
     async def test_event_processor_handles_encrypted_secret_request(self):
         module_name = f"{PACKAGE_NAME}.processors.event_processor"
         sys.modules.pop(module_name, None)
@@ -4482,6 +4580,126 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIsNone(event._build_stream_thread_relation())
+
+    def _make_typing_client(self):
+        class FakeClient:
+            def __init__(self):
+                self.typing_calls = []
+                self.calls = []
+
+            async def set_typing(self, room_id, typing=True, timeout=None):
+                self.typing_calls.append((room_id, typing, timeout))
+                return {}
+
+            async def send_message(self, **kwargs):
+                self.calls.append(("send", kwargs))
+                return {"event_id": "$live:example.org"}
+
+            async def edit_message(self, **kwargs):
+                self.calls.append(("edit", kwargs))
+                return {"event_id": "$edit:example.org"}
+
+        return FakeClient()
+
+    def _make_streaming_event(self, matrix_event, client, *, send_typing):
+        return matrix_event.MatrixPlatformEvent(
+            message_str="input",
+            message_obj=types.SimpleNamespace(message_id="$input:example.org"),
+            platform_meta=sys.modules["astrbot.api.platform"].PlatformMetadata(
+                name="matrix",
+                id="matrix",
+            ),
+            session_id="!room:example.org",
+            client=client,
+            send_typing=send_typing,
+        )
+
+    @staticmethod
+    def _metrics_patch():
+        metric_stub = types.ModuleType("astrbot.core.utils.metrics")
+        metric_stub.Metric = types.SimpleNamespace(upload=mock.AsyncMock())
+        return mock.patch.dict(
+            sys.modules, {"astrbot.core.utils.metrics": metric_stub}
+        )
+
+    async def test_streaming_sends_and_clears_typing_when_enabled(self):
+        matrix_event = self._load_matrix_event_for_test()
+        components = sys.modules["astrbot.api.message_components"]
+        message_chain = sys.modules["astrbot.api.event"].MessageChain
+
+        client = self._make_typing_client()
+        event = self._make_streaming_event(matrix_event, client, send_typing=True)
+
+        async def chunks():
+            yield message_chain([components.Plain("hello")])
+
+        with self._metrics_patch():
+            await event.send_streaming(chunks())
+
+        # 首次 typing 同步发出，不依赖续期任务的调度时机
+        self.assertEqual(
+            client.typing_calls[0],
+            ("!room:example.org", True, matrix_event.STREAMING_TYPING_TIMEOUT_MS),
+        )
+        # 结束后必须显式清除，否则指示器会一直挂到超时
+        self.assertEqual(client.typing_calls[-1], ("!room:example.org", False, None))
+
+    async def test_streaming_does_not_send_typing_by_default(self):
+        matrix_event = self._load_matrix_event_for_test()
+        components = sys.modules["astrbot.api.message_components"]
+        message_chain = sys.modules["astrbot.api.event"].MessageChain
+
+        client = self._make_typing_client()
+        event = self._make_streaming_event(matrix_event, client, send_typing=False)
+
+        async def chunks():
+            yield message_chain([components.Plain("hello")])
+
+        with self._metrics_patch():
+            await event.send_streaming(chunks())
+
+        self.assertEqual(client.typing_calls, [])
+        self.assertTrue(client.calls)
+
+    async def test_streaming_clears_typing_when_generator_fails(self):
+        matrix_event = self._load_matrix_event_for_test()
+
+        client = self._make_typing_client()
+        event = self._make_streaming_event(matrix_event, client, send_typing=True)
+
+        async def chunks():
+            raise RuntimeError("boom")
+            yield  # pragma: no cover - 使函数成为异步生成器
+
+        with self._metrics_patch():
+            with self.assertRaises(RuntimeError):
+                await event.send_streaming(chunks())
+
+        self.assertEqual(client.typing_calls[-1], ("!room:example.org", False, None))
+
+    async def test_streaming_typing_is_refreshed_before_expiry(self):
+        matrix_event = self._load_matrix_event_for_test()
+        components = sys.modules["astrbot.api.message_components"]
+        message_chain = sys.modules["astrbot.api.event"].MessageChain
+
+        client = self._make_typing_client()
+        event = self._make_streaming_event(matrix_event, client, send_typing=True)
+
+        async def chunks():
+            yield message_chain([components.Plain("slow")])
+            await asyncio.sleep(0.12)
+            yield message_chain([components.Plain(" response")])
+
+        with self._metrics_patch():
+            with mock.patch.object(
+                matrix_event, "STREAMING_TYPING_REFRESH_SECONDS", 0.02
+            ):
+                await event.send_streaming(chunks())
+
+        refreshes = [call for call in client.typing_calls if call[1] is True]
+        # 一次初始声明 + 生成期间的多次续期
+        self.assertGreater(len(refreshes), 1)
+        self.assertEqual(client.typing_calls[-1][1], False)
 
     async def test_send_content_keeps_cleartext_relation_on_encrypted_events(self):
         common_sender = load_module("sender.handlers.common")
