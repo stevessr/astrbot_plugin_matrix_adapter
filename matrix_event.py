@@ -21,8 +21,8 @@ from .utils.markdown_utils import markdown_to_html
 class MatrixPlatformEvent(AstrMessageEvent):
     """Matrix 平台事件处理器（不依赖 matrix-nio）
 
-    NOTE: Matrix 默认不启用流式响应；启用后会通过 MSC4357 live messages
-    使用单条消息的连续 m.replace 编辑来模拟流式输出。
+    ``send`` 负责普通消息，``send_streaming`` 固定通过 MSC4357
+    Live Messages 连续编辑同一条消息。
     """
 
     def __init__(
@@ -33,7 +33,6 @@ class MatrixPlatformEvent(AstrMessageEvent):
         session_id: str,
         client,
         enable_threading: bool = False,
-        enable_live_messages: bool = False,
         room_live_messaging_enabled: bool | None = None,
         live_message_update_interval_ms: int = 2000,
         e2ee_manager=None,
@@ -42,13 +41,9 @@ class MatrixPlatformEvent(AstrMessageEvent):
         super().__init__(message_str, message_obj, platform_meta, session_id)
         self.client = client  # MatrixHTTPClient instance
         self.enable_threading = enable_threading  # 试验性：是否默认开启嘟文串模式
-        self.room_live_messaging_enabled = room_live_messaging_enabled
-        # MSC4357 says an explicit room state value of ``enabled: false``
-        # disables live mode. An absent state event defaults to enabled, while
-        # the adapter-level switch remains an explicit opt-in.
-        self.enable_live_messages = bool(
-            enable_live_messages and room_live_messaging_enabled is not False
-        )
+        # 流式是独立发送接口，无需额外总开关。仅当房间通过
+        # MSC4357 状态明确声明 ``enabled: false`` 时退化为普通回复。
+        self.live_messages_allowed = room_live_messaging_enabled is not False
         try:
             update_interval_ms = int(live_message_update_interval_ms)
         except (TypeError, ValueError):
@@ -67,8 +62,10 @@ class MatrixPlatformEvent(AstrMessageEvent):
         # 继续使用同一个线程根，而不会回落到房间时间线。
         self._response_thread_context: dict | None = None
 
-        # 默认关闭；仅在显式启用 Live Messages 时才允许流式输出
-        self.set_extra("enable_streaming", self.enable_live_messages)
+        # 正常情况不覆盖 AstrBot 的流式调度；平台已声明支持
+        # send_streaming，只在房间明确禁用时阻止上游产生流。
+        if not self.live_messages_allowed:
+            self.set_extra("enable_streaming", False)
 
     def _build_stream_thread_relation(self) -> dict | None:
         """Build the initial message relation for a streamed thread reply.
@@ -143,8 +140,8 @@ class MatrixPlatformEvent(AstrMessageEvent):
     async def send_streaming(self, generator, use_fallback: bool = False) -> None:
         """发送流式消息。
 
-        当启用 MSC4357 Live Messages 时，使用一条持续被 m.replace 编辑的
-        Matrix 消息来模拟流式输出；否则退化为发送普通消息。
+        使用 MSC4357 的初始标记与 ``m.replace`` 更新。房间明确
+        禁用 Live Messages 时才聚合为普通消息。
         """
 
         room_id = self.session_id
@@ -156,7 +153,6 @@ class MatrixPlatformEvent(AstrMessageEvent):
         flush_interval = self.live_message_update_interval_ms / 1000
         initial_relation = self._build_stream_thread_relation()
         used_self_send = False
-        used_live_send = False
         is_encrypted_room = False
         metric_cls = None
         try:
@@ -165,6 +161,15 @@ class MatrixPlatformEvent(AstrMessageEvent):
             metric_cls = Metric
         except Exception:
             metric_cls = None
+
+        async def _mark_stream_operation() -> None:
+            if metric_cls is not None:
+                await metric_cls.upload(
+                    msg_event_tick=1,
+                    adapter_name=self.platform_meta.name,
+                )
+            self._has_send_oper = True
+
         if self.e2ee_manager:
             try:
                 is_encrypted_room = await self.client.is_room_encrypted(room_id)
@@ -172,7 +177,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                 is_encrypted_room = False
 
         async def _send_live_payload(text: str, *, final: bool) -> bool:
-            nonlocal current_event_id, last_sent_text, last_flush_at, used_live_send
+            nonlocal current_event_id, last_sent_text, last_flush_at
 
             content = {
                 "msgtype": msg_type,
@@ -246,12 +251,11 @@ class MatrixPlatformEvent(AstrMessageEvent):
                 logger.warning(f"Matrix live message update failed: {e}")
                 return False
 
-            used_live_send = True
             last_sent_text = text
             last_flush_at = time.monotonic()
             return True
 
-        if not self.enable_live_messages:
+        if not self.live_messages_allowed:
             async for chain in generator:
                 if not isinstance(chain, MessageChain):
                     continue
@@ -268,11 +272,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                 await self.send(MessageChain().message(buffer))
                 used_self_send = True
             if not used_self_send:
-                if metric_cls is not None:
-                    await metric_cls.upload(
-                        msg_event_tick=1, adapter_name=self.platform_meta.name
-                    )
-                self._has_send_oper = True
+                await _mark_stream_operation()
             return
 
         async for chain in generator:
@@ -308,20 +308,12 @@ class MatrixPlatformEvent(AstrMessageEvent):
                 await self.send(MessageChain().message(buffer))
                 used_self_send = True
             if not used_self_send:
-                if metric_cls is not None:
-                    await metric_cls.upload(
-                        msg_event_tick=1, adapter_name=self.platform_meta.name
-                    )
-                self._has_send_oper = True
+                await _mark_stream_operation()
             return
 
         if buffer != last_sent_text or last_sent_text:
             await _send_live_payload(buffer, final=True)
-        if metric_cls is not None and (used_live_send or not used_self_send):
-            await metric_cls.upload(
-                msg_event_tick=1, adapter_name=self.platform_meta.name
-            )
-        self._has_send_oper = True
+        await _mark_stream_operation()
 
     async def send(self, message_chain: MessageChain):
         """发送消息"""
@@ -513,9 +505,6 @@ class MatrixPlatformEvent(AstrMessageEvent):
         )
 
         return await super().send(message_chain)
-
-    # NOTE: Matrix 不支持流式消息，已通过 set_extra("enable_streaming", False) 禁用
-    # 不再覆盖 send_streaming 方法，使用父类默认实现即可
 
     async def react(self, emoji: str):
         """对消息添加表情回应。"""

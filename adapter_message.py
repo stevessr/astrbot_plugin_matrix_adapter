@@ -256,7 +256,6 @@ class MatrixAdapterMessageMixin:
                 session_id=message.session_id,
                 client=self.client,
                 enable_threading=self._matrix_config.enable_threading,
-                enable_live_messages=self._matrix_config.enable_live_messages,
                 room_live_messaging_enabled=room_live_messaging_enabled,
                 live_message_update_interval_ms=getattr(
                     self._matrix_config,

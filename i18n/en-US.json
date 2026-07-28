@@ -35,10 +35,6 @@
     "description": "Enable Threading",
     "hint": "Whether to use message threading for replies, default: False"
   },
-  "matrix_enable_live_messages": {
-    "description": "Enable Live Messages",
-    "hint": "Whether to enable Live Messages (experimental feature), default: False"
-  },
   "matrix_live_message_update_interval_ms": {
     "description": "Live Messages Update Interval",
     "hint": "Coalesced live edit interval in milliseconds, default: 2000"

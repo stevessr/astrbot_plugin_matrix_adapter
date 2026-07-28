@@ -3859,7 +3859,6 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             ),
             session_id="!room:example.org",
             client=client,
-            enable_live_messages=True,
             use_notice=True,
         )
 
@@ -3869,6 +3868,8 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         ):
             await event.send_streaming(chunks())
 
+        self.assertTrue(event.live_messages_allowed)
+        self.assertIsNone(event.get_extra("enable_streaming"))
         self.assertEqual(client.calls[0][0], "send")
         self.assertEqual(client.calls[0][1]["content"]["msgtype"], "m.notice")
         self.assertEqual(
@@ -3913,14 +3914,13 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             ),
             session_id="!room:example.org",
             client=client,
-            enable_live_messages=True,
             room_live_messaging_enabled=False,
         )
         event.send = mock.AsyncMock()
 
         await event.send_streaming(chunks())
 
-        self.assertFalse(event.enable_live_messages)
+        self.assertFalse(event.live_messages_allowed)
         self.assertFalse(event.get_extra("enable_streaming"))
         event.send.assert_awaited_once()
         self.assertEqual(
@@ -3974,7 +3974,6 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             session_id="!room:example.org",
             client=client,
             enable_threading=True,
-            enable_live_messages=True,
             live_message_update_interval_ms=2500,
         )
 

@@ -238,7 +238,6 @@ DEFAULT_CONFIG = {
     "matrix_auto_join_rooms": True,
     "matrix_sync_timeout": 30000,
     "matrix_enable_threading": False,
-    "matrix_enable_live_messages": False,
     "matrix_live_message_update_interval_ms": 2000,
     "matrix_use_notice": False,
     # Live 通话事件配置

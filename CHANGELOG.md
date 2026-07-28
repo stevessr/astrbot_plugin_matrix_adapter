@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 移除 `matrix_enable_live_messages` 总开关；流式输出由独立的 `send_streaming()` 接口自动使用 MSC4357，普通 `send()` 不受影响，仅在房间状态明确设置 `enabled: false` 时退化。
 - MSC4357 Live Messages 现在遵循 `org.matrix.msc4357.live_messaging` 房间状态的显式禁用值，默认按提案建议每 2 秒合并更新（可配置），流式 Markdown 会同步更新 HTML fallback，并在开启消息串时保留初始 `m.thread` 关系。
 - 开启 `matrix_use_notice` 时，`MatrixSender` 默认发送、At/联系人/分享/音乐等文本 fallback 现在都会继承适配器配置；Live Messages 的未加密 `m.replace` 编辑也会在外层与 `m.new_content` 中继续使用 `m.notice`，不再回落为 `m.text`。
 - 关闭 AstrBot「回复时引用发送人消息」但开启 Matrix 消息串时，线程关系现在使用 `is_falling_back: true`，不再渲染成显式引用或额外 @ 原发送人。

@@ -35,10 +35,6 @@
     "description": "启用消息线程",
     "hint": "是否使用消息线程（Threading）回复，默认 False"
   },
-  "matrix_enable_live_messages":{
-    "description": "启用 Live Messages",
-    "hint": "是否启用 Live Messages（实验性功能），默认 False"
-  },
   "matrix_live_message_update_interval_ms": {
     "description": "Live Messages 更新间隔",
     "hint": "流式编辑的合并发送间隔（毫秒），默认 2000"

@@ -105,12 +105,6 @@ class MatrixConfig:
             False,
         )
 
-        # Live Messages（MSC4357）配置
-        # 启用后，流式响应会通过单条消息的连续 m.replace 编辑来呈现
-        self.enable_live_messages = self._parse_bool(
-            self.config.get("matrix_enable_live_messages"),
-            False,
-        )
         # MSC4357 recommends coalescing updates at roughly a 2-3 second cadence
         # rather than emitting one replacement per token/keystroke. Keep the
         # interval configurable while enforcing a conservative lower bound.
