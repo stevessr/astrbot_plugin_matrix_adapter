@@ -463,11 +463,24 @@ await event.delete()
 
 ### Reaction、LLM Tool 与插件接口
 
-LLM 可调用 `matrix_react_to_event` 工具，主动给当前 Matrix 消息添加 Reaction：
+LLM 可调用 `matrix_react_to_event` 工具，按消息内容定位目标并添加 Reaction：
 
-- `reaction`：必填，支持 Unicode 表情或自定义 Matrix Reaction key；
-- `room_id` / `event_id`：默认取当前 Matrix 消息，也可显式指定其他事件；
+- `message_content`：必填，用于在房间历史中定位目标消息；
+- `reaction`：必填，支持 Unicode 表情、emoji/sticker 短码（如 `:smile:` / `thinking`）或自定义 Matrix Reaction key / `mxc://`；
+- `time`：可选锚点时间（Unix 秒/毫秒或 ISO-8601）。省略时默认使用工具触发时间（若有入站消息时间戳则优先使用它）；
+- `room_id`：可选，默认取当前 Matrix 房间；
 - `matrix_platform_id`：当前事件不是 Matrix 且运行了多个 Matrix 适配器时必填。
+
+定位规则：
+
+1. 在房间最近消息中，优先选择 **正文完全匹配** 且距离 `time` 最近的一条；
+2. 若无全文匹配，再选择 **正文包含** 查询串且距离 `time` 最近的一条。
+
+短码解析：
+
+- 适配器内置 emoji 短码 → Unicode 的尽力转换；
+- sticker/自定义表情 shortcode → `mxc://` 由 `astrbot_plugin_matrix_sticker` 通过
+  `MatrixUtils.register_reaction_key_resolver()` 注入。
 
 其他插件可以对当前事件使用 AstrBot 标准接口：
 
@@ -484,10 +497,27 @@ response = await MatrixUtils.send_reaction(
     self.context,
     "!roomid:example.org",
     "$event_id:example.org",
-    "👍",
+    ":thumbsup:",  # 也可直接传 👍 / mxc://...
     platform_id="matrix-main",
 )
 reaction_event_id = response.get("event_id")
+```
+
+若需要自行解析 reaction key，或注入 shortcode 处理：
+
+```python
+from astrbot_plugin_matrix_adapter import (
+    MatrixUtils,
+    register_reaction_key_resolver,
+)
+
+def my_resolver(reaction, **kwargs):
+    if reaction.strip(":") == "party":
+        return "mxc://example.org/party"
+    return None
+
+register_reaction_key_resolver(my_resolver)
+key = await MatrixUtils.resolve_reaction_key(":party:")
 ```
 
 未指定 `platform_id` 时，公共接口可以回退到首个 Matrix 适配器；显式指定但不存在的

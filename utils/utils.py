@@ -380,6 +380,85 @@ class MatrixUtils:
         return getattr(platform, "client", None)
 
     @staticmethod
+    async def resolve_reaction_key(
+        reaction: str,
+        *,
+        context=None,
+        room_id: str = "",
+        platform_id: str = "",
+        event=None,
+    ) -> str:
+        """Resolve a reaction key (Unicode emoji / shortcode / mxc://).
+
+        External plugins can inject shortcode→mxc resolvers via
+        ``register_reaction_key_resolver``.
+        """
+        from .reaction_helpers import resolve_reaction_key as _resolve_reaction_key
+
+        return await _resolve_reaction_key(
+            reaction,
+            context=context,
+            room_id=room_id,
+            platform_id=platform_id,
+            event=event,
+        )
+
+    @staticmethod
+    def register_reaction_key_resolver(resolver) -> bool:
+        """Register a reaction-key resolver used by ``resolve_reaction_key``."""
+        from .reaction_helpers import register_reaction_key_resolver
+
+        return register_reaction_key_resolver(resolver)
+
+    @staticmethod
+    def unregister_reaction_key_resolver(resolver) -> bool:
+        """Unregister a reaction-key resolver."""
+        from .reaction_helpers import unregister_reaction_key_resolver
+
+        return unregister_reaction_key_resolver(resolver)
+
+    @staticmethod
+    async def find_event_for_reaction(
+        context,
+        room_id: str,
+        message_content: str,
+        *,
+        time: object | None = None,
+        platform_id: str = "",
+        fallback_to_first: bool = True,
+        limit: int = 100,
+    ) -> dict | None:
+        """Find the nearest room event matching ``message_content`` near ``time``."""
+        from .reaction_helpers import (
+            find_room_event_for_reaction,
+            parse_reaction_anchor_time_ms,
+        )
+
+        target_room_id = str(room_id or "").strip()
+        query = str(message_content or "").strip()
+        if not target_room_id:
+            raise ValueError("room_id is required")
+        if not query:
+            raise ValueError("message_content is required")
+
+        client = MatrixUtils.get_matrix_client(
+            context,
+            str(platform_id or "").strip(),
+            fallback_to_first=bool(fallback_to_first and not str(platform_id or "").strip()),
+        )
+        if client is None:
+            suffix = f" {platform_id!r}" if str(platform_id or "").strip() else ""
+            raise RuntimeError(f"Matrix adapter{suffix} is not available")
+
+        return await find_room_event_for_reaction(
+            client,
+            target_room_id,
+            query,
+            anchor_time_ms=parse_reaction_anchor_time_ms(time),
+            limit=limit,
+        )
+
+    @staticmethod
     async def send_reaction(
         context,
         room_id: str,
@@ -388,6 +467,8 @@ class MatrixUtils:
         *,
         platform_id: str = "",
         fallback_to_first: bool = True,
+        resolve_key: bool = True,
+        event=None,
     ) -> dict:
         """Send a reaction through a running Matrix adapter.
 
@@ -398,10 +479,13 @@ class MatrixUtils:
             context: AstrBot plugin context containing the platform manager.
             room_id: Matrix room ID containing the target event.
             event_id: Matrix event ID to annotate.
-            reaction: Unicode emoji or custom Matrix reaction key.
+            reaction: Unicode emoji, emoji shortcode, sticker shortcode, or custom
+                Matrix reaction key (including ``mxc://`` custom emotes).
             platform_id: Optional AstrBot Matrix platform instance ID.
             fallback_to_first: Use the first Matrix adapter only when ``platform_id``
                 is empty.
+            resolve_key: When true, resolve shortcodes via registered resolvers.
+            event: Optional AstrMessageEvent passed to reaction-key resolvers.
 
         Returns:
             Matrix homeserver response containing the reaction event ID.
@@ -420,6 +504,18 @@ class MatrixUtils:
             raise ValueError("event_id is required")
         if not reaction_key:
             raise ValueError("reaction is required")
+
+        if resolve_key:
+            reaction_key = await MatrixUtils.resolve_reaction_key(
+                reaction_key,
+                context=context,
+                room_id=target_room_id,
+                platform_id=target_platform_id,
+                event=event,
+            )
+            reaction_key = str(reaction_key or "").strip()
+            if not reaction_key:
+                raise ValueError("reaction is required")
 
         platform = MatrixUtils.get_matrix_platform(
             context,

@@ -413,39 +413,137 @@ class MatrixReactionApiCompatTests(unittest.IsolatedAsyncioTestCase):
                 fallback_to_first=True,
             )
 
-    async def test_llm_tool_reacts_to_current_matrix_event(self):
-        """The LLM tool should infer the current room, event, and adapter IDs."""
+    async def test_llm_tool_reacts_to_nearest_matching_matrix_event(self):
+        """The LLM tool should locate the nearest content match and react to it."""
         main_module = load_module("main")
+        helpers = load_module("utils.reaction_helpers")
         plugin = main_module.MatrixPlugin.__new__(main_module.MatrixPlugin)
         plugin.context = types.SimpleNamespace()
         event = types.SimpleNamespace(
             message_obj=types.SimpleNamespace(
                 session_id="!room:example.org",
-                message_id="$event:example.org",
+                message_id="$trigger:example.org",
+                timestamp=1_700_000_100,
                 raw_message=None,
             ),
+            created_at=1_700_000_100,
             get_platform_name=lambda: "matrix",
             get_platform_id=lambda: "matrix-main",
             get_group_id=lambda: "!room:example.org",
             get_session_id=lambda: "!room:example.org",
         )
+        matched = {
+            "event_id": "$matched:example.org",
+            "type": "m.room.message",
+            "origin_server_ts": 1_700_000_050_000,
+            "content": {"body": "hello world", "msgtype": "m.text"},
+        }
+        client = types.SimpleNamespace(
+            room_messages=mock.AsyncMock(return_value={"chunk": [matched]})
+        )
+        resolve_reaction_key = mock.AsyncMock(return_value="👍")
         send_reaction = mock.AsyncMock(
             return_value={"event_id": "$reaction:example.org"}
         )
 
-        with mock.patch.object(main_module.MatrixUtils, "send_reaction", send_reaction):
-            result = await plugin.matrix_react_to_event(event, " 👍 ")
+        with (
+            mock.patch.object(
+                main_module.MatrixUtils, "get_matrix_client", return_value=client
+            ),
+            mock.patch.object(
+                main_module.MatrixUtils,
+                "resolve_reaction_key",
+                resolve_reaction_key,
+            ),
+            mock.patch.object(main_module.MatrixUtils, "send_reaction", send_reaction),
+            mock.patch.object(
+                helpers,
+                "find_room_event_for_reaction",
+                mock.AsyncMock(return_value=matched),
+            ),
+        ):
+            result = await plugin.matrix_react_to_event(
+                event,
+                message_content="hello",
+                reaction=":thumbsup:",
+            )
 
         self.assertIn("Sent Matrix reaction", result)
+        self.assertIn("$matched:example.org", result)
         self.assertIn("$reaction:example.org", result)
+        resolve_reaction_key.assert_awaited_once()
         send_reaction.assert_awaited_once_with(
             plugin.context,
             "!room:example.org",
-            "$event:example.org",
+            "$matched:example.org",
             "👍",
             platform_id="matrix-main",
             fallback_to_first=False,
+            resolve_key=False,
+            event=event,
         )
+
+    async def test_select_nearest_matching_event_prefers_exact_then_nearest(self):
+        helpers = load_module("utils.reaction_helpers")
+        events = [
+            {
+                "event_id": "$contain-far",
+                "type": "m.room.message",
+                "origin_server_ts": 1_000,
+                "content": {"body": "hello there"},
+            },
+            {
+                "event_id": "$exact-near",
+                "type": "m.room.message",
+                "origin_server_ts": 5_000,
+                "content": {"body": "hello"},
+            },
+            {
+                "event_id": "$exact-far",
+                "type": "m.room.message",
+                "origin_server_ts": 9_000,
+                "content": {"body": "hello"},
+            },
+        ]
+        matched = helpers.select_nearest_matching_event(
+            events, "hello", anchor_time_ms=4_800
+        )
+        self.assertIsNotNone(matched)
+        self.assertEqual(matched["event_id"], "$exact-near")
+
+        contain_only = helpers.select_nearest_matching_event(
+            [
+                {
+                    "event_id": "$contain",
+                    "type": "m.room.message",
+                    "origin_server_ts": 3_000,
+                    "content": {"body": "say hello please"},
+                }
+            ],
+            "hello",
+            anchor_time_ms=3_000,
+        )
+        self.assertEqual(contain_only["event_id"], "$contain")
+
+    async def test_reaction_key_resolver_injection_and_mxc_passthrough(self):
+        helpers = load_module("utils.reaction_helpers")
+        helpers.clear_reaction_key_resolvers()
+
+        async def fake_resolver(reaction, **_kwargs):
+            if reaction.strip(":") == "thinking":
+                return "mxc://example.org/sticker"
+            return None
+
+        self.assertTrue(helpers.register_reaction_key_resolver(fake_resolver))
+        try:
+            resolved = await helpers.resolve_reaction_key(":thinking:")
+            self.assertEqual(resolved, "mxc://example.org/sticker")
+            passthrough = await helpers.resolve_reaction_key(
+                "mxc://example.org/already"
+            )
+            self.assertEqual(passthrough, "mxc://example.org/already")
+        finally:
+            helpers.clear_reaction_key_resolvers()
 
 
 class MatrixTextMentionCompatTests(unittest.TestCase):
