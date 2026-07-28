@@ -2566,7 +2566,11 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
             handle_msg=handle_msg,
             _matrix_config=types.SimpleNamespace(user_id="@bot:example.org"),
         )
-        room = types.SimpleNamespace(room_id="!room:example.org", members={})
+        room = types.SimpleNamespace(
+            room_id="!room:example.org",
+            members={},
+            live_messaging_enabled=False,
+        )
 
         draft_event = types.SimpleNamespace(
             sender="@alice:example.org",
@@ -2611,6 +2615,10 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         )
         receiver.convert_message.assert_awaited_once()
         handle_msg.assert_awaited_once()
+        self.assertIs(
+            handle_msg.await_args.kwargs["room_live_messaging_enabled"],
+            False,
+        )
 
     async def test_message_callback_does_not_auto_dispatch_notice_messages(self):
         adapter_message = load_module("adapter_message")
@@ -3863,8 +3871,137 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(client.calls[0][0], "send")
         self.assertEqual(client.calls[0][1]["content"]["msgtype"], "m.notice")
+        self.assertEqual(
+            client.calls[0][1]["content"]["org.matrix.msc4357.live"],
+            {},
+        )
+        self.assertEqual(
+            client.calls[0][1]["content"]["format"],
+            "org.matrix.custom.html",
+        )
         self.assertEqual(client.calls[1][0], "edit")
         self.assertEqual(client.calls[1][1]["msg_type"], "m.notice")
+        self.assertNotIn(
+            "org.matrix.msc4357.live",
+            client.calls[1][1]["new_content"],
+        )
+        self.assertIn("formatted_body", client.calls[1][1]["new_content"])
+
+    async def test_room_state_can_disable_live_streaming(self):
+        matrix_event = self._load_matrix_event_for_test()
+        components = sys.modules["astrbot.api.message_components"]
+        message_chain = sys.modules["astrbot.api.event"].MessageChain
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
+
+            async def send_message(self, **kwargs):
+                self.calls.append(kwargs)
+                return {"event_id": "$unexpected:example.org"}
+
+        async def chunks():
+            yield message_chain([components.Plain("complete response")])
+
+        client = FakeClient()
+        event = matrix_event.MatrixPlatformEvent(
+            message_str="input",
+            message_obj=types.SimpleNamespace(message_id="$input:example.org"),
+            platform_meta=sys.modules["astrbot.api.platform"].PlatformMetadata(
+                name="matrix",
+                id="matrix",
+            ),
+            session_id="!room:example.org",
+            client=client,
+            enable_live_messages=True,
+            room_live_messaging_enabled=False,
+        )
+        event.send = mock.AsyncMock()
+
+        await event.send_streaming(chunks())
+
+        self.assertFalse(event.enable_live_messages)
+        self.assertFalse(event.get_extra("enable_streaming"))
+        event.send.assert_awaited_once()
+        self.assertEqual(
+            event.send.await_args.args[0].get_plain_text(),
+            "complete response",
+        )
+        self.assertEqual(client.calls, [])
+
+    async def test_live_stream_coalesces_updates_and_preserves_thread_relation(self):
+        matrix_event = self._load_matrix_event_for_test()
+        components = sys.modules["astrbot.api.message_components"]
+        message_chain = sys.modules["astrbot.api.event"].MessageChain
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
+
+            async def send_message(self, **kwargs):
+                self.calls.append(("send", kwargs))
+                return {"event_id": "$live:example.org"}
+
+            async def edit_message(self, **kwargs):
+                self.calls.append(("edit", kwargs))
+                return {"event_id": "$edit:example.org"}
+
+        async def chunks():
+            yield message_chain([components.Plain("a")])
+            yield message_chain([components.Plain("b")])
+            yield message_chain([components.Plain("c")])
+
+        raw_message = types.SimpleNamespace(
+            event_id="$input:example.org",
+            content={
+                "m.relates_to": {
+                    "rel_type": "m.thread",
+                    "event_id": "$thread-root:example.org",
+                }
+            },
+        )
+        client = FakeClient()
+        event = matrix_event.MatrixPlatformEvent(
+            message_str="input",
+            message_obj=types.SimpleNamespace(
+                message_id="$input:example.org",
+                raw_message=raw_message,
+            ),
+            platform_meta=sys.modules["astrbot.api.platform"].PlatformMetadata(
+                name="matrix",
+                id="matrix",
+            ),
+            session_id="!room:example.org",
+            client=client,
+            enable_threading=True,
+            enable_live_messages=True,
+            live_message_update_interval_ms=2500,
+        )
+
+        with mock.patch.object(
+            matrix_event.time,
+            "monotonic",
+            side_effect=[0.0, 2.0, 2.6, 2.6, 2.7],
+        ):
+            await event.send_streaming(chunks())
+
+        self.assertEqual([kind for kind, _ in client.calls], ["send", "edit", "edit"])
+        initial = client.calls[0][1]["content"]
+        self.assertEqual(
+            initial["m.relates_to"],
+            {
+                "rel_type": "m.thread",
+                "event_id": "$thread-root:example.org",
+                "is_falling_back": True,
+                "m.in_reply_to": {"event_id": "$input:example.org"},
+            },
+        )
+        self.assertEqual(client.calls[1][1]["new_content"]["body"], "abc")
+        self.assertEqual(client.calls[2][1]["new_content"]["body"], "abc")
+        self.assertNotIn(
+            "org.matrix.msc4357.live",
+            client.calls[2][1]["new_content"],
+        )
 
     async def _send_two_segments(
         self,
@@ -4096,6 +4233,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         plaintext = e2ee_manager.plaintext[2]
         self.assertEqual(plaintext["msgtype"], "m.notice")
         self.assertEqual(plaintext["m.new_content"]["msgtype"], "m.notice")
+        self.assertNotIn("m.relates_to", plaintext)
         self.assertEqual(client.calls[0][0], "send_message")
         sent = client.calls[0][1]
         self.assertEqual(sent["msg_type"], "m.room.encrypted")
@@ -4103,6 +4241,51 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             sent["content"]["m.relates_to"],
             {"rel_type": "m.replace", "event_id": "$root:example.org"},
         )
+
+    async def test_streaming_encrypted_initial_keeps_thread_relation_in_envelope(self):
+        streaming_crypto = load_module("streaming_crypto")
+
+        class FakeClient:
+            async def send_message(self, **kwargs):
+                self.sent = kwargs
+                return {"event_id": "$live:example.org"}
+
+        class FakeE2EEManager:
+            async def encrypt_message(self, room_id, msg_type, content):
+                self.plaintext = (room_id, msg_type, content)
+                return {
+                    "algorithm": "m.megolm.v1.aes-sha2",
+                    "ciphertext": "encrypted-live-message",
+                }
+
+        relation = {
+            "rel_type": "m.thread",
+            "event_id": "$root:example.org",
+            "is_falling_back": True,
+            "m.in_reply_to": {"event_id": "$input:example.org"},
+        }
+        client = FakeClient()
+        e2ee_manager = FakeE2EEManager()
+        response = await streaming_crypto.send_message_encrypted(
+            client=client,
+            e2ee_manager=e2ee_manager,
+            room_id="!room:example.org",
+            msg_type="m.room.message",
+            content={
+                "msgtype": "m.text",
+                "body": "hello",
+                "org.matrix.msc4357.live": {},
+                "m.relates_to": relation,
+            },
+        )
+
+        self.assertEqual(response, {"event_id": "$live:example.org"})
+        self.assertNotIn("m.relates_to", e2ee_manager.plaintext[2])
+        self.assertEqual(
+            e2ee_manager.plaintext[2]["org.matrix.msc4357.live"],
+            {},
+        )
+        self.assertEqual(client.sent["content"]["m.relates_to"], relation)
 
     async def test_streaming_plain_notice_edit_preserves_notice_msgtype(self):
         streaming_crypto = load_module("streaming_crypto")

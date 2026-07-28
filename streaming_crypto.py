@@ -13,6 +13,14 @@ def _copy_cleartext_relates_to(encrypted: dict, content: dict) -> dict:
     return encrypted
 
 
+def _encrypted_payload_without_relation(content: dict) -> dict:
+    """Keep Matrix relations in the cleartext encrypted-event envelope only."""
+
+    payload = dict(content)
+    payload.pop("m.relates_to", None)
+    return payload
+
+
 def check_encrypted_room(e2ee_manager, room_id: str) -> bool:
     """检查房间是否启用加密"""
     if not e2ee_manager:
@@ -36,7 +44,11 @@ async def send_message_encrypted(
 ) -> dict:
     """加密并发送消息"""
     try:
-        encrypted = await e2ee_manager.encrypt_message(room_id, msg_type, content)
+        encrypted = await e2ee_manager.encrypt_message(
+            room_id,
+            msg_type,
+            _encrypted_payload_without_relation(content),
+        )
         if encrypted:
             _copy_cleartext_relates_to(encrypted, content)
             return await client.send_message(
@@ -99,7 +111,9 @@ async def edit_message_encrypted(
             )
 
         encrypted = await e2ee_manager.encrypt_message(
-            room_id, "m.room.message", edit_content
+            room_id,
+            "m.room.message",
+            _encrypted_payload_without_relation(edit_content),
         )
         if encrypted:
             _copy_cleartext_relates_to(encrypted, edit_content)

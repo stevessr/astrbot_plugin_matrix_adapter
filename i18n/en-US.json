@@ -39,6 +39,10 @@
     "description": "Enable Live Messages",
     "hint": "Whether to enable Live Messages (experimental feature), default: False"
   },
+  "matrix_live_message_update_interval_ms": {
+    "description": "Live Messages Update Interval",
+    "hint": "Coalesced live edit interval in milliseconds, default: 2000"
+  },
   "matrix_use_notice": {
     "description": "Use Notice Type",
     "hint": "When enabled, the bot will send messages as m.notice instead of m.text. m.notice is typically used for bot messages and won't trigger notification sounds"

@@ -228,11 +228,24 @@ class MatrixAdapterMessageMixin:
                 return
 
             if force_message_type != "stalk":
-                await self.handle_msg(abm, event_id=getattr(event, "event_id", None))
+                await self.handle_msg(
+                    abm,
+                    event_id=getattr(event, "event_id", None),
+                    room_live_messaging_enabled=getattr(
+                        room,
+                        "live_messaging_enabled",
+                        None,
+                    ),
+                )
         except Exception as e:
             logger.error(f"消息回调时出错：{e}")
 
-    async def handle_msg(self, message, event_id: str | None = None):
+    async def handle_msg(
+        self,
+        message,
+        event_id: str | None = None,
+        room_live_messaging_enabled: bool | None = None,
+    ):
         try:
             from .matrix_event import MatrixPlatformEvent
 
@@ -244,6 +257,12 @@ class MatrixAdapterMessageMixin:
                 client=self.client,
                 enable_threading=self._matrix_config.enable_threading,
                 enable_live_messages=self._matrix_config.enable_live_messages,
+                room_live_messaging_enabled=room_live_messaging_enabled,
+                live_message_update_interval_ms=getattr(
+                    self._matrix_config,
+                    "live_message_update_interval_ms",
+                    2000,
+                ),
                 e2ee_manager=self.e2ee_manager,
                 use_notice=self._matrix_config.use_notice,
             )

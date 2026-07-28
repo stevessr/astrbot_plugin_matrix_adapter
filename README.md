@@ -63,6 +63,7 @@ python -m pip install -r data/plugins/astrbot_plugin_matrix_adapter/requirements
 | `matrix_sync_timeout` | int | `30000` | 同步超时时间（毫秒） |
 | `matrix_enable_threading` | bool | `false` | 是否使用消息线程回复 |
 | `matrix_enable_live_messages` | bool | `false` | 是否启用 MSC4357 Live Messages（流式编辑） |
+| `matrix_live_message_update_interval_ms` | int | `2000` | Live Messages 合并更新间隔（毫秒，限制为 1000-10000） |
 | `matrix_use_notice` | bool | `false` | 是否使用 m.notice 类型发送消息 |
 
 ### Live 通话事件配置
@@ -382,10 +383,18 @@ await adapter.sender.send_custom_event(
 
 如果你希望 Bot 的流式回复通过 Matrix 的 `m.replace` 编辑逐步更新到同一条消息，
 可以在 Matrix 适配器配置中启用 `matrix_enable_live_messages`。
+该功能实现的是尚未进入稳定 Matrix 规范的
+[MSC4357](https://github.com/matrix-org/matrix-spec-proposals/pull/4357)，因此默认保持关闭。
 
 启用后，适配器会在发送的初始消息里加入
 `org.matrix.msc4357.live` 标记，并在后续更新中持续编辑同一条消息。
-最终完成时会移除该标记，兼容不支持该提案的客户端仍会看到正常的编辑消息。
+更新默认每 2 秒合并发送一次，可通过
+`matrix_live_message_update_interval_ms` 调整。最终完成时会移除该标记，
+兼容不支持该提案的客户端仍会看到正常的编辑消息。
+
+适配器会遵循房间状态 `org.matrix.msc4357.live_messaging`：当其内容为
+`{"enabled": false}` 时，该房间自动退化为一次性普通回复；状态缺失时不额外禁用。
+开启消息串时，初始 Live Message 会保留消息串关系，后续 `m.replace` 仍编辑该初始事件。
 
 ### 删除消息
 

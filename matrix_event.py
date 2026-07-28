@@ -1,3 +1,4 @@
+import html
 import time
 
 from astrbot.api import logger
@@ -14,6 +15,7 @@ from .streaming_crypto import (
     send_message_encrypted,
     send_message_plain,
 )
+from .utils.markdown_utils import markdown_to_html
 
 
 class MatrixPlatformEvent(AstrMessageEvent):
@@ -32,13 +34,29 @@ class MatrixPlatformEvent(AstrMessageEvent):
         client,
         enable_threading: bool = False,
         enable_live_messages: bool = False,
+        room_live_messaging_enabled: bool | None = None,
+        live_message_update_interval_ms: int = 2000,
         e2ee_manager=None,
         use_notice: bool = False,
     ):
         super().__init__(message_str, message_obj, platform_meta, session_id)
         self.client = client  # MatrixHTTPClient instance
         self.enable_threading = enable_threading  # 试验性：是否默认开启嘟文串模式
-        self.enable_live_messages = enable_live_messages
+        self.room_live_messaging_enabled = room_live_messaging_enabled
+        # MSC4357 says an explicit room state value of ``enabled: false``
+        # disables live mode. An absent state event defaults to enabled, while
+        # the adapter-level switch remains an explicit opt-in.
+        self.enable_live_messages = bool(
+            enable_live_messages and room_live_messaging_enabled is not False
+        )
+        try:
+            update_interval_ms = int(live_message_update_interval_ms)
+        except (TypeError, ValueError):
+            update_interval_ms = 2000
+        self.live_message_update_interval_ms = min(
+            10000,
+            max(1000, update_interval_ms),
+        )
         self.e2ee_manager = e2ee_manager
         self.use_notice = use_notice  # 使用 m.notice 而不是 m.text
 
@@ -50,7 +68,48 @@ class MatrixPlatformEvent(AstrMessageEvent):
         self._response_thread_context: dict | None = None
 
         # 默认关闭；仅在显式启用 Live Messages 时才允许流式输出
-        self.set_extra("enable_streaming", bool(enable_live_messages))
+        self.set_extra("enable_streaming", self.enable_live_messages)
+
+    def _build_stream_thread_relation(self) -> dict | None:
+        """Build the initial message relation for a streamed thread reply.
+
+        Replacement events point at the initial live event with ``m.replace``;
+        Matrix keeps the initial event's thread relation when applying edits.
+        """
+
+        if not self.enable_threading:
+            return None
+
+        source_event_id = getattr(self.message_obj, "message_id", None)
+        raw_message = getattr(self.message_obj, "raw_message", None)
+        if not source_event_id:
+            if isinstance(raw_message, dict):
+                source_event_id = raw_message.get("event_id")
+            else:
+                source_event_id = getattr(raw_message, "event_id", None)
+        if not source_event_id:
+            return None
+
+        if isinstance(raw_message, dict):
+            source_content = raw_message.get("content", {})
+        else:
+            source_content = getattr(raw_message, "content", {})
+        if not isinstance(source_content, dict):
+            source_content = {}
+        source_relation = source_content.get("m.relates_to", {})
+        if not isinstance(source_relation, dict):
+            source_relation = {}
+
+        thread_root = str(source_event_id)
+        if source_relation.get("rel_type") == "m.thread":
+            thread_root = str(source_relation.get("event_id") or source_event_id)
+
+        return {
+            "rel_type": "m.thread",
+            "event_id": thread_root,
+            "is_falling_back": True,
+            "m.in_reply_to": {"event_id": str(source_event_id)},
+        }
 
     @staticmethod
     async def send_with_client(
@@ -94,7 +153,8 @@ class MatrixPlatformEvent(AstrMessageEvent):
         current_event_id: str | None = None
         last_sent_text = ""
         last_flush_at = 0.0
-        flush_interval = 1.0
+        flush_interval = self.live_message_update_interval_ms / 1000
+        initial_relation = self._build_stream_thread_relation()
         used_self_send = False
         used_live_send = False
         is_encrypted_room = False
@@ -118,8 +178,18 @@ class MatrixPlatformEvent(AstrMessageEvent):
                 "msgtype": msg_type,
                 "body": text,
             }
+            try:
+                formatted_body = markdown_to_html(text)
+            except Exception as e:
+                logger.warning(f"Failed to render live message markdown: {e}")
+                formatted_body = html.escape(text).replace("\n", "<br>")
+            if formatted_body:
+                content["format"] = "org.matrix.custom.html"
+                content["formatted_body"] = formatted_body
             if not final:
                 content[MSC4357_LIVE_MESSAGE_MARKER] = {}
+            if current_event_id is None and initial_relation:
+                content["m.relates_to"] = dict(initial_relation)
 
             tracker_metadata = {
                 "proposal": "msc4357-live-messages",
@@ -148,7 +218,12 @@ class MatrixPlatformEvent(AstrMessageEvent):
                             content,
                             tracker_metadata=tracker_metadata,
                         )
-                    current_event_id = (response or {}).get("event_id")
+                    event_id = (response or {}).get("event_id")
+                    if not event_id:
+                        raise RuntimeError(
+                            "Matrix live message initial response omitted event_id"
+                        )
+                    current_event_id = str(event_id)
                 else:
                     if is_encrypted_room:
                         await edit_message_encrypted(

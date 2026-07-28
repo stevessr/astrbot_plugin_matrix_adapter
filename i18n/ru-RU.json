@@ -39,6 +39,10 @@
     "description": "Включить Live Messages",
     "hint": "Включить Live Messages (экспериментальная функция), по умолчанию: False"
   },
+  "matrix_live_message_update_interval_ms": {
+    "description": "Интервал обновления Live Messages",
+    "hint": "Интервал пакетных изменений в миллисекундах, по умолчанию: 2000"
+  },
   "matrix_use_notice": {
     "description": "Использовать тип Notice",
     "hint": "Если включено, бот будет отправлять сообщения как m.notice вместо m.text. m.notice обычно используется для сообщений ботов и не вызывает звуковых уведомлений"

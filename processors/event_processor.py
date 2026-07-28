@@ -226,10 +226,10 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 enabled = content.get("enabled")
                 if isinstance(enabled, bool):
                     room.live_messaging_enabled = enabled
-                elif enabled is None:
-                    room.live_messaging_enabled = None
                 else:
-                    room.live_messaging_enabled = bool(enabled)
+                    # MSC4357 defines ``enabled`` as a JSON boolean. Invalid or
+                    # absent values behave like no usable room-level override.
+                    room.live_messaging_enabled = None
             case _:
                 return
 

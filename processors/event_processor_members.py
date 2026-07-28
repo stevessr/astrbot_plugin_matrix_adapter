@@ -80,8 +80,8 @@ class MatrixEventProcessorMembers:
                 enabled = live_state.get("enabled")
                 if isinstance(enabled, bool):
                     room.live_messaging_enabled = enabled
-                elif enabled is not None:
-                    room.live_messaging_enabled = bool(enabled)
+                else:
+                    room.live_messaging_enabled = None
                 break
 
         logger.debug(

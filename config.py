@@ -111,6 +111,15 @@ class MatrixConfig:
             self.config.get("matrix_enable_live_messages"),
             False,
         )
+        # MSC4357 recommends coalescing updates at roughly a 2-3 second cadence
+        # rather than emitting one replacement per token/keystroke. Keep the
+        # interval configurable while enforcing a conservative lower bound.
+        self.live_message_update_interval_ms = self._parse_int(
+            self.config.get("matrix_live_message_update_interval_ms"),
+            2000,
+            minimum=1000,
+            maximum=10000,
+        )
 
         # 消息类型配置
         # 当启用时，机器人使用 m.notice 而不是 m.text 发送消息

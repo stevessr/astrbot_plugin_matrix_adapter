@@ -45,8 +45,7 @@ def _build_live_message_metadata(
 ) -> dict[str, Any] | None:
     if not isinstance(content, dict):
         return None
-    is_live = _content_has_live_marker(content) or _content_is_edit(content)
-    if not is_live:
+    if not _content_has_live_marker(content):
         return None
     metadata: dict[str, Any] = {
         "proposal": "msc4357-live-messages",
@@ -270,15 +269,12 @@ class MessageMixin:
             },
             "m.relates_to": {"rel_type": "m.replace", "event_id": original_event_id},
         }
-        edit_metadata = {"proposal": "msc4357-live-messages", "live_message": True, "phase": "edit"}
-        if tracker_metadata:
-            edit_metadata.update(tracker_metadata)
         return await self.send_room_event(
             room_id=room_id,
             event_type="m.room.message",
             content=content,
             txn_id=txn_id,
-            tracker_metadata=edit_metadata,
+            tracker_metadata=tracker_metadata,
         )
 
     async def send_reaction(

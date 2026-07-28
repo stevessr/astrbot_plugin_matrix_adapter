@@ -60,6 +60,12 @@
     "type": "bool",
     "hint": "启用 MSC4357 Live Messages（通过 m.replace 持续编辑同一条消息实现流式输出），默认 False"
   },
+  "matrix_live_message_update_interval_ms": {
+    "description": "Live Messages 更新间隔",
+    "type": "int",
+    "hint": "MSC4357 流式编辑合并发送间隔（毫秒），默认 2000，取值范围 1000-10000",
+    "condition": {"matrix_enable_live_messages": true}
+  },
   "matrix_use_notice": {
     "description": "使用通知类型消息",
     "type": "bool",
