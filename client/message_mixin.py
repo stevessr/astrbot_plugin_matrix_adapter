@@ -239,7 +239,7 @@ class MessageMixin:
         room_id: str,
         original_event_id: str,
         new_content: dict[str, Any],
-        msg_type: str = "m.text",
+        msg_type: str | None = None,
         tracker_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
@@ -249,18 +249,20 @@ class MessageMixin:
             room_id: Room ID
             original_event_id: Event ID of the original message
             new_content: New message content (should include 'body')
-            msg_type: Message type (default: m.text)
+            msg_type: Message type. Defaults to ``new_content["msgtype"]`` and
+                finally ``m.text`` when the content does not declare one.
 
         Returns:
             Send response with event_id
         """
         txn_id = f"{int(time.time() * 1000)}_{id(new_content)}"
+        resolved_msg_type = msg_type or new_content.get("msgtype") or "m.text"
         # Construct edit content according to Matrix spec
         content = {
-            "msgtype": msg_type,
+            "msgtype": resolved_msg_type,
             "body": f"* {new_content.get('body', '')}",  # Fallback for clients that don't support edits
             "m.new_content": {
-                "msgtype": msg_type,
+                "msgtype": resolved_msg_type,
                 "body": new_content.get("body", ""),
                 **{
                     k: v for k, v in new_content.items() if k not in ["body", "msgtype"]

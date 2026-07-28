@@ -1,6 +1,11 @@
 from astrbot.api import logger
 
 
+def resolve_text_msgtype(use_notice: bool = False) -> str:
+    """Resolve the Matrix ``msgtype`` for textual adapter output."""
+    return "m.notice" if use_notice else "m.text"
+
+
 def _copy_cleartext_relates_to(encrypted: dict, content: dict) -> dict:
     """Expose relation metadata on encrypted events for aggregation."""
     relates_to = content.get("m.relates_to")

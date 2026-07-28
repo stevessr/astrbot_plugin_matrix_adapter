@@ -3,7 +3,7 @@ from urllib.parse import quote
 
 from astrbot.api.message_components import At
 
-from .common import send_content
+from .common import resolve_text_msgtype, send_content
 
 
 async def send_at(
@@ -16,11 +16,13 @@ async def send_at(
     is_encrypted_room: bool,
     e2ee_manager,
     thread_is_falling_back: bool | None = None,
+    use_notice: bool = False,
 ) -> None:
+    msgtype = resolve_text_msgtype(use_notice)
     user_id = str(segment.qq)
     if user_id == "all":
         content = {
-            "msgtype": "m.text",
+            "msgtype": msgtype,
             "body": "@room",
             "m.mentions": {"room": True},
         }
@@ -37,7 +39,7 @@ async def send_at(
             f"{html.escape(display)}</a>"
         )
         content = {
-            "msgtype": "m.text",
+            "msgtype": msgtype,
             "body": display,
             "format": "org.matrix.custom.html",
             "formatted_body": formatted_body,

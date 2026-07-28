@@ -3,7 +3,7 @@ from urllib.parse import quote
 
 from astrbot.api.message_components import Contact
 
-from .common import send_content
+from .common import resolve_text_msgtype, send_content
 
 
 async def send_contact(
@@ -16,17 +16,19 @@ async def send_contact(
     is_encrypted_room: bool,
     e2ee_manager,
     thread_is_falling_back: bool | None = None,
+    use_notice: bool = False,
 ) -> None:
+    msgtype = resolve_text_msgtype(use_notice)
     contact_type = getattr(segment, "_type", "") or ""
     contact_id = getattr(segment, "id", "") or ""
     body = f"[contact] type={contact_type} id={contact_id}".strip()
-    content_data = {"msgtype": "m.text", "body": body}
+    content_data = {"msgtype": msgtype, "body": body}
 
     if isinstance(contact_id, str) and contact_id.startswith("@") and ":" in contact_id:
         link = f"https://matrix.to/#/{quote(contact_id, safe='')}"
         display = contact_id
         content_data = {
-            "msgtype": "m.text",
+            "msgtype": msgtype,
             "body": display,
             "format": "org.matrix.custom.html",
             "formatted_body": (

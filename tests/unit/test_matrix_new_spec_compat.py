@@ -2340,6 +2340,103 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
+    async def test_matrix_sender_uses_configured_notice_by_default(self):
+        sender_module = load_module("sender.sender")
+        message_chain = sys.modules["astrbot.api.event"].MessageChain()
+        captured = []
+
+        async def fake_send_with_client(*args, **kwargs):
+            captured.append(kwargs)
+            return 1
+
+        matrix_event_stub = types.ModuleType(f"{PACKAGE_NAME}.matrix_event")
+        matrix_event_stub.MatrixPlatformEvent = types.SimpleNamespace(
+            send_with_client=fake_send_with_client
+        )
+
+        with mock.patch.dict(
+            sys.modules,
+            {f"{PACKAGE_NAME}.matrix_event": matrix_event_stub},
+        ):
+            sender = sender_module.MatrixSender(object(), use_notice=True)
+            await sender.send_message("!room:example.org", message_chain)
+            await sender.send_message(
+                "!room:example.org",
+                message_chain,
+                use_notice=False,
+            )
+
+        self.assertTrue(captured[0]["use_notice"])
+        self.assertFalse(captured[1]["use_notice"])
+
+    async def test_text_fallback_handlers_follow_notice_mode(self):
+        message_components = sys.modules["astrbot.api.message_components"]
+        for component_name in ("Dice", "RPS", "Music"):
+            if not hasattr(message_components, component_name):
+                setattr(message_components, component_name, type(component_name, (), {}))
+
+        cases = [
+            (
+                load_module("sender.handlers.contact").send_contact,
+                types.SimpleNamespace(_type="matrix", id="@alice:example.org"),
+            ),
+            (load_module("sender.handlers.dice").send_dice, types.SimpleNamespace()),
+            (load_module("sender.handlers.rps").send_rps, types.SimpleNamespace()),
+            (
+                load_module("sender.handlers.music").send_music,
+                types.SimpleNamespace(title="Song", url="", audio="", image=""),
+            ),
+        ]
+
+        for handler, segment in cases:
+            with self.subTest(handler=handler.__name__):
+                class FakeClient:
+                    async def send_message(self, **kwargs):
+                        self.content = kwargs["content"]
+                        return {"event_id": "$ok"}
+
+                client = FakeClient()
+                await handler(
+                    client,
+                    segment,
+                    "!room:example.org",
+                    reply_to=None,
+                    thread_root=None,
+                    use_thread=False,
+                    is_encrypted_room=False,
+                    e2ee_manager=None,
+                    use_notice=True,
+                )
+                self.assertEqual(client.content["msgtype"], "m.notice")
+
+    async def test_per_message_profile_follows_notice_mode_by_default(self):
+        sender_module = load_module("sender.sender")
+
+        class FakeClient:
+            async def send_message(self, **kwargs):
+                self.calls.append(kwargs)
+                return {"event_id": "$profile"}
+
+            def __init__(self):
+                self.calls = []
+
+        client = FakeClient()
+        sender = sender_module.MatrixSender(client, use_notice=True)
+        await sender.send_with_per_message_profile(
+            "!room:example.org",
+            "hello",
+            displayname="Bridge",
+        )
+        await sender.send_with_per_message_profile(
+            "!room:example.org",
+            "hello",
+            displayname="Bridge",
+            msgtype="m.text",
+        )
+
+        self.assertEqual(client.calls[0]["content"]["msgtype"], "m.notice")
+        self.assertEqual(client.calls[1]["content"]["msgtype"], "m.text")
+
     async def test_at_sender_escapes_formatted_body_and_encodes_matrix_to_link(self):
         at_handler = load_module("sender.handlers.at")
 
@@ -2364,9 +2461,11 @@ class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
             use_thread=False,
             is_encrypted_room=False,
             e2ee_manager=None,
+            use_notice=True,
         )
 
         content = client.calls[0][2]
+        self.assertEqual(content["msgtype"], "m.notice")
         self.assertEqual(content["body"], "@Alice <Admin>")
         self.assertIn("https://matrix.to/#/%40alice%3Aexample.org", content["formatted_body"])
         self.assertIn('data-mxid="@alice:example.org"', content["formatted_body"])
@@ -2399,9 +2498,11 @@ class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
             use_thread=False,
             is_encrypted_room=False,
             e2ee_manager=None,
+            use_notice=True,
         )
 
         formatted = client.calls[0][2]["formatted_body"]
+        self.assertEqual(client.calls[0][2]["msgtype"], "m.notice")
         self.assertIn("Docs &lt;Guide&gt;", formatted)
         self.assertIn("read &lt;now&gt;", formatted)
         self.assertIn("thumb &lt;1&gt;", formatted)
@@ -3718,6 +3819,53 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         base_event.send = base_send
         return module
 
+    async def test_live_notice_stream_keeps_notice_for_initial_and_edit(self):
+        matrix_event = self._load_matrix_event_for_test()
+        components = sys.modules["astrbot.api.message_components"]
+        message_chain = sys.modules["astrbot.api.event"].MessageChain
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
+
+            async def send_message(self, **kwargs):
+                self.calls.append(("send", kwargs))
+                return {"event_id": "$live:example.org"}
+
+            async def edit_message(self, **kwargs):
+                self.calls.append(("edit", kwargs))
+                return {"event_id": "$edit:example.org"}
+
+        async def chunks():
+            yield message_chain([components.Plain("hello")])
+
+        metric_stub = types.ModuleType("astrbot.core.utils.metrics")
+        metric_stub.Metric = types.SimpleNamespace(upload=mock.AsyncMock())
+        client = FakeClient()
+        event = matrix_event.MatrixPlatformEvent(
+            message_str="input",
+            message_obj=types.SimpleNamespace(message_id="$input:example.org"),
+            platform_meta=sys.modules["astrbot.api.platform"].PlatformMetadata(
+                name="matrix",
+                id="matrix",
+            ),
+            session_id="!room:example.org",
+            client=client,
+            enable_live_messages=True,
+            use_notice=True,
+        )
+
+        with mock.patch.dict(
+            sys.modules,
+            {"astrbot.core.utils.metrics": metric_stub},
+        ):
+            await event.send_streaming(chunks())
+
+        self.assertEqual(client.calls[0][0], "send")
+        self.assertEqual(client.calls[0][1]["content"]["msgtype"], "m.notice")
+        self.assertEqual(client.calls[1][0], "edit")
+        self.assertEqual(client.calls[1][1]["msg_type"], "m.notice")
+
     async def _send_two_segments(
         self,
         *,
@@ -3929,26 +4077,71 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
 
         class FakeE2EEManager:
             async def encrypt_message(self, room_id, msg_type, content):
+                self.plaintext = (room_id, msg_type, content)
                 return {
                     "algorithm": "m.megolm.v1.aes-sha2",
                     "ciphertext": "encrypted-edit",
                 }
 
         client = FakeClient()
+        e2ee_manager = FakeE2EEManager()
         await streaming_crypto.edit_message_encrypted(
             client=client,
-            e2ee_manager=FakeE2EEManager(),
+            e2ee_manager=e2ee_manager,
             room_id="!room:example.org",
             original_event_id="$root:example.org",
-            new_content={"msgtype": "m.text", "body": "final"},
+            new_content={"msgtype": "m.notice", "body": "final"},
         )
 
+        plaintext = e2ee_manager.plaintext[2]
+        self.assertEqual(plaintext["msgtype"], "m.notice")
+        self.assertEqual(plaintext["m.new_content"]["msgtype"], "m.notice")
         self.assertEqual(client.calls[0][0], "send_message")
         sent = client.calls[0][1]
         self.assertEqual(sent["msg_type"], "m.room.encrypted")
         self.assertEqual(
             sent["content"]["m.relates_to"],
             {"rel_type": "m.replace", "event_id": "$root:example.org"},
+        )
+
+    async def test_streaming_plain_notice_edit_preserves_notice_msgtype(self):
+        streaming_crypto = load_module("streaming_crypto")
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = []
+
+            async def edit_message(self, **kwargs):
+                self.calls.append(kwargs)
+                return kwargs
+
+        client = FakeClient()
+        await streaming_crypto.edit_message_plain(
+            client=client,
+            room_id="!room:example.org",
+            original_event_id="$live:example.org",
+            new_content={"msgtype": "m.notice", "body": "final"},
+        )
+
+        self.assertEqual(client.calls[0]["msg_type"], "m.notice")
+
+    async def test_client_edit_message_infers_notice_from_new_content(self):
+        message_mixin = load_module("client.message_mixin")
+
+        class FakeClient(message_mixin.MessageMixin):
+            async def send_room_event(self, **kwargs):
+                return kwargs
+
+        response = await FakeClient().edit_message(
+            room_id="!room:example.org",
+            original_event_id="$live:example.org",
+            new_content={"msgtype": "m.notice", "body": "final"},
+        )
+
+        self.assertEqual(response["content"]["msgtype"], "m.notice")
+        self.assertEqual(
+            response["content"]["m.new_content"]["msgtype"],
+            "m.notice",
         )
 
     async def test_send_content_marks_thread_messages_as_fallback(self):
@@ -4069,6 +4262,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             thread_is_falling_back=True,
         )
 
+        self.assertEqual(client.content["msgtype"], "m.notice")
         self.assertNotIn("m.mentions", client.content)
         self.assertEqual(
             client.content["m.relates_to"],

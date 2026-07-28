@@ -2,7 +2,7 @@ import html
 
 from astrbot.api.message_components import Share
 
-from .common import send_content
+from .common import resolve_text_msgtype, send_content
 
 
 async def send_share(
@@ -15,7 +15,9 @@ async def send_share(
     is_encrypted_room: bool,
     e2ee_manager,
     thread_is_falling_back: bool | None = None,
+    use_notice: bool = False,
 ) -> None:
+    msgtype = resolve_text_msgtype(use_notice)
     title = segment.title or ""
     content = segment.content or ""
     url = segment.url or ""
@@ -35,13 +37,13 @@ async def send_share(
         if image:
             formatted = f"{formatted}<br>{html.escape(image)}"
         content_data = {
-            "msgtype": "m.text",
+            "msgtype": msgtype,
             "body": body,
             "format": "org.matrix.custom.html",
             "formatted_body": formatted,
         }
     else:
-        content_data = {"msgtype": "m.text", "body": body}
+        content_data = {"msgtype": msgtype, "body": body}
 
     await send_content(
         client,

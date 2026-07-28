@@ -193,7 +193,10 @@ class MatrixPlatformAdapter(
             token_store_path=None,  # 让 MatrixAuth 自动生成路径
         )
 
-        self.sender = MatrixSender(self.client)
+        self.sender = MatrixSender(
+            self.client,
+            use_notice=self._matrix_config.use_notice,
+        )
 
         # 获取机器人名称用于检测 @
         bot_name = platform_config.get(

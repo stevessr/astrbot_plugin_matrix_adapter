@@ -129,9 +129,11 @@ async def edit_message_plain(
     tracker_metadata: dict | None = None,
 ):
     """编辑未加密消息"""
+    msg_type = new_content.get("msgtype") or "m.text"
     await client.edit_message(
         room_id=room_id,
         original_event_id=original_event_id,
         new_content=new_content,
+        msg_type=msg_type,
         tracker_metadata=tracker_metadata,
     )

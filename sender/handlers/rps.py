@@ -2,7 +2,7 @@ import random
 
 from astrbot.api.message_components import RPS
 
-from .common import send_content
+from .common import resolve_text_msgtype, send_content
 
 
 async def send_rps(
@@ -15,10 +15,14 @@ async def send_rps(
     is_encrypted_room: bool,
     e2ee_manager,
     thread_is_falling_back: bool | None = None,
+    use_notice: bool = False,
 ) -> None:
     choices = ["rock", "paper", "scissors"]
     choice = random.choice(choices)
-    content_data = {"msgtype": "m.text", "body": f"[rps] {choice}"}
+    content_data = {
+        "msgtype": resolve_text_msgtype(use_notice),
+        "body": f"[rps] {choice}",
+    }
 
     await send_content(
         client,

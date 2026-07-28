@@ -10,7 +10,7 @@ from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
 from ...constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES
 from ...plugin_config import get_plugin_config
-from .common import send_content
+from .common import resolve_text_msgtype, send_content
 
 _MUSIC_DOWNLOAD_CHUNK_SIZE = 64 * 1024
 _MUSIC_DOWNLOAD_CONNECT_TIMEOUT_SECONDS = 15
@@ -97,6 +97,7 @@ async def send_music(
     e2ee_manager,
     upload_size_limit: int | None = None,
     thread_is_falling_back: bool | None = None,
+    use_notice: bool = False,
 ) -> None:
     title = segment.title or ""
     url = segment.url or ""
@@ -153,7 +154,10 @@ async def send_music(
                 meta_lines = [line for line in [title, url, image] if line]
                 meta_body = "\n".join(meta_lines)
                 if meta_body:
-                    meta_content = {"msgtype": "m.text", "body": meta_body}
+                    meta_content = {
+                        "msgtype": resolve_text_msgtype(use_notice),
+                        "body": meta_body,
+                    }
                     await send_content(
                         client,
                         meta_content,
@@ -169,7 +173,10 @@ async def send_music(
 
     lines = [line for line in [title, url, image] if line]
     body = "\n".join(lines) if lines else "[music]"
-    content_data = {"msgtype": "m.text", "body": body}
+    content_data = {
+        "msgtype": resolve_text_msgtype(use_notice),
+        "body": body,
+    }
     await send_content(
         client,
         content_data,

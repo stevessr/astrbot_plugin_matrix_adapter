@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 开启 `matrix_use_notice` 时，`MatrixSender` 默认发送、At/联系人/分享/音乐等文本 fallback 现在都会继承适配器配置；Live Messages 的未加密 `m.replace` 编辑也会在外层与 `m.new_content` 中继续使用 `m.notice`，不再回落为 `m.text`。
 - 关闭 AstrBot「回复时引用发送人消息」但开启 Matrix 消息串时，线程关系现在使用 `is_falling_back: true`，不再渲染成显式引用或额外 @ 原发送人。
 - 接收普通 Markdown/HTML 引用块时不再当作 Matrix reply fallback 删除；只有声明了 `m.in_reply_to` 或线程关系的事件才会剥离引用 fallback。
 

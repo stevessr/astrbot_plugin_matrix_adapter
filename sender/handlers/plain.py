@@ -6,7 +6,7 @@ from astrbot.api.message_components import Plain
 from ...constants import TEXT_TRUNCATE_LENGTH_50
 from ...utils.markdown_utils import markdown_to_html
 from ...utils.utils import MatrixUtils
-from .common import send_content
+from .common import resolve_text_msgtype, send_content
 
 
 def _merge_reply_mentions(
@@ -65,7 +65,7 @@ async def send_plain(
     use_notice: bool,
     thread_is_falling_back: bool | None = None,
 ) -> None:
-    msg_type = "m.notice" if use_notice else "m.text"
+    msg_type = resolve_text_msgtype(use_notice)
     text = segment.text or ""
     content = {"msgtype": msg_type, "body": text}
 

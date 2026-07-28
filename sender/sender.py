@@ -21,9 +21,10 @@ from ..constants import (
 
 
 class MatrixSender:
-    def __init__(self, client, e2ee_manager=None):
+    def __init__(self, client, e2ee_manager=None, *, use_notice: bool = False):
         self.client = client
         self.e2ee_manager = e2ee_manager
+        self.use_notice = bool(use_notice)
 
     async def send_message(
         self,
@@ -32,13 +33,14 @@ class MatrixSender:
         reply_to: str = None,
         thread_root: str = None,
         use_thread: bool = False,
-        use_notice: bool = False,
+        use_notice: bool | None = None,
     ) -> int:
         """
         Send a message to a room
         """
         from ..matrix_event import MatrixPlatformEvent
 
+        resolved_use_notice = self.use_notice if use_notice is None else use_notice
         return await MatrixPlatformEvent.send_with_client(
             self.client,
             message_chain,
@@ -47,7 +49,7 @@ class MatrixSender:
             thread_root=thread_root,
             use_thread=use_thread,
             e2ee_manager=self.e2ee_manager,
-            use_notice=use_notice,
+            use_notice=resolved_use_notice,
         )
 
     async def send_video(
@@ -57,7 +59,7 @@ class MatrixSender:
         reply_to: str = None,
         thread_root: str = None,
         use_thread: bool = False,
-        use_notice: bool = False,
+        use_notice: bool | None = None,
     ) -> int:
         """Send a video to a room (file path or http/https URL)."""
         if video.startswith("http://") or video.startswith("https://"):
@@ -80,7 +82,7 @@ class MatrixSender:
         reply_to: str = None,
         thread_root: str = None,
         use_thread: bool = False,
-        use_notice: bool = False,
+        use_notice: bool | None = None,
     ) -> int:
         """Send an audio clip to a room (file path or http/https URL)."""
         if audio.startswith("http://") or audio.startswith("https://"):
@@ -821,7 +823,7 @@ class MatrixSender:
         *,
         displayname: str | None = None,
         avatar_url: str | None = None,
-        msgtype: str = "m.text",
+        msgtype: str | None = None,
         formatted_body: str | None = None,
         reply_to: str | None = None,
         thread_root: str | None = None,
@@ -841,7 +843,8 @@ class MatrixSender:
             body: Plain-text body
             displayname: Display name to attach to this message
             avatar_url: ``mxc://`` avatar URL to attach to this message
-            msgtype: Message type, defaults to ``m.text``
+            msgtype: Explicit message type. When omitted, follows the sender's
+                configured notice mode and otherwise defaults to ``m.text``.
             formatted_body: Optional HTML formatted body
             stable: Also include the stable ``m.per_message_profile`` key
                 alongside the unstable ``com.beeper.per_message_profile`` key
@@ -856,8 +859,9 @@ class MatrixSender:
         if avatar_url:
             profile["avatar_url"] = avatar_url
 
+        resolved_msgtype = msgtype or ("m.notice" if self.use_notice else "m.text")
         content: dict[str, Any] = {
-            "msgtype": msgtype,
+            "msgtype": resolved_msgtype,
             "body": body,
             MSC4144_PROFILE_KEY: dict(profile),
         }
