@@ -2,15 +2,6 @@
 
 ## 0.3.9 - 2026-07-29
 
-- 提取硬编码字符串为常量：成员关系值（`MEMBERSHIP_LEAVE`/`BAN`/`KNOCK`）、关系类型（`REL_TYPE_REFERENCE`/`ANNOTATION`）、内容键名（`CONTENT_KEY_RELATES_TO`/`NEW_CONTENT`/`IN_REPLY_TO`/`FULLY_READ`/`READ_RECEIPT`）统一归入 `constants.py`。
-- 替换 10 个源文件中的硬编码协议字符串为常量引用。
-- 消除 `_extract_text_repr` 在 3 个文件中的重复定义，提取到 `utils/utils.py`。
-- 修复 SAS 验证时 `_build_terminal_qr` 在 `sso.py` 和 `verification_handlers_display.py` 的签名差异；保留两处独立实现。
-
-## Unreleased
-
-- 修复 `matrix_send_typing` 布尔状态覆盖 AstrBot 4.26+ 同名 `send_typing()` 生命周期方法、导致 LLM 请求前报 `TypeError: 'bool' object is not callable` 的问题；现在同时正确实现请求前开启和请求后清除 typing 的平台钩子。
-
 - 修复 `matrix_send_typing` 布尔状态覆盖 AstrBot 4.26+ 同名 `send_typing()` 生命周期方法、导致 LLM 请求前报 `TypeError: 'bool' object is not callable` 的问题；现在同时正确实现请求前开启和请求后清除 typing 的平台钩子。
 - 修复开启流式回复时不发送「正在输入」状态的问题：`send_streaming()` 现在在消费生成器期间声明 typing，并因 Matrix typing 约 5 秒过期而按固定间隔续期，生成结束或抛异常时都会显式清除。
 - 新增插件级开关 `matrix_send_typing`（默认关闭）与 `matrix_send_read_receipt`（默认开启）。注意 `matrix_send_typing` 默认关闭后，原先无条件发送 typing 的主动发送路径（`send_by_session`）也会一并停止发送，需要时请显式开启。
@@ -30,6 +21,9 @@
 - 开启 `matrix_use_notice` 时，`MatrixSender` 默认发送、At/联系人/分享/音乐等文本 fallback 现在都会继承适配器配置；Live Messages 的未加密 `m.replace` 编辑也会在外层与 `m.new_content` 中继续使用 `m.notice`，不再回落为 `m.text`。
 - 关闭 AstrBot「回复时引用发送人消息」但开启 Matrix 消息串时，线程关系现在使用 `is_falling_back: true`，不再渲染成显式引用或额外 @ 原发送人。
 - 接收普通 Markdown/HTML 引用块时不再当作 Matrix reply fallback 删除；只有声明了 `m.in_reply_to` 或线程关系的事件才会剥离引用 fallback。
+- 提取硬编码字符串为常量：成员关系值（`MEMBERSHIP_LEAVE`/`BAN`/`KNOCK`）、关系类型（`REL_TYPE_REFERENCE`/`ANNOTATION`）、内容键名（`CONTENT_KEY_RELATES_TO`/`NEW_CONTENT`/`IN_REPLY_TO`/`FULLY_READ`/`READ_RECEIPT`）统一归入 `constants.py`。
+- 替换 10 个源文件中的硬编码协议字符串为常量引用。
+- 消除 `_extract_text_repr` 在 3 个文件中的重复定义，提取到 `utils/utils.py`。
 
 ## 0.3.8 - 2026-07-19
 
