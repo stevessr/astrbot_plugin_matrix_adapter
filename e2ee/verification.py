@@ -30,6 +30,7 @@ from .verification_handlers_flow import SASVerificationFlowMixin
 from .verification_manual_notify import SASVerificationManualNotifyMixin
 from .verification_send_device import SASVerificationSendDeviceMixin
 from .verification_send_room import SASVerificationSendRoomMixin
+from .verification_utils import _encode_unpadded_base64
 
 
 class SASVerification(
@@ -209,8 +210,8 @@ class SASVerification(
             session["master_key"] = master_key
             session["fingerprint"] = peer_device_key
 
-            key1_b64 = self._encode_unpadded_base64(parsed["key1"])
-            key2_b64 = self._encode_unpadded_base64(parsed["key2"])
+            key1_b64 = _encode_unpadded_base64(parsed["key1"])
+            key2_b64 = _encode_unpadded_base64(parsed["key2"])
             mode = int(parsed["mode"])
             if mode == QR_CODE_MODE_SELF_VERIFICATION_TRUSTED_MASTER:
                 expected_key1 = master_key
@@ -227,7 +228,7 @@ class SASVerification(
                     "二维码载荷与当前验证会话不匹配，请确认扫描的是对应设备展示的验证二维码",
                 )
 
-            secret_b64 = self._encode_unpadded_base64(parsed["secret"])
+            secret_b64 = _encode_unpadded_base64(parsed["secret"])
             session["state"] = "started"
             session["method"] = M_RECIPROCATE_V1_METHOD
             session["qr_scanned_by_us"] = True

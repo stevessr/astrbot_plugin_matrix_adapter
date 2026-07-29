@@ -29,12 +29,8 @@ class E2EEManagerSecretsMixin:
 
     @staticmethod
     def _mask_device_id(device_id: str | None) -> str:
-        if not isinstance(device_id, str) or not device_id:
-            return "<empty>"
-        normalized = device_id.strip()
-        if len(normalized) <= 4:
-            return "***"
-        return f"{normalized[:2]}***{normalized[-2:]}"
+        from ..utils.utils import mask_device_id
+        return mask_device_id(device_id)
 
     @staticmethod
     def _mask_request_id(request_id: str | None) -> str:

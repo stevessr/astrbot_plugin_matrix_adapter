@@ -9,6 +9,7 @@ from ..constants import (
     OLM_ALGO,
 )
 from .olm_machine_types import Ed25519PublicKey, Ed25519Signature
+from .verification_utils import _canonical_json
 
 
 class OlmMachineKeysMixin:
@@ -57,7 +58,7 @@ class OlmMachineKeysMixin:
         payload_to_sign.pop("unsigned", None)
         payload_to_sign.pop("signatures", None)
 
-        device_keys_json = self._canonical_json(payload_to_sign)
+        device_keys_json = _canonical_json(payload_to_sign)
         signature = self._account.sign(device_keys_json.encode()).to_base64()
 
         device_keys["signatures"] = {
@@ -96,7 +97,7 @@ class OlmMachineKeysMixin:
             }
 
             # 生成签名 (vodozemac sign 需要 bytes 输入)
-            key_json = self._canonical_json(signed_key)
+            key_json = _canonical_json(signed_key)
             signature = self._account.sign(key_json.encode()).to_base64()
             signed_key["signatures"] = {
                 self.user_id: {f"ed25519:{self.device_id}": signature}
@@ -147,7 +148,7 @@ class OlmMachineKeysMixin:
             }
 
             # 生成签名
-            key_json = self._canonical_json(signed_key)
+            key_json = _canonical_json(signed_key)
             signature = self._account.sign(key_json.encode()).to_base64()
             signed_key["signatures"] = {
                 self.user_id: {f"ed25519:{self.device_id}": signature}
@@ -203,7 +204,7 @@ class OlmMachineKeysMixin:
             verifier = Ed25519PublicKey.from_base64(public_key)
             signature = Ed25519Signature.from_base64(signature_b64)
             verifier.verify_signature(
-                cls._canonical_json(signed_payload).encode("utf-8"),
+                _canonical_json(signed_payload).encode("utf-8"),
                 signature,
             )
             return True
@@ -285,13 +286,6 @@ class OlmMachineKeysMixin:
         return None
 
     # ========== Olm 会话 ==========
-
-    @staticmethod
-    def _canonical_json(obj: dict) -> str:
-        """生成规范化的 JSON 字符串 (用于签名)"""
-        return json.dumps(
-            obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-        )
 
     @property
     def curve25519_key(self) -> str:

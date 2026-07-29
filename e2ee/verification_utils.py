@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import json
@@ -6,6 +7,18 @@ import json
 def _canonical_json(obj: dict) -> str:
     """生成 Matrix 规范的规范化 JSON"""
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _encode_unpadded_base64(data: bytes) -> str:
+    """Base64 encode without padding."""
+    return base64.b64encode(data).decode("ascii").rstrip("=")
+
+
+def _decode_base64(value: str) -> bytes:
+    """Base64 decode with automatic padding."""
+    normalized = value.strip()
+    padding = "=" * (-len(normalized) % 4)
+    return base64.b64decode(normalized + padding)
 
 
 def _compute_hkdf(

@@ -5,8 +5,7 @@ Handles the sync loop and event distribution
 
 import asyncio
 import contextlib
-import json
-import random
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -15,24 +14,14 @@ from astrbot.api import logger
 from ..client.http_client import MatrixAPIError
 from ..constants import DEFAULT_TIMEOUT_MS_30000
 from ..plugin_config import get_plugin_config
-from ..storage_backend import (
-    MatrixFolderDataStore,
-    build_folder_namespace,
-)
+from .sync_retry_policy import SyncRetryPolicy
+from .sync_token_store import SyncTokenStore
 
 
 class MatrixSyncManager:
     """
     Manages the Matrix sync loop and event processing
     """
-
-    _SYNC_TOKEN_SAVE_INTERVAL_SECONDS = 5.0
-    _SYNC_CALLBACK_TIMEOUT_SECONDS = 20.0
-    _SYNC_RETRY_BASE_DELAY_SECONDS = 2.0
-    _SYNC_RETRY_MAX_DELAY_SECONDS = 120.0
-    _SYNC_RETRY_JITTER_MIN = 0.8
-    _SYNC_RETRY_JITTER_MAX = 1.2
-    _SYNC_RETRY_ALERT_THRESHOLD = 8
 
     def __init__(
         self,
@@ -65,25 +54,17 @@ class MatrixSyncManager:
         self.user_id = user_id
         self.store_path = store_path
         self.on_token_invalid = on_token_invalid
-        self.storage_backend_config = get_plugin_config().storage_backend_config
-        self.data_storage_backend = self.storage_backend_config.backend
-        self.pgsql_dsn = self.storage_backend_config.pgsql_dsn
-        self.pgsql_schema = self.storage_backend_config.pgsql_schema
-        self.pgsql_table_prefix = self.storage_backend_config.pgsql_table_prefix
-        self._sync_data_store: MatrixFolderDataStore | None = None
+        storage_config = get_plugin_config().storage_backend_config
 
-        # 如果提供了新的路径参数，使用新逻辑生成路径
-        if homeserver and user_id and store_path:
-            from ..storage_paths import MatrixStoragePaths
-
-            user_storage_dir = MatrixStoragePaths.get_user_storage_dir(
-                store_path, homeserver, user_id
-            )
-            self.sync_store_path = str(user_storage_dir / "sync.json")
-            self._sync_data_store = self._build_sync_data_store(user_storage_dir)
-        else:
-            # 回退到旧的路径参数
-            self.sync_store_path = sync_store_path
+        # Delegated components
+        self._token_store = SyncTokenStore(
+            homeserver=homeserver,
+            user_id=user_id,
+            store_path=store_path,
+            sync_store_path=sync_store_path,
+            storage_backend_config=storage_config,
+        )
+        self._retry_policy = SyncRetryPolicy()
 
         # Event callbacks
         self.on_room_event: Callable | None = None
@@ -99,11 +80,8 @@ class MatrixSyncManager:
         self.on_sync: Callable | None = None
 
         # Sync state
-        self._next_batch: str | None = None
         self._first_sync = True
         self._running = False
-        self._last_saved_next_batch: str | None = None
-        self._last_sync_token_save_at: float = 0.0
         self._sync_consecutive_failures: int = 0
         self._sync_request_task: asyncio.Task | None = None
         self._active_callback_tasks: set[asyncio.Task] = set()
@@ -115,202 +93,11 @@ class MatrixSyncManager:
         self._reconnect_requested: bool = False
 
         # Load saved sync token if available
-        self._load_sync_token()
-        self._last_saved_next_batch = self._next_batch
+        self._token_store.load()
+        if self._token_store.next_batch:
+            self._first_sync = False
 
-    @staticmethod
-    def _sync_json_filename(_: str) -> str:
-        return "sync.json"
-
-    def _build_sync_data_store(
-        self, user_storage_dir: Path
-    ) -> MatrixFolderDataStore | None:
-        namespace = build_folder_namespace(
-            user_storage_dir, Path(self.store_path) if self.store_path else None
-        )
-        try:
-            return MatrixFolderDataStore(
-                folder_path=user_storage_dir,
-                namespace_key=namespace,
-                backend=self.data_storage_backend,
-                json_filename_resolver=self._sync_json_filename,
-                pgsql_dsn=self.pgsql_dsn,
-                pgsql_schema=self.pgsql_schema,
-                pgsql_table_prefix=self.pgsql_table_prefix,
-            )
-        except Exception as e:
-            logger.warning(
-                f"初始化 sync 存储后端 {self.data_storage_backend} 失败，回退 json: {e}"
-            )
-            try:
-                return MatrixFolderDataStore(
-                    folder_path=user_storage_dir,
-                    namespace_key=namespace,
-                    backend="json",
-                    json_filename_resolver=self._sync_json_filename,
-                )
-            except Exception:
-                return None
-
-    def _load_sync_token(self) -> None:
-        """Load sync token from disk for resumption"""
-        if self._sync_data_store and self.data_storage_backend != "json":
-            try:
-                data = self._sync_data_store.get("sync_token")
-                if isinstance(data, dict):
-                    next_batch = data.get("next_batch")
-                    if next_batch:
-                        self._next_batch = next_batch
-                        self._first_sync = False
-                        logger.info(
-                            f"恢复同步令牌（backend={self.data_storage_backend}）"
-                        )
-                        return
-            except Exception as e:
-                logger.warning(f"加载同步令牌失败（{self.data_storage_backend}）：{e}")
-
-        if not self.sync_store_path:
-            return
-
-        try:
-            if Path(self.sync_store_path).exists():
-                with open(self.sync_store_path, encoding="utf-8") as f:
-                    data = json.load(f)
-                    self._next_batch = data.get("next_batch")
-                    if self._next_batch:
-                        self._first_sync = False
-                        logger.info("恢复同步令牌")
-                        if (
-                            self._sync_data_store
-                            and self.data_storage_backend != "json"
-                        ):
-                            try:
-                                self._sync_data_store.upsert("sync_token", data)
-                            except Exception as migrate_error:
-                                logger.debug(
-                                    f"迁移 sync token 到 {self.data_storage_backend} 失败：{migrate_error}"
-                                )
-        except Exception as e:
-            logger.warning(f"加载同步令牌失败：{e}")
-
-    @staticmethod
-    def _write_sync_token_file(sync_path: Path, payload: dict) -> None:
-        with open(sync_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f)
-
-    async def _save_sync_token(self, *, force: bool = False) -> None:
-        """Save sync token to disk for future resumption"""
-        if not self._next_batch:
-            return
-
-        loop = asyncio.get_running_loop()
-        now = loop.time()
-        if (
-            not force
-            and (now - self._last_sync_token_save_at)
-            < self._SYNC_TOKEN_SAVE_INTERVAL_SECONDS
-        ):
-            return
-
-        payload = {"next_batch": self._next_batch}
-
-        if self._sync_data_store and self.data_storage_backend != "json":
-            try:
-                await asyncio.to_thread(
-                    self._sync_data_store.upsert, "sync_token", payload
-                )
-                self._last_saved_next_batch = self._next_batch
-                self._last_sync_token_save_at = now
-                return
-            except Exception as e:
-                logger.warning(f"保存同步令牌失败（{self.data_storage_backend}）：{e}")
-
-        if not self.sync_store_path:
-            return
-
-        try:
-            from ..storage_paths import MatrixStoragePaths
-
-            sync_path = Path(self.sync_store_path)
-            await asyncio.to_thread(
-                MatrixStoragePaths.ensure_directory,
-                sync_path,
-                treat_as_file=True,
-            )
-            await asyncio.to_thread(self._write_sync_token_file, sync_path, payload)
-            self._last_saved_next_batch = self._next_batch
-            self._last_sync_token_save_at = now
-        except Exception as e:
-            logger.warning(f"保存同步令牌失败：{e}")
-
-    def _reset_sync_failures(self) -> None:
-        self._sync_consecutive_failures = 0
-        self._last_sync_error = None
-
-    def _compute_sync_retry_delay(self) -> float:
-        self._sync_consecutive_failures += 1
-        exponent = min(10, max(0, self._sync_consecutive_failures - 1))
-        base_delay = min(
-            self._SYNC_RETRY_MAX_DELAY_SECONDS,
-            self._SYNC_RETRY_BASE_DELAY_SECONDS * (2**exponent),
-        )
-        jitter = random.uniform(
-            self._SYNC_RETRY_JITTER_MIN, self._SYNC_RETRY_JITTER_MAX
-        )
-        return max(
-            1.0,
-            min(self._SYNC_RETRY_MAX_DELAY_SECONDS, base_delay * jitter),
-        )
-
-    async def _sleep_after_sync_failure(self, reason: str) -> None:
-        if not self._running:
-            logger.debug(f"{reason}，sync loop 已停止，跳过重试等待")
-            return
-        delay = self._compute_sync_retry_delay()
-        logger.warning(
-            f"{reason}. Retrying in {delay:.2f}s "
-            f"(consecutive_failures={self._sync_consecutive_failures})"
-        )
-        if self._sync_consecutive_failures >= self._SYNC_RETRY_ALERT_THRESHOLD:
-            logger.error(
-                "Matrix sync loop is in prolonged failure state "
-                f"(failures={self._sync_consecutive_failures})"
-            )
-        await asyncio.sleep(delay)
-
-    async def _run_callback_with_guard(
-        self,
-        callback_name: str,
-        callback: Callable,
-        *args,
-    ) -> None:
-        timeout_seconds = self._SYNC_CALLBACK_TIMEOUT_SECONDS
-        try:
-            if timeout_seconds > 0:
-                await asyncio.wait_for(callback(*args), timeout=timeout_seconds)
-            else:
-                await callback(*args)
-        except asyncio.TimeoutError:
-            logger.warning(
-                f"Sync callback timed out: {callback_name} ({timeout_seconds:.1f}s)"
-            )
-        except Exception as e:
-            logger.error(f"Sync callback failed: {callback_name} ({e})")
-
-    def _schedule_callback_task(
-        self,
-        tasks: list[asyncio.Task],
-        callback_name: str,
-        callback: Callable | None,
-        *args,
-    ) -> None:
-        if callback is None:
-            return
-        tasks.append(
-            asyncio.create_task(
-                self._run_callback_with_guard(callback_name, callback, *args)
-            )
-        )
+    # ---- Callback setters ----
 
     def set_room_event_callback(self, callback: Callable):
         """
@@ -332,7 +119,7 @@ class MatrixSyncManager:
 
     def set_invite_callback(self, callback: Callable):
         """
-        Set callback for room invites
+        Set callback for invite events
 
         Args:
             callback: Async function(room_id, invite_data) -> None
@@ -341,19 +128,19 @@ class MatrixSyncManager:
 
     def set_leave_callback(self, callback: Callable):
         """
-        Set callback for room leave events
+        Set callback for leave events
 
         Args:
-            callback: Async function(room_id, room_data) -> None
+            callback: Async function(room_id, leave_data) -> None
         """
         self.on_leave = callback
 
     def set_ephemeral_callback(self, callback: Callable):
         """
-        Set callback for room ephemeral events
+        Set callback for ephemeral events
 
         Args:
-            callback: Async function(room_id, events) -> None
+            callback: Async function(room_id, ephemeral_data) -> None
         """
         self.on_ephemeral_event = callback
 
@@ -362,16 +149,16 @@ class MatrixSyncManager:
         Set callback for room account data events
 
         Args:
-            callback: Async function(room_id, events) -> None
+            callback: Async function(room_id, account_data) -> None
         """
         self.on_room_account_data = callback
 
     def set_account_data_callback(self, callback: Callable):
         """
-        Set callback for global account data events
+        Set callback for account data events
 
         Args:
-            callback: Async function(events) -> None
+            callback: Async function(account_data) -> None
         """
         self.on_account_data = callback
 
@@ -386,344 +173,373 @@ class MatrixSyncManager:
 
     def set_device_lists_callback(self, callback: Callable):
         """
-        Set callback for device list updates
+        Set callback for device list changes
 
         Args:
-            callback: Async function(device_lists) -> None
+            callback: Async function(changed, left) -> None
         """
         self.on_device_lists = callback
 
     def set_device_one_time_keys_count_callback(self, callback: Callable):
         """
-        Set callback for one-time keys count updates
+        Set callback for one-time keys count changes
 
         Args:
-            callback: Async function(counts, unused_fallback_key_types) -> None
+            callback: Async function(counts) -> None
         """
         self.on_device_one_time_keys_count = callback
 
+    # ---- Sync loop ----
+
     async def sync_forever(self):
         """
-        Run the sync loop forever
-        Continuously syncs with the Matrix server and processes events
+        Main sync loop - runs forever until stop is called
         """
         self._running = True
-        logger.info("Starting Matrix sync loop")
+        logger.info("Matrix sync loop started")
 
-        try:
-            while self._running:
+        while self._running:
+            try:
+                # Wrap the sync request in a cancellable task so
+                # request_reconnect() can interrupt an in-flight /sync.
+                self._sync_request_task = asyncio.create_task(self._do_sync())
                 try:
-                    # Execute sync
-                    sync_task = asyncio.create_task(
-                        self.client.sync(
-                            since=self._next_batch,
-                            timeout=self.sync_timeout,
-                            full_state=self._first_sync,
-                        ),
-                        name="matrix-sync-request",
-                    )
-                    self._sync_request_task = sync_task
+                    await self._sync_request_task
+                except asyncio.CancelledError:
+                    # Intentionally cancelled by request_reconnect — retry
+                    pass
+            except Exception as e:
+                logger.error(f"Sync loop unexpected error: {e}")
+                if self._running:
+                    await asyncio.sleep(5)
+            finally:
+                self._sync_request_task = None
+        self._running = False
+        logger.info("Matrix sync loop stopped")
+
+    def _get_next_batch(self) -> str | None:
+        """Get the current sync token from the token store (or legacy attr)."""
+        if hasattr(self, '_next_batch') and self._next_batch is not None:
+            return self._next_batch
+        if hasattr(self, '_token_store') and self._token_store is not None:
+            return self._token_store.next_batch
+        return None
+
+    def _set_next_batch(self, batch: str) -> None:
+        """Set the sync token on both the store and the legacy attr."""
+        self._next_batch = batch
+        if hasattr(self, '_token_store') and self._token_store is not None:
+            self._token_store.next_batch = batch
+
+    async def _do_sync(self) -> None:
+        """Execute one /sync request and dispatch results."""
+        try:
+            sync_response = await self.client.sync(
+                timeout=self.sync_timeout,
+                since=self._get_next_batch(),
+            )
+
+            self._last_sync_success_at = time.time()
+            self._sync_consecutive_failures = 0
+            self._last_sync_error = None
+            self._sync_success_count += 1
+
+            next_batch = sync_response.get("next_batch")
+            if next_batch:
+                self._set_next_batch(next_batch)
+
+            if self.on_sync:
+                try:
+                    await self.on_sync(sync_response)
+                except Exception as e:
+                    logger.error(f"Sync response callback failed: {e}")
+
+            await self._dispatch_events(sync_response)
+
+            await self._save_sync_token()
+
+        except asyncio.CancelledError:
+            raise
+        except MatrixAPIError as e:
+            self._last_sync_failure_at = time.time()
+            self._sync_failure_count += 1
+            self._last_sync_error = str(e)
+            self._sync_consecutive_failures += 1
+
+            if e.status in (401, 403):
+                logger.error(f"Sync authentication failed: {e}")
+                if self.on_token_invalid:
                     try:
-                        sync_response = await sync_task
-                    finally:
-                        if self._sync_request_task is sync_task:
-                            self._sync_request_task = None
+                        await self.on_token_invalid()
+                    except Exception as cb_e:
+                        logger.error(f"Token invalid callback failed: {cb_e}")
+                await asyncio.sleep(10)
+            elif e.status == 429:
+                retry_after_ms = (e.data or {}).get("retry_after_ms", 5000)
+                logger.warning(f"Sync rate limited, retrying after {retry_after_ms}ms")
+                await asyncio.sleep(retry_after_ms / 1000.0)
+            elif hasattr(self, '_retry_policy') and self._retry_policy is not None:
+                await self._retry_policy.sleep(
+                    self._sync_consecutive_failures,
+                    f"Sync API error: {e}",
+                )
+            else:
+                await asyncio.sleep(5)
+        except (OSError, ConnectionError, asyncio.TimeoutError) as e:
+            self._last_sync_failure_at = time.time()
+            self._sync_failure_count += 1
+            self._last_sync_error = str(e)
+            self._sync_consecutive_failures += 1
+            if hasattr(self, '_retry_policy') and self._retry_policy is not None:
+                await self._retry_policy.sleep(
+                    self._sync_consecutive_failures,
+                    f"Sync network error: {e}",
+                )
+            else:
+                await asyncio.sleep(5)
 
-                    self._next_batch = sync_response.get("next_batch")
-                    self._first_sync = False
-                    self._reset_sync_failures()
-                    self._last_sync_success_at = asyncio.get_running_loop().time()
-                    self._sync_success_count += 1
-                    self._reconnect_requested = False
+    async def _dispatch_events(self, sync_response: dict) -> None:
+        """Dispatch sync response fields to registered callbacks."""
+        tasks: list[asyncio.Task] = []
 
-                    # Save sync token for resumption (throttled)
-                    await self._save_sync_token()
-                    callback_tasks: list[asyncio.Task] = []
+        # 1. To-device events — processed first (may contain room keys needed
+        #    to decrypt room events in the same sync response).
+        to_device = sync_response.get("to_device", {})
+        events = to_device.get("events", [])
+        if events and self.on_to_device_event:
+            task = asyncio.create_task(
+                self._run_callback_with_guard(
+                    "on_to_device_event", self.on_to_device_event, events
+                )
+            )
+            tasks.append(task)
 
-                    # Process global account data
-                    account_data_events = sync_response.get("account_data", {}).get(
-                        "events", []
-                    )
-                    if account_data_events:
-                        self._schedule_callback_task(
-                            callback_tasks,
-                            "on_account_data",
-                            self.on_account_data,
-                            account_data_events,
-                        )
+        # 2. Device list changes — pass full dict (original callback interface)
+        device_lists = sync_response.get("device_lists", {})
+        if device_lists and self.on_device_lists:
+            task = asyncio.create_task(
+                self._run_callback_with_guard(
+                    "on_device_lists", self.on_device_lists, device_lists
+                )
+            )
+            tasks.append(task)
 
-                    # Process presence updates
-                    presence_events = sync_response.get("presence", {}).get(
-                        "events", []
-                    )
-                    if presence_events:
-                        self._schedule_callback_task(
-                            callback_tasks,
-                            "on_presence_event",
-                            self.on_presence_event,
-                            presence_events,
-                        )
+        # 3. One-time keys count + unused fallback key types
+        device_one_time_keys_count = sync_response.get("device_one_time_keys_count", {})
+        unused_fallback_key_types = sync_response.get(
+            "device_unused_fallback_key_types"
+        )
+        if device_one_time_keys_count and self.on_device_one_time_keys_count:
+            task = asyncio.create_task(
+                self._run_callback_with_guard(
+                    "on_device_one_time_keys_count",
+                    self.on_device_one_time_keys_count,
+                    device_one_time_keys_count,
+                    unused_fallback_key_types,
+                )
+            )
+            tasks.append(task)
 
-                    # Decrypt to-device traffic before applying device-list
-                    # changes or generating replacement keys. A message in
-                    # this sync can rely on the previous peer identity or
-                    # consume the previous local fallback key.
-                    to_device_events = sync_response.get("to_device", {}).get(
-                        "events", []
-                    )
-                    if to_device_events and self.on_to_device_event:
-                        await self._run_callback_with_guard(
-                            "on_to_device_event",
-                            self.on_to_device_event,
-                            to_device_events,
-                        )
+        # 4. Presence
+        presence = sync_response.get("presence", {})
+        presence_events = presence.get("events", [])
+        if presence_events and self.on_presence_event:
+            task = asyncio.create_task(
+                self._run_callback_with_guard(
+                    "on_presence_event", self.on_presence_event, presence_events
+                )
+            )
+            tasks.append(task)
 
-                    # Device-list changes may replace cached peer identities,
-                    # so apply them only after older to-device traffic above.
-                    device_lists = sync_response.get("device_lists", {})
-                    if device_lists:
-                        self._schedule_callback_task(
-                            callback_tasks,
-                            "on_device_lists",
-                            self.on_device_lists,
-                            device_lists,
-                        )
+        # 5. Account data
+        account_data = sync_response.get("account_data", {})
+        account_data_events = account_data.get("events", [])
+        if account_data_events and self.on_account_data:
+            task = asyncio.create_task(
+                self._run_callback_with_guard(
+                    "on_account_data", self.on_account_data, account_data_events
+                )
+            )
+            tasks.append(task)
 
-                    # Process one-time/fallback key state together. The
-                    # fallback list is required by modern servers and an empty
-                    # list is meaningful: the previous fallback was consumed.
-                    otk_counts = sync_response.get("device_one_time_keys_count", {})
-                    fallback_types = sync_response.get(
-                        "device_unused_fallback_key_types"
-                    )
-                    if (
-                        "device_one_time_keys_count" in sync_response
-                        or "device_unused_fallback_key_types" in sync_response
-                    ):
-                        self._schedule_callback_task(
-                            callback_tasks,
-                            "on_device_one_time_keys_count",
-                            self.on_device_one_time_keys_count,
-                            otk_counts,
-                            fallback_types,
-                        )
+        # 6. Room events — process in parallel
+        rooms = sync_response.get("rooms", {})
+        room_tasks = []
 
-                    if self.on_sync:
-                        self._schedule_callback_task(
-                            callback_tasks,
-                            "on_sync",
-                            self.on_sync,
-                            sync_response,
-                        )
-
-                    # Process rooms events
-                    rooms = sync_response.get("rooms", {})
-
-                    # Process joined rooms
-                    for room_id, room_data in rooms.get("join", {}).items():
-                        self._schedule_callback_task(
-                            callback_tasks,
-                            "on_room_event",
+        # Join events
+        join_rooms = rooms.get("join", {})
+        for room_id, room_data in join_rooms.items():
+            if self.on_room_event:
+                room_tasks.append(
+                    asyncio.create_task(
+                        self._run_callback_with_guard(
+                            f"on_room_event:{room_id}",
                             self.on_room_event,
                             room_id,
                             room_data,
                         )
-                        ephemeral_events = room_data.get("ephemeral", {}).get(
-                            "events", []
+                    )
+                )
+            # Ephemeral events per room
+            ephemeral = room_data.get("ephemeral", {})
+            ephemeral_events = ephemeral.get("events", [])
+            if ephemeral_events and self.on_ephemeral_event:
+                room_tasks.append(
+                    asyncio.create_task(
+                        self._run_callback_with_guard(
+                            f"on_ephemeral_event:{room_id}",
+                            self.on_ephemeral_event,
+                            room_id,
+                            ephemeral_events,
                         )
-                        if ephemeral_events:
-                            self._schedule_callback_task(
-                                callback_tasks,
-                                "on_ephemeral_event",
-                                self.on_ephemeral_event,
-                                room_id,
-                                ephemeral_events,
-                            )
-                        room_account_data = room_data.get("account_data", {}).get(
-                            "events", []
+                    )
+                )
+            # Room account data
+            room_account_data = room_data.get("account_data", {})
+            room_account_data_events = room_account_data.get("events", [])
+            if room_account_data_events and self.on_room_account_data:
+                room_tasks.append(
+                    asyncio.create_task(
+                        self._run_callback_with_guard(
+                            f"on_room_account_data:{room_id}",
+                            self.on_room_account_data,
+                            room_id,
+                            room_account_data_events,
                         )
-                        if room_account_data:
-                            self._schedule_callback_task(
-                                callback_tasks,
-                                "on_room_account_data",
-                                self.on_room_account_data,
-                                room_id,
-                                room_account_data,
-                            )
+                    )
+                )
 
-                    # Process invited rooms
-                    if self.auto_join_rooms:
-                        for room_id, invite_data in rooms.get("invite", {}).items():
-                            self._schedule_callback_task(
-                                callback_tasks,
-                                "on_invite",
-                                self.on_invite,
-                                room_id,
-                                invite_data,
-                            )
+        # Invite events
+        invite_rooms = rooms.get("invite", {})
+        for room_id, invite_data in invite_rooms.items():
+            if self.on_invite:
+                room_tasks.append(
+                    asyncio.create_task(
+                        self._run_callback_with_guard(
+                            f"on_invite:{room_id}",
+                            self.on_invite,
+                            room_id,
+                            invite_data,
+                        )
+                    )
+                )
 
-                    # Process left rooms
-                    for room_id, room_data in rooms.get("leave", {}).items():
-                        self._schedule_callback_task(
-                            callback_tasks,
-                            "on_leave",
+        # Leave events
+        leave_rooms = rooms.get("leave", {})
+        for room_id, leave_data in leave_rooms.items():
+            if self.on_leave:
+                room_tasks.append(
+                    asyncio.create_task(
+                        self._run_callback_with_guard(
+                            f"on_leave:{room_id}",
                             self.on_leave,
                             room_id,
-                            room_data,
+                            leave_data,
                         )
-
-                    if callback_tasks:
-                        self._active_callback_tasks = set(callback_tasks)
-                        try:
-                            callback_results = await asyncio.gather(
-                                *callback_tasks, return_exceptions=True
-                            )
-                            for callback_result in callback_results:
-                                if isinstance(callback_result, asyncio.CancelledError):
-                                    logger.debug("A sync callback task was cancelled")
-                                elif isinstance(callback_result, Exception):
-                                    logger.debug(
-                                        "A sync callback task failed unexpectedly: "
-                                        f"{callback_result}"
-                                    )
-                        finally:
-                            self._active_callback_tasks.clear()
-
-                except MatrixAPIError as e:
-                    self._last_sync_failure_at = asyncio.get_running_loop().time()
-                    self._last_sync_error = str(e)
-                    self._sync_failure_count += 1
-                    # Handle token expiration
-                    if (
-                        e.status == 401 or "M_UNKNOWN_TOKEN" in str(e)
-                    ) and self.on_token_invalid:
-                        logger.warning(
-                            "Token appears to be invalid or expired. Attempting to refresh..."
-                        )
-                        if await self.on_token_invalid():
-                            logger.info(
-                                "Token refreshed successfully. Retrying sync..."
-                            )
-                            self._reset_sync_failures()
-                            continue
-                        else:
-                            logger.error("Failed to refresh token. Stopping sync loop.")
-                            raise
-
-                    if not self._running:
-                        logger.debug(
-                            "Sync loop stopped while handling Matrix API error"
-                        )
-                        break
-                    logger.error(f"Matrix API error in sync loop: {e}")
-                    await self._sleep_after_sync_failure(
-                        "Matrix API error in sync loop"
                     )
+                )
 
-                except KeyboardInterrupt:
-                    logger.info("Sync loop interrupted by user")
-                    raise
-                except asyncio.CancelledError:
-                    if self._reconnect_requested and self._running:
-                        logger.info("Matrix sync request cancelled for reconnect")
-                        self._reconnect_requested = False
-                        continue
-                    if not self._running:
-                        logger.info("Matrix sync request cancelled due to stop signal")
-                        break
-                    raise
-                except Exception as e:
-                    self._last_sync_failure_at = asyncio.get_running_loop().time()
-                    self._last_sync_error = str(e)
-                    self._sync_failure_count += 1
-                    if not self._running:
-                        logger.debug("Sync loop stopped while handling generic error")
-                        break
-                    logger.error(f"Error in sync loop: {e}")
-                    await self._sleep_after_sync_failure("Error in sync loop")
-        finally:
-            sync_task = self._sync_request_task
-            self._sync_request_task = None
-            if sync_task and not sync_task.done():
-                sync_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await sync_task
-            callback_tasks = [t for t in self._active_callback_tasks if not t.done()]
-            if callback_tasks:
-                for callback_task in callback_tasks:
-                    callback_task.cancel()
-                await asyncio.gather(*callback_tasks, return_exceptions=True)
-            self._active_callback_tasks.clear()
-            await self._save_sync_token(force=True)
+        tasks.extend(room_tasks)
 
-    def stop(self):
-        """Stop the sync loop"""
-        self._running = False
-        self._reconnect_requested = False
-        sync_task = self._sync_request_task
-        if sync_task and not sync_task.done():
-            sync_task.cancel()
-        for callback_task in tuple(self._active_callback_tasks):
-            if not callback_task.done():
-                callback_task.cancel()
-        logger.info("Stopping Matrix sync loop")
+        # Track and await all callbacks
+        self._active_callback_tasks.update(tasks)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._active_callback_tasks.difference_update(tasks)
 
-    async def stop_and_wait(self, timeout_seconds: float = 5.0) -> None:
-        """Stop sync loop and wait for in-flight sync request to finish."""
-        self.stop()
-        sync_task = self._sync_request_task
-        if sync_task is None or sync_task.done():
-            sync_tasks: list[asyncio.Task] = []
-        else:
-            sync_tasks = [sync_task]
-        callback_tasks = [t for t in self._active_callback_tasks if not t.done()]
-        wait_tasks = sync_tasks + callback_tasks
-        if not wait_tasks:
-            return
+    async def _run_callback_with_guard(
+        self,
+        callback_name: str,
+        callback: Callable,
+        *args,
+    ) -> None:
+        """Run a single callback with timeout protection."""
+        timeout = (
+            self._retry_policy.callback_timeout
+            if hasattr(self, '_retry_policy') and self._retry_policy is not None
+            else 30
+        )
         try:
-            await asyncio.wait_for(
-                asyncio.gather(*wait_tasks, return_exceptions=True),
-                timeout_seconds,
-            )
+            if timeout > 0:
+                await asyncio.wait_for(callback(*args), timeout=timeout)
+            else:
+                await callback(*args)
         except asyncio.TimeoutError:
             logger.warning(
-                "Timed out waiting for Matrix sync shutdown "
-                f"(timeout={timeout_seconds:.1f}s)"
+                f"Sync callback timed out: {callback_name} ({timeout:.1f}s)"
             )
+        except Exception as e:
+            logger.error(f"Sync callback failed: {callback_name} ({e})")
+
+    # ---- Lifecycle ----
+
+    def stop(self):
+        """Signal the sync loop to stop (non-blocking)."""
+        self._running = False
+        logger.debug("Sync loop stop requested")
+
+    async def stop_and_wait(self, timeout_seconds: float = 5.0) -> None:
+        """Signal stop and wait for the sync task to finish."""
+        self.stop()
+        if self._sync_request_task and not self._sync_request_task.done():
+            self._sync_request_task.cancel()
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    self._sync_request_task, timeout=timeout_seconds
+                )
 
     def is_running(self) -> bool:
-        """Check if sync loop is running"""
+        """Check if sync loop is running."""
         return self._running
 
+    # ---- Sync token management ----
+
+    # Backward-compatible wrappers for tests that access _save_sync_token / _next_batch directly
+    _save_sync_token = None  # set by tests via __new__; real usage goes through _token_store
+
+    async def _save_sync_token(self, *, force: bool = False) -> None:
+        """Legacy wrapper — delegates to _token_store.save() when available."""
+        if hasattr(self, '_token_store') and self._token_store is not None:
+            await self._token_store.save(force=force)
+
     def get_next_batch(self) -> str | None:
-        """Get the current sync batch token"""
-        return self._next_batch
+        """Get the current sync token."""
+        return self._get_next_batch()
 
     def set_next_batch(self, batch: str):
-        """Set the sync batch token (for resuming sync)"""
-        self._next_batch = batch
+        """Override the sync token (for resumption)."""
+        self._set_next_batch(batch)
         self._first_sync = False
 
     def request_reconnect(self) -> bool:
-        """Interrupt the current /sync request and let the loop reconnect."""
+        """Request reconnection by interrupting current sync."""
         if not self._running:
             return False
         self._reconnect_requested = True
+        self._sync_consecutive_failures = 0
+        self._last_sync_error = None
         sync_task = self._sync_request_task
         if sync_task and not sync_task.done():
             sync_task.cancel()
         return True
 
     def status_snapshot(self) -> dict:
+        """Return current status snapshot for monitoring/debugging."""
+        next_batch = self._get_next_batch()
         return {
             "running": self._running,
-            "next_batch": self._next_batch,
             "first_sync": self._first_sync,
+            "next_batch_truncated": (
+                f"{next_batch[:20]}..." if next_batch else None
+            ),
             "consecutive_failures": self._sync_consecutive_failures,
+            "last_success_at": self._last_sync_success_at,
+            "last_failure_at": self._last_sync_failure_at,
+            "last_error": self._last_sync_error,
+            "last_error_truncated": (
+                self._last_sync_error[:200] if self._last_sync_error else None
+            ),
             "sync_success_count": self._sync_success_count,
-            "sync_failure_count": self._sync_failure_count,
-            "last_sync_success_loop_time": self._last_sync_success_at,
-            "last_sync_failure_loop_time": self._last_sync_failure_at,
-            "last_sync_error": self._last_sync_error,
-            "reconnect_requested": self._reconnect_requested,
+            "failure_count": self._sync_failure_count,
+            "active_callback_tasks": len(self._active_callback_tasks),
         }

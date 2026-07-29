@@ -11,6 +11,12 @@ from .olm_machine_types import (
     Session,
 )
 
+# Maximum Olm sessions to keep per peer to prevent memory exhaustion
+# from repeated PreKey messages.  Per the spec, a single active session
+# suffices; older sessions are retained for decryption of out-of-order
+# messages that may still arrive.
+MAX_OLM_SESSIONS_PER_PEER = 5
+
 
 class OlmMachineOlmMixin:
     def create_outbound_session(
@@ -35,10 +41,13 @@ class OlmMachineOlmMixin:
 
         session = self._account.create_outbound_session(identity_key, one_time_key)
 
-        # 缓存会话
+        # 缓存会话 (cap per-peer to prevent memory exhaustion)
         if their_identity_key not in self._olm_sessions:
             self._olm_sessions[their_identity_key] = []
-        self._olm_sessions[their_identity_key].append(session)
+        sessions = self._olm_sessions[their_identity_key]
+        sessions.append(session)
+        if len(sessions) > MAX_OLM_SESSIONS_PER_PEER:
+            sessions.pop(0)
 
         # 保存会话
         self.store.add_olm_session(their_identity_key, session.pickle(self._pickle_key))
@@ -272,10 +281,13 @@ class OlmMachineOlmMixin:
                 # 移除已使用的一次性密钥 (vodozemac 会自动处理)
                 # self._account.remove_one_time_keys(session)
 
-                # 缓存和保存会话
+                # 缓存和保存会话 (cap per-peer to prevent memory exhaustion)
                 if sender_key not in self._olm_sessions:
                     self._olm_sessions[sender_key] = []
-                self._olm_sessions[sender_key].append(session)
+                sessions = self._olm_sessions[sender_key]
+                sessions.append(session)
+                if len(sessions) > MAX_OLM_SESSIONS_PER_PEER:
+                    sessions.pop(0)
                 self.store.add_olm_session(sender_key, session.pickle(self._pickle_key))
                 self._save_account()
 

@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 
 from astrbot.api import logger
 
+from ..call_events import is_call_event_type
+from ..client.event_types import parse_event
 from ..constants import (
     M_FORWARDED_ROOM_KEY,
     M_ROOM_ENCRYPTED,
@@ -405,9 +407,6 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             room: Room object
             event_data: Event data
         """
-        from ..call_events import is_call_event_type
-        from ..client.event_types import parse_event
-
         event_type = event_data.get("type", "")
         content = event_data.get("content", {})
         msgtype = content.get("msgtype", "")
@@ -606,7 +605,6 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         """
         try:
             from ..call_events import should_surface_call_event
-            from ..client.event_types import parse_event
 
             event_type = event_data.get("type", "")
             config = self.call_event_config
@@ -750,8 +748,6 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                                 room, verification_event
                             )
                             return
-
-                        from ..client.event_types import parse_event
 
                         event = parse_event(
                             {

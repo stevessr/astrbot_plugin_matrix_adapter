@@ -18,16 +18,7 @@ from .key_backup_crypto import (
     _compute_hkdf,
     _decode_recovery_key,
 )
-
-
-def _encode_unpadded_base64(data: bytes) -> str:
-    return base64.b64encode(data).decode("utf-8").rstrip("=")
-
-
-def _decode_base64(value: str) -> bytes:
-    normalized = value.strip()
-    padding = "=" * (-len(normalized) % 4)
-    return base64.b64decode(normalized + padding)
+from .verification_utils import _decode_base64, _encode_unpadded_base64
 
 
 class KeyBackupSSSSMixin:

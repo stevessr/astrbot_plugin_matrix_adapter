@@ -4,6 +4,7 @@ from .beacon import handle_beacon as handle_beacon
 from .beacon import handle_beacon_info as handle_beacon_info
 from .call import handle_call_event as handle_call_event
 from .call import is_call_event_type as is_call_event_type
+from .extensible import handle_extensible_event as handle_extensible_event
 from .file import handle_file as handle_file
 from .image import handle_image as handle_image
 from .location import handle_location as handle_location

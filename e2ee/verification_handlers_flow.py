@@ -25,7 +25,11 @@ from .verification_constants import (
     Curve25519PublicKey,
     Sas,
 )
-from .verification_utils import _canonical_json, _compute_hkdf
+from .verification_utils import (
+    _canonical_json,
+    _compute_hkdf,
+    _encode_unpadded_base64,
+)
 
 
 class SASVerificationFlowMixin:
@@ -52,10 +56,6 @@ class SASVerificationFlowMixin:
         if not isinstance(methods, (list, tuple, set)):
             return False
         return method in methods
-
-    @staticmethod
-    def _encode_unpadded_base64(data: bytes) -> str:
-        return base64.b64encode(data).decode("ascii").rstrip("=")
 
     @staticmethod
     def _decode_unpadded_base64(data: str) -> bytes:
@@ -176,7 +176,7 @@ class SASVerificationFlowMixin:
             session["qr_mode"] = mode
             session["qr_payload"] = payload
             session["qr_shared_secret"] = shared_secret
-            session["qr_shared_secret_b64"] = self._encode_unpadded_base64(
+            session["qr_shared_secret_b64"] = _encode_unpadded_base64(
                 shared_secret
             )
 
@@ -565,7 +565,7 @@ class SASVerificationFlowMixin:
             # receives that sender's public key. Hash the exact start *content*
             # object and encode the digest as unpadded Base64 (Matrix v1.19).
             combined = (their_key + _canonical_json(start_content)).encode("utf-8")
-            computed = self._encode_unpadded_base64(hashlib.sha256(combined).digest())
+            computed = _encode_unpadded_base64(hashlib.sha256(combined).digest())
 
             if computed != their_commitment:
                 logger.warning(

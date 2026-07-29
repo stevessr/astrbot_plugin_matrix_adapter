@@ -18,7 +18,7 @@ from astrbot.core.utils import astrbot_path
 
 # Update import: Client event types are in ..client.event_types
 from ..client.event_types import MatrixRoom
-from ..constants import REL_TYPE_THREAD
+from ..constants import MSC1767_HTML_KEY, MSC1767_TEXT_KEY, REL_TYPE_THREAD
 from ..plugin_config import get_plugin_config
 from ..utils.media_cache_index import MediaCacheIndexStore
 from ..utils.media_crypto import decrypt_encrypted_file
@@ -30,6 +30,7 @@ from .handlers import (
     handle_beacon,
     handle_beacon_info,
     handle_call_event,
+    handle_extensible_event,
     handle_file,
     handle_image,
     handle_location,
@@ -44,6 +45,19 @@ from .handlers import (
     handle_video,
     is_call_event_type,
 )
+
+
+def _has_extensible_content(content: dict | None) -> bool:
+    """Check if event content uses MSC1767 extensible event keys."""
+    if not isinstance(content, dict):
+        return False
+    for key in (MSC1767_TEXT_KEY, MSC1767_HTML_KEY):
+        if isinstance(content.get(key), dict):
+            return True
+    return False
+
+
+
 
 
 class MatrixReceiver:
@@ -878,8 +892,13 @@ class MatrixReceiver:
         elif event_type in BEACON_EVENT_TYPES:
             await handle_beacon(self, chain, event, event_type)
         else:
-            handler = self._MSGTYPE_HANDLERS.get(msgtype, handle_unknown)
-            await handler(self, chain, event, msgtype)
+            handler = self._MSGTYPE_HANDLERS.get(msgtype)
+            if handler is not None:
+                await handler(self, chain, event, msgtype)
+            elif msgtype or not _has_extensible_content(event.content):
+                await handle_unknown(self, chain, event, msgtype or "")
+            else:
+                await handle_extensible_event(self, chain, event, "m.text")
 
         if msgtype == "m.redaction":
             message.message_str = "".join(

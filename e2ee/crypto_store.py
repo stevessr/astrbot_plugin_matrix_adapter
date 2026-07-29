@@ -20,6 +20,12 @@ from astrbot.api import logger
 from ..plugin_config import get_plugin_config
 from .storage import build_e2ee_data_store
 
+# Maximum Megolm message indices to track per session for replay protection.
+# Older entries are evicted; a Megolm session ratchets forward monotonically
+# so old indices cannot be reused for new attacks after the ratchet has
+# advanced past them.
+_MAX_REPLAY_INDEXES_PER_SESSION = 10_000
+
 
 class CryptoStore:
     """E2EE 加密状态存储"""
@@ -542,6 +548,13 @@ class CryptoStore:
         if previous is not None:
             return previous == event_identifier
         indexes[index_key] = event_identifier
+
+        # Evict oldest entries when per-session limit is exceeded
+        # to prevent unbounded memory growth.
+        if len(indexes) > _MAX_REPLAY_INDEXES_PER_SESSION:
+            for k in sorted(indexes, key=int)[:-_MAX_REPLAY_INDEXES_PER_SESSION]:
+                del indexes[k]
+
         self._save_record(self._RECORD_MEGOLM_REPLAY, self._megolm_replay)
         return True
 

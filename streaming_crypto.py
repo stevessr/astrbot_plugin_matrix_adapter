@@ -4,13 +4,7 @@
 
 from astrbot.api import logger
 
-
-def _copy_cleartext_relates_to(encrypted: dict, content: dict) -> dict:
-    """Expose relation metadata on encrypted events for Matrix aggregation."""
-    relates_to = content.get("m.relates_to")
-    if isinstance(encrypted, dict) and isinstance(relates_to, dict):
-        encrypted.setdefault("m.relates_to", dict(relates_to))
-    return encrypted
+from .sender.handlers.common import _copy_cleartext_relates_to
 
 
 def _encrypted_payload_without_relation(content: dict) -> dict:
