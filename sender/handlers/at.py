@@ -3,6 +3,7 @@ from urllib.parse import quote
 
 from astrbot.api.message_components import At
 
+from ...constants import M_MENTIONS_KEY, MATRIX_HTML_FORMAT
 from .common import resolve_text_msgtype, send_content
 
 
@@ -41,7 +42,7 @@ async def send_at(
         content = {
             "msgtype": msgtype,
             "body": display,
-            "format": "org.matrix.custom.html",
+            "format": MATRIX_HTML_FORMAT,
             "formatted_body": formatted_body,
             "m.mentions": {"user_ids": [user_id]},
         }

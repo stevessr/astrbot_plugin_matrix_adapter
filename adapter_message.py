@@ -9,7 +9,13 @@ from pathlib import Path
 
 from astrbot.api import logger
 
-from .constants import MSC4357_LIVE_MESSAGE_MARKER, REL_TYPE_REPLACE
+from .constants import (
+    M_ROOM_ENCRYPTED,
+    M_ROOM_MESSAGE,
+    M_ROOM_REDACTION,
+    MSC4357_LIVE_MESSAGE_MARKER,
+    REL_TYPE_REPLACE,
+)
 from .plugin_config import get_plugin_config
 
 
@@ -90,19 +96,19 @@ class MatrixAdapterMessageMixin:
             content = event.get("content") or {}
 
             body = ""
-            if event_type == "m.room.message":
+            if event_type == M_ROOM_MESSAGE:
                 msgtype = content.get("msgtype") or ""
                 body = content.get("body") or ""
-                if not body and msgtype in ("m.image", "m.video", "m.audio", "m.file"):
+                if not body and msgtype in (MSGTYPE_IMAGE, MSGTYPE_VIDEO, MSGTYPE_AUDIO, MSGTYPE_FILE):
                     body = msgtype
                 if msgtype == "m.sticker" and not body:
                     body = "sticker"
             elif event_type == "m.reaction":
                 reaction = content.get("m.relates_to", {}).get("key", "")
                 body = f"[reaction] {reaction}".strip()
-            elif event_type == "m.room.encrypted":
+            elif event_type == M_ROOM_ENCRYPTED:
                 body = "[encrypted]"
-            elif event_type == "m.room.redaction":
+            elif event_type == M_ROOM_REDACTION:
                 body = "[redaction]"
             else:
                 body = (

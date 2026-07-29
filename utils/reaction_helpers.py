@@ -11,6 +11,8 @@ from typing import Any
 
 from astrbot.api import logger
 
+from ..constants import M_ROOM_MESSAGE, M_STICKER
+
 ReactionKeyResolver = Callable[..., str | None | Awaitable[str | None]]
 
 _REACTION_KEY_RESOLVERS: list[ReactionKeyResolver] = []
@@ -160,7 +162,7 @@ def select_nearest_matching_event(
         if not isinstance(event, dict):
             continue
         event_type = str(event.get("type") or "")
-        if event_type not in {"m.room.message", "m.sticker"}:
+        if event_type not in {M_ROOM_MESSAGE, M_STICKER}:
             continue
         text = extract_matrix_event_text(event)
         if not text:

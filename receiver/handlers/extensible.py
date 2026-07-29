@@ -9,7 +9,7 @@ when no legacy ``msgtype`` is present.
 
 from astrbot.api.message_components import Plain
 
-from ...constants import MSC1767_HTML_KEY, MSC1767_TEXT_KEY
+from ...constants import MATRIX_HTML_FORMAT, MSC1767_HTML_KEY, MSC1767_TEXT_KEY
 
 
 async def handle_extensible_event(receiver, chain, event, _msgtype: str):
@@ -25,7 +25,7 @@ async def handle_extensible_event(receiver, chain, event, _msgtype: str):
 
         body = _nested_content(content, MSC1767_TEXT_KEY, "body") or event.body or ""
         append_formatted_text(receiver, chain, body, {
-            "format": "org.matrix.custom.html",
+            "format": MATRIX_HTML_FORMAT,
             "formatted_body": html,
         })
         return

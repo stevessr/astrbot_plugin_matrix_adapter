@@ -1,12 +1,13 @@
 from astrbot.api.message_components import Location
 
+from ...constants import (
+    M_LOCATION,
+    MSC3488_ASSET_KEY,
+    MSC3488_LOCATION_KEY,
+)
 from .common import send_content
 
 DEFAULT_ASSET_TYPE = "m.self"
-STABLE_LOCATION_KEY = "m.location"
-STABLE_ASSET_KEY = "m.asset"
-UNSTABLE_LOCATION_KEY = "org.matrix.msc3488.location"
-UNSTABLE_ASSET_KEY = "org.matrix.msc3488.asset"
 
 
 def _build_text_repr(text: str) -> list[dict[str, str]]:
@@ -41,10 +42,10 @@ async def send_location(
         "msgtype": "m.location",
         "body": body,
         "geo_uri": geo_uri,
-        STABLE_LOCATION_KEY: location_repr,
-        STABLE_ASSET_KEY: dict(asset_repr),
-        UNSTABLE_LOCATION_KEY: dict(location_repr),
-        UNSTABLE_ASSET_KEY: dict(asset_repr),
+        M_LOCATION: location_repr,
+        "m.asset": dict(asset_repr),
+        MSC3488_LOCATION_KEY: dict(location_repr),
+        MSC3488_ASSET_KEY: dict(asset_repr),
     }
     text_repr = _build_text_repr(body)
     if text_repr:

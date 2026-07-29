@@ -1,13 +1,14 @@
 from astrbot.api.message_components import Plain
 
+from ...constants import (
+    M_LOCATION,
+    MSC1767_TEXT_KEY,
+    MSC3488_ASSET_KEY,
+    MSC3488_LOCATION_KEY,
+)
+
 DEFAULT_ASSET_TYPE = "m.self"
 PIN_ASSET_TYPE = "m.pin"
-STABLE_LOCATION_EVENT_TYPE = "m.location"
-UNSTABLE_LOCATION_EVENT_TYPE = "org.matrix.msc3488.location"
-STABLE_LOCATION_KEY = "m.location"
-UNSTABLE_LOCATION_KEY = "org.matrix.msc3488.location"
-STABLE_ASSET_KEY = "m.asset"
-UNSTABLE_ASSET_KEY = "org.matrix.msc3488.asset"
 
 
 def _extract_text_repr(value) -> str:
@@ -24,12 +25,12 @@ def _extract_text_repr(value) -> str:
 
 
 def _extract_location_content(content: dict, event_type: str | None) -> dict:
-    for key in (STABLE_LOCATION_KEY, UNSTABLE_LOCATION_KEY):
+    for key in (M_LOCATION, MSC3488_LOCATION_KEY):
         location_content = content.get(key)
         if isinstance(location_content, dict):
             return location_content
 
-    if event_type in (STABLE_LOCATION_EVENT_TYPE, UNSTABLE_LOCATION_EVENT_TYPE):
+    if event_type in (M_LOCATION, MSC3488_LOCATION_KEY):
         return content
 
     return {}
@@ -57,7 +58,7 @@ def _extract_location_description(content: dict, event_type: str | None) -> str:
 
 
 def _extract_asset_type(content: dict) -> str:
-    for key in (STABLE_ASSET_KEY, UNSTABLE_ASSET_KEY):
+    for key in ("m.asset", MSC3488_ASSET_KEY):
         asset_content = content.get(key)
         if isinstance(asset_content, dict):
             asset_type = asset_content.get("type")
@@ -74,7 +75,7 @@ async def handle_location(receiver, chain, event, event_type: str):
         getattr(event, "body", "")
         or content.get("body", "")
         or _extract_text_repr(content.get("m.text"))
-        or _extract_text_repr(content.get("org.matrix.msc1767.text"))
+        or _extract_text_repr(content.get(MSC1767_TEXT_KEY))
         or _extract_location_description(content, resolved_event_type)
     )
     prefix = (

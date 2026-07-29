@@ -1,15 +1,16 @@
 from astrbot.api import logger
 from astrbot.api.message_components import Plain, Record
 
+from ...constants import (
+    MSC1767_AUDIO_KEY,
+    MSC1767_FILE_KEY,
+    MSC3245_VOICE_KEY,
+)
 from .text import append_formatted_text, should_append_caption
-
-UNSTABLE_AUDIO_KEY = "org.matrix.msc1767.audio"
-UNSTABLE_VOICE_KEY = "org.matrix.msc3245.voice"
-UNSTABLE_FILE_KEY = "org.matrix.msc1767.file"
 
 
 def _extract_unstable_file(content: dict) -> dict:
-    unstable_file = content.get(UNSTABLE_FILE_KEY)
+    unstable_file = content.get(MSC1767_FILE_KEY)
     return unstable_file if isinstance(unstable_file, dict) else {}
 
 
@@ -37,7 +38,7 @@ def _extract_audio_info(content: dict) -> dict:
     info_data = content.get("info")
     resolved: dict = dict(info_data) if isinstance(info_data, dict) else {}
 
-    unstable_audio = content.get(UNSTABLE_AUDIO_KEY)
+    unstable_audio = content.get(MSC1767_AUDIO_KEY)
     if isinstance(unstable_audio, dict):
         duration = unstable_audio.get("duration")
         if duration is not None and "duration" not in resolved:

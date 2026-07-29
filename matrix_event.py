@@ -7,6 +7,8 @@ from astrbot.api.event import AstrMessageEvent, MessageChain
 from astrbot.api.platform import AstrBotMessage, PlatformMetadata
 
 from .constants import (
+    M_ROOM_MESSAGE,
+    MATRIX_HTML_FORMAT,
     MSC4357_LIVE_MESSAGE_MARKER,
     STREAMING_TYPING_REFRESH_SECONDS,
     STREAMING_TYPING_TIMEOUT_MS,
@@ -297,7 +299,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                 logger.warning(f"Failed to render live message markdown: {e}")
                 formatted_body = html.escape(text).replace("\n", "<br>")
             if formatted_body:
-                content["format"] = "org.matrix.custom.html"
+                content["format"] = MATRIX_HTML_FORMAT
                 content["formatted_body"] = formatted_body
             if not final:
                 content[MSC4357_LIVE_MESSAGE_MARKER] = {}
@@ -319,7 +321,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                             self.client,
                             self.e2ee_manager,
                             room_id,
-                            "m.room.message",
+                            M_ROOM_MESSAGE,
                             content,
                             tracker_metadata=tracker_metadata,
                         )
@@ -327,7 +329,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                         response = await send_message_plain(
                             self.client,
                             room_id,
-                            "m.room.message",
+                            M_ROOM_MESSAGE,
                             content,
                             tracker_metadata=tracker_metadata,
                         )
@@ -517,7 +519,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                             chunk = messages_resp.get("chunk", [])
                             for event in chunk:
                                 if (
-                                    event.get("type") == "m.room.message"
+                                    event.get("type") == M_ROOM_MESSAGE
                                     and event.get("sender") == my_user_id
                                     and event.get("content", {}).get("msgtype")
                                     in ("m.text", "m.notice")

@@ -5,7 +5,14 @@ Matrix Event Types - Replacement for matrix-nio event types
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..constants import GROUP_CHAT_MIN_MEMBERS_2, REL_TYPE_REPLACE
+from ..constants import (
+    GROUP_CHAT_MIN_MEMBERS_2,
+    M_ROOM_MEMBER,
+    M_ROOM_MESSAGE,
+    M_ROOM_REDACTION,
+    MSGTYPE_TEXT,
+    REL_TYPE_REPLACE,
+)
 
 
 @dataclass
@@ -84,7 +91,7 @@ class RoomMessageText(RoomMessageEvent):
     @classmethod
     def from_dict(cls, data: dict[str, Any], room_id: str):
         event = super().from_dict(data, room_id)
-        event.msgtype = "m.text"
+        event.msgtype = MSGTYPE_TEXT
         return event
 
 
@@ -123,7 +130,7 @@ class InviteEvent(MatrixEvent):
             origin_server_ts=data.get("origin_server_ts", 0),
             room_id=room_id,
             content=data.get("content", {}),
-            event_type="m.room.member",
+            event_type=M_ROOM_MEMBER,
             state_key=data.get("state_key"),
             unsigned=data.get("unsigned"),
         )
@@ -197,7 +204,7 @@ def _build_location_body(content: dict[str, Any]) -> str:
             if description:
                 return str(description)
 
-    text_repr = _extract_text_repr(content.get("m.text")) or _extract_text_repr(
+    text_repr = _extract_text_repr(content.get(MSGTYPE_TEXT)) or _extract_text_repr(
         content.get("org.matrix.msc1767.text")
     )
     if text_repr:
@@ -233,7 +240,7 @@ def parse_event(event_data: dict[str, Any], room_id: str) -> MatrixEvent:
 
     # Treat edits (m.replace) as normal messages with new content.
     if (
-        event_type == "m.room.message"
+        event_type == M_ROOM_MESSAGE
         and relates_to.get("rel_type") == REL_TYPE_REPLACE
         and content.get("m.new_content")
     ):
@@ -242,19 +249,16 @@ def parse_event(event_data: dict[str, Any], room_id: str) -> MatrixEvent:
         event_data = dict(event_data)
         event_data["content"] = content
 
-    match event_type:
-        case "m.room.message":
-            msgtype = content.get("msgtype", "")
-            match msgtype:
-                case "m.text":
-                    return RoomMessageText.from_dict(event_data, room_id)
-                case "m.image":
-                    return RoomMessageImage.from_dict(event_data, room_id)
-                case "m.file":
-                    return RoomMessageFile.from_dict(event_data, room_id)
-                case _:
-                    return RoomMessageEvent.from_dict(event_data, room_id)
-        case "m.sticker":
+    if event_type == M_ROOM_MESSAGE:
+        msgtype = content.get("msgtype", "")
+        if msgtype == MSGTYPE_TEXT:
+            return RoomMessageText.from_dict(event_data, room_id)
+        if msgtype == "m.image":
+            return RoomMessageImage.from_dict(event_data, room_id)
+        if msgtype == "m.file":
+            return RoomMessageFile.from_dict(event_data, room_id)
+        return RoomMessageEvent.from_dict(event_data, room_id)
+    if event_type == "m.sticker":
             # 贴纸事件使用 RoomMessageEvent 结构，设置 msgtype 为 m.sticker
             event = RoomMessageEvent.from_dict(event_data, room_id)
             event.msgtype = "m.sticker"
@@ -262,48 +266,47 @@ def parse_event(event_data: dict[str, Any], room_id: str) -> MatrixEvent:
             if "msgtype" not in event.content:
                 event.content["msgtype"] = "m.sticker"
             return event
-        case "m.reaction":
-            reaction = content.get("m.relates_to", {}).get("key", "")
-            reaction_content = dict(content)
-            reaction_content["msgtype"] = "m.reaction"
-            reaction_content["body"] = reaction
-            event_data = dict(event_data)
-            event_data["content"] = reaction_content
-            return RoomMessageEvent.from_dict(event_data, room_id)
-        case "m.location" | "org.matrix.msc3488.location":
-            location_content = dict(content)
-            location_content.setdefault("msgtype", "m.location")
-            location_content.setdefault("body", _build_location_body(content))
-            event_data = dict(event_data)
-            event_data["content"] = location_content
-            event = RoomMessageEvent.from_dict(event_data, room_id)
-            event.msgtype = "m.location"
-            return event
-        case (
-            "m.beacon"
-            | "m.beacon_info"
-            | "org.matrix.msc3672.beacon"
-            | "org.matrix.msc3672.beacon_info"
-        ):
-            beacon_content = dict(content)
-            beacon_content.setdefault("msgtype", "m.beacon")
-            beacon_content.setdefault("body", _build_location_body(content))
-            event_data = dict(event_data)
-            event_data["content"] = beacon_content
-            event = RoomMessageEvent.from_dict(event_data, room_id)
-            event.msgtype = "m.beacon"
-            return event
-        case "m.room.member" if content.get("membership") == "invite":
-            return InviteEvent.from_dict(event_data, room_id)
-        case "m.room.redaction":
-            redaction_content = dict(content)
-            if "redacts" not in redaction_content and event_data.get("redacts"):
-                redaction_content["redacts"] = event_data.get("redacts")
-            event_data = dict(event_data)
-            event_data["content"] = redaction_content
-            event = RoomMessageEvent.from_dict(event_data, room_id)
-            event.msgtype = "m.redaction"
-            event.body = redaction_content.get("reason", "")
-            return event
-        case _:
-            return MatrixEvent.from_dict(event_data, room_id)
+    if event_type == "m.reaction":
+        reaction = content.get("m.relates_to", {}).get("key", "")
+        reaction_content = dict(content)
+        reaction_content["msgtype"] = "m.reaction"
+        reaction_content["body"] = reaction
+        event_data = dict(event_data)
+        event_data["content"] = reaction_content
+        return RoomMessageEvent.from_dict(event_data, room_id)
+    if event_type in {"m.location", "org.matrix.msc3488.location"}:
+        location_content = dict(content)
+        location_content.setdefault("msgtype", "m.location")
+        location_content.setdefault("body", _build_location_body(content))
+        event_data = dict(event_data)
+        event_data["content"] = location_content
+        event = RoomMessageEvent.from_dict(event_data, room_id)
+        event.msgtype = "m.location"
+        return event
+    if event_type in {
+        "m.beacon",
+        "m.beacon_info",
+        "org.matrix.msc3672.beacon",
+        "org.matrix.msc3672.beacon_info",
+    }:
+        beacon_content = dict(content)
+        beacon_content.setdefault("msgtype", "m.beacon")
+        beacon_content.setdefault("body", _build_location_body(content))
+        event_data = dict(event_data)
+        event_data["content"] = beacon_content
+        event = RoomMessageEvent.from_dict(event_data, room_id)
+        event.msgtype = "m.beacon"
+        return event
+    if event_type == M_ROOM_MEMBER and content.get("membership") == "invite":
+        return InviteEvent.from_dict(event_data, room_id)
+    if event_type == M_ROOM_REDACTION:
+        redaction_content = dict(content)
+        if "redacts" not in redaction_content and event_data.get("redacts"):
+            redaction_content["redacts"] = event_data.get("redacts")
+        event_data = dict(event_data)
+        event_data["content"] = redaction_content
+        event = RoomMessageEvent.from_dict(event_data, room_id)
+        event.msgtype = "m.redaction"
+        event.body = redaction_content.get("reason", "")
+        return event
+    return MatrixEvent.from_dict(event_data, room_id)

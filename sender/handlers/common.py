@@ -1,5 +1,7 @@
 from astrbot.api import logger
 
+from ...constants import M_ROOM_ENCRYPTED, M_ROOM_MESSAGE
+
 
 def resolve_text_msgtype(use_notice: bool = False) -> str:
     """Resolve the Matrix ``msgtype`` for textual adapter output."""
@@ -23,7 +25,7 @@ async def send_content(
     use_thread: bool,
     is_encrypted_room: bool,
     e2ee_manager,
-    msg_type: str = "m.room.message",
+    msg_type: str = M_ROOM_MESSAGE,
     thread_is_falling_back: bool | None = None,
 ) -> dict | None:
     if use_thread and thread_root:
@@ -46,7 +48,7 @@ async def send_content(
             _copy_cleartext_relates_to(encrypted, content)
             return await client.send_message(
                 room_id=room_id,
-                msg_type="m.room.encrypted",
+                msg_type=M_ROOM_ENCRYPTED,
                 content=encrypted,
             )
         logger.warning("加密消息失败，尝试发送未加密消息")

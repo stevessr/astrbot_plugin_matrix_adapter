@@ -18,7 +18,27 @@ from astrbot.core.utils import astrbot_path
 
 # Update import: Client event types are in ..client.event_types
 from ..client.event_types import MatrixRoom
-from ..constants import MSC1767_HTML_KEY, MSC1767_TEXT_KEY, REL_TYPE_THREAD
+from ..constants import (
+    M_POLL_END,
+    M_POLL_RESPONSE,
+    M_POLL_START,
+    MSC1767_HTML_KEY,
+    MSC1767_TEXT_KEY,
+    MSC3381_POLL_END,
+    MSC3381_POLL_RESPONSE,
+    MSC3381_POLL_START,
+    MSGTYPE_AUDIO,
+    MSGTYPE_EMOTE,
+    MSGTYPE_FILE,
+    MSGTYPE_IMAGE,
+    MSGTYPE_LOCATION,
+    MSGTYPE_NOTICE,
+    MSGTYPE_REDACTION,
+    MSGTYPE_STICKER,
+    MSGTYPE_TEXT,
+    MSGTYPE_VIDEO,
+    REL_TYPE_THREAD,
+)
 from ..plugin_config import get_plugin_config
 from ..utils.media_cache_index import MediaCacheIndexStore
 from ..utils.media_crypto import decrypt_encrypted_file
@@ -79,17 +99,17 @@ class MatrixReceiver:
 
     # 消息类型 -> handler 映射（类常量，避免每次 convert_message 时重建）
     _MSGTYPE_HANDLERS = {
-        "m.text": handle_text,
-        "m.notice": handle_text,
-        "m.emote": handle_text,
-        "m.image": handle_image,
-        "m.redaction": handle_redaction,
-        "m.sticker": handle_sticker,
-        "m.video": handle_video,
-        "m.audio": handle_audio,
-        "m.file": handle_file,
+        MSGTYPE_TEXT: handle_text,
+        MSGTYPE_NOTICE: handle_text,
+        MSGTYPE_EMOTE: handle_text,
+        MSGTYPE_IMAGE: handle_image,
+        MSGTYPE_REDACTION: handle_redaction,
+        MSGTYPE_STICKER: handle_sticker,
+        MSGTYPE_VIDEO: handle_video,
+        MSGTYPE_AUDIO: handle_audio,
+        MSGTYPE_FILE: handle_file,
         "m.reaction": handle_reaction,
-        "m.location": handle_location,
+        MSGTYPE_LOCATION: handle_location,
     }
 
     def __init__(
@@ -129,7 +149,7 @@ class MatrixReceiver:
 
     def _should_auto_download_media(self, msgtype: str) -> bool:
         """检查是否应该自动下载该类型的媒体文件"""
-        if msgtype not in {"m.image", "m.sticker", "m.video", "m.audio", "m.file"}:
+        if msgtype not in {MSGTYPE_IMAGE, MSGTYPE_STICKER, MSGTYPE_VIDEO, MSGTYPE_AUDIO, MSGTYPE_FILE}:
             return False
         try:
             return get_plugin_config().is_media_auto_download_enabled(msgtype)
@@ -604,16 +624,16 @@ class MatrixReceiver:
         if self._is_media_over_auto_download_limit(size_bytes):
             if self.mxc_converter and not file_info:
                 http_url = self.mxc_converter(mxc_url)
-                if msgtype == "m.image":
+                if msgtype == MSGTYPE_IMAGE:
                     chain.chain.append(Image.fromURL(http_url))
                     return True
-                if msgtype == "m.video":
+                if msgtype == MSGTYPE_VIDEO:
                     chain.chain.append(Video.fromURL(http_url))
                     return True
-                if msgtype == "m.audio":
+                if msgtype == MSGTYPE_AUDIO:
                     chain.chain.append(Record.fromURL(http_url))
                     return True
-                if msgtype == "m.file":
+                if msgtype == MSGTYPE_FILE:
                     filename = content.get("filename") or content.get(
                         "body", "file.bin"
                     )
@@ -627,24 +647,24 @@ class MatrixReceiver:
         filename = content.get("filename")
         if not filename:
             default_name_map = {
-                "m.image": "image.jpg",
-                "m.video": "video.mp4",
-                "m.audio": "audio.mp3",
-                "m.file": "file.bin",
+                MSGTYPE_IMAGE: "image.jpg",
+                MSGTYPE_VIDEO: "video.mp4",
+                MSGTYPE_AUDIO: "audio.mp3",
+                MSGTYPE_FILE: "file.bin",
             }
             filename = content.get("body", default_name_map.get(msgtype, "media.bin"))
 
         def _append_http_component(http_url: str) -> bool:
-            if msgtype == "m.image":
+            if msgtype == MSGTYPE_IMAGE:
                 chain.chain.append(Image.fromURL(http_url))
                 return True
-            if msgtype == "m.video":
+            if msgtype == MSGTYPE_VIDEO:
                 chain.chain.append(Video.fromURL(http_url))
                 return True
-            if msgtype == "m.audio":
+            if msgtype == MSGTYPE_AUDIO:
                 chain.chain.append(Record.fromURL(http_url))
                 return True
-            if msgtype == "m.file":
+            if msgtype == MSGTYPE_FILE:
                 chain.chain.append(File(name=filename, url=http_url))
                 return True
             return False
@@ -691,16 +711,16 @@ class MatrixReceiver:
             logger.warning(f"Failed to download quoted media ({msgtype}): {e}")
             return False
 
-        if msgtype == "m.image":
+        if msgtype == MSGTYPE_IMAGE:
             chain.chain.append(Image.fromFileSystem(str(cache_path)))
             return True
-        if msgtype == "m.video":
+        if msgtype == MSGTYPE_VIDEO:
             chain.chain.append(Video.fromFileSystem(str(cache_path)))
             return True
-        if msgtype == "m.audio":
+        if msgtype == MSGTYPE_AUDIO:
             chain.chain.append(Record.fromFileSystem(str(cache_path)))
             return True
-        if msgtype == "m.file":
+        if msgtype == MSGTYPE_FILE:
             chain.chain.append(File(name=filename, file=str(cache_path)))
             return True
         return False
@@ -857,10 +877,10 @@ class MatrixReceiver:
                         original_msgtype = original_content.get("msgtype")
 
                         if original_msgtype in {
-                            "m.image",
-                            "m.video",
-                            "m.audio",
-                            "m.file",
+                            MSGTYPE_IMAGE,
+                            MSGTYPE_VIDEO,
+                            MSGTYPE_AUDIO,
+                            MSGTYPE_FILE,
                         }:
                             rendered = await self._append_quoted_media_component(
                                 chain, original_msgtype, original_content
@@ -881,11 +901,11 @@ class MatrixReceiver:
         event_type = getattr(event, "event_type", None)
 
         # Handle poll events by event type rather than msgtype
-        if event_type in ("m.poll.start", "org.matrix.msc3381.poll.start"):
+        if event_type in (M_POLL_START, MSC3381_POLL_START):
             await handle_poll_start(self, chain, event, event_type)
-        elif event_type in ("m.poll.response", "org.matrix.msc3381.poll.response"):
+        elif event_type in (M_POLL_RESPONSE, MSC3381_POLL_RESPONSE):
             await handle_poll_response(self, chain, event, event_type)
-        elif event_type in ("m.poll.end", "org.matrix.msc3381.poll.end"):
+        elif event_type in (M_POLL_END, MSC3381_POLL_END):
             await handle_poll_end(self, chain, event, event_type)
         elif event_type in BEACON_EVENT_TYPES and event_type and "beacon_info" in event_type:
             await handle_beacon_info(self, chain, event, event_type)
@@ -898,9 +918,9 @@ class MatrixReceiver:
             elif msgtype or not _has_extensible_content(event.content):
                 await handle_unknown(self, chain, event, msgtype or "")
             else:
-                await handle_extensible_event(self, chain, event, "m.text")
+                await handle_extensible_event(self, chain, event, MSGTYPE_TEXT)
 
-        if msgtype == "m.redaction":
+        if msgtype == MSGTYPE_REDACTION:
             message.message_str = "".join(
                 str(getattr(component, "text", ""))
                 for component in chain.chain

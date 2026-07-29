@@ -4,6 +4,7 @@
 
 from astrbot.api import logger
 
+from .constants import M_ROOM_ENCRYPTED, M_ROOM_MESSAGE
 from .sender.handlers.common import _copy_cleartext_relates_to
 
 
@@ -47,7 +48,7 @@ async def send_message_encrypted(
             _copy_cleartext_relates_to(encrypted, content)
             return await client.send_message(
                 room_id=room_id,
-                msg_type="m.room.encrypted",
+                msg_type=M_ROOM_ENCRYPTED,
                 content=encrypted,
                 tracker_metadata=tracker_metadata,
             )
@@ -106,14 +107,14 @@ async def edit_message_encrypted(
 
         encrypted = await e2ee_manager.encrypt_message(
             room_id,
-            "m.room.message",
+            M_ROOM_MESSAGE,
             _encrypted_payload_without_relation(edit_content),
         )
         if encrypted:
             _copy_cleartext_relates_to(encrypted, edit_content)
             await client.send_message(
                 room_id=room_id,
-                msg_type="m.room.encrypted",
+                msg_type=M_ROOM_ENCRYPTED,
                 content=encrypted,
                 tracker_metadata=tracker_metadata,
             )

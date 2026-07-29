@@ -12,6 +12,8 @@ from ...constants import (
     M_BEACON_INFO,
     MSC1767_TEXT_KEY,
     MSC3488_LOCATION_KEY,
+    MSC3489_BEACON_INFO_PREFIX,
+    MSC3489_BEACON_KEY,
 )
 
 
@@ -77,7 +79,7 @@ async def handle_beacon(receiver, chain, event, _: str):
 
 BEACON_EVENT_TYPES = {
     M_BEACON_INFO,
-    "org.matrix.msc3672.beacon_info",
+    MSC3489_BEACON_INFO_PREFIX,
     M_BEACON,
-    "org.matrix.msc3672.beacon",
+    MSC3489_BEACON_KEY,
 }

@@ -3,7 +3,7 @@ import html
 from astrbot.api import logger
 from astrbot.api.message_components import Plain
 
-from ...constants import TEXT_TRUNCATE_LENGTH_50
+from ...constants import MATRIX_HTML_FORMAT, TEXT_TRUNCATE_LENGTH_50
 from ...utils.markdown_utils import markdown_to_html
 from ...utils.utils import MatrixUtils
 from .common import resolve_text_msgtype, send_content
@@ -96,7 +96,7 @@ async def send_plain(
     if hasattr(segment, "format") and segment.format:
         content["format"] = segment.format
     else:
-        content["format"] = "org.matrix.custom.html"
+        content["format"] = MATRIX_HTML_FORMAT
 
     if formatted_body:
         if original_message_info and reply_to and not use_thread:
@@ -107,7 +107,7 @@ async def send_plain(
                 room_id=room_id,
             )
             formatted_body = fallback_html + formatted_body
-            content["format"] = "org.matrix.custom.html"
+            content["format"] = MATRIX_HTML_FORMAT
 
         content["formatted_body"] = formatted_body
 

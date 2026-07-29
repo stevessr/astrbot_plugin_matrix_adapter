@@ -5,6 +5,7 @@ Provides core room operations and search methods
 
 from typing import Any
 
+from ..constants import M_ROOM_ENCRYPTION
 from .path_utils import quote_path_segment
 
 
@@ -123,7 +124,7 @@ class RoomCoreMixin:
         try:
             state = await self.get_room_state(room_id)
             for event in state:
-                if event.get("type") == "m.room.encryption":
+                if event.get("type") == M_ROOM_ENCRYPTION:
                     return True
             return False
         except Exception:

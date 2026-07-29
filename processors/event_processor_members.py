@@ -6,6 +6,7 @@ import asyncio
 
 from astrbot.api import logger
 
+from ..constants import M_ROOM_LIVE_MESSAGING, MSC4357_LIVE_MESSAGING_STATE
 from ..room_member_store import MatrixRoomMemberStore
 from ..user_store import MatrixUserStore
 
@@ -71,8 +72,8 @@ class MatrixEventProcessorMembers:
         if "state_events" in room_data:
             room.state_events = room_data.get("state_events", {})
             for event_type in (
-                "m.room.live_messaging",
-                "org.matrix.msc4357.live_messaging",
+                M_ROOM_LIVE_MESSAGING,
+                MSC4357_LIVE_MESSAGING_STATE,
             ):
                 live_state = room.state_events.get(event_type, {}).get("", {})
                 if not isinstance(live_state, dict):

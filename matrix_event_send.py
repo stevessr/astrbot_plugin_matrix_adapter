@@ -27,7 +27,7 @@ from astrbot.api.message_components import (
 )
 
 from .components import Poll
-from .constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES
+from .constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES, MATRIX_HTML_FORMAT
 from .sender.handlers import (
     send_at,
     send_audio,
@@ -531,7 +531,7 @@ async def send_with_client_impl(
                 if fallback_html:
                     temp = Plain(
                         text=fallback_text,
-                        format="org.matrix.custom.html",
+                        format=MATRIX_HTML_FORMAT,
                         formatted_body=fallback_html,
                         convert=False,
                     )

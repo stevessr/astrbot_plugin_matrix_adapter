@@ -4,6 +4,27 @@ Handler for Matrix room state events (m.room.name, m.room.topic, m.room.encrypti
 
 from astrbot.api.message_components import Plain
 
+from ...constants import (
+    M_ROOM_ALIASES,
+    M_ROOM_AVATAR,
+    M_ROOM_CANONICAL_ALIAS,
+    M_ROOM_CREATE,
+    M_ROOM_ENCRYPTION,
+    M_ROOM_GUEST_ACCESS,
+    M_ROOM_HISTORY_VISIBILITY,
+    M_ROOM_JOIN_RULES,
+    M_ROOM_MEMBER,
+    M_ROOM_NAME,
+    M_ROOM_PINNED_EVENTS,
+    M_ROOM_POWER_LEVELS,
+    M_ROOM_SERVER_ACL,
+    M_ROOM_THIRD_PARTY_INVITE,
+    M_ROOM_TOMBSTONE,
+    M_ROOM_TOPIC,
+    M_SPACE_CHILD,
+    M_SPACE_PARENT,
+)
+
 
 def _format_member(user_id: str | None, display_name: str | None = None) -> str:
     user = str(user_id or "").strip()
@@ -452,22 +473,22 @@ async def handle_room_member_change(receiver, chain, event, _: str):
 
 # Map of state event types to their handlers
 ROOM_STATE_HANDLERS = {
-    "m.room.member": handle_room_member_change,
-    "m.room.name": handle_room_name_change,
-    "m.room.topic": handle_room_topic_change,
-    "m.room.avatar": handle_room_avatar_change,
-    "m.room.create": handle_room_create,
-    "m.room.encryption": handle_room_encryption,
-    "m.room.server_acl": handle_room_server_acl,
-    "m.room.tombstone": handle_room_tombstone,
-    "m.room.power_levels": handle_room_power_levels,
-    "m.room.join_rules": handle_room_join_rules,
-    "m.room.history_visibility": handle_room_history_visibility,
-    "m.room.guest_access": handle_room_guest_access,
-    "m.room.canonical_alias": handle_room_canonical_alias,
-    "m.room.aliases": handle_room_aliases,
-    "m.room.pinned_events": handle_room_pinned_events,
-    "m.room.third_party_invite": handle_room_third_party_invite,
-    "m.space.child": handle_space_child,
-    "m.space.parent": handle_space_parent,
+    M_ROOM_MEMBER: handle_room_member_change,
+    M_ROOM_NAME: handle_room_name_change,
+    M_ROOM_TOPIC: handle_room_topic_change,
+    M_ROOM_AVATAR: handle_room_avatar_change,
+    M_ROOM_CREATE: handle_room_create,
+    M_ROOM_ENCRYPTION: handle_room_encryption,
+    M_ROOM_SERVER_ACL: handle_room_server_acl,
+    M_ROOM_TOMBSTONE: handle_room_tombstone,
+    M_ROOM_POWER_LEVELS: handle_room_power_levels,
+    M_ROOM_JOIN_RULES: handle_room_join_rules,
+    M_ROOM_HISTORY_VISIBILITY: handle_room_history_visibility,
+    M_ROOM_GUEST_ACCESS: handle_room_guest_access,
+    M_ROOM_CANONICAL_ALIAS: handle_room_canonical_alias,
+    M_ROOM_ALIASES: handle_room_aliases,
+    M_ROOM_PINNED_EVENTS: handle_room_pinned_events,
+    M_ROOM_THIRD_PARTY_INVITE: handle_room_third_party_invite,
+    M_SPACE_CHILD: handle_space_child,
+    M_SPACE_PARENT: handle_space_parent,
 }

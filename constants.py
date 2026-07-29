@@ -81,6 +81,16 @@ MSC4310_RTC_DECLINE = "org.matrix.msc4310.rtc.decline"
 # InvitedRoom/KnockedRoom 上携带完整 member 事件的 state 键（unstable）
 MSC4319_STATE_KEY = "org.matrix.msc4319.state"
 
+# MSC3381 Polls
+M_POLL_START = "m.poll.start"
+M_POLL_RESPONSE = "m.poll.response"
+M_POLL_END = "m.poll.end"
+MSC3381_POLL_START = "org.matrix.msc3381.poll.start"
+MSC3381_POLL_RESPONSE = "org.matrix.msc3381.poll.response"
+MSC3381_POLL_END = "org.matrix.msc3381.poll.end"
+M_POLL_KIND_DISCLOSED = "m.disclosed"
+M_POLL_KIND_UNDISCLOSED = "m.undisclosed"
+
 # MSC4495 Selective Presence (选择性在线状态)
 M_PRESENCE_SHARING = "m.presence.sharing"
 MSC4495_PRESENCE_SHARING = "org.continuwuity.presence_v2.msc4495.presence.sharing"
@@ -103,6 +113,11 @@ PRESENCE_HINT_SUGGEST = "suggest"
 PRESENCE_HINT_FORBID = "forbid"
 
 # 通用事件类型
+M_ROOM_MESSAGE = "m.room.message"
+M_ROOM_REDACTION = "m.room.redaction"
+M_STICKER = "m.sticker"
+M_REACTION = "m.reaction"
+M_LOCATION = "m.location"
 M_ROOM_ENCRYPTED = "m.room.encrypted"
 M_ROOM_KEY = "m.room_key"
 M_ROOM_KEY_REQUEST = "m.room_key_request"
@@ -111,6 +126,26 @@ M_FORWARDED_ROOM_KEY = "m.forwarded_room_key"
 M_ROOM_MEMBER = "m.room.member"
 MEMBERSHIP_JOIN = "join"
 MEMBERSHIP_INVITE = "invite"
+
+# 房间状态事件类型
+# 参考：https://spec.matrix.org/latest/client-server-api/#room-events
+M_ROOM_NAME = "m.room.name"
+M_ROOM_TOPIC = "m.room.topic"
+M_ROOM_AVATAR = "m.room.avatar"
+M_ROOM_CREATE = "m.room.create"
+M_ROOM_ENCRYPTION = "m.room.encryption"
+M_ROOM_SERVER_ACL = "m.room.server_acl"
+M_ROOM_TOMBSTONE = "m.room.tombstone"
+M_ROOM_POWER_LEVELS = "m.room.power_levels"
+M_ROOM_JOIN_RULES = "m.room.join_rules"
+M_ROOM_HISTORY_VISIBILITY = "m.room.history_visibility"
+M_ROOM_GUEST_ACCESS = "m.room.guest_access"
+M_ROOM_CANONICAL_ALIAS = "m.room.canonical_alias"
+M_ROOM_ALIASES = "m.room.aliases"
+M_ROOM_PINNED_EVENTS = "m.room.pinned_events"
+M_ROOM_THIRD_PARTY_INVITE = "m.room.third_party_invite"
+M_SPACE_CHILD = "m.space.child"
+M_SPACE_PARENT = "m.space.parent"
 
 # 设备密钥前缀
 PREFIX_ED25519 = "ed25519:"
@@ -184,6 +219,24 @@ INFO_PREFIX_MAC = "MATRIX_KEY_VERIFICATION_MAC"
 # 在线状态
 PRESENCE_ONLINE = "online"
 PRESENCE_OFFLINE = "offline"
+
+# 消息类型（msgtype）
+MSGTYPE_TEXT = "m.text"
+MSGTYPE_NOTICE = "m.notice"
+MSGTYPE_EMOTE = "m.emote"
+MSGTYPE_IMAGE = "m.image"
+MSGTYPE_FILE = "m.file"
+MSGTYPE_VIDEO = "m.video"
+MSGTYPE_AUDIO = "m.audio"
+MSGTYPE_STICKER = "m.sticker"
+MSGTYPE_LOCATION = "m.location"
+MSGTYPE_REDACTION = "m.redaction"
+
+# 用户认证类型
+LOGIN_TYPE_PASSWORD = "m.login.password"
+LOGIN_TYPE_TOKEN = "m.login.token"
+LOGIN_TYPE_SSO = "m.login.sso"
+ID_TYPE_USER = "m.id.user"
 
 # 协议和加密常量
 CRYPTO_KEY_SIZE_32 = 32

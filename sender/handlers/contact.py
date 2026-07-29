@@ -3,6 +3,7 @@ from urllib.parse import quote
 
 from astrbot.api.message_components import Contact
 
+from ...constants import M_MENTIONS_KEY, MATRIX_HTML_FORMAT
 from .common import resolve_text_msgtype, send_content
 
 
@@ -30,7 +31,7 @@ async def send_contact(
         content_data = {
             "msgtype": msgtype,
             "body": display,
-            "format": "org.matrix.custom.html",
+            "format": MATRIX_HTML_FORMAT,
             "formatted_body": (
                 f'<a href="{html.escape(link, quote=True)}">'
                 f"{html.escape(display)}</a>"

@@ -2,6 +2,7 @@ import html
 
 from astrbot.api.message_components import Share
 
+from ...constants import MATRIX_HTML_FORMAT
 from .common import resolve_text_msgtype, send_content
 
 
@@ -39,7 +40,7 @@ async def send_share(
         content_data = {
             "msgtype": msgtype,
             "body": body,
-            "format": "org.matrix.custom.html",
+            "format": MATRIX_HTML_FORMAT,
             "formatted_body": formatted,
         }
     else:

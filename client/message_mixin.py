@@ -13,9 +13,12 @@ from astrbot.api import logger
 
 from ..constants import (
     DEFAULT_TIMEOUT_MS_30000,
+    M_ROOM_MESSAGE,
+    M_ROOM_REDACTION,
     MSC4310_RTC_DECLINE,
     MSC4357_LIVE_MESSAGE_MARKER,
     MSC4446_ALLOW_BACKWARD,
+    MSGTYPE_TEXT,
     REL_TYPE_REPLACE,
     RESPONSE_TRUNCATE_LENGTH_400,
 )
@@ -230,7 +233,7 @@ class MessageMixin:
             Response data
         """
         return await self.send_message(
-            room_id, "m.room.message", {"msgtype": "m.text", "body": message}
+            room_id, M_ROOM_MESSAGE, {"msgtype": MSGTYPE_TEXT, "body": message}
         )
 
     async def edit_message(
@@ -255,7 +258,7 @@ class MessageMixin:
             Send response with event_id
         """
         txn_id = f"{int(time.time() * 1000)}_{id(new_content)}"
-        resolved_msg_type = msg_type or new_content.get("msgtype") or "m.text"
+        resolved_msg_type = msg_type or new_content.get("msgtype") or MSGTYPE_TEXT
         # Construct edit content according to Matrix spec
         content = {
             "msgtype": resolved_msg_type,
@@ -271,7 +274,7 @@ class MessageMixin:
         }
         return await self.send_room_event(
             room_id=room_id,
-            event_type="m.room.message",
+            event_type=M_ROOM_MESSAGE,
             content=content,
             txn_id=txn_id,
             tracker_metadata=tracker_metadata,
@@ -452,7 +455,7 @@ class MessageMixin:
                 txn_id=txn_id,
                 action="redact_event",
                 room_id=room_id,
-                event_type="m.room.redaction",
+                event_type=M_ROOM_REDACTION,
                 content=data,
                 metadata={"event_id": event_id, "reason": reason},
             )

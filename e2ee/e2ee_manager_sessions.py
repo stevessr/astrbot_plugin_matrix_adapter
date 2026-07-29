@@ -6,6 +6,8 @@ from astrbot.api import logger
 
 from ..constants import (
     M_ROOM_ENCRYPTED,
+    M_ROOM_ENCRYPTION,
+    M_ROOM_HISTORY_VISIBILITY,
     M_ROOM_KEY,
     M_ROOM_MEMBER,
     MEGOLM_ALGO,
@@ -121,7 +123,7 @@ class E2EEManagerSessionsMixin:
         try:
             content = await self.client.get_room_state_event(
                 room_id,
-                "m.room.history_visibility",
+                M_ROOM_HISTORY_VISIBILITY,
                 "",
             )
         except Exception as e:
@@ -606,7 +608,7 @@ class E2EEManagerSessionsMixin:
             visibility = None
             for event in state:
                 if (
-                    event.get("type") == "m.room.encryption"
+                    event.get("type") == M_ROOM_ENCRYPTION
                     and event.get("state_key", "") == ""
                 ):
                     self.set_room_encryption_config(
@@ -614,7 +616,7 @@ class E2EEManagerSessionsMixin:
                         event.get("content") or {},
                     )
                 if (
-                    event.get("type") == "m.room.history_visibility"
+                    event.get("type") == M_ROOM_HISTORY_VISIBILITY
                     and event.get("state_key", "") == ""
                 ):
                     visibility = (event.get("content") or {}).get("history_visibility")

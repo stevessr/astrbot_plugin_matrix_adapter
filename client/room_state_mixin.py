@@ -7,6 +7,16 @@ import json
 from collections.abc import Iterable
 from typing import Any
 
+from ..constants import (
+    M_ROOM_AVATAR,
+    M_ROOM_CANONICAL_ALIAS,
+    M_ROOM_GUEST_ACCESS,
+    M_ROOM_HISTORY_VISIBILITY,
+    M_ROOM_JOIN_RULES,
+    M_ROOM_NAME,
+    M_ROOM_PINNED_EVENTS,
+    M_ROOM_TOPIC,
+)
 from .base import MatrixAPIError
 from .path_utils import quote_path_segment
 
@@ -138,7 +148,7 @@ class RoomStateMixin:
             Response with event_id
         """
         return await self.set_room_state_event(
-            room_id=room_id, event_type="m.room.name", content={"name": name}
+            room_id=room_id, event_type=M_ROOM_NAME, content={"name": name}
         )
 
     async def set_room_topic(self, room_id: str, topic: str) -> dict[str, Any]:
@@ -153,7 +163,7 @@ class RoomStateMixin:
             Response with event_id
         """
         return await self.set_room_state_event(
-            room_id=room_id, event_type="m.room.topic", content={"topic": topic}
+            room_id=room_id, event_type=M_ROOM_TOPIC, content={"topic": topic}
         )
 
     async def set_room_avatar(self, room_id: str, avatar_url: str) -> dict[str, Any]:
@@ -169,7 +179,7 @@ class RoomStateMixin:
         """
         return await self.set_room_state_event(
             room_id=room_id,
-            event_type="m.room.avatar",
+            event_type=M_ROOM_AVATAR,
             content={"url": avatar_url},
         )
 
@@ -186,7 +196,7 @@ class RoomStateMixin:
         """
         return await self.set_room_state_event(
             room_id=room_id,
-            event_type="m.room.join_rules",
+            event_type=M_ROOM_JOIN_RULES,
             content={"join_rule": join_rule},
         )
 
@@ -205,7 +215,7 @@ class RoomStateMixin:
         """
         return await self.set_room_state_event(
             room_id=room_id,
-            event_type="m.room.history_visibility",
+            event_type=M_ROOM_HISTORY_VISIBILITY,
             content={"history_visibility": history_visibility},
         )
 
@@ -224,7 +234,7 @@ class RoomStateMixin:
         """
         return await self.set_room_state_event(
             room_id=room_id,
-            event_type="m.room.guest_access",
+            event_type=M_ROOM_GUEST_ACCESS,
             content={"guest_access": guest_access},
         )
 
@@ -249,7 +259,7 @@ class RoomStateMixin:
             content["alt_aliases"] = alt_aliases
         return await self.set_room_state_event(
             room_id=room_id,
-            event_type="m.room.canonical_alias",
+            event_type=M_ROOM_CANONICAL_ALIAS,
             content=content,
         )
 
@@ -289,7 +299,7 @@ class RoomStateMixin:
         try:
             content = await self.get_room_state_event(
                 room_id=room_id,
-                event_type="m.room.pinned_events",
+                event_type=M_ROOM_PINNED_EVENTS,
             )
         except MatrixAPIError as e:
             if e.status == 404:
@@ -319,7 +329,7 @@ class RoomStateMixin:
         """
         return await self.set_room_state_event(
             room_id=room_id,
-            event_type="m.room.pinned_events",
+            event_type=M_ROOM_PINNED_EVENTS,
             content={"pinned": self._normalize_pinned_event_ids(event_ids)},
         )
 

@@ -11,6 +11,8 @@ from ..constants import (
     M_BEACON,
     M_BEACON_INFO,
     M_PROFILE_KEY,
+    M_ROOM_MESSAGE,
+    MATRIX_HTML_FORMAT,
     MSC1767_TEXT_KEY,
     MSC3488_ASSET_KEY,
     MSC3488_TS_KEY,
@@ -888,12 +890,12 @@ class MatrixSender:
         if stable:
             content[M_PROFILE_KEY] = dict(profile)
         if formatted_body:
-            content["format"] = "org.matrix.custom.html"
+            content["format"] = MATRIX_HTML_FORMAT
             content["formatted_body"] = formatted_body
 
         return await self.send_custom_message(
             room_id,
-            "m.room.message",
+            M_ROOM_MESSAGE,
             content,
             reply_to=reply_to,
             thread_root=thread_root,

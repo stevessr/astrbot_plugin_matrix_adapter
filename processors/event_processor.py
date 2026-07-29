@@ -14,12 +14,31 @@ from ..call_events import is_call_event_type
 from ..client.event_types import parse_event
 from ..constants import (
     M_FORWARDED_ROOM_KEY,
+    M_ROOM_ALIASES,
+    M_ROOM_AVATAR,
+    M_ROOM_CANONICAL_ALIAS,
+    M_ROOM_CREATE,
     M_ROOM_ENCRYPTED,
+    M_ROOM_ENCRYPTION,
+    M_ROOM_GUEST_ACCESS,
+    M_ROOM_HISTORY_VISIBILITY,
+    M_ROOM_JOIN_RULES,
     M_ROOM_KEY,
     M_ROOM_KEY_REQUEST,
     M_ROOM_KEY_WITHHELD,
+    M_ROOM_LIVE_MESSAGING,
+    M_ROOM_NAME,
+    M_ROOM_PINNED_EVENTS,
+    M_ROOM_POWER_LEVELS,
+    M_ROOM_SERVER_ACL,
+    M_ROOM_THIRD_PARTY_INVITE,
+    M_ROOM_TOMBSTONE,
+    M_ROOM_TOPIC,
+    M_SPACE_CHILD,
+    M_SPACE_PARENT,
     MAX_PROCESSED_MESSAGES_1000,
     MEGOLM_ALGO,
+    MSC4357_LIVE_MESSAGING_STATE,
     TIMESTAMP_BUFFER_MS_1000,
 )
 from ..plugin_config import get_plugin_config
@@ -33,30 +52,30 @@ if TYPE_CHECKING:
 
 VISIBLE_ROOM_STATE_EVENT_TYPES = frozenset(
     {
-        "m.room.name",
-        "m.room.topic",
-        "m.room.avatar",
-        "m.room.create",
-        "m.room.encryption",
-        "m.room.server_acl",
-        "m.room.tombstone",
-        "m.room.power_levels",
-        "m.room.join_rules",
-        "m.room.history_visibility",
-        "m.room.guest_access",
-        "m.room.canonical_alias",
-        "m.room.aliases",
-        "m.room.pinned_events",
-        "m.room.third_party_invite",
-        "m.space.child",
-        "m.space.parent",
+        M_ROOM_NAME,
+        M_ROOM_TOPIC,
+        M_ROOM_AVATAR,
+        M_ROOM_CREATE,
+        M_ROOM_ENCRYPTION,
+        M_ROOM_SERVER_ACL,
+        M_ROOM_TOMBSTONE,
+        M_ROOM_POWER_LEVELS,
+        M_ROOM_JOIN_RULES,
+        M_ROOM_HISTORY_VISIBILITY,
+        M_ROOM_GUEST_ACCESS,
+        M_ROOM_CANONICAL_ALIAS,
+        M_ROOM_ALIASES,
+        M_ROOM_PINNED_EVENTS,
+        M_ROOM_THIRD_PARTY_INVITE,
+        M_SPACE_CHILD,
+        M_SPACE_PARENT,
     }
 )
 
 LIVE_MESSAGING_STATE_EVENT_TYPES = frozenset(
     {
-        "m.room.live_messaging",
-        "org.matrix.msc4357.live_messaging",
+        M_ROOM_LIVE_MESSAGING,
+        MSC4357_LIVE_MESSAGING_STATE,
     }
 )
 
@@ -182,65 +201,62 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
         room.state_events.setdefault(event_type, {})[state_key] = content
 
-        match event_type:
-            case "m.room.name":
-                room.display_name = content.get("name", "") or ""
-            case "m.room.topic":
-                room.topic = content.get("topic", "") or ""
-            case "m.room.avatar":
-                room.avatar_url = content.get("url") or None
-            case "m.room.join_rules":
-                room.join_rules = content
-            case "m.room.power_levels":
-                room.power_levels = content
-            case "m.room.history_visibility":
-                room.history_visibility = content.get("history_visibility")
-            case "m.room.guest_access":
-                room.guest_access = content.get("guest_access")
-            case "m.room.canonical_alias":
-                room.canonical_alias = content.get("alias")
-                alt_aliases = content.get("alt_aliases") or []
-                if isinstance(alt_aliases, list):
-                    room.room_aliases = alt_aliases
-            case "m.room.aliases":
-                aliases = content.get("aliases") or []
-                if isinstance(aliases, list):
-                    room.room_aliases = aliases
-            case "m.room.encryption":
-                room.encryption = content
-            case "m.room.create":
-                room.create = content
-            case "m.room.tombstone":
-                room.tombstone = content
-            case "m.room.pinned_events":
-                pinned = content.get("pinned") or []
-                if isinstance(pinned, list):
-                    room.pinned_events = pinned
-            case "m.space.child":
-                if content:
-                    room.space_children[state_key] = content
-                else:
-                    room.space_children.pop(state_key, None)
-            case "m.space.parent":
-                if content:
-                    room.space_parents[state_key] = content
-                else:
-                    room.space_parents.pop(state_key, None)
-            case "m.room.third_party_invite":
-                if content:
-                    room.third_party_invites[state_key] = content
-                else:
-                    room.third_party_invites.pop(state_key, None)
-            case _ if event_type in LIVE_MESSAGING_STATE_EVENT_TYPES:
-                enabled = content.get("enabled")
-                if isinstance(enabled, bool):
-                    room.live_messaging_enabled = enabled
-                else:
-                    # MSC4357 defines ``enabled`` as a JSON boolean. Invalid or
-                    # absent values behave like no usable room-level override.
-                    room.live_messaging_enabled = None
-            case _:
-                return
+        if event_type == M_ROOM_NAME:
+            room.display_name = content.get("name", "") or ""
+        elif event_type == M_ROOM_TOPIC:
+            room.topic = content.get("topic", "") or ""
+        elif event_type == M_ROOM_AVATAR:
+            room.avatar_url = content.get("url") or None
+        elif event_type == M_ROOM_JOIN_RULES:
+            room.join_rules = content
+        elif event_type == M_ROOM_POWER_LEVELS:
+            room.power_levels = content
+        elif event_type == M_ROOM_HISTORY_VISIBILITY:
+            room.history_visibility = content.get("history_visibility")
+        elif event_type == M_ROOM_GUEST_ACCESS:
+            room.guest_access = content.get("guest_access")
+        elif event_type == M_ROOM_CANONICAL_ALIAS:
+            room.canonical_alias = content.get("alias")
+            alt_aliases = content.get("alt_aliases") or []
+            if isinstance(alt_aliases, list):
+                room.room_aliases = alt_aliases
+        elif event_type == M_ROOM_ALIASES:
+            aliases = content.get("aliases") or []
+            if isinstance(aliases, list):
+                room.room_aliases = aliases
+        elif event_type == M_ROOM_ENCRYPTION:
+            room.encryption = content
+        elif event_type == M_ROOM_CREATE:
+            room.create = content
+        elif event_type == M_ROOM_TOMBSTONE:
+            room.tombstone = content
+        elif event_type == M_ROOM_PINNED_EVENTS:
+            pinned = content.get("pinned") or []
+            if isinstance(pinned, list):
+                room.pinned_events = pinned
+        elif event_type == M_SPACE_CHILD:
+            if content:
+                room.space_children[state_key] = content
+            else:
+                room.space_children.pop(state_key, None)
+        elif event_type == M_SPACE_PARENT:
+            if content:
+                room.space_parents[state_key] = content
+            else:
+                room.space_parents.pop(state_key, None)
+        elif event_type == M_ROOM_THIRD_PARTY_INVITE:
+            if content:
+                room.third_party_invites[state_key] = content
+            else:
+                room.third_party_invites.pop(state_key, None)
+        elif event_type in LIVE_MESSAGING_STATE_EVENT_TYPES:
+            enabled = content.get("enabled")
+            if isinstance(enabled, bool):
+                room.live_messaging_enabled = enabled
+            else:
+                # MSC4357 defines ``enabled`` as a JSON boolean. Invalid or
+                # absent values behave like no usable room-level override.
+                room.live_messaging_enabled = None
 
     async def process_room_events(self, room_id: str, room_data: dict):
         """
@@ -284,7 +300,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
                 # Process member events from API response
                 for event in chunk:
-                    if event.get("type") == "m.room.member":
+                    if event.get("type") == M_ROOM_MEMBER:
                         user_id = event.get("state_key")
                         content = event.get("content", {})
                         membership = content.get("membership")
@@ -356,7 +372,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         state_events = room_data.get("state", {}).get("events", [])
         e2ee_manager = getattr(self, "e2ee_manager", None)
         for event in state_events:
-            if event.get("type") == "m.room.member":
+            if event.get("type") == M_ROOM_MEMBER:
                 # State deltas can contain joins/leaves hidden by a limited
                 # timeline. Apply the crypto/member transition without
                 # rendering it as a timeline system message.
@@ -365,7 +381,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 event_type = event.get("type")
                 previous_history_visibility = room.history_visibility
                 self._apply_room_state_event(room, event)
-                if event_type == "m.room.history_visibility" and e2ee_manager:
+                if event_type == M_ROOM_HISTORY_VISIBILITY and e2ee_manager:
                     on_visibility_changed = getattr(
                         e2ee_manager,
                         "on_history_visibility_changed",
@@ -412,7 +428,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
         msgtype = content.get("msgtype", "")
 
         # Handle membership updates to keep profile cache fresh
-        if event_type == "m.room.member":
+        if event_type == M_ROOM_MEMBER:
             await self._handle_member_event(room, event_data)
             event = parse_event(event_data, room.room_id)
             await self._process_member_event(room, event)
@@ -423,7 +439,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             previous_history_visibility = getattr(room, "history_visibility", None)
             self._apply_room_state_event(room, event_data)
             e2ee_manager = getattr(self, "e2ee_manager", None)
-            if event_type == "m.room.history_visibility" and e2ee_manager:
+            if event_type == M_ROOM_HISTORY_VISIBILITY and e2ee_manager:
                 on_visibility_changed = getattr(
                     e2ee_manager,
                     "on_history_visibility_changed",
@@ -438,7 +454,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                         )
                     except Exception as e:
                         logger.warning(f"更新加密历史共享状态失败：{e}")
-            elif event_type == "m.room.encryption" and e2ee_manager:
+            elif event_type == M_ROOM_ENCRYPTION and e2ee_manager:
                 set_encryption_config = getattr(
                     e2ee_manager,
                     "set_room_encryption_config",
@@ -470,14 +486,14 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             return
 
         # Check for in-room verification request (m.room.message with msgtype m.key.verification.request)
-        if event_type == "m.room.message" and msgtype == "m.key.verification.request":
+        if event_type == M_ROOM_MESSAGE and msgtype == "m.key.verification.request":
             await self._handle_in_room_verification(room, event_data)
             return
 
         if event_type in (
-            "m.room.message",
-            "m.room.encrypted",
-            "m.room.redaction",
+            M_ROOM_MESSAGE,
+            M_ROOM_ENCRYPTED,
+            M_ROOM_REDACTION,
             "m.sticker",
             "m.reaction",
             "m.location",
@@ -673,7 +689,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             event_content = event.content
 
             # Handle encrypted messages first
-            if event_type == "m.room.encrypted" or event_content.get("algorithm"):
+            if event_type == M_ROOM_ENCRYPTED or event_content.get("algorithm"):
                 if self.e2ee_manager:
                     algorithm = event_content.get("algorithm")
                     logger.debug(f"检测到加密事件，算法：{algorithm}")
@@ -701,7 +717,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
                         # 替换事件内容为解密后的内容
                         event.content = decrypted_content
-                        event.event_type = decrypted.get("type", "m.room.message")
+                        event.event_type = decrypted.get("type", M_ROOM_MESSAGE)
                         event.msgtype = event.content.get("msgtype", "")
                         event.body = event.content.get("body", "")
                         logger.debug(

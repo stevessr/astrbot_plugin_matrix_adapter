@@ -7,10 +7,11 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.api.message_components import Record
 
+from ...constants import (
+    MSC1767_AUDIO_KEY,
+    MSC3245_VOICE_KEY,
+)
 from .common import send_content
-
-UNSTABLE_AUDIO_KEY = "org.matrix.msc1767.audio"
-UNSTABLE_VOICE_KEY = "org.matrix.msc3245.voice"
 
 
 async def send_audio(
@@ -79,10 +80,10 @@ async def send_audio(
         "filename": filename,
         "url": content_uri,
         "info": info,
-        UNSTABLE_VOICE_KEY: {},
+        MSC3245_VOICE_KEY: {},
     }
     if isinstance(info.get("duration"), int):
-        content[UNSTABLE_AUDIO_KEY] = {"duration": info["duration"]}
+        content[MSC1767_AUDIO_KEY] = {"duration": info["duration"]}
 
     await send_content(
         client,

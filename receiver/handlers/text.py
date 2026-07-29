@@ -4,6 +4,8 @@ from urllib.parse import unquote
 
 from astrbot.api.message_components import At, AtAll, Plain, Reply
 
+from ...constants import MATRIX_HTML_FORMAT
+
 MENTION_HREF_RE = re.compile(
     r"""href\s*=\s*["'](?:https?://)?matrix\.to/#/([^/"'<> ?#]+)""",
     re.IGNORECASE,
@@ -54,7 +56,7 @@ def append_formatted_text(
     mentions = content.get("m.mentions") or {}
     format_type = content.get("format") or ""
     formatted_body = content.get("formatted_body") or ""
-    if format_type != "org.matrix.custom.html":
+    if format_type != MATRIX_HTML_FORMAT:
         formatted_body = ""
 
     seen_mentions: set[str] = set()
