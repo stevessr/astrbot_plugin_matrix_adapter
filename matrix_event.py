@@ -380,6 +380,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                             await self.send(MessageChain().message(buffer))
                             used_self_send = True
                             buffer = ""
+                        self._response_thread_context = None
                         continue
                     text = chain.get_plain_text()
                     if text:
@@ -401,6 +402,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                             used_self_send = True
                     else:
                         await _send_live_payload(buffer, final=True)
+                    self._response_thread_context = None
                     buffer = ""
                     current_event_id = None
                     last_sent_text = ""
@@ -439,7 +441,8 @@ class MatrixPlatformEvent(AstrMessageEvent):
         # Matrix 的 room_id 即为会话 ID
         room_id = self.session_id
 
-        if message_chain.type in {"tool_call", "tool_direct_result"}:
+        is_fc_boundary = message_chain.type in {"tool_call", "tool_direct_result"}
+        if is_fc_boundary:
             try:
                 from astrbot.api.message_components import Reply as _Reply
 
@@ -637,6 +640,10 @@ class MatrixPlatformEvent(AstrMessageEvent):
             use_notice=self.use_notice,
             thread_is_falling_back=thread_is_falling_back,
         )
+
+        # FC 边界：清除线程上下文，后续回复另开新消息而非接续
+        if is_fc_boundary:
+            self._response_thread_context = None
 
         return await super().send(message_chain)
 
