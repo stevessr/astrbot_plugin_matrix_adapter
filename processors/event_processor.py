@@ -381,6 +381,8 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 # timeline. Apply the crypto/member transition without
                 # rendering it as a timeline system message.
                 await self._handle_member_event(room, event)
+                if event.get("event_id"):
+                    self._mark_message_processed(event["event_id"])
             elif _is_room_state_event_type(event.get("type", "")):
                 event_type = event.get("type")
                 previous_history_visibility = room.history_visibility
@@ -417,7 +419,14 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
         # Process timeline events
         for event_data in events:
-            await self._handle_event(room, event_data)
+            try:
+                await self._handle_event(room, event_data)
+            except Exception as e:
+                event_id = event_data.get("event_id", "<unknown>")
+                logger.error(f"处理事件 {event_id} 失败：{e}")
+
+        # Re-persist after timeline processing to capture any state changes
+        await self._persist_room_state(room)
 
     async def _handle_event(self, room, event_data: dict):
         """
@@ -433,6 +442,9 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
 
         # Handle membership updates to keep profile cache fresh
         if event_type == M_ROOM_MEMBER:
+            event_id = event_data.get("event_id")
+            if event_id and self._is_message_processed(event_id):
+                return
             await self._handle_member_event(room, event_data)
             event = parse_event(event_data, room.room_id)
             await self._process_member_event(room, event)
@@ -494,10 +506,25 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
             await self._handle_in_room_verification(room, event_data)
             return
 
+        # Handle redaction: apply to cached room state
+        if event_type == M_ROOM_REDACTION:
+            redact_event_id = content.get("redacts", "")
+            if redact_event_id and hasattr(room, "state_events"):
+                removed = False
+                for key in list(room.state_events.keys()):
+                    ev = room.state_events.get(key, {})
+                    if isinstance(ev, dict) and ev.get("event_id") == redact_event_id:
+                        del room.state_events[key]
+                        removed = True
+                if removed:
+                    await self._persist_room_state(room)
+            event = parse_event(event_data, room.room_id)
+            await self._process_message_event(room, event)
+            return
+
         if event_type in (
             M_ROOM_MESSAGE,
             M_ROOM_ENCRYPTED,
-            M_ROOM_REDACTION,
             "m.sticker",
             "m.reaction",
             "m.location",
@@ -554,11 +581,10 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 logger.debug(f"忽略重复成员事件：{event.event_id}")
                 return
 
-            self._mark_message_processed(event.event_id)
-
             if self.on_message:
                 await self._persist_interacted_user(room, event)
                 await self.on_message(room, event)
+                self._mark_message_processed(event.event_id)
         except Exception as e:
             logger.error(f"处理成员事件时出错：{e}")
 
@@ -603,11 +629,10 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 logger.debug(f"忽略重复状态事件：{event.event_id}")
                 return
 
-            self._mark_message_processed(event.event_id)
-
             if self.on_message:
                 await self._persist_interacted_user(room, event)
                 await self.on_message(room, event)
+                self._mark_message_processed(event.event_id)
         except Exception as e:
             logger.error(f"处理状态事件时出错：{e}")
 
@@ -664,11 +689,10 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 logger.debug(f"忽略重复通话事件：{event.event_id}")
                 return
 
-            self._mark_message_processed(event.event_id)
-
             if self.on_message:
                 await self._persist_interacted_user(room, event)
                 await self.on_message(room, event)
+                self._mark_message_processed(event.event_id)
         except Exception as e:
             logger.error(f"处理通话事件时出错：{e}")
 
@@ -818,12 +842,11 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                 logger.debug(f"忽略重复消息：{event.event_id}")
                 return
 
-            self._mark_message_processed(event.event_id)
-
             # Call message callback
             if self.on_message:
                 await self._persist_interacted_user(room, event)
                 await self.on_message(room, event)
+                self._mark_message_processed(event.event_id)
 
                 # Send read receipt after successful processing
                 if get_plugin_config().send_read_receipt:

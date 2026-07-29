@@ -97,7 +97,7 @@ class E2EEManagerDecryptMixin:
                     return None
 
             # 2. 发送 m.room_key_request
-            await self._request_room_key(room_id, session_id, sender_key)
+            await self._request_room_key(room_id, session_id, sender_key, sender=sender)
 
             return None
 

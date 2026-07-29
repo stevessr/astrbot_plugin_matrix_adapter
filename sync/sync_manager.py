@@ -4,7 +4,6 @@ Handles the sync loop and event distribution
 """
 
 import asyncio
-import contextlib
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -90,8 +89,6 @@ class MatrixSyncManager:
         self._last_sync_error: str | None = None
         self._sync_success_count: int = 0
         self._sync_failure_count: int = 0
-        self._reconnect_requested: bool = False
-
         # Load saved sync token if available
         self._token_store.load()
         if self._token_store.next_batch:
@@ -239,11 +236,6 @@ class MatrixSyncManager:
                 since=self._get_next_batch(),
             )
 
-            self._last_sync_success_at = time.time()
-            self._sync_consecutive_failures = 0
-            self._last_sync_error = None
-            self._sync_success_count += 1
-
             next_batch = sync_response.get("next_batch")
             if next_batch:
                 self._set_next_batch(next_batch)
@@ -254,9 +246,15 @@ class MatrixSyncManager:
                 except Exception as e:
                     logger.error(f"Sync response callback failed: {e}")
 
+            await self._save_sync_token()
+
             await self._dispatch_events(sync_response)
 
-            await self._save_sync_token()
+            # Mark success only after dispatch completes
+            self._last_sync_success_at = time.time()
+            self._sync_consecutive_failures = 0
+            self._last_sync_error = None
+            self._sync_success_count += 1
 
         except asyncio.CancelledError:
             raise
@@ -268,12 +266,14 @@ class MatrixSyncManager:
 
             if e.status in (401, 403):
                 logger.error(f"Sync authentication failed: {e}")
+                token_refreshed = False
                 if self.on_token_invalid:
                     try:
-                        await self.on_token_invalid()
+                        token_refreshed = await self.on_token_invalid()
                     except Exception as cb_e:
                         logger.error(f"Token invalid callback failed: {cb_e}")
-                await asyncio.sleep(10)
+                if not token_refreshed:
+                    await asyncio.sleep(10)
             elif e.status == 429:
                 retry_after_ms = (e.data or {}).get("retry_after_ms", 5000)
                 logger.warning(f"Sync rate limited, retrying after {retry_after_ms}ms")
@@ -483,10 +483,12 @@ class MatrixSyncManager:
         self.stop()
         if self._sync_request_task and not self._sync_request_task.done():
             self._sync_request_task.cancel()
-            with contextlib.suppress(asyncio.TimeoutError):
+            try:
                 await asyncio.wait_for(
                     self._sync_request_task, timeout=timeout_seconds
                 )
+            except asyncio.TimeoutError:
+                logger.warning("等待 sync 任务停止超时")
 
     def is_running(self) -> bool:
         """Check if sync loop is running."""
@@ -494,11 +496,8 @@ class MatrixSyncManager:
 
     # ---- Sync token management ----
 
-    # Backward-compatible wrappers for tests that access _save_sync_token / _next_batch directly
-    _save_sync_token = None  # set by tests via __new__; real usage goes through _token_store
-
     async def _save_sync_token(self, *, force: bool = False) -> None:
-        """Legacy wrapper — delegates to _token_store.save() when available."""
+        """Persist current sync token to storage."""
         if hasattr(self, '_token_store') and self._token_store is not None:
             await self._token_store.save(force=force)
 
@@ -515,7 +514,6 @@ class MatrixSyncManager:
         """Request reconnection by interrupting current sync."""
         if not self._running:
             return False
-        self._reconnect_requested = True
         self._sync_consecutive_failures = 0
         self._last_sync_error = None
         sync_task = self._sync_request_task

@@ -68,9 +68,8 @@ class E2EEManagerSessionsMixin:
             if isinstance(share_cache, dict):
                 share_cache.pop(session_id, None)
             locks = getattr(self, "_room_key_share_locks", None)
-            lock = locks.get(session_id) if isinstance(locks, dict) else None
-            if lock is not None and not lock.locked():
-                locks.pop(session_id, None)
+            if isinstance(locks, dict):
+                locks.pop(session_id, None)  # always pop, task keeps own reference
         return discarded
 
     def _outbound_session_is_current(self, room_id: str, session_id: str) -> bool:

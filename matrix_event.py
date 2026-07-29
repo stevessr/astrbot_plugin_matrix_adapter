@@ -4,6 +4,7 @@ import time
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageChain
+from astrbot.api.message_components import Reply as _Reply
 from astrbot.api.platform import AstrBotMessage, PlatformMetadata
 
 from .constants import (
@@ -256,6 +257,22 @@ class MatrixPlatformEvent(AstrMessageEvent):
         禁用 Live Messages 时才聚合为普通消息。
         """
 
+        if use_fallback:
+            # 回退：缓存整个生成器然后作为一条消息发送
+            full_text = ""
+            async for chain in generator:
+                if not isinstance(chain, MessageChain):
+                    continue
+                if chain.type == "break":
+                    continue
+                text = chain.get_plain_text()
+                if text:
+                    full_text += text
+            if full_text:
+                await self.send(MessageChain().message(full_text))
+            self._has_send_oper = True
+            return
+
         room_id = self.session_id
         msg_type = MSGTYPE_NOTICE if self.use_notice else MSGTYPE_TEXT
         buffer = ""
@@ -430,7 +447,10 @@ class MatrixPlatformEvent(AstrMessageEvent):
                 return
 
             if buffer != last_sent_text or last_sent_text:
-                await _send_live_payload(buffer, final=True)
+                if buffer:
+                    await _send_live_payload(buffer, final=True)
+                else:
+                    await _mark_stream_operation()
             await _mark_stream_operation()
         finally:
             await self._stop_typing_keepalive(typing_task, room_id)
@@ -444,8 +464,6 @@ class MatrixPlatformEvent(AstrMessageEvent):
         is_fc_boundary = message_chain.type in {"tool_call", "tool_direct_result"}
         if is_fc_boundary:
             try:
-                from astrbot.api.message_components import Reply as _Reply
-
                 has_reply = any(
                     isinstance(seg, _Reply) for seg in message_chain.chain or []
                 )
@@ -461,7 +479,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                         _Reply(id=reply_id, sender_id=sender_id),
                     )
             except Exception:
-                pass
+                logger.debug(f"FC 边界 Reply 处理失败")
 
         # 检查是否需要使用嘟文串模式
         reply_to = None
@@ -474,8 +492,6 @@ class MatrixPlatformEvent(AstrMessageEvent):
 
         # 尝试从消息链中提取 Reply 段
         try:
-            from astrbot.api.message_components import Reply as _Reply
-
             has_reply_component = any(
                 isinstance(seg, _Reply) for seg in message_chain.chain
             )
@@ -484,7 +500,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                     reply_to = str(seg.id)
                     break
         except Exception:
-            pass
+            logger.debug(f"提取 Reply 组件失败")
 
         # 分段回复的后续消息没有 Reply 组件。优先复用本次事件前一段已经
         # 解析好的线程上下文；如果没有上下文且启用了线程，则使用本次入站
@@ -505,37 +521,45 @@ class MatrixPlatformEvent(AstrMessageEvent):
         # 则尝试获取自己最近发送的消息作为回复对象
         if not reply_to:
             try:
-                from astrbot.api.message_components import Reply as _Reply
-
                 if has_reply_component:
                     # 直接使用已缓存的 user_id（登录时已设置），无需额外 API 调用
                     my_user_id = getattr(self.client, "user_id", None)
 
                     if my_user_id:
-                        try:
-                            # 获取房间最近的消息
-                            messages_resp = await self.client.room_messages(
-                                room_id=room_id,
-                                direction="b",  # 向后获取（最新的消息）
-                                limit=50,  # 获取最近 50 条消息
-                            )
+                        # 节流：每房间每 5 秒最多一次回退查找
+                        now = time.time()
+                        last_lookup = getattr(self, '_reply_fallback_cache', {}).get(room_id, 0)
+                        if now - last_lookup < 5.0:
+                            pass  # 跳过
+                        else:
+                            try:
+                                # 获取房间最近的消息
+                                messages_resp = await self.client.room_messages(
+                                    room_id=room_id,
+                                    direction="b",  # 向后获取（最新的消息）
+                                    limit=50,  # 获取最近 50 条消息
+                                )
 
-                            # 查找自己最近发送的消息
-                            chunk = messages_resp.get("chunk", [])
-                            for event in chunk:
-                                if (
-                                    event.get("type") == M_ROOM_MESSAGE
-                                    and event.get("sender") == my_user_id
-                                    and event.get("content", {}).get("msgtype")
-                                    in (MSGTYPE_TEXT, MSGTYPE_NOTICE)
-                                ):
-                                    reply_to = event.get("event_id")
-                                    logger.debug(
-                                        f"找到自己最近的消息作为回复对象：{reply_to}"
-                                    )
-                                    break
-                        except Exception as e:
-                            logger.debug(f"获取自己最近消息失败：{e}")
+                                # 查找自己最近发送的消息
+                                chunk = messages_resp.get("chunk", [])
+                                for event in chunk:
+                                    if (
+                                        event.get("type") == M_ROOM_MESSAGE
+                                        and event.get("sender") == my_user_id
+                                        and event.get("content", {}).get("msgtype")
+                                        in (MSGTYPE_TEXT, MSGTYPE_NOTICE)
+                                    ):
+                                        reply_to = event.get("event_id")
+                                        logger.debug(
+                                            f"找到自己最近的消息作为回复对象：{reply_to}"
+                                        )
+                                        break
+                            except Exception as e:
+                                logger.debug(f"获取自己最近消息失败：{e}")
+                            finally:
+                                if not hasattr(self, '_reply_fallback_cache'):
+                                    self._reply_fallback_cache = {}
+                                self._reply_fallback_cache[room_id] = now
             except Exception as e:
                 logger.debug(f"处理回复模式时出错：{e}")
 

@@ -107,6 +107,7 @@ class CryptoStore:
         self._megolm_inbound: dict[str, str] = {}  # session_id -> pickle
         self._megolm_inbound_meta: dict[str, dict[str, Any]] = {}
         self._megolm_replay: dict[str, dict[str, str]] = {}
+        self._megolm_replay_lock = threading.Lock()
         self._megolm_outbound: dict[str, str] = {}  # room_id -> pickle
         self._megolm_outbound_meta: dict[str, dict[str, Any]] = {}
         self._device_keys: dict[str, dict] = {}  # user_id -> {device_id: keys}
@@ -542,20 +543,21 @@ class CryptoStore:
             or not event_identifier
         ):
             return False
-        indexes = self._megolm_replay.setdefault(session_id, {})
-        index_key = str(message_index)
-        previous = indexes.get(index_key)
-        if previous is not None:
-            return previous == event_identifier
-        indexes[index_key] = event_identifier
+        with self._megolm_replay_lock:
+            indexes = self._megolm_replay.setdefault(session_id, {})
+            index_key = str(message_index)
+            previous = indexes.get(index_key)
+            if previous is not None:
+                return previous == event_identifier
+            indexes[index_key] = event_identifier
 
-        # Evict oldest entries when per-session limit is exceeded
-        # to prevent unbounded memory growth.
-        if len(indexes) > _MAX_REPLAY_INDEXES_PER_SESSION:
-            for k in sorted(indexes, key=int)[:-_MAX_REPLAY_INDEXES_PER_SESSION]:
-                del indexes[k]
+            # Evict oldest entries when per-session limit is exceeded
+            # to prevent unbounded memory growth.
+            if len(indexes) > _MAX_REPLAY_INDEXES_PER_SESSION:
+                for k in sorted(indexes, key=int)[:-_MAX_REPLAY_INDEXES_PER_SESSION]:
+                    del indexes[k]
 
-        self._save_record(self._RECORD_MEGOLM_REPLAY, self._megolm_replay)
+            self._save_record(self._RECORD_MEGOLM_REPLAY, self._megolm_replay)
         return True
 
     def has_megolm_inbound(self, session_id: str) -> bool:

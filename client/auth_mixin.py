@@ -313,7 +313,12 @@ class AuthMixin:
         if filter_id:
             params["filter"] = filter_id
 
-        response = await self._request("GET", "/_matrix/client/v3/sync", params=params)
+        # HTTP timeout must exceed sync poll timeout to account for network latency
+        http_timeout_s = timeout / 1000 + 15
+        response = await self._request(
+            "GET", "/_matrix/client/v3/sync", params=params,
+            timeout_override=http_timeout_s,
+        )
 
         # Log to_device events
         to_device = response.get("to_device", {}).get("events", [])

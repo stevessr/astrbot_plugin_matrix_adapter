@@ -586,9 +586,9 @@ class KeyBackupBackupMixin:
                             else:
                                 skipped += 1
                         except json.JSONDecodeError:
-                            # 可能是 pickle 格式
-                            self.store.save_megolm_inbound(session_id, plaintext)
-                            restored += 1
+                            # 非 JSON 格式，可能已损坏或不兼容
+                            logger.warning(f"会话 {session_id[:8]} 数据不是 JSON 格式，跳过")
+                            skipped += 1
 
                     except Exception as e:
                         logger.debug(f"恢复会话 {(session_id or '')[:8]}... 失败：{e}")

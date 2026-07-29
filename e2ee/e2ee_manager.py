@@ -133,6 +133,7 @@ class E2EEManager(
         self._key_backup = None  # KeyBackup
         self._cross_signing = None  # CrossSigning
         self._initialized = False
+        self._closing = False
         # session_id -> {"@user:server|DEVICEID", ...}
         self._room_key_share_cache: dict[str, set[str]] = {}
         # A single distribution pass per Megolm session prevents duplicate
@@ -219,6 +220,7 @@ class E2EEManager(
 
     async def close(self) -> None:
         """Release runtime resources and flush pending persistence jobs."""
+        self._closing = True
         self._initialized = False
         key_share_task = self.stop_key_share_check_task()
         if key_share_task and not key_share_task.done():
@@ -246,7 +248,7 @@ class E2EEManager(
 
     async def _proactive_check_key_sharing(self):
         """主动检查并分发房间密钥"""
-        if not self._olm or not self._initialized:
+        if self._closing or not self._olm or not self._initialized:
             return
 
         async with self._key_share_check_lock:

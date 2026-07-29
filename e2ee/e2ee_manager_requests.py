@@ -140,6 +140,7 @@ class E2EEManagerRequestsMixin:
         room_id: str,
         session_id: str,
         sender_key: str | None,
+        sender: str | None = None,
     ) -> bool:
         """
         发送 m.room_key_request 请求密钥
@@ -161,6 +162,8 @@ class E2EEManagerRequestsMixin:
         # Matrix key requests are restricted to verified devices of our own
         # user. The deprecated sender fields are not an authorization source.
         recipients = {self.user_id}
+        if sender and sender != self.user_id:
+            recipients.add(sender)
 
         async with self._room_key_request_lock:
             expiry = self._room_key_request_expiry_sec

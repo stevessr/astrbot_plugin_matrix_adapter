@@ -15,7 +15,7 @@ from .olm_machine_types import (
 # from repeated PreKey messages.  Per the spec, a single active session
 # suffices; older sessions are retained for decryption of out-of-order
 # messages that may still arrive.
-MAX_OLM_SESSIONS_PER_PEER = 5
+MAX_OLM_SESSIONS_PER_PEER = 20
 
 
 class OlmMachineOlmMixin:

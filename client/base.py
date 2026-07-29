@@ -48,6 +48,7 @@ class MatrixClientBase:
         self.user_id: str | None = None
         self.device_id: str | None = None
         self.session: aiohttp.ClientSession | None = None
+        self._session_lock = asyncio.Lock()
         self._next_batch: str | None = None
 
     @classmethod
@@ -69,13 +70,21 @@ class MatrixClientBase:
             configured = self._DEFAULT_HTTP_TIMEOUT_SECONDS
         return self._normalize_http_timeout_seconds(configured)
 
-    def _build_http_timeout(self) -> aiohttp.ClientTimeout:
-        return aiohttp.ClientTimeout(total=self.get_http_timeout_seconds())
+    def _build_http_timeout(self, override_seconds: int | None = None) -> aiohttp.ClientTimeout:
+        seconds = override_seconds if override_seconds is not None else self.get_http_timeout_seconds()
+        return aiohttp.ClientTimeout(
+            total=seconds,
+            connect=seconds,
+            sock_connect=seconds,
+            sock_read=seconds,
+        )
 
     async def _ensure_session(self):
         """Ensure aiohttp session exists"""
         if self.session is None or self.session.closed:
-            self.session = aiohttp.ClientSession(timeout=self._build_http_timeout())
+            async with self._session_lock:
+                if self.session is None or self.session.closed:  # double-check
+                    self.session = aiohttp.ClientSession(timeout=self._build_http_timeout())
 
     async def close(self):
         """Close the HTTP session"""
@@ -100,6 +109,7 @@ class MatrixClientBase:
         params: dict | None = None,
         authenticated: bool = True,
         _retry_count: int = 0,
+        timeout_override: int | None = None,
     ) -> dict[str, Any]:
         """
         Make HTTP request to Matrix server
@@ -123,6 +133,8 @@ class MatrixClientBase:
         MAX_RETRIES = 3
         await self._ensure_session()
 
+        timeout = self._build_http_timeout(timeout_override)
+
         url = f"{self.homeserver}{endpoint}"
         headers = (
             self._get_headers()
@@ -135,14 +147,25 @@ class MatrixClientBase:
 
         try:
             async with self.session.request(
-                method, url, json=data, params=params, headers=headers
+                method, url, json=data, params=params, headers=headers,
+                timeout=timeout,
             ) as response:
                 # 处理 429 速率限制
                 # 参考：https://spec.matrix.org/latest/client-server-api/#rate-limiting
                 if response.status == 429 and _retry_count < MAX_RETRIES:
                     try:
                         response_data = await response.json()
-                        retry_after_ms = response_data.get("retry_after_ms", 5000)
+                        retry_after_ms = response_data.get("retry_after_ms", None)
+                        if retry_after_ms is None:
+                            # RFC 7231 Retry-After header
+                            retry_after_header = response.headers.get("Retry-After")
+                            if retry_after_header:
+                                try:
+                                    retry_after_ms = int(retry_after_header) * 1000
+                                except (ValueError, TypeError):
+                                    retry_after_ms = 5000
+                            else:
+                                retry_after_ms = 5000
                         retry_after_s = retry_after_ms / 1000
                         logger.warning(
                             f"速率限制，等待 {retry_after_s:.1f} 秒后重试 "
@@ -159,6 +182,19 @@ class MatrixClientBase:
                         )
                     except Exception:
                         pass  # 继续正常错误处理
+
+                # 重试服务器错误 (5xx) 和瞬态错误
+                if response.status >= 500 and _retry_count < MAX_RETRIES:
+                    retry_after_s = 5 * (_retry_count + 1)
+                    logger.warning(
+                        f"服务器错误 {response.status}，等待 {retry_after_s:.1f} 秒后重试 "
+                        f"(retry {_retry_count + 1}/{MAX_RETRIES})"
+                    )
+                    await asyncio.sleep(retry_after_s)
+                    return await self._request(
+                        method, endpoint, data=data, params=params,
+                        authenticated=authenticated, _retry_count=_retry_count + 1,
+                    )
 
                 # 检查响应状态
                 if response.status >= HTTP_ERROR_STATUS_400:
@@ -205,6 +241,13 @@ class MatrixClientBase:
 
                 return response_data
 
-        except aiohttp.ClientError as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             logger.error(f"Matrix HTTP request failed: {e}")
+            if _retry_count < MAX_RETRIES:
+                retry_after_s = 5 * (_retry_count + 1)
+                await asyncio.sleep(retry_after_s)
+                return await self._request(
+                    method, endpoint, data=data, params=params,
+                    authenticated=authenticated, _retry_count=_retry_count + 1,
+                )
             raise
