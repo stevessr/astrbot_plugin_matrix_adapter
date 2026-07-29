@@ -1,6 +1,15 @@
 # Changelog
 
+## 0.3.9 - 2026-07-29
+
+- 提取硬编码字符串为常量：成员关系值（`MEMBERSHIP_LEAVE`/`BAN`/`KNOCK`）、关系类型（`REL_TYPE_REFERENCE`/`ANNOTATION`）、内容键名（`CONTENT_KEY_RELATES_TO`/`NEW_CONTENT`/`IN_REPLY_TO`/`FULLY_READ`/`READ_RECEIPT`）统一归入 `constants.py`。
+- 替换 10 个源文件中的硬编码协议字符串为常量引用。
+- 消除 `_extract_text_repr` 在 3 个文件中的重复定义，提取到 `utils/utils.py`。
+- 修复 SAS 验证时 `_build_terminal_qr` 在 `sso.py` 和 `verification_handlers_display.py` 的签名差异；保留两处独立实现。
+
 ## Unreleased
+
+- 修复 `matrix_send_typing` 布尔状态覆盖 AstrBot 4.26+ 同名 `send_typing()` 生命周期方法、导致 LLM 请求前报 `TypeError: 'bool' object is not callable` 的问题；现在同时正确实现请求前开启和请求后清除 typing 的平台钩子。
 
 - 修复 `matrix_send_typing` 布尔状态覆盖 AstrBot 4.26+ 同名 `send_typing()` 生命周期方法、导致 LLM 请求前报 `TypeError: 'bool' object is not callable` 的问题；现在同时正确实现请求前开启和请求后清除 typing 的平台钩子。
 - 修复开启流式回复时不发送「正在输入」状态的问题：`send_streaming()` 现在在消费生成器期间声明 typing，并因 Matrix typing 约 5 秒过期而按固定间隔续期，生成结束或抛异常时都会显式清除。
