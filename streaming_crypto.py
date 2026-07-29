@@ -4,7 +4,7 @@
 
 from astrbot.api import logger
 
-from .constants import M_ROOM_ENCRYPTED, M_ROOM_MESSAGE
+from .constants import M_ROOM_ENCRYPTED, M_ROOM_MESSAGE, REL_TYPE_REPLACE
 from .sender.handlers.common import _copy_cleartext_relates_to
 
 
@@ -95,7 +95,7 @@ async def edit_message_encrypted(
             "body": f"* {new_content.get('body', '')}",
             "m.new_content": new_content,
             "m.relates_to": {
-                "rel_type": "m.replace",
+                "rel_type": REL_TYPE_REPLACE,
                 "event_id": original_event_id,
             },
         }

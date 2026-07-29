@@ -9,6 +9,8 @@ from astrbot.api import logger
 
 from ..client.http_client import MatrixAPIError
 from ..constants import (
+    LOGIN_TYPE_DUMMY,
+    LOGIN_TYPE_PASSWORD,
     SECRET_CROSS_SIGNING_MASTER,
     SECRET_CROSS_SIGNING_SELF_SIGNING,
     SECRET_CROSS_SIGNING_USER_SIGNING,
@@ -555,7 +557,7 @@ class CrossSigning:
 
     def _build_password_auth(self, session_id: str) -> dict:
         return {
-            "type": "m.login.password",
+            "type": LOGIN_TYPE_PASSWORD,
             "identifier": {"type": "m.id.user", "user": self.user_id},
             "password": self.password,
             "session": session_id,
@@ -593,7 +595,7 @@ class CrossSigning:
                     master_key=master_key,
                     self_signing_key=self_signing_key,
                     user_signing_key=user_signing_key,
-                    auth={"type": "m.login.dummy", "session": session_id},
+                    auth={"type": LOGIN_TYPE_DUMMY, "session": session_id},
                 )
                 return
             except MatrixAPIError as dummy_error:

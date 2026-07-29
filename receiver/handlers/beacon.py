@@ -17,17 +17,7 @@ from ...constants import (
 )
 
 
-def _extract_text_repr(value) -> str:
-    if isinstance(value, str):
-        return value
-    if isinstance(value, dict):
-        return str(value.get("body") or value.get("text") or "")
-    if isinstance(value, list):
-        for item in value:
-            extracted = _extract_text_repr(item)
-            if extracted:
-                return extracted
-    return ""
+from ...utils.utils import _extract_text_repr
 
 
 def _resolve_location_payload(content: dict) -> dict:

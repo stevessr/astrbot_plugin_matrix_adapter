@@ -12,7 +12,11 @@ import secrets
 import time
 from typing import Any
 
-from ..constants import MSC4140_DELAYED_EVENTS_PATH
+from ..constants import (
+    MSC4140_DELAY_KEY,
+    MSC4140_DELAYED_EVENTS_PATH,
+    MSC4140_PARENT_DELAY_ID_KEY,
+)
 from .path_utils import quote_path_segment
 
 
@@ -51,9 +55,9 @@ class DelayedEventsMixin:
         event = quote_path_segment(event_type)
         txn = quote_path_segment(txn_id)
         endpoint = f"/_matrix/client/v3/rooms/{room}/send/{event}/{txn}"
-        params: dict[str, Any] = {"org.matrix.msc4140.delay": delay_ms}
+        params: dict[str, Any] = {MSC4140_DELAY_KEY: delay_ms}
         if parent_delay_id:
-            params["org.matrix.msc4140.parent_delay_id"] = parent_delay_id
+            params[MSC4140_PARENT_DELAY_ID_KEY] = parent_delay_id
         return await self._request("PUT", endpoint, data=content, params=params)
 
     async def send_delayed_state_event(
@@ -83,9 +87,9 @@ class DelayedEventsMixin:
         event = quote_path_segment(event_type)
         state = quote_path_segment(state_key)
         endpoint = f"/_matrix/client/v3/rooms/{room}/state/{event}/{state}"
-        params: dict[str, Any] = {"org.matrix.msc4140.delay": delay_ms}
+        params: dict[str, Any] = {MSC4140_DELAY_KEY: delay_ms}
         if parent_delay_id:
-            params["org.matrix.msc4140.parent_delay_id"] = parent_delay_id
+            params[MSC4140_PARENT_DELAY_ID_KEY] = parent_delay_id
         return await self._request("PUT", endpoint, data=content, params=params)
 
     async def list_delayed_events(

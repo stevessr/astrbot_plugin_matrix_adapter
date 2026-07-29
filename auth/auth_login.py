@@ -2,6 +2,8 @@
 Matrix authentication flows.
 """
 
+from ..constants import LOGIN_TYPE_PASSWORD
+
 
 class MatrixAuthLogin:
     """Mixin providing login/refresh flows."""

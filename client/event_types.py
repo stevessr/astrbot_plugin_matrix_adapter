@@ -7,12 +7,26 @@ from typing import Any
 
 from ..constants import (
     GROUP_CHAT_MIN_MEMBERS_2,
+    M_BEACON,
+    M_BEACON_INFO,
+    M_REACTION,
     M_ROOM_MEMBER,
     M_ROOM_MESSAGE,
     M_ROOM_REDACTION,
+    MSC1767_TEXT_KEY,
+    MSC3488_LOCATION_KEY,
+    MSC3489_BEACON_INFO_PREFIX,
+    MSC3489_BEACON_KEY,
+    MSGTYPE_FILE,
+    MSGTYPE_IMAGE,
+    MSGTYPE_LOCATION,
+    MSGTYPE_REACTION,
+    MSGTYPE_STICKER,
     MSGTYPE_TEXT,
+    MEMBERSHIP_INVITE,
     REL_TYPE_REPLACE,
 )
+from ..utils.utils import _extract_text_repr
 
 
 @dataclass
@@ -102,7 +116,7 @@ class RoomMessageImage(RoomMessageEvent):
     @classmethod
     def from_dict(cls, data: dict[str, Any], room_id: str):
         event = super().from_dict(data, room_id)
-        event.msgtype = "m.image"
+        event.msgtype = MSGTYPE_IMAGE
         return event
 
 
@@ -113,7 +127,7 @@ class RoomMessageFile(RoomMessageEvent):
     @classmethod
     def from_dict(cls, data: dict[str, Any], room_id: str):
         event = super().from_dict(data, room_id)
-        event.msgtype = "m.file"
+        event.msgtype = MSGTYPE_FILE
         return event
 
 
@@ -180,23 +194,10 @@ class MatrixRoom:
         return effective_count > GROUP_CHAT_MIN_MEMBERS_2
 
 
-def _extract_text_repr(value) -> str:
-    if isinstance(value, str):
-        return value
-    if isinstance(value, dict):
-        return str(value.get("body") or value.get("text") or "")
-    if isinstance(value, list):
-        for item in value:
-            text = _extract_text_repr(item)
-            if text:
-                return text
-    return ""
-
-
 def _build_location_body(content: dict[str, Any]) -> str:
     for location_content in (
-        content.get("m.location"),
-        content.get("org.matrix.msc3488.location"),
+        content.get(MSGTYPE_LOCATION),
+        content.get(MSC3488_LOCATION_KEY),
         content,
     ):
         if isinstance(location_content, dict):
@@ -205,14 +206,14 @@ def _build_location_body(content: dict[str, Any]) -> str:
                 return str(description)
 
     text_repr = _extract_text_repr(content.get(MSGTYPE_TEXT)) or _extract_text_repr(
-        content.get("org.matrix.msc1767.text")
+        content.get(MSC1767_TEXT_KEY)
     )
     if text_repr:
         return text_repr
 
     for location_content in (
-        content.get("m.location"),
-        content.get("org.matrix.msc3488.location"),
+        content.get(MSGTYPE_LOCATION),
+        content.get(MSC3488_LOCATION_KEY),
         content,
     ):
         if isinstance(location_content, dict):
@@ -253,51 +254,51 @@ def parse_event(event_data: dict[str, Any], room_id: str) -> MatrixEvent:
         msgtype = content.get("msgtype", "")
         if msgtype == MSGTYPE_TEXT:
             return RoomMessageText.from_dict(event_data, room_id)
-        if msgtype == "m.image":
+        if msgtype == MSGTYPE_IMAGE:
             return RoomMessageImage.from_dict(event_data, room_id)
-        if msgtype == "m.file":
+        if msgtype == MSGTYPE_FILE:
             return RoomMessageFile.from_dict(event_data, room_id)
         return RoomMessageEvent.from_dict(event_data, room_id)
-    if event_type == "m.sticker":
+    if event_type == MSGTYPE_STICKER:
             # 贴纸事件使用 RoomMessageEvent 结构，设置 msgtype 为 m.sticker
             event = RoomMessageEvent.from_dict(event_data, room_id)
-            event.msgtype = "m.sticker"
+            event.msgtype = MSGTYPE_STICKER
             # 确保 content 中的 msgtype 也被设置（用于接收器处理）
             if "msgtype" not in event.content:
-                event.content["msgtype"] = "m.sticker"
+                event.content["msgtype"] = MSGTYPE_STICKER
             return event
-    if event_type == "m.reaction":
+    if event_type == M_REACTION:
         reaction = content.get("m.relates_to", {}).get("key", "")
         reaction_content = dict(content)
-        reaction_content["msgtype"] = "m.reaction"
+        reaction_content["msgtype"] = M_REACTION
         reaction_content["body"] = reaction
         event_data = dict(event_data)
         event_data["content"] = reaction_content
         return RoomMessageEvent.from_dict(event_data, room_id)
-    if event_type in {"m.location", "org.matrix.msc3488.location"}:
+    if event_type in {MSGTYPE_LOCATION, MSC3488_LOCATION_KEY}:
         location_content = dict(content)
-        location_content.setdefault("msgtype", "m.location")
+        location_content.setdefault("msgtype", MSGTYPE_LOCATION)
         location_content.setdefault("body", _build_location_body(content))
         event_data = dict(event_data)
         event_data["content"] = location_content
         event = RoomMessageEvent.from_dict(event_data, room_id)
-        event.msgtype = "m.location"
+        event.msgtype = MSGTYPE_LOCATION
         return event
     if event_type in {
-        "m.beacon",
-        "m.beacon_info",
-        "org.matrix.msc3672.beacon",
-        "org.matrix.msc3672.beacon_info",
+        M_BEACON,
+        M_BEACON_INFO,
+        MSC3489_BEACON_KEY,
+        MSC3489_BEACON_INFO_PREFIX,
     }:
         beacon_content = dict(content)
-        beacon_content.setdefault("msgtype", "m.beacon")
+        beacon_content.setdefault("msgtype", M_BEACON)
         beacon_content.setdefault("body", _build_location_body(content))
         event_data = dict(event_data)
         event_data["content"] = beacon_content
         event = RoomMessageEvent.from_dict(event_data, room_id)
-        event.msgtype = "m.beacon"
+        event.msgtype = M_BEACON
         return event
-    if event_type == M_ROOM_MEMBER and content.get("membership") == "invite":
+    if event_type == M_ROOM_MEMBER and content.get("membership") == MEMBERSHIP_INVITE:
         return InviteEvent.from_dict(event_data, room_id)
     if event_type == M_ROOM_REDACTION:
         redaction_content = dict(content)

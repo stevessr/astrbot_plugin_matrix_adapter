@@ -1,6 +1,7 @@
 import html
 
 from .common import send_content
+from ...constants import CONTENT_KEY_RELATES_TO, REL_TYPE_REFERENCE
 
 
 def _build_poll_fallback(question: str, answers: list[str]) -> tuple[str, str]:
@@ -189,8 +190,8 @@ async def send_poll_response(
         content = {"m.selections": clean_answer_ids}
 
     # Poll responses reference the corresponding poll start event.
-    content["m.relates_to"] = {
-        "rel_type": "m.reference",
+    content[CONTENT_KEY_RELATES_TO] = {
+        "rel_type": REL_TYPE_REFERENCE,
         "event_id": poll_start_event_id,
     }
 

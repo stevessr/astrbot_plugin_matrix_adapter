@@ -27,9 +27,12 @@ from ..constants import (
     M_ROOM_KEY_REQUEST,
     M_ROOM_KEY_WITHHELD,
     M_ROOM_LIVE_MESSAGING,
+    M_ROOM_MEMBER,
+    M_ROOM_MESSAGE,
     M_ROOM_NAME,
     M_ROOM_PINNED_EVENTS,
     M_ROOM_POWER_LEVELS,
+    M_ROOM_REDACTION,
     M_ROOM_SERVER_ACL,
     M_ROOM_THIRD_PARTY_INVITE,
     M_ROOM_TOMBSTONE,
@@ -39,6 +42,7 @@ from ..constants import (
     MAX_PROCESSED_MESSAGES_1000,
     MEGOLM_ALGO,
     MSC4357_LIVE_MESSAGING_STATE,
+    MEMBERSHIP_JOIN,
     TIMESTAMP_BUFFER_MS_1000,
 )
 from ..plugin_config import get_plugin_config
@@ -317,7 +321,7 @@ class MatrixEventProcessor(MatrixEventProcessorStreams, MatrixEventProcessorMemb
                             )
 
                         # Only count joined members
-                        if membership == "join":
+                        if membership == MEMBERSHIP_JOIN:
                             display_name = content.get("displayname", user_id)
                             room.members[user_id] = display_name
                             avatar_url = content.get("avatar_url")

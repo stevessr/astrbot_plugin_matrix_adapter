@@ -15,6 +15,10 @@ MATRIX_HTML_FORMAT = "org.matrix.custom.html"
 REL_TYPE_THREAD = "m.thread"
 REL_TYPE_REPLACE = "m.replace"
 
+# Extended relation type constants
+REL_TYPE_REFERENCE = "m.reference"
+REL_TYPE_ANNOTATION = "m.annotation"
+
 # MSC4357 Live Messages
 MSC4357_LIVE_MESSAGE_MARKER = "org.matrix.msc4357.live"
 M_ROOM_LIVE_MESSAGING = "m.room.live_messaging"
@@ -90,6 +94,7 @@ MSC3381_POLL_RESPONSE = "org.matrix.msc3381.poll.response"
 MSC3381_POLL_END = "org.matrix.msc3381.poll.end"
 M_POLL_KIND_DISCLOSED = "m.disclosed"
 M_POLL_KIND_UNDISCLOSED = "m.undisclosed"
+M_POLL = "m.poll"
 
 # MSC4495 Selective Presence (选择性在线状态)
 M_PRESENCE_SHARING = "m.presence.sharing"
@@ -126,6 +131,16 @@ M_FORWARDED_ROOM_KEY = "m.forwarded_room_key"
 M_ROOM_MEMBER = "m.room.member"
 MEMBERSHIP_JOIN = "join"
 MEMBERSHIP_INVITE = "invite"
+MEMBERSHIP_LEAVE = "leave"
+MEMBERSHIP_BAN = "ban"
+MEMBERSHIP_KNOCK = "knock"
+
+# 内容键名（事件负载中使用的固定 JSON 字段名）
+CONTENT_KEY_RELATES_TO = "m.relates_to"
+CONTENT_KEY_NEW_CONTENT = "m.new_content"
+CONTENT_KEY_IN_REPLY_TO = "m.in_reply_to"
+CONTENT_KEY_FULLY_READ = "m.fully_read"
+CONTENT_KEY_READ_RECEIPT = "m.read"
 
 # 房间状态事件类型
 # 参考：https://spec.matrix.org/latest/client-server-api/#room-events
@@ -231,11 +246,17 @@ MSGTYPE_AUDIO = "m.audio"
 MSGTYPE_STICKER = "m.sticker"
 MSGTYPE_LOCATION = "m.location"
 MSGTYPE_REDACTION = "m.redaction"
+MSGTYPE_REACTION = "m.reaction"
 
 # 用户认证类型
 LOGIN_TYPE_PASSWORD = "m.login.password"
 LOGIN_TYPE_TOKEN = "m.login.token"
 LOGIN_TYPE_SSO = "m.login.sso"
+LOGIN_TYPE_DUMMY = "m.login.dummy"
+
+# 特定 API 参数键名
+MSC4140_DELAY_KEY = "org.matrix.msc4140.delay"
+MSC4140_PARENT_DELAY_ID_KEY = "org.matrix.msc4140.parent_delay_id"
 ID_TYPE_USER = "m.id.user"
 
 # 协议和加密常量

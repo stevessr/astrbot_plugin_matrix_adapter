@@ -47,6 +47,24 @@ def mask_device_id(device_id: str | None) -> str:
     return f"{normalized[:2]}***{normalized[-2:]}"
 
 
+def _extract_text_repr(value) -> str:
+    """Extract a text representation from a Matrix event content value.
+
+    Handles strings, dicts with body/text keys, and lists of such items.
+    Used by event_types.py, beacon.py, location.py.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return str(value.get("body") or value.get("text") or "")
+    if isinstance(value, list):
+        for item in value:
+            text = _extract_text_repr(item)
+            if text:
+                return text
+    return ""
+
+
 def compress_image_if_needed(
     image_data: bytes,
     content_type: str,

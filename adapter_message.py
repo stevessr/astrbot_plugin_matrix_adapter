@@ -10,10 +10,14 @@ from pathlib import Path
 from astrbot.api import logger
 
 from .constants import (
+    M_REACTION,
     M_ROOM_ENCRYPTED,
     M_ROOM_MESSAGE,
     M_ROOM_REDACTION,
     MSC4357_LIVE_MESSAGE_MARKER,
+    MSGTYPE_NOTICE,
+    MSGTYPE_REACTION,
+    MSGTYPE_STICKER,
     REL_TYPE_REPLACE,
 )
 from .plugin_config import get_plugin_config
@@ -101,9 +105,9 @@ class MatrixAdapterMessageMixin:
                 body = content.get("body") or ""
                 if not body and msgtype in (MSGTYPE_IMAGE, MSGTYPE_VIDEO, MSGTYPE_AUDIO, MSGTYPE_FILE):
                     body = msgtype
-                if msgtype == "m.sticker" and not body:
+                if msgtype == MSGTYPE_STICKER and not body:
                     body = "sticker"
-            elif event_type == "m.reaction":
+            elif event_type == M_REACTION:
                 reaction = content.get("m.relates_to", {}).get("key", "")
                 body = f"[reaction] {reaction}".strip()
             elif event_type == M_ROOM_ENCRYPTED:
@@ -148,7 +152,7 @@ class MatrixAdapterMessageMixin:
             sender_id = getattr(event, "sender", "") or ""
             sender_name = room.members.get(sender_id, sender_id) if sender_id else ""
 
-            if getattr(event, "msgtype", None) == "m.reaction":
+            if getattr(event, "msgtype", None) == M_REACTION:
                 # Reactions should not enter the normal pipeline to avoid LLM replies.
                 try:
                     relates_to = event.content.get("m.relates_to", {})
@@ -227,7 +231,7 @@ class MatrixAdapterMessageMixin:
                 }
                 _append_stalk_archive(abm.session_id, record)
 
-            if getattr(event, "msgtype", None) == "m.notice":
+            if getattr(event, "msgtype", None) == MSGTYPE_NOTICE:
                 logger.debug(
                     f"忽略 m.notice 自动分发，避免 bot notice 触发回复：event_id={getattr(event, 'event_id', '')}"
                 )

@@ -11,17 +11,7 @@ DEFAULT_ASSET_TYPE = "m.self"
 PIN_ASSET_TYPE = "m.pin"
 
 
-def _extract_text_repr(value) -> str:
-    if isinstance(value, str):
-        return value
-    if isinstance(value, dict):
-        return str(value.get("body") or value.get("text") or "")
-    if isinstance(value, list):
-        for item in value:
-            text = _extract_text_repr(item)
-            if text:
-                return text
-    return ""
+from ...utils.utils import _extract_text_repr
 
 
 def _extract_location_content(content: dict, event_type: str | None) -> dict:

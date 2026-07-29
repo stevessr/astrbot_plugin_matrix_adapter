@@ -22,6 +22,11 @@ from ...constants import (
     M_ROOM_TOMBSTONE,
     M_ROOM_TOPIC,
     M_SPACE_CHILD,
+    MEMBERSHIP_BAN,
+    MEMBERSHIP_INVITE,
+    MEMBERSHIP_JOIN,
+    MEMBERSHIP_KNOCK,
+    MEMBERSHIP_LEAVE,
     M_SPACE_PARENT,
 )
 
@@ -436,8 +441,8 @@ async def handle_room_member_change(receiver, chain, event, _: str):
     sender = _format_member(sender_id)
     reason = _format_optional_reason(content.get("reason"))
 
-    if membership == "join":
-        if prev_membership == "join":
+    if membership == MEMBERSHIP_JOIN:
+        if prev_membership == MEMBERSHIP_JOIN:
             changes: list[str] = []
             prev_display = prev_content.get("displayname") or prev_content.get(
                 "display_name"
@@ -454,16 +459,16 @@ async def handle_room_member_change(receiver, chain, event, _: str):
                 text = f"[Room Member] {target} refreshed membership"
         else:
             text = f"[Room Member] {target} joined the room"
-    elif membership == "invite":
+    elif membership == MEMBERSHIP_INVITE:
         text = f"[Room Member] {sender} invited {target}"
-    elif membership == "leave":
+    elif membership == MEMBERSHIP_LEAVE:
         if sender_id and target_id and sender_id != target_id:
             text = f"[Room Member] {sender} removed {target} from the room{reason}"
         else:
             text = f"[Room Member] {target} left the room{reason}"
-    elif membership == "ban":
+    elif membership == MEMBERSHIP_BAN:
         text = f"[Room Member] {sender} banned {target}{reason}"
-    elif membership == "knock":
+    elif membership == MEMBERSHIP_KNOCK:
         text = f"[Room Member] {target} requested to join the room"
     else:
         text = f"[Room Member] {target} membership changed to: {membership}{reason}"

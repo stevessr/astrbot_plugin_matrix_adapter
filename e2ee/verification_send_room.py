@@ -13,7 +13,9 @@ from ..constants import (
     M_KEY_VERIFICATION_KEY,
     M_KEY_VERIFICATION_MAC,
     M_KEY_VERIFICATION_READY,
+    CONTENT_KEY_RELATES_TO,
     M_ROOM_ENCRYPTED,
+    REL_TYPE_REFERENCE,
 )
 from .verification_constants import (
     HASHES,
@@ -62,8 +64,8 @@ class SASVerificationSendRoomMixin:
         try:
             # Add m.relates_to to link to the original request
             # Matrix spec: in-room verification events should use m.reference relationship
-            content["m.relates_to"] = {
-                "rel_type": "m.reference",
+            content[CONTENT_KEY_RELATES_TO] = {
+                "rel_type": REL_TYPE_REFERENCE,
                 "event_id": transaction_id,
             }
 

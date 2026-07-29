@@ -15,6 +15,9 @@ from ..constants import (
     M_ROOM_JOIN_RULES,
     M_ROOM_NAME,
     M_ROOM_PINNED_EVENTS,
+    MEMBERSHIP_INVITE,
+    MEMBERSHIP_JOIN,
+    MEMBERSHIP_LEAVE,
     M_ROOM_TOPIC,
 )
 from .base import MatrixAPIError
@@ -110,7 +113,7 @@ class RoomStateMixin:
         response = await self._request("GET", "/_matrix/client/v3/sync", params=params)
 
         rooms = response.get("rooms", {})
-        for bucket in ("join", "invite", "leave"):
+        for bucket in (MEMBERSHIP_JOIN, MEMBERSHIP_INVITE, MEMBERSHIP_LEAVE):
             room_bucket = rooms.get(bucket, {})
             if room_id in room_bucket:
                 return room_bucket[room_id]

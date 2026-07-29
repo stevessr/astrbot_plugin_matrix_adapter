@@ -27,7 +27,14 @@ from astrbot.api.message_components import (
 )
 
 from .components import Poll
-from .constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES, MATRIX_HTML_FORMAT
+from .constants import (
+    DEFAULT_MAX_UPLOAD_SIZE_BYTES,
+    M_POLL,
+    M_POLL_KIND_DISCLOSED,
+    M_POLL_START,
+    MATRIX_HTML_FORMAT,
+    MSGTYPE_EMOTE,
+)
 from .sender.handlers import (
     send_at,
     send_audio,
@@ -366,9 +373,9 @@ async def send_with_client_impl(
                     is_encrypted_room,
                     e2ee_manager,
                     max_selections=getattr(segment, "max_selections", 1) or 1,
-                    kind=getattr(segment, "kind", None) or "m.disclosed",
-                    event_type=getattr(segment, "event_type", None) or "m.poll.start",
-                    poll_key=getattr(segment, "poll_key", None) or "m.poll",
+                    kind=getattr(segment, "kind", None) or M_POLL_KIND_DISCLOSED,
+                    event_type=getattr(segment, "event_type", None) or M_POLL_START,
+                    poll_key=getattr(segment, "poll_key", None) or M_POLL,
                     fallback_text=getattr(segment, "fallback_text", None),
                     fallback_html=getattr(segment, "fallback_html", None),
                     thread_is_falling_back=thread_is_falling_back,
@@ -507,7 +514,7 @@ async def send_with_client_impl(
                 logger.error(f"发送 sticker 失败：{e}")
         elif isinstance(segment, Poke):
             try:
-                content_data = {"msgtype": "m.emote", "body": "pokes"}
+                content_data = {"msgtype": MSGTYPE_EMOTE, "body": "pokes"}
                 await send_content(
                     client,
                     content_data,

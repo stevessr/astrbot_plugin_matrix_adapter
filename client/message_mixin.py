@@ -19,6 +19,8 @@ from ..constants import (
     MSC4357_LIVE_MESSAGE_MARKER,
     MSC4446_ALLOW_BACKWARD,
     MSGTYPE_TEXT,
+    REL_TYPE_ANNOTATION,
+    REL_TYPE_REFERENCE,
     REL_TYPE_REPLACE,
     RESPONSE_TRUNCATE_LENGTH_400,
 )
@@ -208,7 +210,7 @@ class MessageMixin:
         """
         content: dict[str, Any] = {
             "m.relates_to": {
-                "rel_type": "m.reference",
+                "rel_type": REL_TYPE_REFERENCE,
                 "event_id": notification_event_id,
             },
         }
@@ -270,7 +272,7 @@ class MessageMixin:
                     k: v for k, v in new_content.items() if k not in ["body", "msgtype"]
                 },
             },
-            "m.relates_to": {"rel_type": "m.replace", "event_id": original_event_id},
+            "m.relates_to": {"rel_type": REL_TYPE_REPLACE, "event_id": original_event_id},
         }
         return await self.send_room_event(
             room_id=room_id,
@@ -304,7 +306,7 @@ class MessageMixin:
 
         content = {
             "m.relates_to": {
-                "rel_type": "m.annotation",
+                "rel_type": REL_TYPE_ANNOTATION,
                 "event_id": event_id,
                 "key": emoji,
             }

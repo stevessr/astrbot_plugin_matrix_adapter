@@ -10,6 +10,8 @@ from .constants import (
     M_ROOM_MESSAGE,
     MATRIX_HTML_FORMAT,
     MSC4357_LIVE_MESSAGE_MARKER,
+    MSGTYPE_NOTICE,
+    MSGTYPE_TEXT,
     STREAMING_TYPING_REFRESH_SECONDS,
     STREAMING_TYPING_TIMEOUT_MS,
 )
@@ -255,7 +257,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
         """
 
         room_id = self.session_id
-        msg_type = "m.notice" if self.use_notice else "m.text"
+        msg_type = MSGTYPE_NOTICE if self.use_notice else MSGTYPE_TEXT
         buffer = ""
         current_event_id: str | None = None
         last_sent_text = ""
@@ -522,7 +524,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                                     event.get("type") == M_ROOM_MESSAGE
                                     and event.get("sender") == my_user_id
                                     and event.get("content", {}).get("msgtype")
-                                    in ("m.text", "m.notice")
+                                    in (MSGTYPE_TEXT, MSGTYPE_NOTICE)
                                 ):
                                     reply_to = event.get("event_id")
                                     logger.debug(

@@ -7,7 +7,7 @@ from typing import Any
 
 from astrbot.api import logger
 
-from ..constants import DEFAULT_TIMEOUT_MS_30000
+from ..constants import DEFAULT_TIMEOUT_MS_30000, LOGIN_TYPE_PASSWORD, LOGIN_TYPE_TOKEN
 from .path_utils import quote_path_segment
 
 
@@ -108,7 +108,7 @@ class AuthMixin:
             Login response with access_token, device_id, etc.
         """
         data = {
-            "type": "m.login.password",
+            "type": LOGIN_TYPE_PASSWORD,
             "identifier": {"type": "m.id.user", "user": user_id},
             "password": password,
             "initial_device_display_name": device_name,
@@ -166,7 +166,7 @@ class AuthMixin:
             Login response with access_token, device_id, etc.
         """
         data = {
-            "type": "m.login.token",
+            "type": LOGIN_TYPE_TOKEN,
             "token": token,
             "initial_device_display_name": device_name,
         }

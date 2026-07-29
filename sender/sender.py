@@ -16,7 +16,9 @@ from ..constants import (
     MSC1767_TEXT_KEY,
     MSC3488_ASSET_KEY,
     MSC3488_TS_KEY,
+    CONTENT_KEY_RELATES_TO,
     MSC4144_PROFILE_KEY,
+    REL_TYPE_REFERENCE,
 )
 
 # Update import: markdown_utils is now in ..utils.markdown_utils
@@ -978,8 +980,8 @@ class MatrixSender:
             "org.matrix.msc3488.location": dict(location_payload),
             "m.ts": ts_ms,
             MSC3488_TS_KEY: ts_ms,
-            "m.relates_to": {
-                "rel_type": "m.reference",
+            CONTENT_KEY_RELATES_TO: {
+                "rel_type": REL_TYPE_REFERENCE,
                 "event_id": beacon_info_event_id,
             },
             MSC1767_TEXT_KEY: description or geo_uri,

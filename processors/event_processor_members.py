@@ -6,7 +6,7 @@ import asyncio
 
 from astrbot.api import logger
 
-from ..constants import M_ROOM_LIVE_MESSAGING, MSC4357_LIVE_MESSAGING_STATE
+from ..constants import M_ROOM_LIVE_MESSAGING, MEMBERSHIP_BAN, MEMBERSHIP_INVITE, MEMBERSHIP_JOIN, MEMBERSHIP_LEAVE, MSC4357_LIVE_MESSAGING_STATE
 from ..room_member_store import MatrixRoomMemberStore
 from ..user_store import MatrixUserStore
 
@@ -120,7 +120,7 @@ class MatrixEventProcessorMembers:
         if (
             e2ee_manager
             and getattr(room, "timeline_limited", False)
-            and membership != "join"
+            and membership != MEMBERSHIP_JOIN
             and user_id != self.user_id
         ):
             # A non-join membership event after a limited timeline may hide an
@@ -131,7 +131,7 @@ class MatrixEventProcessorMembers:
             except Exception as e:
                 logger.debug(f"Limited-sync Megolm rotation failed: {e}")
 
-        if membership == "join":
+        if membership == MEMBERSHIP_JOIN:
             is_new_member = user_id not in room.members
             room.members[user_id] = display_name
             if avatar_url:
@@ -180,7 +180,7 @@ class MatrixEventProcessorMembers:
                             )
                     except Exception as e:
                         logger.debug(f"成员加入后的主动密钥分发失败：{e}")
-        elif membership == "invite":
+        elif membership == MEMBERSHIP_INVITE:
             if display_name or avatar_url:
                 await asyncio.to_thread(
                     self.user_store.upsert,
@@ -199,7 +199,7 @@ class MatrixEventProcessorMembers:
                         await on_member_invited(room.room_id, user_id)
                 except Exception as e:
                     logger.debug(f"Post-invite room-key sharing failed: {e}")
-        elif membership in ("leave", "ban"):
+        elif membership in (MEMBERSHIP_LEAVE, MEMBERSHIP_BAN):
             was_member = user_id in room.members
             room.members.pop(user_id, None)
             room.member_avatars.pop(user_id, None)

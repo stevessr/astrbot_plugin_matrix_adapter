@@ -3,7 +3,7 @@ import json
 
 from astrbot.api import logger
 
-from ..constants import OLM_ALGO
+from ..constants import M_ROOM_KEY, OLM_ALGO
 from .olm_machine_types import (
     AnyOlmMessage,
     Curve25519PublicKey,
@@ -92,7 +92,7 @@ class OlmMachineOlmMixin:
         session: Session | None = None,
         recipient_user_id: str = "unknown",
         recipient_ed25519_key: str = "unknown",
-        event_type: str = "m.room_key",
+        event_type: str = M_ROOM_KEY,
     ) -> dict:
         masked_identity_key = (their_identity_key or "")[:8]
         """

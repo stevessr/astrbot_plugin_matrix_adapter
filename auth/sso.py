@@ -8,6 +8,7 @@ import io
 import secrets
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from ..constants import LOGIN_TYPE_SSO
 from .oauth2_core import (
     _get_query_param,
     _get_request_query_params,
@@ -166,7 +167,7 @@ class MatrixSSO:
 
             sso_flow = None
             for flow in flows:
-                if flow.get("type") == "m.login.sso":
+                if flow.get("type") == LOGIN_TYPE_SSO:
                     sso_flow = flow
                     break
 

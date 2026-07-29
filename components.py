@@ -1,14 +1,16 @@
 from astrbot.api.message_components import BaseMessageComponent, ComponentType
 
+from .constants import M_POLL, M_POLL_KIND_DISCLOSED, M_POLL_START
+
 
 class Poll(BaseMessageComponent):
     type = ComponentType.Unknown
     question: str
     answers: list[str]
     max_selections: int | None = 1
-    kind: str | None = "m.disclosed"
-    event_type: str | None = "m.poll.start"
-    poll_key: str | None = "m.poll"
+    kind: str | None = M_POLL_KIND_DISCLOSED
+    event_type: str | None = M_POLL_START
+    poll_key: str | None = M_POLL
     fallback_text: str | None = None
     fallback_html: str | None = None
 
@@ -17,9 +19,9 @@ class Poll(BaseMessageComponent):
         question: str,
         answers: list[str],
         max_selections: int | None = 1,
-        kind: str | None = "m.disclosed",
-        event_type: str | None = "m.poll.start",
-        poll_key: str | None = "m.poll",
+        kind: str | None = M_POLL_KIND_DISCLOSED,
+        event_type: str | None = M_POLL_START,
+        poll_key: str | None = M_POLL,
         fallback_text: str | None = None,
         fallback_html: str | None = None,
         **_,
