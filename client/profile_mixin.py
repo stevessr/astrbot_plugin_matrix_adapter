@@ -190,7 +190,8 @@ class ProfileMixin:
         Set user presence status
 
         Args:
-            status: Presence status ('online', 'unavailable', 'offline')
+            status: Presence status ('online', 'unavailable', 'offline',
+                or 'busy' per MSC3026)
             status_msg: Optional status message
             last_active_ts: Optional last active timestamp (ms)
             currently_active: Optional active flag

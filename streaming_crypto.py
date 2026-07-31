@@ -86,18 +86,26 @@ async def edit_message_encrypted(
     original_event_id: str,
     new_content: dict,
     tracker_metadata: dict | None = None,
+    thread_root: str | None = None,
 ):
-    """加密并编辑消息"""
+    """加密并编辑消息
+
+    ``thread_root`` 非空时按 MSC4145 在 ``m.relates_to`` 中同时携带
+    ``m.thread`` 关系，保持编辑聚合在原消息列内。
+    """
     try:
         # 构建编辑事件的完整内容
+        relates_to: dict = {
+            "rel_type": REL_TYPE_REPLACE,
+            "event_id": original_event_id,
+        }
+        if thread_root:
+            relates_to["m.thread"] = {"event_id": thread_root}
         edit_content = {
             "msgtype": new_content.get("msgtype", "m.text"),
             "body": f"* {new_content.get('body', '')}",
             "m.new_content": new_content,
-            "m.relates_to": {
-                "rel_type": REL_TYPE_REPLACE,
-                "event_id": original_event_id,
-            },
+            "m.relates_to": relates_to,
         }
         if "format" in new_content:
             edit_content["format"] = new_content["format"]
@@ -127,6 +135,7 @@ async def edit_message_encrypted(
         original_event_id=original_event_id,
         new_content=new_content,
         tracker_metadata=tracker_metadata,
+        thread_root=thread_root,
     )
 
 
@@ -136,6 +145,7 @@ async def edit_message_plain(
     original_event_id: str,
     new_content: dict,
     tracker_metadata: dict | None = None,
+    thread_root: str | None = None,
 ):
     """编辑未加密消息"""
     msg_type = new_content.get("msgtype") or "m.text"
@@ -145,4 +155,5 @@ async def edit_message_plain(
         new_content=new_content,
         msg_type=msg_type,
         tracker_metadata=tracker_metadata,
+        thread_root=thread_root,
     )

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0 - under going
+
+- **MSC3881 远程房间加入**：`join_room` / `knock_room` 新增 `server_name` 参数，可在远程加入时指定目标服务器列表。
+- **MSC4145 消息列内编辑**：编辑消息列内消息时，编辑事件自动携带 `m.thread` 关系（`edit_message` / `edit_message_encrypted` / `edit_message_plain` 新增 `thread_root` 参数），流式编辑也同步传递线程上下文，确保编辑聚合在消息列内而非落到房间时间线。
+- **MSC3026 忙绿状态**：新增 `PRESENCE_BUSY` 常量，`set_presence("busy")` 可设置忙绿状态。
+- **MSC3874 —— 同步过滤器链路**：`MatrixSyncManager` 构造时可选传入 `filter_id`，传递至 `client.sync(filter_id=...)` 以过滤 `/sync` 返回的 room/event 类型。
+- **修复 `m.replace` 编辑事件处理**：事件处理器现在正确识别 `m.relates_to.rel_type == m.replace` 的编辑事件：
+  - 若原始消息已被处理，跳过编辑事件，避免 LLM 对同一消息的编辑版本重复响应。
+  - 若原始消息尚未处理，使用 `m.new_content` 替换事件内容（清理 `* ` 前缀回退），让 LLM 看到修正后的文本。
+  - 无 `m.new_content` 时至少去掉 `* ` 前缀。
+
 ## 0.3.9 - 2026-07-29
 
 - 修复 `matrix_send_typing` 布尔状态覆盖 AstrBot 4.26+ 同名 `send_typing()` 生命周期方法、导致 LLM 请求前报 `TypeError: 'bool' object is not callable` 的问题；现在同时正确实现请求前开启和请求后清除 typing 的平台钩子。

@@ -281,6 +281,11 @@ class MatrixPlatformEvent(AstrMessageEvent):
         last_flush_at = 0.0
         flush_interval = self.live_message_update_interval_ms / 1000
         initial_relation = self._build_stream_thread_relation()
+        # MSC4145: 编辑位于消息列内的消息时，编辑事件需同时携带 m.thread 关系，
+        # 保证编辑在客户端聚合在消息列内而非落到房间时间线。
+        stream_thread_root = None
+        if isinstance(initial_relation, dict):
+            stream_thread_root = initial_relation.get("event_id")
         used_self_send = False
         is_encrypted_room = False
         metric_cls = None
@@ -367,6 +372,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                             current_event_id,
                             content,
                             tracker_metadata=tracker_metadata,
+                            thread_root=stream_thread_root,
                         )
                     else:
                         await edit_message_plain(
@@ -375,6 +381,7 @@ class MatrixPlatformEvent(AstrMessageEvent):
                             current_event_id,
                             content,
                             tracker_metadata=tracker_metadata,
+                            thread_root=stream_thread_root,
                         )
             except Exception as e:
                 logger.warning(f"Matrix live message update failed: {e}")

@@ -32,6 +32,7 @@ class MatrixSyncManager:
         user_id: str | None = None,
         store_path: str | Path | None = None,
         on_token_invalid: Callable | None = None,
+        filter_id: str | None = None,
     ):
         """
         Initialize sync manager
@@ -53,6 +54,7 @@ class MatrixSyncManager:
         self.user_id = user_id
         self.store_path = store_path
         self.on_token_invalid = on_token_invalid
+        self._filter_id = filter_id
         storage_config = get_plugin_config().storage_backend_config
 
         # Delegated components
@@ -234,6 +236,7 @@ class MatrixSyncManager:
             sync_response = await self.client.sync(
                 timeout=self.sync_timeout,
                 since=self._get_next_batch(),
+                filter_id=self._filter_id,
             )
 
             next_batch = sync_response.get("next_batch")

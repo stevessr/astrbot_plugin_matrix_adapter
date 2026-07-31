@@ -41,7 +41,10 @@ class RoomManagementMixin:
         return await self._request("POST", endpoint, data={"new_version": new_version})
 
     async def knock_room(
-        self, room_id_or_alias: str, reason: str | None = None
+        self,
+        room_id_or_alias: str,
+        reason: str | None = None,
+        server_name: list[str] | None = None,
     ) -> dict[str, Any]:
         """
         Knock on a room (if supported by server)
@@ -49,6 +52,8 @@ class RoomManagementMixin:
         Args:
             room_id_or_alias: Room ID or alias
             reason: Optional reason
+            server_name: Optional list of server names to try knocking via
+                (MSC3881 remote room joining, mirrors ``/join`` behaviour)
 
         Returns:
             Knock response with room_id
@@ -58,6 +63,8 @@ class RoomManagementMixin:
         data: dict[str, Any] = {}
         if reason:
             data["reason"] = reason
+        if server_name:
+            data["server_name"] = list(server_name)
         return await self._request("POST", endpoint, data=data)
 
     async def accept_knock(

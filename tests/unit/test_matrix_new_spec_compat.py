@@ -300,6 +300,7 @@ def _install_aiohttp_stub() -> None:
 
 
 def _install_package_stubs() -> None:
+    import importlib.util  # needed for spec_from_file_location
     package_paths = {
         PACKAGE_NAME: REPO_ROOT,
         f"{PACKAGE_NAME}.auth": REPO_ROOT / "auth",
@@ -315,6 +316,27 @@ def _install_package_stubs() -> None:
     for name, path in package_paths.items():
         module = sys.modules.setdefault(name, types.ModuleType(name))
         module.__path__ = [str(path)]
+
+    # Pre-load root-level modules imported via relative imports by
+    # submodules under test. The root package stub shadows the real
+    # package, so submodules must be loaded explicitly.
+    _root_modules = ["constants", "call_events"]
+    for _mod_name in _root_modules:
+        _full_name = f"{PACKAGE_NAME}.{_mod_name}"
+        if _full_name in sys.modules:
+            continue
+        _mod_path = REPO_ROOT / f"{_mod_name}.py"
+        if _mod_path.is_file():
+            try:
+                _spec = importlib.util.spec_from_file_location(
+                    _full_name, str(_mod_path)
+                )
+                if _spec and _spec.loader:
+                    _mod = importlib.util.module_from_spec(_spec)
+                    sys.modules[_full_name] = _mod
+                    _spec.loader.exec_module(_mod)
+            except Exception:
+                pass
 
     utils_pkg = sys.modules[f"{PACKAGE_NAME}.utils"]
     try:

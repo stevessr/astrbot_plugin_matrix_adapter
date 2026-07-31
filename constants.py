@@ -234,6 +234,8 @@ INFO_PREFIX_MAC = "MATRIX_KEY_VERIFICATION_MAC"
 # 在线状态
 PRESENCE_ONLINE = "online"
 PRESENCE_OFFLINE = "offline"
+# MSC3026 忙绿状态（busy presence）
+PRESENCE_BUSY = "busy"
 
 # 消息类型（msgtype）
 MSGTYPE_TEXT = "m.text"

@@ -780,18 +780,32 @@ await adapter.sender.client.delete_extended_profile_field("us.cloke.msc4175.tz")
 | MSC2867 | Marking Rooms as Unread | 发 | `mark_room_unread`，双写稳定与 unstable 键 |
 | MSC2965 | OAuth2 Discovery | 发 | 登录元数据自动发现 |
 | MSC2967 | OAuth2 Scopes | 发 | API/设备 scope（兼容 legacy） |
+| MSC3026 | Busy Presence | 发 | 支持 `busy` 忙绿状态，`set_presence("busy")` |
 | MSC3245 | Voice Messages | 发 | 发送音频时附加 `org.matrix.msc3245.voice` 标记 |
 | MSC3381 | Polls | 收/发 | 双向兼容稳定 `m.poll` 与 `org.matrix.msc3381.*` |
 | MSC3488 | Location | 收/发 | `m.location` 与 `org.matrix.msc3488.*` 双写/双解 |
 | MSC3489 / MSC3672 | Live Location Sharing | 收/发 | `m.beacon_info` + `m.beacon` |
 | MSC3771 | Read Receipts for Threads | 发 | 支持 `thread_id` 字段 |
+| MSC3881 | Remote Room Joining | 发 | `join_room` / `knock_room` 支持 `server_name` 参数实现远程加入 |
 | MSC3952 | Intentional Mentions | 收/发 | At/AtAll 自动生成 `m.mentions`，回复时合并被提及者 |
 | MSC4075 | Ringing Notifications (m.call.notify) | 收 | 来电响铃/通知事件 |
 | MSC4133 | Extended Profile Fields | 发 | 扩展个人资料读写，未支持时回退到稳定端点 |
 | MSC4140 | Cancellable Delayed Events | 发 | `send_delayed_message` / `cancel_delayed_message` 等 |
 | MSC4143 | OAuth2 Auth Metadata | 发 | 优先请求 `/_matrix/client/v1/auth_metadata` |
 | MSC4144 | Per-Message Profiles | 发 | `send_with_per_message_profile` 单条消息携带 displayname/avatar |
+| MSC4145 | Edits in Threads | 发 | 编辑消息列内消息时保留 `m.thread` 关系，编辑聚合在消息列内 |
 | MSC4357 | Live Messages（流式编辑） | 发 | 见下方"流式输出"章节 |
+
+### MSC3874 Sync Filter
+
+`MatrixSyncManager` 构造时可选传入 `filter_id`，传递至底层 `client.sync(filter_id=...)`，用于过滤 `/sync` 返回的 room 和 event 类型。
+
+### 编辑事件处理（行为修复）
+
+收到 `m.relates_to.rel_type == m.replace` 的编辑事件时：
+- 若原始消息已被处理，跳过编辑事件，避免 LLM 对同一消息的编辑版本重复响应。
+- 若原始消息尚未处理，使用 `m.new_content` 替换事件内容（清理 `* ` 前缀回退），让 LLM 看到修正后的文本。
+- 无 `m.new_content` 时至少去掉 `* ` 前缀。
 
 ### Matrix v1.19 稳定能力
 

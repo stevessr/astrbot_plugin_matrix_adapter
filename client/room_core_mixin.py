@@ -12,18 +12,24 @@ from .path_utils import quote_path_segment
 class RoomCoreMixin:
     """Core room-related methods for Matrix client"""
 
-    async def join_room(self, room_id: str) -> dict[str, Any]:
+    async def join_room(self, room_id: str, server_name: list[str] | None = None) -> dict[str, Any]:
         """
         Join a room
 
         Args:
             room_id: Room ID or alias
+            server_name: Optional list of server names to try joining via
+                (MSC3881 remote room joining, e.g. joining a room ID on
+                another homeserver). Also accepted as ``via`` servers.
 
         Returns:
             Join response with room_id
         """
+        data: dict[str, Any] = {}
+        if server_name:
+            data["server_name"] = list(server_name)
         endpoint = f"/_matrix/client/v3/join/{quote_path_segment(room_id)}"
-        return await self._request("POST", endpoint, data={})
+        return await self._request("POST", endpoint, data=data)
 
     async def leave_room(self, room_id: str) -> dict[str, Any]:
         """
