@@ -3,6 +3,7 @@ Matrix HTTP Client - Base module
 Provides core HTTP request functionality
 """
 
+import asyncio
 from typing import Any
 
 import aiohttp

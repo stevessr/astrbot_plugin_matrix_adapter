@@ -3043,7 +3043,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                     receipts = []
 
                     class FakeClient:
-                        async def send_read_receipt(self, room_id, event_id):
+                        async def send_read_receipt(self, room_id, event_id, thread_id=None):
                             receipts.append((room_id, event_id))
                             return {}
 
