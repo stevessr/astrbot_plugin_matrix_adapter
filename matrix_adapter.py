@@ -10,6 +10,7 @@ from astrbot.api.platform import Platform, PlatformMetadata, register_platform_a
 from .adapter.message import MatrixAdapterMessageMixin
 from .adapter.runtime import MatrixAdapterRuntimeMixin
 from .adapter.send import MatrixAdapterSendMixin
+from .adapter.state import MatrixRuntimeState
 from .auth.auth import MatrixAuth
 
 # 自定义 Matrix 客户端（不依赖 matrix-nio）
@@ -23,15 +24,14 @@ from .constants import (
     DEFAULT_MAX_UPLOAD_SIZE_BYTES,
     LOGO_PATH,
 )
-from .storage.stores.outbound import MatrixOutboundTracker
 from .processors.core import MatrixEventProcessor
 from .processors.event_handler import MatrixEventHandler
 from .receiver.core import MatrixReceiver
-from .adapter.state import MatrixRuntimeState
 from .sender.core import MatrixSender
 
 # Sticker 支持
 from .sticker import StickerAvailabilityStore, StickerPackSyncer, StickerStorage
+from .storage.stores.outbound import MatrixOutboundTracker
 from .sync.core import MatrixSyncManager
 from .utils.utils import MatrixUtils
 
