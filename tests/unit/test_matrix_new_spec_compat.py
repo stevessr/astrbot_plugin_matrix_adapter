@@ -311,11 +311,61 @@ def _install_package_stubs() -> None:
         f"{PACKAGE_NAME}.receiver.handlers": REPO_ROOT / "receiver" / "handlers",
         f"{PACKAGE_NAME}.sender": REPO_ROOT / "sender",
         f"{PACKAGE_NAME}.sender.handlers": REPO_ROOT / "sender" / "handlers",
+        f"{PACKAGE_NAME}.sender.sender_lib": REPO_ROOT / "sender" / "sender_lib",
         f"{PACKAGE_NAME}.utils": REPO_ROOT / "utils",
+        f"{PACKAGE_NAME}.utils.utils_lib": REPO_ROOT / "utils" / "utils_lib",
+        f"{PACKAGE_NAME}.client.message": REPO_ROOT / "client" / "message",
+        f"{PACKAGE_NAME}.client.media": REPO_ROOT / "client" / "media",
+        f"{PACKAGE_NAME}.client.profile": REPO_ROOT / "client" / "profile",
+        f"{PACKAGE_NAME}.e2ee.sessions": REPO_ROOT / "e2ee" / "sessions",
+        f"{PACKAGE_NAME}.e2ee.decrypt": REPO_ROOT / "e2ee" / "decrypt",
+        f"{PACKAGE_NAME}.e2ee.megolm": REPO_ROOT / "e2ee" / "megolm",
+        f"{PACKAGE_NAME}.e2ee.store": REPO_ROOT / "e2ee" / "store",
+        f"{PACKAGE_NAME}.e2ee.ssss": REPO_ROOT / "e2ee" / "ssss",
+        f"{PACKAGE_NAME}.e2ee.verification": REPO_ROOT / "e2ee" / "verification",
+        f"{PACKAGE_NAME}.e2ee.backup": REPO_ROOT / "e2ee" / "backup",
+        f"{PACKAGE_NAME}.e2ee.secrets": REPO_ROOT / "e2ee" / "secrets",
+        f"{PACKAGE_NAME}.e2ee.signing": REPO_ROOT / "e2ee" / "signing",
+        f"{PACKAGE_NAME}.e2ee.requests": REPO_ROOT / "e2ee" / "requests",
+        f"{PACKAGE_NAME}.receiver.receiver_lib": REPO_ROOT / "receiver" / "receiver_lib",
+        f"{PACKAGE_NAME}.sync.sync_lib": REPO_ROOT / "sync" / "sync_lib",
+        f"{PACKAGE_NAME}.sticker.storage_lib": REPO_ROOT / "sticker" / "storage_lib",
+        f"{PACKAGE_NAME}.processors.event_lib": REPO_ROOT / "processors" / "event_lib",
     }
+    split_package_suffixes = (
+        ".sender_lib",
+        ".utils_lib",
+        ".message",
+        ".media",
+        ".profile",
+        ".sessions",
+        ".decrypt",
+        ".megolm",
+        ".store",
+        ".ssss",
+        ".verification",
+        ".backup",
+        ".secrets",
+        ".signing",
+        ".requests",
+        ".receiver_lib",
+        ".sync_lib",
+        ".storage_lib",
+        ".event_lib",
+    )
+
+    split_package_names = {
+        name
+        for name in package_paths
+        if name.endswith(split_package_suffixes)
+    }
+
     for name, path in package_paths.items():
+        if name in split_package_names:
+            continue
         module = sys.modules.setdefault(name, types.ModuleType(name))
         module.__path__ = [str(path)]
+
 
     # Pre-load root-level modules imported via relative imports by
     # submodules under test. The root package stub shadows the real
@@ -4238,6 +4288,10 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         """Load MatrixPlatformEvent without importing the full sender graph."""
         module_name = f"{PACKAGE_NAME}.matrix_event"
         sys.modules.pop(module_name, None)
+        # Also pop the stream mixin submodule so its lazy _matrix_event_module
+        # reference (from from . import matrix_event) resolves to the fresh
+        # matrix_event module rather than a stale one from a prior test.
+        sys.modules.pop(f"{PACKAGE_NAME}.matrix_event_stream", None)
 
         event_send_stub = types.ModuleType(f"{PACKAGE_NAME}.matrix_event_send")
 

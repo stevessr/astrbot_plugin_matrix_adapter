@@ -8,7 +8,7 @@ from astrbot.api import logger
 from astrbot.api.message_components import Image
 
 from ...utils.utils import compress_image_if_needed
-from ..constants import M_MEDIA_KEY
+from ...constants import M_MEDIA_KEY
 from .common import send_content
 
 try:

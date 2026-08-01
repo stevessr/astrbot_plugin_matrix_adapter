@@ -7,7 +7,7 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.api.message_components import Video
 
-from ..constants import M_MEDIA_KEY
+from ...constants import M_MEDIA_KEY
 from .common import send_content
 
 

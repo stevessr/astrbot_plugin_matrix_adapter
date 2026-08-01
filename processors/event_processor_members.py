@@ -190,12 +190,14 @@ class MatrixEventProcessorMembers:
                         logger.debug(f"成员加入后的主动密钥分发失败：{e}")
         elif membership == MEMBERSHIP_INVITE:
             if display_name or avatar_url:
-                await asyncio.to_thread(
-                    self.user_store.upsert,
-                    user_id,
-                    display_name,
-                    avatar_url,
-                )
+                user_store = getattr(self, "user_store", None)
+                if user_store is not None:
+                    await asyncio.to_thread(
+                        user_store.upsert,
+                        user_id,
+                        display_name,
+                        avatar_url,
+                    )
             if e2ee_manager and user_id != self.user_id:
                 try:
                     on_member_invited = getattr(
@@ -215,9 +217,11 @@ class MatrixEventProcessorMembers:
                 room.members[user_id] = display_name
                 if avatar_url:
                     room.member_avatars[user_id] = avatar_url
-                await asyncio.to_thread(
-                    self.user_store.upsert, user_id, display_name, avatar_url
-                )
+                user_store = getattr(self, "user_store", None)
+                if user_store is not None:
+                    await asyncio.to_thread(
+                        user_store.upsert, user_id, display_name, avatar_url
+                    )
             logger.info(
                 f"用户 {user_id} ({display_name}) 敲门房间 {room.room_id}"
             )
