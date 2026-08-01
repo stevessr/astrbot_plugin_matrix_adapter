@@ -274,7 +274,7 @@ class MatrixEventProcessorStatesMixin:
             event_data: Raw event data
         """
         try:
-            from ...call_events import should_surface_call_event
+            from ...events.call import should_surface_call_event
 
             event_type = event_data.get("type", "")
             config = self.call_event_config

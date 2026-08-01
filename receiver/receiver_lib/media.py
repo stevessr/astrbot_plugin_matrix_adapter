@@ -9,6 +9,7 @@ from astrbot.api import logger
 from astrbot.api.event import MessageChain
 from astrbot.api.message_components import File, Image, Record, Video
 
+from ...config.plugin import get_plugin_config
 from ...constants import (
     MSGTYPE_AUDIO,
     MSGTYPE_FILE,
@@ -16,7 +17,6 @@ from ...constants import (
     MSGTYPE_STICKER,
     MSGTYPE_VIDEO,
 )
-from ...plugin_config import get_plugin_config
 from ...utils.media_crypto import decrypt_encrypted_file
 
 

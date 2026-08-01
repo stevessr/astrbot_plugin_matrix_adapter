@@ -6,7 +6,8 @@
 
 from pathlib import Path
 
-from .plugin_config_defaults import (
+from ..storage.backend import StorageBackendConfig, normalize_storage_backend
+from .defaults import (
     _DEFAULT_E2EE_STORE_MAX_PENDING_WRITES,
     _DEFAULT_HTTP_TIMEOUT_SECONDS,
     _DEFAULT_MEDIA_DOWNLOAD_MAX_IN_MEMORY_BYTES,
@@ -23,7 +24,6 @@ from .plugin_config_defaults import (
     _normalize_token_list,
     _warn_config_coercion,
 )
-from .storage.backend import StorageBackendConfig, normalize_storage_backend
 
 
 class PluginConfig(PluginConfigDefaultsMixin):

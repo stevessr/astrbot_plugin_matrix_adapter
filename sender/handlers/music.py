@@ -8,8 +8,8 @@ from astrbot.api import logger
 from astrbot.api.message_components import Music
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
+from ...config.plugin import get_plugin_config
 from ...constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES
-from ...plugin_config import get_plugin_config
 from .common import resolve_text_msgtype, send_content
 
 _MUSIC_DOWNLOAD_CHUNK_SIZE = 64 * 1024

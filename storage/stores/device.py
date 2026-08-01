@@ -10,8 +10,8 @@ from pathlib import Path
 
 from astrbot.api import logger
 
-from .plugin_config import get_plugin_config
-from .storage.backend import (
+from ...config.plugin import get_plugin_config
+from ..backend import (
     MatrixFolderDataStore,
     build_folder_namespace,
 )
@@ -55,7 +55,7 @@ class MatrixDeviceManager:
 
         # 使用新的存储路径逻辑
 
-        from .storage.paths import MatrixStoragePaths
+        from ..paths import MatrixStoragePaths
 
         # 获取用户的存储目录
 

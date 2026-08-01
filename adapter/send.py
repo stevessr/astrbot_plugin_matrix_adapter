@@ -6,9 +6,9 @@ from astrbot.api import logger
 from astrbot.api.event import MessageChain
 from astrbot.api.message_components import Plain, Reply
 
-from .constants import DEFAULT_TYPING_TIMEOUT_MS, MATRIX_HTML_FORMAT
-from .plugin_config import get_plugin_config
-from .utils.markdown_utils import markdown_to_html
+from ..config.plugin import get_plugin_config
+from ..constants import DEFAULT_TYPING_TIMEOUT_MS, MATRIX_HTML_FORMAT
+from ..utils.markdown_utils import markdown_to_html
 
 _MARKDOWN_MARKERS = ("**", "*", "`", "#", "- ", "> ", "[", "](")
 
@@ -107,7 +107,7 @@ class MatrixAdapterSendMixin:
 
                 new_message_chain = MessageChain(new_chain)
 
-                from .matrix_event import MatrixPlatformEvent
+                from ..matrix_event import MatrixPlatformEvent
 
                 await MatrixPlatformEvent.send_with_client(
                     self.client,
@@ -160,7 +160,7 @@ class MatrixAdapterSendMixin:
             [*header_comps, processed_segment] if header_comps else [processed_segment]
         )
 
-        from .matrix_event import MatrixPlatformEvent
+        from ..matrix_event import MatrixPlatformEvent
 
         await MatrixPlatformEvent.send_with_client(
             self.client,

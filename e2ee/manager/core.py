@@ -10,7 +10,7 @@ from typing import Literal
 
 from astrbot.api import logger
 
-from ...plugin_config import get_plugin_config
+from ...config.plugin import get_plugin_config
 from ...storage.backend import build_folder_namespace
 from ...storage.paths import MatrixStoragePaths
 from ...utils.utils import mask_device_id

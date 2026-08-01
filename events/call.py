@@ -22,7 +22,7 @@ Matrix Live 通话（VoIP / MatrixRTC）事件适配的共享逻辑。
 
 from dataclasses import dataclass
 
-from .constants import M_RTC_DECLINE, MSC4310_RTC_DECLINE
+from ..constants import M_RTC_DECLINE, MSC4310_RTC_DECLINE
 
 # --- 事件类型常量 -----------------------------------------------------------
 

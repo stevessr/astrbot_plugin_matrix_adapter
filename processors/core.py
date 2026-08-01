@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from astrbot.api import logger
 
+from ..config.plugin import get_plugin_config
 from ..constants import (
     M_FORWARDED_ROOM_KEY,
     M_ROOM_ENCRYPTED,
@@ -18,7 +19,6 @@ from ..constants import (
     MAX_PROCESSED_MESSAGES_1000,
     MEGOLM_ALGO,
 )
-from ..plugin_config import get_plugin_config
 from ..utils import parse_bool
 from .event_lib.members import MatrixEventProcessorMembers
 from .event_lib.msg import MatrixEventProcessorMessagesMixin

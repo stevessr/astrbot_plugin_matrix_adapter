@@ -917,7 +917,7 @@ class MatrixTextMessageCompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_poll_defaults_and_stable_handler(self):
-        components = load_module("components")
+        components = load_module("matrix_event_send.components")
         poll_handler = load_module("receiver.handlers.poll")
 
         poll = components.Poll("喝什么？", ["茶", "咖啡"])
@@ -2722,7 +2722,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_message_callback_ignores_live_drafts_but_processes_final_edits(
         self,
     ):
-        adapter_message = load_module("adapter_message")
+        adapter_message = load_module("adapter.message")
 
         runtime_state = types.SimpleNamespace(mark_live_message_inbound=mock.Mock())
         receiver = types.SimpleNamespace(
@@ -2792,7 +2792,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_message_callback_does_not_auto_dispatch_notice_messages(self):
-        adapter_message = load_module("adapter_message")
+        adapter_message = load_module("adapter.message")
 
         receiver = types.SimpleNamespace(
             convert_message=mock.AsyncMock(
@@ -2944,8 +2944,8 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                 MSC3489_BEACON_INFO_PREFIX="org.matrix.msc3672.beacon_info",
                 MSC3489_BEACON_KEY="org.matrix.msc3672.beacon",
             ),
-            f"{PACKAGE_NAME}.plugin_config": _make_module(
-                f"{PACKAGE_NAME}.plugin_config",
+            f"{PACKAGE_NAME}.config.plugin": _make_module(
+                f"{PACKAGE_NAME}.config.plugin",
                 get_plugin_config=lambda: types.SimpleNamespace(
                     storage_backend_config=None
                 ),
@@ -3036,8 +3036,8 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                 sys.modules.pop(module_name, None)
                 _install_package_stubs()
                 stubs = {
-                    f"{PACKAGE_NAME}.plugin_config": _make_module(
-                        f"{PACKAGE_NAME}.plugin_config",
+                    f"{PACKAGE_NAME}.config.plugin": _make_module(
+                        f"{PACKAGE_NAME}.config.plugin",
                         get_plugin_config=lambda enabled=enabled: types.SimpleNamespace(
                             storage_backend_config=None,
                             send_read_receipt=enabled,
@@ -3122,8 +3122,8 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         _install_package_stubs()
 
         stubs = {
-            f"{PACKAGE_NAME}.plugin_config": _make_module(
-                f"{PACKAGE_NAME}.plugin_config",
+            f"{PACKAGE_NAME}.config.plugin": _make_module(
+                f"{PACKAGE_NAME}.config.plugin",
                 get_plugin_config=lambda: types.SimpleNamespace(
                     storage_backend_config=None
                 ),
@@ -3356,8 +3356,8 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                 MSC3489_BEACON_INFO_PREFIX="org.matrix.msc3672.beacon_info",
                 MSC3489_BEACON_KEY="org.matrix.msc3672.beacon",
             ),
-            f"{PACKAGE_NAME}.plugin_config": _make_module(
-                f"{PACKAGE_NAME}.plugin_config",
+            f"{PACKAGE_NAME}.config.plugin": _make_module(
+                f"{PACKAGE_NAME}.config.plugin",
                 get_plugin_config=lambda: types.SimpleNamespace(
                     storage_backend_config=None
                 ),
@@ -3695,8 +3695,8 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                 MSC3489_BEACON_INFO_PREFIX="org.matrix.msc3672.beacon_info",
                 MSC3489_BEACON_KEY="org.matrix.msc3672.beacon",
             ),
-            f"{PACKAGE_NAME}.plugin_config": _make_module(
-                f"{PACKAGE_NAME}.plugin_config",
+            f"{PACKAGE_NAME}.config.plugin": _make_module(
+                f"{PACKAGE_NAME}.config.plugin",
                 get_plugin_config=lambda: types.SimpleNamespace(
                     storage_backend_config=None
                 ),
@@ -3832,8 +3832,8 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                 MSC3489_BEACON_INFO_PREFIX="org.matrix.msc3672.beacon_info",
                 MSC3489_BEACON_KEY="org.matrix.msc3672.beacon",
             ),
-            f"{PACKAGE_NAME}.plugin_config": _make_module(
-                f"{PACKAGE_NAME}.plugin_config",
+            f"{PACKAGE_NAME}.config.plugin": _make_module(
+                f"{PACKAGE_NAME}.config.plugin",
                 get_plugin_config=lambda: types.SimpleNamespace(
                     storage_backend_config=None
                 ),
@@ -4072,8 +4072,8 @@ class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
                 MSC3489_BEACON_INFO_PREFIX="org.matrix.msc3672.beacon_info",
                 MSC3489_BEACON_KEY="org.matrix.msc3672.beacon",
             ),
-            f"{PACKAGE_NAME}.plugin_config": _make_module(
-                f"{PACKAGE_NAME}.plugin_config",
+            f"{PACKAGE_NAME}.config.plugin": _make_module(
+                f"{PACKAGE_NAME}.config.plugin",
                 get_plugin_config=lambda: types.SimpleNamespace(
                     storage_backend_config=None
                 ),
@@ -4296,6 +4296,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         sys.modules.pop(f"{PACKAGE_NAME}.matrix_event.stream", None)
 
         event_send_stub = types.ModuleType(f"{PACKAGE_NAME}.matrix_event_send")
+        event_send_stub.__path__ = [str(REPO_ROOT / "matrix_event_send")]
 
         async def send_with_client_impl(**_kwargs):
             return 1
@@ -5027,7 +5028,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_streaming_encrypted_edit_keeps_cleartext_replace_relation(self):
-        streaming_crypto = load_module("streaming_crypto")
+        streaming_crypto = load_module("matrix_event_send.crypto")
 
         class FakeClient:
             def __init__(self):
@@ -5072,7 +5073,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_streaming_encrypted_initial_keeps_thread_relation_in_envelope(self):
-        streaming_crypto = load_module("streaming_crypto")
+        streaming_crypto = load_module("matrix_event_send.crypto")
 
         class FakeClient:
             async def send_message(self, **kwargs):
@@ -5117,7 +5118,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.sent["content"]["m.relates_to"], relation)
 
     async def test_streaming_plain_notice_edit_preserves_notice_msgtype(self):
-        streaming_crypto = load_module("streaming_crypto")
+        streaming_crypto = load_module("matrix_event_send.crypto")
 
         class FakeClient:
             def __init__(self):
@@ -5815,7 +5816,7 @@ class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
             await controller.wait_for_callback()
 
     def test_webhook_url_builder_prefers_callback_api_base(self):
-        webhook_module = load_module("webhook")
+        webhook_module = load_module("auth.webhook")
 
         fake_webhook_utils = types.ModuleType("astrbot.core.utils.webhook_utils")
         fake_webhook_utils._get_callback_api_base = lambda: "https://bot.example.com"
@@ -6013,8 +6014,8 @@ class MatrixAuthCompatTests(unittest.IsolatedAsyncioTestCase):
             return module
 
         stubs = {
-            f"{PACKAGE_NAME}.plugin_config": _make_module(
-                f"{PACKAGE_NAME}.plugin_config",
+            f"{PACKAGE_NAME}.config.plugin": _make_module(
+                f"{PACKAGE_NAME}.config.plugin",
                 get_plugin_config=lambda: types.SimpleNamespace(
                     storage_backend_config=types.SimpleNamespace(
                         backend="json",
@@ -8177,12 +8178,12 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_scan_qr_sends_reciprocate_start(self):
         module_name = f"{PACKAGE_NAME}.e2ee.verification"
         sys.modules.pop(module_name, None)
-        plugin_config_stub = types.ModuleType(f"{PACKAGE_NAME}.plugin_config")
+        plugin_config_stub = types.ModuleType(f"{PACKAGE_NAME}.config.plugin")
         plugin_config_stub.get_plugin_config = lambda: types.SimpleNamespace(
             storage_backend_config=types.SimpleNamespace(backend="json")
         )
         with mock.patch.dict(
-            sys.modules, {f"{PACKAGE_NAME}.plugin_config": plugin_config_stub}
+            sys.modules, {f"{PACKAGE_NAME}.config.plugin": plugin_config_stub}
         ):
             verification_module = importlib.import_module(module_name)
         constants = load_module("constants")
@@ -8739,8 +8740,8 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                 super().__init__(message)
 
         stubs = {
-            f"{PACKAGE_NAME}.plugin_config": _make_module(
-                f"{PACKAGE_NAME}.plugin_config",
+            f"{PACKAGE_NAME}.config.plugin": _make_module(
+                f"{PACKAGE_NAME}.config.plugin",
                 get_plugin_config=lambda: types.SimpleNamespace(
                     storage_backend_config=types.SimpleNamespace(
                         backend="json",

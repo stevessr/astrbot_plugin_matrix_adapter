@@ -8,7 +8,7 @@ Handler for Matrix VoIP / MatrixRTC (Live) 通话事件。
 
 from astrbot.api.message_components import Plain
 
-from ...call_events import format_call_event_text, is_call_event_type
+from ...events.call import format_call_event_text, is_call_event_type
 
 __all__ = ["handle_call_event", "is_call_event_type"]
 

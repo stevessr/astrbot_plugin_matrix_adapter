@@ -7,9 +7,9 @@ from pathlib import Path
 from astrbot.api import logger
 from astrbot.api.platform import Platform, PlatformMetadata, register_platform_adapter
 
-from .adapter_message import MatrixAdapterMessageMixin
-from .adapter_runtime import MatrixAdapterRuntimeMixin
-from .adapter_send import MatrixAdapterSendMixin
+from .adapter.message import MatrixAdapterMessageMixin
+from .adapter.runtime import MatrixAdapterRuntimeMixin
+from .adapter.send import MatrixAdapterSendMixin
 from .auth.auth import MatrixAuth
 
 # 自定义 Matrix 客户端（不依赖 matrix-nio）
@@ -17,17 +17,17 @@ from .client import MatrixHTTPClient
 
 # Import commands to register them
 # 组件导入 - Updated to new structure
-from .config import MatrixConfig
+from .config.matrix import MatrixConfig
 from .constants import (
     DEFAULT_CONFIG,
     DEFAULT_MAX_UPLOAD_SIZE_BYTES,
     LOGO_PATH,
 )
-from .outbound_tracker import MatrixOutboundTracker
+from .storage.stores.outbound import MatrixOutboundTracker
 from .processors.core import MatrixEventProcessor
 from .processors.event_handler import MatrixEventHandler
 from .receiver.core import MatrixReceiver
-from .runtime_state import MatrixRuntimeState
+from .adapter.state import MatrixRuntimeState
 from .sender.core import MatrixSender
 
 # Sticker 支持

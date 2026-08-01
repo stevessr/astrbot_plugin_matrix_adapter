@@ -10,11 +10,11 @@ import aiohttp
 
 from astrbot.api import logger
 
+from ..config.plugin import get_plugin_config
 from ..constants import (
     ERROR_TRUNCATE_LENGTH_200,
     HTTP_ERROR_STATUS_400,
 )
-from ..plugin_config import get_plugin_config
 
 
 class MatrixAPIError(Exception):

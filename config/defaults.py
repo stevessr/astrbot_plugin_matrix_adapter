@@ -9,8 +9,8 @@ from pathlib import Path
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 
-from .storage.backend import StorageBackendConfig
-from .utils import parse_bool
+from ..storage.backend import StorageBackendConfig
+from ..utils import parse_bool
 
 _DEFAULT_MEDIA_UPLOAD_BLOCKED_EXTENSIONS = (
     ".exe",

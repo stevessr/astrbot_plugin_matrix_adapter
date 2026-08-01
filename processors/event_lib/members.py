@@ -15,8 +15,8 @@ from ...constants import (
     MEMBERSHIP_LEAVE,
     MSC4357_LIVE_MESSAGING_STATE,
 )
-from ...room_member_store import MatrixRoomMemberStore
-from ...user_store import MatrixUserStore
+from ...storage.stores.rooms import MatrixRoomMemberStore
+from ...storage.stores.users import MatrixUserStore
 
 
 class MatrixEventProcessorMembers:

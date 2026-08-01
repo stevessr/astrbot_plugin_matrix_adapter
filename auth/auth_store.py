@@ -8,7 +8,7 @@ import threading
 import time
 from pathlib import Path
 
-from ..plugin_config import get_plugin_config
+from ..config.plugin import get_plugin_config
 from ..storage.backend import (
     MatrixFolderDataStore,
     StorageBackendConfig,

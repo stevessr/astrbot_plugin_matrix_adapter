@@ -11,9 +11,9 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 
-from .plugin_config import get_plugin_config
-from .storage.backend import MatrixFolderDataStore
-from .storage.paths import MatrixStoragePaths
+from ...config.plugin import get_plugin_config
+from ..backend import MatrixFolderDataStore
+from ..paths import MatrixStoragePaths
 
 
 class MatrixUserStore:

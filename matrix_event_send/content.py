@@ -14,8 +14,8 @@ from astrbot.api.message_components import (
     Unknown,
 )
 
-from ..components import Poll
 from ..sticker import Sticker
+from .components import Poll
 
 
 def _is_sticker_component(obj) -> bool:

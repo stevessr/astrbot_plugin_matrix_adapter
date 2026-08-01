@@ -14,7 +14,7 @@ import aiohttp
 
 from astrbot.api import logger
 
-from ...plugin_config import get_plugin_config
+from ...config.plugin import get_plugin_config
 from ..path_utils import quote_path_segment
 
 

@@ -6,13 +6,13 @@ from pathlib import Path
 
 from astrbot.api import logger
 
-from .call_events import CallEventConfig
-from .constants import DEFAULT_TIMEOUT_MS_30000
-from .device_manager import MatrixDeviceManager
-from .plugin_config import get_plugin_config
-from .storage.backend import StorageBackendConfig
-from .utils import parse_bool
-from .webhook import build_unified_webhook_url
+from ..auth.webhook import build_unified_webhook_url
+from ..constants import DEFAULT_TIMEOUT_MS_30000
+from ..events.call import CallEventConfig
+from ..storage.backend import StorageBackendConfig
+from ..storage.stores.device import MatrixDeviceManager
+from ..utils import parse_bool
+from .plugin import get_plugin_config
 
 
 class MatrixConfig:

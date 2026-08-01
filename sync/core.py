@@ -11,8 +11,8 @@ from pathlib import Path
 from astrbot.api import logger
 
 from ..client.http_client import MatrixAPIError
+from ..config.plugin import get_plugin_config
 from ..constants import DEFAULT_TIMEOUT_MS_30000
-from ..plugin_config import get_plugin_config
 from .sync_lib import (
     MatrixSyncManagerCallbacksMixin,
     MatrixSyncManagerDispatchMixin,

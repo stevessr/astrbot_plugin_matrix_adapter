@@ -6,12 +6,10 @@ from ...constants import (
     MSC3488_ASSET_KEY,
     MSC3488_LOCATION_KEY,
 )
+from ...utils.utils import _extract_text_repr
 
 DEFAULT_ASSET_TYPE = "m.self"
 PIN_ASSET_TYPE = "m.pin"
-
-
-from ...utils.utils import _extract_text_repr
 
 
 def _extract_location_content(content: dict, event_type: str | None) -> dict:

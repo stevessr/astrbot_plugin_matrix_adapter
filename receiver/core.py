@@ -5,6 +5,9 @@ Matrix 消息接收组件
 import asyncio
 from pathlib import Path
 
+# Kept importable: tests patch receiver.core.get_plugin_config to stub
+# plugin config. The mixin modules import it directly from ..plugin_config.
+from ..config.plugin import get_plugin_config  # noqa: F401
 from ..constants import (
     MSGTYPE_AUDIO,
     MSGTYPE_EMOTE,
@@ -17,10 +20,6 @@ from ..constants import (
     MSGTYPE_TEXT,
     MSGTYPE_VIDEO,
 )
-
-# Kept importable: tests patch receiver.core.get_plugin_config to stub
-# plugin config. The mixin modules import it directly from ..plugin_config.
-from ..plugin_config import get_plugin_config  # noqa: F401
 from ..utils.media_cache_index import MediaCacheIndexStore
 from .handlers import (
     handle_audio,

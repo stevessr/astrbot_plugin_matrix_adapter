@@ -9,6 +9,7 @@ from astrbot.core.platform.astrbot_message import MessageMember
 from astrbot.core.platform.message_type import MessageType
 
 from ...client.event_types import MatrixRoom
+from ...config.plugin import get_plugin_config
 from ...constants import (
     M_POLL_END,
     M_POLL_RESPONSE,
@@ -26,7 +27,6 @@ from ...constants import (
     MSGTYPE_VIDEO,
     REL_TYPE_THREAD,
 )
-from ...plugin_config import get_plugin_config
 from ...utils.utils import MatrixUtils
 from ..handlers import (
     BEACON_EVENT_TYPES,

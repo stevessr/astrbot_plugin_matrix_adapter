@@ -12,7 +12,7 @@ from ..constants import (
     MSGTYPE_NOTICE,
     MSGTYPE_TEXT,
 )
-from ..streaming_crypto import (
+from ..matrix_event_send.crypto import (
     edit_message_encrypted,
     edit_message_plain,
     send_message_encrypted,

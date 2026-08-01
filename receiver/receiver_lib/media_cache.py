@@ -7,7 +7,7 @@ from pathlib import Path
 from astrbot.api import logger
 from astrbot.core.utils import astrbot_path
 
-from ...plugin_config import get_plugin_config
+from ...config.plugin import get_plugin_config
 from ...utils.media_cache_index import MediaCacheIndexStore
 
 

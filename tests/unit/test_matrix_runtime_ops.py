@@ -14,12 +14,12 @@ class MatrixOutboundTrackerTests(unittest.IsolatedAsyncioTestCase):
         utils_pkg.parse_bool = utils_mod.parse_bool
         utils_pkg.MatrixUtils = utils_mod.MatrixUtils
         utils_pkg.mask_device_id = utils_mod.mask_device_id
-        plugin_config = load_module("plugin_config")
+        plugin_config = load_module("config.plugin")
         self.temp_dir = tempfile.TemporaryDirectory()
         plugin_config.init_plugin_config({"data_dir": self.temp_dir.name})
         self.message_mixin = load_module("client.message")
-        self.outbound_tracker_mod = load_module("outbound_tracker")
-        self.runtime_state_mod = load_module("runtime_state")
+        self.outbound_tracker_mod = load_module("storage.stores.outbound")
+        self.runtime_state_mod = load_module("adapter.state")
 
     async def asyncTearDown(self):
         self.temp_dir.cleanup()
@@ -97,7 +97,7 @@ class MatrixAdaptiveThreadReplyConfigTests(unittest.TestCase):
         utils_pkg.parse_bool = utils_mod.parse_bool
         utils_pkg.MatrixUtils = utils_mod.MatrixUtils
         utils_pkg.mask_device_id = utils_mod.mask_device_id
-        self.plugin_config = load_module("plugin_config")
+        self.plugin_config = load_module("config.plugin")
         self.temp_dir = tempfile.TemporaryDirectory()
 
     def tearDown(self):

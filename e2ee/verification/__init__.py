@@ -11,6 +11,13 @@ class SASVerificationFlowMixin(
     pass
 
 
-from .sas import SASVerification
 
 __all__ = ["SASVerification", "SASVerificationFlowMixin"]
+
+
+def __getattr__(name: str):
+    if name == "SASVerification":
+        from .sas import SASVerification
+
+        return SASVerification
+    raise AttributeError(name)

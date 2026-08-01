@@ -7,7 +7,6 @@ import asyncio
 
 from astrbot.api import logger
 
-from ...call_events import is_call_event_type
 from ...client.event_types import parse_event
 from ...constants import (
     M_ROOM_ENCRYPTED,
@@ -18,6 +17,7 @@ from ...constants import (
     M_ROOM_REDACTION,
     MEMBERSHIP_JOIN,
 )
+from ...events.call import is_call_event_type
 from .states import (
     VISIBLE_ROOM_STATE_EVENT_TYPES,
     _is_room_state_event_type,

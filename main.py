@@ -30,7 +30,7 @@ class MatrixPlugin(Star):
 
         # 初始化插件级别配置（目录路径等）
         try:
-            from .plugin_config import get_plugin_config, init_plugin_config
+            from .config.plugin import get_plugin_config, init_plugin_config
 
             # 使用传入的 config 参数（AstrBot 从 astrbot_plugin_matrix_adapter_config.json 加载）
             plugin_config = config if isinstance(config, dict) else {}

@@ -6,8 +6,8 @@ import asyncio
 
 from astrbot.api import logger
 
-from .storage.paths import MatrixStoragePaths
-from .utils.utils import mask_device_id
+from ..storage.paths import MatrixStoragePaths
+from ..utils.utils import mask_device_id
 
 
 class MatrixAdapterRuntimeMixin:

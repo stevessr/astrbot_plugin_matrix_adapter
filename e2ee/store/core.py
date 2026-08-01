@@ -5,7 +5,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from ...plugin_config import get_plugin_config
+from ...config.plugin import get_plugin_config
 from ..storage import build_e2ee_data_store
 
 

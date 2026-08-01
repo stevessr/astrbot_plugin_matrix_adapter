@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 from astrbot.api import logger
 
+from ...config.plugin import get_plugin_config
 from ...constants import (
     M_KEY_VERIFICATION_START,
     M_RECIPROCATE_V1_METHOD,
@@ -22,7 +23,6 @@ from ...constants import (
     QR_CODE_MODE_SELF_VERIFICATION_UNTRUSTED_MASTER,
     QR_CODE_VERSION,
 )
-from ...plugin_config import get_plugin_config
 from ..device_store import DeviceStore
 from . import SASVerificationFlowMixin
 from .crypto_utils import _encode_unpadded_base64

@@ -9,17 +9,21 @@ from pathlib import Path
 
 from astrbot.api import logger
 
-from .constants import (
+from ..config.plugin import get_plugin_config
+from ..constants import (
     M_REACTION,
     M_ROOM_ENCRYPTED,
     M_ROOM_MESSAGE,
     M_ROOM_REDACTION,
     MSC4357_LIVE_MESSAGE_MARKER,
+    MSGTYPE_AUDIO,
+    MSGTYPE_FILE,
+    MSGTYPE_IMAGE,
     MSGTYPE_NOTICE,
     MSGTYPE_STICKER,
+    MSGTYPE_VIDEO,
     REL_TYPE_REPLACE,
 )
-from .plugin_config import get_plugin_config
 
 
 def _stalk_archive_path(room_id: str) -> Path:
@@ -261,7 +265,7 @@ class MatrixAdapterMessageMixin:
         room_live_messaging_enabled: bool | None = None,
     ):
         try:
-            from .matrix_event import MatrixPlatformEvent
+            from ..matrix_event import MatrixPlatformEvent
 
             message_event = MatrixPlatformEvent(
                 message_str=message.message_str,
