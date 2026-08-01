@@ -4,8 +4,8 @@
 
 from astrbot.api import logger
 
-from ..constants import M_ROOM_ENCRYPTED, M_ROOM_MESSAGE, REL_TYPE_REPLACE
-from ..sender.handlers.common import _copy_cleartext_relates_to
+from ...constants import M_ROOM_ENCRYPTED, M_ROOM_MESSAGE, REL_TYPE_REPLACE
+from ..events.common import _copy_cleartext_relates_to
 
 
 def _encrypted_payload_without_relation(content: dict) -> dict:

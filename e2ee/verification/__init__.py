@@ -11,7 +11,6 @@ class SASVerificationFlowMixin(
     pass
 
 
-
 __all__ = ["SASVerification", "SASVerificationFlowMixin"]
 
 

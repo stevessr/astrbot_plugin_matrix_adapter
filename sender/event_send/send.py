@@ -25,7 +25,7 @@ from astrbot.api.message_components import (
     Video,
 )
 
-from ..constants import (
+from ...constants import (
     DEFAULT_MAX_UPLOAD_SIZE_BYTES,
     M_POLL,
     M_POLL_KIND_DISCLOSED,
@@ -33,7 +33,7 @@ from ..constants import (
     MATRIX_HTML_FORMAT,
     MSGTYPE_EMOTE,
 )
-from ..sender.handlers import (
+from ..events import (
     send_at,
     send_audio,
     send_contact,
@@ -50,8 +50,8 @@ from ..sender.handlers import (
     send_sticker,
     send_video,
 )
-from ..sender.handlers.common import send_content
-from ..sender.handlers.record_component import (
+from ..events.common import send_content
+from ..events.record_component import (
     coerce_record_component,
     is_record_component,
 )

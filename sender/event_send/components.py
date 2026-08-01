@@ -1,6 +1,6 @@
 from astrbot.api.message_components import BaseMessageComponent, ComponentType
 
-from ..constants import M_POLL, M_POLL_KIND_DISCLOSED, M_POLL_START
+from ...constants import M_POLL, M_POLL_KIND_DISCLOSED, M_POLL_START
 
 
 class Poll(BaseMessageComponent):

@@ -265,7 +265,7 @@ class MatrixAdapterMessageMixin:
         room_live_messaging_enabled: bool | None = None,
     ):
         try:
-            from ..matrix_event import MatrixPlatformEvent
+            from ..events.matrix import MatrixPlatformEvent
 
             message_event = MatrixPlatformEvent(
                 message_str=message.message_str,

@@ -107,7 +107,7 @@ class MatrixAdapterSendMixin:
 
                 new_message_chain = MessageChain(new_chain)
 
-                from ..matrix_event import MatrixPlatformEvent
+                from ..events.matrix import MatrixPlatformEvent
 
                 await MatrixPlatformEvent.send_with_client(
                     self.client,
@@ -160,7 +160,7 @@ class MatrixAdapterSendMixin:
             [*header_comps, processed_segment] if header_comps else [processed_segment]
         )
 
-        from ..matrix_event import MatrixPlatformEvent
+        from ..events.matrix import MatrixPlatformEvent
 
         await MatrixPlatformEvent.send_with_client(
             self.client,

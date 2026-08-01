@@ -21,7 +21,7 @@ from ..constants import (
     MSGTYPE_VIDEO,
 )
 from ..utils.media_cache_index import MediaCacheIndexStore
-from .handlers import (
+from .events import (
     handle_audio,
     handle_file,
     handle_image,

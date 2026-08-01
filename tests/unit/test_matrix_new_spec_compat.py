@@ -308,10 +308,13 @@ def _install_package_stubs() -> None:
         f"{PACKAGE_NAME}.client": REPO_ROOT / "client",
         f"{PACKAGE_NAME}.e2ee": REPO_ROOT / "e2ee",
         f"{PACKAGE_NAME}.processors": REPO_ROOT / "processors",
+        f"{PACKAGE_NAME}.events": REPO_ROOT / "events",
+        f"{PACKAGE_NAME}.events.matrix": REPO_ROOT / "events" / "matrix",
         f"{PACKAGE_NAME}.receiver": REPO_ROOT / "receiver",
-        f"{PACKAGE_NAME}.receiver.handlers": REPO_ROOT / "receiver" / "handlers",
+        f"{PACKAGE_NAME}.receiver.events": REPO_ROOT / "receiver" / "events",
         f"{PACKAGE_NAME}.sender": REPO_ROOT / "sender",
-        f"{PACKAGE_NAME}.sender.handlers": REPO_ROOT / "sender" / "handlers",
+        f"{PACKAGE_NAME}.sender.events": REPO_ROOT / "sender" / "events",
+        f"{PACKAGE_NAME}.sender.event_send": REPO_ROOT / "sender" / "event_send",
         f"{PACKAGE_NAME}.sender.sender_lib": REPO_ROOT / "sender" / "sender_lib",
         f"{PACKAGE_NAME}.utils": REPO_ROOT / "utils",
         f"{PACKAGE_NAME}.utils.utils_lib": REPO_ROOT / "utils" / "utils_lib",
@@ -620,7 +623,7 @@ class MatrixReactionApiCompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixTextMentionCompatTests(unittest.TestCase):
     def test_plain_bracket_mention_targets_bot(self):
-        text_handler = load_module("receiver.handlers.text")
+        text_handler = load_module("receiver.events.text")
 
         receiver = types.SimpleNamespace(
             user_id="@toushou.little.bot:neko.aaca.eu.org",
@@ -672,7 +675,7 @@ class MatrixTextMentionCompatTests(unittest.TestCase):
         self.assertEqual(chain.chain[1].text, "抱抱大家喵")
 
     def test_percent_encoded_matrix_to_mentions_are_decoded(self):
-        text_handler = load_module("receiver.handlers.text")
+        text_handler = load_module("receiver.events.text")
 
         receiver = types.SimpleNamespace(
             user_id="@bot:example.org",
@@ -694,7 +697,7 @@ class MatrixTextMentionCompatTests(unittest.TestCase):
         self.assertEqual(chain.chain[1].text, " says hi")
 
     def test_percent_encoded_reply_fallback_is_decoded(self):
-        text_handler = load_module("receiver.handlers.text")
+        text_handler = load_module("receiver.events.text")
 
         receiver = types.SimpleNamespace(
             user_id="@bot:example.org",
@@ -722,7 +725,7 @@ class MatrixTextMentionCompatTests(unittest.TestCase):
         self.assertEqual(chain.chain[1].text, "reply body")
 
     def test_matrix_to_reply_with_via_query_does_not_pollute_event_id(self):
-        text_handler = load_module("receiver.handlers.text")
+        text_handler = load_module("receiver.events.text")
 
         receiver = types.SimpleNamespace(
             user_id="@bot:example.org",
@@ -748,7 +751,7 @@ class MatrixTextMentionCompatTests(unittest.TestCase):
         self.assertEqual(chain.chain[0].sender_id, "@alice:example.org")
 
     def test_single_quoted_matrix_to_links_are_parsed(self):
-        text_handler = load_module("receiver.handlers.text")
+        text_handler = load_module("receiver.events.text")
 
         receiver = types.SimpleNamespace(
             user_id="@bot:example.org",
@@ -799,7 +802,7 @@ class MatrixTextMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         _install_astrbot_stubs()
         _install_aiohttp_stub()
         _install_package_stubs()
-        sys.modules.pop(f"{PACKAGE_NAME}.receiver.handlers", None)
+        sys.modules.pop(f"{PACKAGE_NAME}.receiver.events", None)
         sys.modules.pop(f"{PACKAGE_NAME}.receiver.core", None)
         receiver_module = importlib.import_module(f"{PACKAGE_NAME}.receiver.core")
         event_types = load_module("client.event_types")
@@ -877,7 +880,7 @@ class MatrixTextMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reply_message.message[0].id, "$original:example.org")
 
     async def test_notice_message_does_not_rewrite_bang_command_prefix(self):
-        text_handler = load_module("receiver.handlers.text")
+        text_handler = load_module("receiver.events.text")
 
         receiver = types.SimpleNamespace(
             user_id="@bot:example.org",
@@ -896,7 +899,7 @@ class MatrixTextMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("/status", chain.chain[0].text)
 
     async def test_emote_message_renders_sender_action_without_command_rewrite(self):
-        text_handler = load_module("receiver.handlers.text")
+        text_handler = load_module("receiver.events.text")
 
         receiver = types.SimpleNamespace(
             user_id="@bot:example.org",
@@ -917,8 +920,8 @@ class MatrixTextMessageCompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_poll_defaults_and_stable_handler(self):
-        components = load_module("matrix_event_send.components")
-        poll_handler = load_module("receiver.handlers.poll")
+        components = load_module("sender.event_send.components")
+        poll_handler = load_module("receiver.events.poll")
 
         poll = components.Poll("喝什么？", ["茶", "咖啡"])
         self.assertEqual(poll.event_type, "m.poll.start")
@@ -941,7 +944,7 @@ class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(chain.chain[0].text, "[Poll] 喝什么？ | Options: 茶，咖啡")
 
     async def test_stable_handler_accepts_extensible_poll_fields(self):
-        poll_handler = load_module("receiver.handlers.poll")
+        poll_handler = load_module("receiver.events.poll")
 
         chain = types.SimpleNamespace(chain=[])
         event = types.SimpleNamespace(
@@ -961,7 +964,7 @@ class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(chain.chain[0].text, "[Poll] 喝什么？ | Options: 茶，咖啡")
 
     async def test_stable_response_handler_reads_m_selections(self):
-        poll_handler = load_module("receiver.handlers.poll")
+        poll_handler = load_module("receiver.events.poll")
 
         chain = types.SimpleNamespace(chain=[])
         event = types.SimpleNamespace(
@@ -979,7 +982,7 @@ class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("responding to", chain.chain[0].text)
 
     async def test_stable_sender_emits_extensible_poll_fields(self):
-        poll_sender = load_module("sender.handlers.poll")
+        poll_sender = load_module("sender.events.poll")
         captured = {}
 
         async def fake_send_content(
@@ -1023,7 +1026,7 @@ class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(content["body"], "喝什么？\n1. 茶\n2. 咖啡")
 
     async def test_stable_sender_response_uses_m_selections(self):
-        poll_sender = load_module("sender.handlers.poll")
+        poll_sender = load_module("sender.events.poll")
         captured = {}
 
         async def fake_send_content(
@@ -1062,7 +1065,7 @@ class MatrixPollCompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixLocationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_location_sender_adds_text_fallback(self):
-        location_sender = load_module("sender.handlers.location")
+        location_sender = load_module("sender.events.location")
         location_cls = sys.modules["astrbot.api.message_components"].Location
         captured = {}
 
@@ -2521,14 +2524,12 @@ class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
             captured.append(kwargs)
             return 1
 
-        matrix_event_stub = types.ModuleType(f"{PACKAGE_NAME}.matrix_event")
-        matrix_event_stub.MatrixPlatformEvent = types.SimpleNamespace(
-            send_with_client=fake_send_with_client
-        )
+        event_send_stub = types.ModuleType(f"{PACKAGE_NAME}.sender.event_send")
+        event_send_stub.send_with_client_impl = fake_send_with_client
 
         with mock.patch.dict(
             sys.modules,
-            {f"{PACKAGE_NAME}.matrix_event": matrix_event_stub},
+            {f"{PACKAGE_NAME}.sender.event_send": event_send_stub},
         ):
             sender = sender_module.MatrixSender(object(), use_notice=True)
             await sender.send_message("!room:example.org", message_chain)
@@ -2551,13 +2552,13 @@ class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
 
         cases = [
             (
-                load_module("sender.handlers.contact").send_contact,
+                load_module("sender.events.contact").send_contact,
                 types.SimpleNamespace(_type="matrix", id="@alice:example.org"),
             ),
-            (load_module("sender.handlers.dice").send_dice, types.SimpleNamespace()),
-            (load_module("sender.handlers.rps").send_rps, types.SimpleNamespace()),
+            (load_module("sender.events.dice").send_dice, types.SimpleNamespace()),
+            (load_module("sender.events.rps").send_rps, types.SimpleNamespace()),
             (
-                load_module("sender.handlers.music").send_music,
+                load_module("sender.events.music").send_music,
                 types.SimpleNamespace(title="Song", url="", audio="", image=""),
             ),
         ]
@@ -2613,7 +2614,7 @@ class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.calls[1]["content"]["msgtype"], "m.text")
 
     async def test_at_sender_escapes_formatted_body_and_encodes_matrix_to_link(self):
-        at_handler = load_module("sender.handlers.at")
+        at_handler = load_module("sender.events.at")
 
         class FakeClient:
             def __init__(self):
@@ -2650,7 +2651,7 @@ class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("<Admin>", content["formatted_body"])
 
     async def test_share_sender_escapes_formatted_body_fields(self):
-        share_handler = load_module("sender.handlers.share")
+        share_handler = load_module("sender.events.share")
 
         class FakeClient:
             def __init__(self):
@@ -2831,7 +2832,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         handle_msg.assert_not_awaited()
 
     async def test_location_handler_accepts_extensible_fallback_fields(self):
-        location_handler = load_module("receiver.handlers.location")
+        location_handler = load_module("receiver.events.location")
 
         chain = types.SimpleNamespace(chain=[])
         event = types.SimpleNamespace(
@@ -2848,7 +2849,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_location_handler_accepts_unstable_asset_and_pin_type(self):
-        location_handler = load_module("receiver.handlers.location")
+        location_handler = load_module("receiver.events.location")
 
         chain = types.SimpleNamespace(chain=[])
         event = types.SimpleNamespace(
@@ -2871,7 +2872,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_event_processor_accepts_top_level_location_events(self):
-        location_handler = load_module("receiver.handlers.location")
+        location_handler = load_module("receiver.events.location")
 
         module_name = f"{PACKAGE_NAME}.processors.core"
         sys.modules.pop(module_name, None)
@@ -3542,7 +3543,7 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(processor._persist_room_state.await_count, len(cases))
 
     async def test_room_state_handlers_render_alias_guest_pins_and_space_links(self):
-        room_state = load_module("receiver.handlers.room_state")
+        room_state = load_module("receiver.events.room_state")
 
         cases = [
             (
@@ -3923,7 +3924,7 @@ class MatrixMemberEventCompatTests(unittest.IsolatedAsyncioTestCase):
         _install_astrbot_stubs()
         _install_aiohttp_stub()
         _install_package_stubs()
-        sys.modules.pop(f"{PACKAGE_NAME}.receiver.handlers", None)
+        sys.modules.pop(f"{PACKAGE_NAME}.receiver.events", None)
         sys.modules.pop(f"{PACKAGE_NAME}.receiver.core", None)
         receiver_module = importlib.import_module(f"{PACKAGE_NAME}.receiver.core")
         event_types = load_module("client.event_types")
@@ -3974,7 +3975,7 @@ class MatrixMemberEventCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.message[0].text, message.message_str)
 
     async def test_room_member_handler_renders_moderation_reason(self):
-        room_state = load_module("receiver.handlers.room_state")
+        room_state = load_module("receiver.events.room_state")
 
         chain = types.SimpleNamespace(chain=[])
         event = types.SimpleNamespace(
@@ -3999,7 +4000,7 @@ class MatrixMemberEventCompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_event_processor_forwards_room_redactions(self):
-        redaction_handler = load_module("receiver.handlers.redaction")
+        redaction_handler = load_module("receiver.events.redaction")
 
         module_name = f"{PACKAGE_NAME}.processors.core"
         sys.modules.pop(module_name, None)
@@ -4138,7 +4139,7 @@ class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
         _install_astrbot_stubs()
         _install_aiohttp_stub()
         _install_package_stubs()
-        sys.modules.pop(f"{PACKAGE_NAME}.receiver.handlers", None)
+        sys.modules.pop(f"{PACKAGE_NAME}.receiver.events", None)
         sys.modules.pop(f"{PACKAGE_NAME}.receiver.core", None)
         receiver_module = importlib.import_module(f"{PACKAGE_NAME}.receiver.core")
         event_types = load_module("client.event_types")
@@ -4184,7 +4185,7 @@ class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixVoiceCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_audio_sender_emits_voice_indicator_and_unstable_audio_duration(self):
-        audio_sender = load_module("sender.handlers.audio")
+        audio_sender = load_module("sender.events.audio")
         record_cls = sys.modules["astrbot.api.message_components"].Record
         captured = {}
 
@@ -4249,7 +4250,7 @@ class MatrixVoiceCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(captured["content"]["info"]["duration"], 1234)
 
     async def test_audio_handler_accepts_voice_and_extensible_file_fallback(self):
-        audio_handler = load_module("receiver.handlers.audio")
+        audio_handler = load_module("receiver.events.audio")
 
         size_calls = []
 
@@ -4288,15 +4289,15 @@ class MatrixVoiceCompatTests(unittest.IsolatedAsyncioTestCase):
 class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
     def _load_matrix_event_for_test(self):
         """Load MatrixPlatformEvent without importing the full sender graph."""
-        module_name = f"{PACKAGE_NAME}.matrix_event.core"
-        sys.modules.pop(f"{PACKAGE_NAME}.matrix_event", None)
+        module_name = f"{PACKAGE_NAME}.events.matrix.core"
+        sys.modules.pop(f"{PACKAGE_NAME}.events.matrix", None)
         sys.modules.pop(module_name, None)
         # Also pop the stream mixin submodule so its lazy core reference
         # resolves to the fresh event module rather than a stale one.
-        sys.modules.pop(f"{PACKAGE_NAME}.matrix_event.stream", None)
+        sys.modules.pop(f"{PACKAGE_NAME}.events.matrix.stream", None)
 
-        event_send_stub = types.ModuleType(f"{PACKAGE_NAME}.matrix_event_send")
-        event_send_stub.__path__ = [str(REPO_ROOT / "matrix_event_send")]
+        event_send_stub = types.ModuleType(f"{PACKAGE_NAME}.sender.event_send")
+        event_send_stub.__path__ = [str(REPO_ROOT / "sender" / "event_send")]
 
         async def send_with_client_impl(**_kwargs):
             return 1
@@ -4309,9 +4310,9 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         _install_package_stubs()
         with mock.patch.dict(
             sys.modules,
-            {f"{PACKAGE_NAME}.matrix_event_send": event_send_stub},
+            {f"{PACKAGE_NAME}.sender.event_send": event_send_stub},
         ):
-            module = load_module("matrix_event.core")
+            module = load_module("events.matrix.core")
 
         base_event = sys.modules["astrbot.api.event"].AstrMessageEvent
 
@@ -4990,7 +4991,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.typing_calls[-1][1], False)
 
     async def test_send_content_keeps_cleartext_relation_on_encrypted_events(self):
-        common_sender = load_module("sender.handlers.common")
+        common_sender = load_module("sender.events.common")
 
         class FakeClient:
             async def send_message(self, **kwargs):
@@ -5028,7 +5029,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_streaming_encrypted_edit_keeps_cleartext_replace_relation(self):
-        streaming_crypto = load_module("matrix_event_send.crypto")
+        streaming_crypto = load_module("sender.event_send.crypto")
 
         class FakeClient:
             def __init__(self):
@@ -5073,7 +5074,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_streaming_encrypted_initial_keeps_thread_relation_in_envelope(self):
-        streaming_crypto = load_module("matrix_event_send.crypto")
+        streaming_crypto = load_module("sender.event_send.crypto")
 
         class FakeClient:
             async def send_message(self, **kwargs):
@@ -5118,7 +5119,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.sent["content"]["m.relates_to"], relation)
 
     async def test_streaming_plain_notice_edit_preserves_notice_msgtype(self):
-        streaming_crypto = load_module("matrix_event_send.crypto")
+        streaming_crypto = load_module("sender.event_send.crypto")
 
         class FakeClient:
             def __init__(self):
@@ -5158,7 +5159,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_send_content_marks_thread_messages_as_fallback(self):
-        common_sender = load_module("sender.handlers.common")
+        common_sender = load_module("sender.events.common")
 
         class FakeClient:
             async def send_message(self, **kwargs):
@@ -5186,7 +5187,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_send_content_prefers_explicit_reply_for_thread_context(self):
-        common_sender = load_module("sender.handlers.common")
+        common_sender = load_module("sender.events.common")
 
         class FakeClient:
             async def send_message(self, **kwargs):
@@ -5214,7 +5215,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_send_content_keeps_thread_target_for_reply_fallback(self):
-        common_sender = load_module("sender.handlers.common")
+        common_sender = load_module("sender.events.common")
 
         class FakeClient:
             async def send_message(self, **kwargs):
@@ -5243,7 +5244,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_plain_thread_fallback_does_not_add_reply_mention(self):
-        plain_sender = load_module("sender.handlers.plain")
+        plain_sender = load_module("sender.events.plain")
         plain_cls = sys.modules["astrbot.api.message_components"].Plain
 
         class FakeClient:
@@ -5288,7 +5289,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_send_content_marks_explicit_root_thread_reply_as_non_fallback(self):
-        common_sender = load_module("sender.handlers.common")
+        common_sender = load_module("sender.events.common")
 
         class FakeClient:
             async def send_message(self, **kwargs):
@@ -5316,7 +5317,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_send_plain_skips_legacy_reply_fallback_for_thread_messages(self):
-        module_name = f"{PACKAGE_NAME}.sender.handlers.plain"
+        module_name = f"{PACKAGE_NAME}.sender.events.plain"
         markdown_utils_name = f"{PACKAGE_NAME}.utils.markdown_utils"
         sys.modules.pop(module_name, None)
         sys.modules.pop(markdown_utils_name, None)
@@ -5339,7 +5340,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             sys.modules,
             {"bleach": bleach_stub, "markdown_it": markdown_it_stub},
         ):
-            plain_sender = load_module("sender.handlers.plain")
+            plain_sender = load_module("sender.events.plain")
         plain_cls = sys.modules["astrbot.api.message_components"].Plain
         captured = {}
 
@@ -5389,7 +5390,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_send_plain_adds_reply_sender_and_target_mentions(self):
-        module_name = f"{PACKAGE_NAME}.sender.handlers.plain"
+        module_name = f"{PACKAGE_NAME}.sender.events.plain"
         markdown_utils_name = f"{PACKAGE_NAME}.utils.markdown_utils"
         sys.modules.pop(module_name, None)
         sys.modules.pop(markdown_utils_name, None)
@@ -5412,7 +5413,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             sys.modules,
             {"bleach": bleach_stub, "markdown_it": markdown_it_stub},
         ):
-            plain_sender = load_module("sender.handlers.plain")
+            plain_sender = load_module("sender.events.plain")
 
         plain_cls = sys.modules["astrbot.api.message_components"].Plain
         captured = {}
@@ -5462,7 +5463,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_send_plain_escapes_html_when_markdown_renderer_fails(self):
-        plain_sender = load_module("sender.handlers.plain")
+        plain_sender = load_module("sender.events.plain")
         plain_cls = sys.modules["astrbot.api.message_components"].Plain
         captured = {}
 

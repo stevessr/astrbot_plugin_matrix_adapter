@@ -1,3 +1,5 @@
+"""Inbound Matrix event decoders and message-chain handlers."""
+
 from .audio import handle_audio as handle_audio
 from .beacon import BEACON_EVENT_TYPES as BEACON_EVENT_TYPES
 from .beacon import handle_beacon as handle_beacon

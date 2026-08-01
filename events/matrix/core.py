@@ -5,7 +5,7 @@ from astrbot.api.event import AstrMessageEvent, MessageChain
 from astrbot.api.message_components import Reply as _Reply
 from astrbot.api.platform import AstrBotMessage, PlatformMetadata
 
-from ..constants import (
+from ...constants import (
     M_ROOM_MESSAGE,
     MATRIX_HTML_FORMAT,
     MSC4357_LIVE_MESSAGE_MARKER,
@@ -14,7 +14,7 @@ from ..constants import (
     STREAMING_TYPING_REFRESH_SECONDS,
     STREAMING_TYPING_TIMEOUT_MS,
 )
-from ..matrix_event_send import send_with_client_impl
+from ...sender.event_send import send_with_client_impl
 from .stream import MatrixPlatformEventStreamMixin
 
 __all__ = [

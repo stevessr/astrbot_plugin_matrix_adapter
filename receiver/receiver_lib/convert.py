@@ -28,7 +28,7 @@ from ...constants import (
     REL_TYPE_THREAD,
 )
 from ...utils.utils import MatrixUtils
-from ..handlers import (
+from ..events import (
     BEACON_EVENT_TYPES,
     ROOM_STATE_HANDLERS,
     handle_beacon,

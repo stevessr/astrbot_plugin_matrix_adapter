@@ -58,7 +58,7 @@ class MatrixPlugin(Star):
 
         try:
             from .matrix_adapter import MatrixPlatformAdapter  # noqa
-            from .matrix_event import MatrixPlatformEvent  # noqa
+            from .events.matrix import MatrixPlatformEvent
         except ImportError as e:
             logger.error(f"导入 Matrix Adapter 失败，请检查依赖是否安装：{e}")
             # 抛出异常，避免处于"已加载但不可用"的不一致状态

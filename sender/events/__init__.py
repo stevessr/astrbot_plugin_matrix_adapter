@@ -1,3 +1,5 @@
+"""Outbound Matrix event encoders for AstrBot message components."""
+
 from .at import send_at as send_at
 from .audio import send_audio as send_audio
 from .contact import send_contact as send_contact

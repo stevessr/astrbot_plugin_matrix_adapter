@@ -5,20 +5,20 @@ import time
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
 
-from ..constants import (
+from ...constants import (
     M_ROOM_MESSAGE,
     MATRIX_HTML_FORMAT,
     MSC4357_LIVE_MESSAGE_MARKER,
     MSGTYPE_NOTICE,
     MSGTYPE_TEXT,
 )
-from ..matrix_event_send.crypto import (
+from ...sender.event_send.crypto import (
     edit_message_encrypted,
     edit_message_plain,
     send_message_encrypted,
     send_message_plain,
 )
-from ..utils.markdown_utils import markdown_to_html
+from ...utils.markdown_utils import markdown_to_html
 from . import core as _matrix_event_module
 
 

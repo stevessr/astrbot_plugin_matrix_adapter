@@ -14,7 +14,7 @@ from astrbot.api.message_components import (
     Unknown,
 )
 
-from ..sticker import Sticker
+from ...sticker import Sticker
 from .components import Poll
 
 

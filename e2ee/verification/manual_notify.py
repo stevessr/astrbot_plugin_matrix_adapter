@@ -3,7 +3,7 @@ from __future__ import annotations
 from astrbot.api import logger
 
 from ...constants import M_ROOM_MESSAGE
-from ...sender.handlers.common import send_content
+from ...sender.events.common import send_content
 
 
 class SASVerificationManualNotifyMixin:
