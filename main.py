@@ -104,7 +104,9 @@ class MatrixPlugin(Star):
         query = str(message_content or "").strip()
         reaction_raw = str(reaction or "").strip()
         if not query:
-            return "A non-empty message_content is required to locate the target message."
+            return (
+                "A non-empty message_content is required to locate the target message."
+            )
         if not reaction_raw:
             return "A non-empty Matrix reaction key is required."
 

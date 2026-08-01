@@ -186,7 +186,7 @@ class MatrixSyncManagerDispatchMixin:
         """Run a single callback with timeout protection."""
         timeout = (
             self._retry_policy.callback_timeout
-            if hasattr(self, '_retry_policy') and self._retry_policy is not None
+            if hasattr(self, "_retry_policy") and self._retry_policy is not None
             else 30
         )
         try:
@@ -195,8 +195,6 @@ class MatrixSyncManagerDispatchMixin:
             else:
                 await callback(*args)
         except asyncio.TimeoutError:
-            logger.warning(
-                f"Sync callback timed out: {callback_name} ({timeout:.1f}s)"
-            )
+            logger.warning(f"Sync callback timed out: {callback_name} ({timeout:.1f}s)")
         except Exception as e:
             logger.error(f"Sync callback failed: {callback_name} ({e})")

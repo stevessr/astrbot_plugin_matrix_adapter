@@ -1,6 +1,6 @@
 from .msg import MatrixEventProcessorMessagesMixin
-from .states import MatrixEventProcessorStatesMixin
 from .room import MatrixEventProcessorRoomDispatchMixin
+from .states import MatrixEventProcessorStatesMixin
 
 
 class MatrixEventProcessorMixin(

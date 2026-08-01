@@ -13,8 +13,9 @@ from ...constants import (
     M_ROOM_MESSAGE,
     TIMESTAMP_BUFFER_MS_1000,
 )
+
 if TYPE_CHECKING:
-    from ...e2ee import E2EEManager
+    pass
 
 
 class MatrixEventProcessorMessagesMixin:
@@ -172,7 +173,10 @@ class MatrixEventProcessorMessagesMixin:
             # 若原始消息尚未处理，则用 m.new_content 替换事件内容，
             # 让 LLM 看到的是修正后的文本而非 "* 旧文本" 回退。
             relates_to = event_content.get("m.relates_to", {})
-            if isinstance(relates_to, dict) and relates_to.get("rel_type") == "m.replace":
+            if (
+                isinstance(relates_to, dict)
+                and relates_to.get("rel_type") == "m.replace"
+            ):
                 original_event_id = relates_to.get("event_id")
                 if original_event_id and self._is_message_processed(original_event_id):
                     logger.debug(
@@ -222,19 +226,25 @@ class MatrixEventProcessorMessagesMixin:
                 # When the message is in a thread, pass the thread ID so the
                 # read receipt marks the thread as read (MSC3771).
                 from ...plugin_config import get_plugin_config as _get_plugin_config
+
                 if _get_plugin_config().send_read_receipt:
                     try:
                         thread_id = None
                         relates_to = event_content.get("m.relates_to", {})
-                        if isinstance(relates_to, dict) and relates_to.get("rel_type") == "m.thread":
+                        if (
+                            isinstance(relates_to, dict)
+                            and relates_to.get("rel_type") == "m.thread"
+                        ):
                             thread_id = relates_to.get("event_id")
                         await self.client.send_read_receipt(
                             room.room_id, event.event_id, thread_id=thread_id
                         )
-                        logger.debug(f"已发送事件 {event.event_id} 的已读回执" + (f" (thread={thread_id})" if thread_id else ""))
+                        logger.debug(
+                            f"已发送事件 {event.event_id} 的已读回执"
+                            + (f" (thread={thread_id})" if thread_id else "")
+                        )
                     except Exception as e:
                         logger.debug(f"发送已读回执失败：{e}")
 
         except Exception as e:
             logger.error(f"处理消息事件时出错：{e}")
-

@@ -103,7 +103,6 @@ class MatrixEventProcessorStatesMixin:
             state_events=room.state_events,
         )
 
-
     def _apply_room_state_event(self, room, event_data: dict) -> None:
         event_type = event_data.get("type", "")
         if not _is_room_state_event_type(event_type):
@@ -170,7 +169,6 @@ class MatrixEventProcessorStatesMixin:
                 # absent values behave like no usable room-level override.
                 room.live_messaging_enabled = None
 
-
     async def _process_member_event(self, room, event):
         """
         Process membership/system events as OtherMessage.
@@ -214,7 +212,6 @@ class MatrixEventProcessorStatesMixin:
                 self._mark_message_processed(event.event_id)
         except Exception as e:
             logger.error(f"处理成员事件时出错：{e}")
-
 
     async def _process_room_state_event(self, room, event):
         """
@@ -263,7 +260,6 @@ class MatrixEventProcessorStatesMixin:
                 self._mark_message_processed(event.event_id)
         except Exception as e:
             logger.error(f"处理状态事件时出错：{e}")
-
 
     async def _process_call_event(self, room, event_data: dict):
         """
@@ -325,7 +321,6 @@ class MatrixEventProcessorStatesMixin:
         except Exception as e:
             logger.error(f"处理通话事件时出错：{e}")
 
-
     async def _handle_in_room_verification(self, room, event_data: dict):
         """
         Handle in-room verification events (m.key.verification.*)
@@ -384,4 +379,3 @@ class MatrixEventProcessorStatesMixin:
                 logger.error(f"处理房间内验证事件失败：{e}")
         else:
             logger.warning("E2EE 未启用，忽略房间内验证事件")
-

@@ -126,9 +126,7 @@ class OAuth2CallbackServer:
 
             if _has_query_param(query_params, "error"):
                 error = _get_query_param(query_params, "error")
-                error_description = _get_query_param(
-                    query_params, "error_description"
-                )
+                error_description = _get_query_param(query_params, "error_description")
                 _log("error", f"OAuth2 error: {error} - {error_description}")
 
                 if self.callback_future and not self.callback_future.done():

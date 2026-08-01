@@ -6,8 +6,6 @@ import copy
 import time
 from typing import Any
 
-from astrbot.api import logger
-
 # Maximum Megolm message indices to track per session for replay protection.
 # Older entries are evicted; a Megolm session ratchets forward monotonically
 # so old indices cannot be reused for new attacks after the ratchet has

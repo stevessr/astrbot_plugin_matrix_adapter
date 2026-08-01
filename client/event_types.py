@@ -13,6 +13,7 @@ from ..constants import (
     M_ROOM_MEMBER,
     M_ROOM_MESSAGE,
     M_ROOM_REDACTION,
+    MEMBERSHIP_INVITE,
     MSC1767_TEXT_KEY,
     MSC3488_LOCATION_KEY,
     MSC3489_BEACON_INFO_PREFIX,
@@ -20,10 +21,8 @@ from ..constants import (
     MSGTYPE_FILE,
     MSGTYPE_IMAGE,
     MSGTYPE_LOCATION,
-    MSGTYPE_REACTION,
     MSGTYPE_STICKER,
     MSGTYPE_TEXT,
-    MEMBERSHIP_INVITE,
     REL_TYPE_REPLACE,
 )
 from ..utils.utils import _extract_text_repr
@@ -260,13 +259,13 @@ def parse_event(event_data: dict[str, Any], room_id: str) -> MatrixEvent:
             return RoomMessageFile.from_dict(event_data, room_id)
         return RoomMessageEvent.from_dict(event_data, room_id)
     if event_type == MSGTYPE_STICKER:
-            # 贴纸事件使用 RoomMessageEvent 结构，设置 msgtype 为 m.sticker
-            event = RoomMessageEvent.from_dict(event_data, room_id)
-            event.msgtype = MSGTYPE_STICKER
-            # 确保 content 中的 msgtype 也被设置（用于接收器处理）
-            if "msgtype" not in event.content:
-                event.content["msgtype"] = MSGTYPE_STICKER
-            return event
+        # 贴纸事件使用 RoomMessageEvent 结构，设置 msgtype 为 m.sticker
+        event = RoomMessageEvent.from_dict(event_data, room_id)
+        event.msgtype = MSGTYPE_STICKER
+        # 确保 content 中的 msgtype 也被设置（用于接收器处理）
+        if "msgtype" not in event.content:
+            event.content["msgtype"] = MSGTYPE_STICKER
+        return event
     if event_type == M_REACTION:
         reaction = content.get("m.relates_to", {}).get("key", "")
         reaction_content = dict(content)

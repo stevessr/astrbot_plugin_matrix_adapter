@@ -3,8 +3,7 @@ Persist mixin for CryptoStore — handles async persistence, device ID tracking,
 """
 
 import copy
-import threading
-from concurrent.futures import Future, ThreadPoolExecutor, wait
+from concurrent.futures import Future, wait
 from pathlib import Path
 from typing import Any
 

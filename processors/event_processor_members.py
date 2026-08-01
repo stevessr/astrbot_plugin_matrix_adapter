@@ -222,9 +222,7 @@ class MatrixEventProcessorMembers:
                     await asyncio.to_thread(
                         user_store.upsert, user_id, display_name, avatar_url
                     )
-            logger.info(
-                f"用户 {user_id} ({display_name}) 敲门房间 {room.room_id}"
-            )
+            logger.info(f"用户 {user_id} ({display_name}) 敲门房间 {room.room_id}")
         elif membership in (MEMBERSHIP_LEAVE, MEMBERSHIP_BAN):
             was_member = user_id in room.members
             room.members.pop(user_id, None)

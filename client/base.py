@@ -71,8 +71,14 @@ class MatrixClientBase:
             configured = self._DEFAULT_HTTP_TIMEOUT_SECONDS
         return self._normalize_http_timeout_seconds(configured)
 
-    def _build_http_timeout(self, override_seconds: int | None = None) -> aiohttp.ClientTimeout:
-        seconds = override_seconds if override_seconds is not None else self.get_http_timeout_seconds()
+    def _build_http_timeout(
+        self, override_seconds: int | None = None
+    ) -> aiohttp.ClientTimeout:
+        seconds = (
+            override_seconds
+            if override_seconds is not None
+            else self.get_http_timeout_seconds()
+        )
         return aiohttp.ClientTimeout(
             total=seconds,
             connect=seconds,
@@ -85,7 +91,9 @@ class MatrixClientBase:
         if self.session is None or self.session.closed:
             async with self._session_lock:
                 if self.session is None or self.session.closed:  # double-check
-                    self.session = aiohttp.ClientSession(timeout=self._build_http_timeout())
+                    self.session = aiohttp.ClientSession(
+                        timeout=self._build_http_timeout()
+                    )
 
     async def close(self):
         """Close the HTTP session"""
@@ -148,7 +156,11 @@ class MatrixClientBase:
 
         try:
             async with self.session.request(
-                method, url, json=data, params=params, headers=headers,
+                method,
+                url,
+                json=data,
+                params=params,
+                headers=headers,
                 timeout=timeout,
             ) as response:
                 # 处理 429 速率限制
@@ -193,8 +205,12 @@ class MatrixClientBase:
                     )
                     await asyncio.sleep(retry_after_s)
                     return await self._request(
-                        method, endpoint, data=data, params=params,
-                        authenticated=authenticated, _retry_count=_retry_count + 1,
+                        method,
+                        endpoint,
+                        data=data,
+                        params=params,
+                        authenticated=authenticated,
+                        _retry_count=_retry_count + 1,
                     )
 
                 # 检查响应状态
@@ -248,7 +264,11 @@ class MatrixClientBase:
                 retry_after_s = 5 * (_retry_count + 1)
                 await asyncio.sleep(retry_after_s)
                 return await self._request(
-                    method, endpoint, data=data, params=params,
-                    authenticated=authenticated, _retry_count=_retry_count + 1,
+                    method,
+                    endpoint,
+                    data=data,
+                    params=params,
+                    authenticated=authenticated,
+                    _retry_count=_retry_count + 1,
                 )
             raise

@@ -30,7 +30,6 @@ class SASVerificationFlowUtilsMixin:
             return "***"
         return f"{normalized[:2]}***{normalized[-2:]}"
 
-
     @staticmethod
     def _mask_txn_id(value: str | None) -> str:
         if not isinstance(value, str) or not value:
@@ -40,13 +39,11 @@ class SASVerificationFlowUtilsMixin:
             return "***"
         return f"{normalized[:8]}..."
 
-
     @staticmethod
     def _supports_method(methods: object, method: str) -> bool:
         if not isinstance(methods, (list, tuple, set)):
             return False
         return method in methods
-
 
     @staticmethod
     def _decode_unpadded_base64(data: str) -> bytes:
@@ -55,7 +52,6 @@ class SASVerificationFlowUtilsMixin:
             return b""
         padding = "=" * (-len(normalized) % 4)
         return base64.b64decode(normalized + padding)
-
 
     def _get_local_device_ed25519_key(self) -> str | None:
         olm = getattr(self, "olm", None)
@@ -73,13 +69,11 @@ class SASVerificationFlowUtilsMixin:
                 return None
         return None
 
-
     @staticmethod
     def _device_trusts_master_key(response: dict, user_id: str, device_id: str) -> bool:
         master_key = (response.get("master_keys") or {}).get(user_id) or {}
         signatures = (master_key.get("signatures") or {}).get(user_id) or {}
         return f"{PREFIX_ED25519}{device_id}" in signatures
-
 
     def _can_continue_with_qr(self, sender: str, methods: object) -> bool:
         if sender != self.user_id:
@@ -89,7 +83,6 @@ class SASVerificationFlowUtilsMixin:
             methods, M_QR_CODE_SHOW_V1_METHOD
         ) and self._supports_method(methods, M_RECIPROCATE_V1_METHOD)
         return can_show_to_peer or can_scan_peer
-
 
     def _build_self_verification_qr_payload(
         self,
@@ -110,7 +103,6 @@ class SASVerificationFlowUtilsMixin:
                 shared_secret,
             ]
         )
-
 
     async def _maybe_prepare_self_verification_qr(
         self,
@@ -172,9 +164,7 @@ class SASVerificationFlowUtilsMixin:
             session["qr_mode"] = mode
             session["qr_payload"] = payload
             session["qr_shared_secret"] = shared_secret
-            session["qr_shared_secret_b64"] = _encode_unpadded_base64(
-                shared_secret
-            )
+            session["qr_shared_secret_b64"] = _encode_unpadded_base64(shared_secret)
 
             build_terminal_qr = getattr(self, "_build_terminal_qr", None)
             if callable(build_terminal_qr):
@@ -199,7 +189,6 @@ class SASVerificationFlowUtilsMixin:
         except Exception as e:
             logger.warning(f"[E2EE-Verify] 准备同账号 QR 自验证失败：{e}")
             return False
-
 
     def _compute_sas_fallback(self, session: dict, their_key: str):
         """回退的 SAS 计算（当 vodozemac SAS 不可用时）"""

@@ -12,11 +12,9 @@ from typing import Any
 from astrbot.api import logger
 
 from ...constants import (
-    DEFAULT_TIMEOUT_MS_30000,
     M_ROOM_MESSAGE,
     MSC4310_RTC_DECLINE,
     MSC4357_LIVE_MESSAGE_MARKER,
-    MSC4446_ALLOW_BACKWARD,
     MSGTYPE_TEXT,
     REL_TYPE_ANNOTATION,
     REL_TYPE_REFERENCE,
@@ -41,7 +39,9 @@ def _content_is_edit(content: dict[str, Any]) -> bool:
     if not isinstance(content, dict):
         return False
     relates_to = content.get("m.relates_to")
-    return isinstance(relates_to, dict) and relates_to.get("rel_type") == REL_TYPE_REPLACE
+    return (
+        isinstance(relates_to, dict) and relates_to.get("rel_type") == REL_TYPE_REPLACE
+    )
 
 
 def _build_live_message_metadata(
@@ -390,9 +390,7 @@ class MessageSendMixin:
         try:
             response = await self._request("PUT", endpoint, data=data)
         except Exception as e:
-            logger.error(
-                f"send_to_device failed for {event_type} txn {txn_id}: {e}"
-            )
+            logger.error(f"send_to_device failed for {event_type} txn {txn_id}: {e}")
             raise
         try:
             logger.debug(

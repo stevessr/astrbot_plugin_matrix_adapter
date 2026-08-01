@@ -316,7 +316,9 @@ class AuthMixin:
         # HTTP timeout must exceed sync poll timeout to account for network latency
         http_timeout_s = timeout / 1000 + 15
         response = await self._request(
-            "GET", "/_matrix/client/v3/sync", params=params,
+            "GET",
+            "/_matrix/client/v3/sync",
+            params=params,
             timeout_override=http_timeout_s,
         )
 

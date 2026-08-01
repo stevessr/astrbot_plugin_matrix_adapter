@@ -5,6 +5,7 @@ import time
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
 
+from . import matrix_event as _matrix_event_module
 from .constants import (
     M_ROOM_MESSAGE,
     MATRIX_HTML_FORMAT,
@@ -19,8 +20,6 @@ from .streaming_crypto import (
     send_message_plain,
 )
 from .utils.markdown_utils import markdown_to_html
-
-from . import matrix_event as _matrix_event_module
 
 
 class MatrixPlatformEventStreamMixin:
@@ -38,7 +37,6 @@ class MatrixPlatformEventStreamMixin:
 
         package = sys.modules.get(__package__)
         return getattr(package, "matrix_event", None) or _matrix_event_module
-
 
     def _build_stream_thread_relation(self) -> dict | None:
         """Build the initial message relation for a streamed thread reply.
@@ -77,7 +75,9 @@ class MatrixPlatformEventStreamMixin:
         """
 
         while True:
-            await asyncio.sleep(self._stream_event_module().STREAMING_TYPING_REFRESH_SECONDS)
+            await asyncio.sleep(
+                self._stream_event_module().STREAMING_TYPING_REFRESH_SECONDS
+            )
             try:
                 await self.client.set_typing(
                     room_id,

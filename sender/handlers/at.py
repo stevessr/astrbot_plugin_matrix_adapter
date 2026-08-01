@@ -3,7 +3,7 @@ from urllib.parse import quote
 
 from astrbot.api.message_components import At
 
-from ...constants import M_MENTIONS_KEY, MATRIX_HTML_FORMAT
+from ...constants import MATRIX_HTML_FORMAT
 from .common import resolve_text_msgtype, send_content
 
 

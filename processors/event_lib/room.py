@@ -193,7 +193,6 @@ class MatrixEventProcessorRoomDispatchMixin:
         # Re-persist after timeline processing to capture any state changes
         await self._persist_room_state(room)
 
-
     async def _handle_event(self, room, event_data: dict):
         """
         Handle a single event
@@ -309,4 +308,3 @@ class MatrixEventProcessorRoomDispatchMixin:
             # Parse plaintext message event, encrypted event, sticker, or poll event
             event = parse_event(event_data, room.room_id)
             await self._process_message_event(room, event)
-

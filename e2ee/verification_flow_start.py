@@ -145,7 +145,6 @@ class SASVerificationFlowStartMixin:
                 "不支持的验证方法",
             )
 
-
     async def _handle_ready(self, sender: str, content: dict, transaction_id: str):
         """处理 ready 响应"""
         from_device = content.get("from_device")
@@ -196,7 +195,6 @@ class SASVerificationFlowStartMixin:
                     "No common methods",
                 )
 
-
     async def _handle_start(self, sender: str, content: dict, transaction_id: str):
         """处理验证开始"""
         from_device = content.get("from_device")
@@ -242,7 +240,6 @@ class SASVerificationFlowStartMixin:
                         sender, from_device, transaction_id, content
                     )
 
-
     async def _handle_accept(self, sender: str, content: dict, transaction_id: str):
         """处理验证接受"""
         commitment = content.get("commitment")
@@ -278,7 +275,6 @@ class SASVerificationFlowStartMixin:
                 await self._send_in_room_key(room_id, transaction_id)
             else:
                 await self._send_key(sender, target_device, transaction_id)
-
 
     async def _handle_reciprocate_start(
         self,

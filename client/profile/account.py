@@ -73,7 +73,9 @@ class ProfileAccountMixin:
         user = quote_path_segment(self.user_id)
         room = quote_path_segment(room_id)
         data_type = quote_path_segment(type)
-        endpoint = f"/_matrix/client/v3/user/{user}/rooms/{room}/account_data/{data_type}"
+        endpoint = (
+            f"/_matrix/client/v3/user/{user}/rooms/{room}/account_data/{data_type}"
+        )
         try:
             return await self._request("GET", endpoint)
         except Exception:
@@ -98,7 +100,9 @@ class ProfileAccountMixin:
         user = quote_path_segment(self.user_id)
         room = quote_path_segment(room_id)
         data_type = quote_path_segment(type)
-        endpoint = f"/_matrix/client/v3/user/{user}/rooms/{room}/account_data/{data_type}"
+        endpoint = (
+            f"/_matrix/client/v3/user/{user}/rooms/{room}/account_data/{data_type}"
+        )
         return await self._request("PUT", endpoint, data=content)
 
     async def set_display_name(self, display_name: str) -> dict[str, Any]:
@@ -204,9 +208,7 @@ class ProfileAccountMixin:
         await self.set_room_account_data(room_id, M_MARKED_UNREAD, content)
         # Legacy unstable key for older clients
         try:
-            await self.set_room_account_data(
-                room_id, MSC2867_MARKED_UNREAD, content
-            )
+            await self.set_room_account_data(room_id, MSC2867_MARKED_UNREAD, content)
         except Exception as e:
             logger.debug(f"Failed to set legacy marked_unread: {e}")
         return content

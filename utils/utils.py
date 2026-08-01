@@ -2,10 +2,7 @@
 Matrix 工具方法组件
 """
 
-import asyncio
 import io
-from pathlib import Path
-from urllib.parse import quote
 
 from astrbot.api import logger
 
@@ -18,7 +15,6 @@ from ..constants import (
     IMAGE_RESIZE_SCALE_FACTOR,
 )
 from .utils_lib import MatrixUtilsMixin
-
 
 
 def parse_bool(value: object, default: bool = False) -> bool:

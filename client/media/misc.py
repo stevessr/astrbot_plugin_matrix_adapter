@@ -32,7 +32,6 @@ class MediaMiscMixin:
         }
     )
 
-
     _MEDIA_UPLOAD_DEFAULT_ALLOWED_MIME_RULES = (
         "image/*",
         "video/*",
@@ -44,14 +43,12 @@ class MediaMiscMixin:
         "application/octet-stream",
     )
 
-
     _MEDIA_MIME_ALIASES = {
         "image/jpg": "image/jpeg",
         "audio/mp3": "audio/mpeg",
         "audio/x-wav": "audio/wav",
         "application/x-zip-compressed": "application/zip",
     }
-
 
     class _HashingFileReader(io.IOBase):
         """IOBase-compatible file wrapper that hashes uploaded bytes."""
@@ -119,7 +116,6 @@ class MediaMiscMixin:
         def __getattr__(self, name: str):
             return getattr(self._file_handle, name)
 
-
     @staticmethod
     def _parse_mxc_server_media_id(mxc_url: str) -> tuple[str, str]:
         """Parse an ``mxc://server/media`` URI into Matrix path segments.
@@ -137,17 +133,10 @@ class MediaMiscMixin:
             raise ValueError(f"Invalid MXC URL format: {mxc_url}")
 
         server_name = parts[0].strip()
-        media_id = (
-            parts[1]
-            .split("?", 1)[0]
-            .split("#", 1)[0]
-            .strip()
-            .lstrip("/")
-        )
+        media_id = parts[1].split("?", 1)[0].split("#", 1)[0].strip().lstrip("/")
         if not server_name or not media_id:
             raise ValueError(f"Invalid MXC URL format: {mxc_url}")
         return server_name, media_id
-
 
     @classmethod
     def _normalize_mime_type(cls, content_type: str | None) -> str:
@@ -158,7 +147,6 @@ class MediaMiscMixin:
             return "application/octet-stream"
         return cls._MEDIA_MIME_ALIASES.get(normalized, normalized)
 
-
     @staticmethod
     def _normalize_extension(filename: str | None) -> str:
         if not isinstance(filename, str):
@@ -166,13 +154,11 @@ class MediaMiscMixin:
         suffix = Path(filename).suffix.lower()
         return suffix.strip()
 
-
     def _is_media_upload_strict_mime_check_enabled(self) -> bool:
         try:
             return bool(get_plugin_config().media_upload_strict_mime_check)
         except Exception:
             return True
-
 
     def _get_media_upload_blocked_extensions(self) -> set[str]:
         try:
@@ -188,7 +174,6 @@ class MediaMiscMixin:
             blocked = set(self._MEDIA_UPLOAD_DEFAULT_BLOCKED_EXTENSIONS)
         return blocked
 
-
     def _get_media_upload_allowed_mime_rules(self) -> tuple[str, ...]:
         try:
             configured = get_plugin_config().media_upload_allowed_mime_rules
@@ -203,7 +188,6 @@ class MediaMiscMixin:
             return normalized_rules
         return self._MEDIA_UPLOAD_DEFAULT_ALLOWED_MIME_RULES
 
-
     @staticmethod
     def _mime_allowed_by_rules(mime_type: str, rules: tuple[str, ...]) -> bool:
         for rule in rules:
@@ -215,7 +199,6 @@ class MediaMiscMixin:
             if mime_type == rule:
                 return True
         return False
-
 
     @classmethod
     def _is_mime_compatible(cls, left: str, right: str) -> bool:
@@ -238,7 +221,6 @@ class MediaMiscMixin:
         }:
             return True
         return False
-
 
     @staticmethod
     def _sniff_mime_from_bytes(data: bytes) -> str | None:
@@ -303,12 +285,10 @@ class MediaMiscMixin:
                 return "text/plain"
         return None
 
-
     @staticmethod
     def _read_file_head(path: Path, size: int) -> bytes:
         with path.open("rb") as f:
             return f.read(size)
-
 
     def _validate_media_upload_security(
         self,
@@ -384,7 +364,6 @@ class MediaMiscMixin:
             return extension_mime
         return normalized_declared
 
-
     async def get_media_config(self) -> dict[str, Any]:
         """
         获取 Matrix 媒体服务器配置
@@ -403,7 +382,6 @@ class MediaMiscMixin:
 
         logger.warning("无法获取 Matrix 媒体服务器配置，将使用默认值")
         return {}
-
 
     async def get_url_preview(
         self, url: str, timestamp_ms: int | None = None
@@ -433,4 +411,3 @@ class MediaMiscMixin:
                 continue
 
         raise Exception(f"Matrix URL preview error: {last_error}")
-

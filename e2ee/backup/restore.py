@@ -259,7 +259,9 @@ class KeyBackupBackupRestoreMixin:
                                 skipped += 1
                         except json.JSONDecodeError:
                             # 非 JSON 格式，可能已损坏或不兼容
-                            logger.warning(f"会话 {session_id[:8]} 数据不是 JSON 格式，跳过")
+                            logger.warning(
+                                f"会话 {session_id[:8]} 数据不是 JSON 格式，跳过"
+                            )
                             skipped += 1
 
                     except Exception as e:

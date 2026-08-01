@@ -9,7 +9,6 @@ from ..constants import (
 
 
 class E2EEManagerSessionEncryptMixin:
-
     def _discard_outbound_session(self, room_id: str) -> bool:
         """Discard a room session and its per-session distribution state."""
         if not self._olm:
@@ -202,4 +201,3 @@ class E2EEManagerSessionEncryptMixin:
                 )
         except Exception as e:
             logger.error(f"分发密钥失败：{e}")
-

@@ -4,7 +4,7 @@ import copy
 from astrbot.api import logger
 
 from ...client.http_client import MatrixAPIError
-from ...constants import LOGIN_TYPE_DUMMY, LOGIN_TYPE_PASSWORD
+from ...constants import LOGIN_TYPE_DUMMY
 from ..key_backup_crypto import CRYPTO_AVAILABLE
 
 

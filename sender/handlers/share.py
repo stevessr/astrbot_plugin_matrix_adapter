@@ -30,8 +30,7 @@ async def send_share(
     if url:
         link_title = title or url
         formatted = (
-            f'<a href="{html.escape(url, quote=True)}">'
-            f"{html.escape(link_title)}</a>"
+            f'<a href="{html.escape(url, quote=True)}">{html.escape(link_title)}</a>'
         )
         if content:
             formatted = f"{formatted}<br>{html.escape(content)}"

@@ -178,7 +178,11 @@ class MatrixReceiverConvertMixin:
             await handle_poll_response(self, chain, event, event_type)
         elif event_type in (M_POLL_END, MSC3381_POLL_END):
             await handle_poll_end(self, chain, event, event_type)
-        elif event_type in BEACON_EVENT_TYPES and event_type and "beacon_info" in event_type:
+        elif (
+            event_type in BEACON_EVENT_TYPES
+            and event_type
+            and "beacon_info" in event_type
+        ):
             await handle_beacon_info(self, chain, event, event_type)
         elif event_type in BEACON_EVENT_TYPES:
             await handle_beacon(self, chain, event, event_type)

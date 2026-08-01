@@ -74,9 +74,7 @@ class ProfileExtendedMixin:
         endpoint = f"/_matrix/client/v3/presence/{user}/status"
         return await self._request("GET", endpoint)
 
-    async def get_extended_profile(
-        self, user_id: str | None = None
-    ) -> dict[str, Any]:
+    async def get_extended_profile(self, user_id: str | None = None) -> dict[str, Any]:
         """
         Fetch the full extended profile for a user (MSC4133).
 
@@ -139,7 +137,9 @@ class ProfileExtendedMixin:
             if mapping is None:
                 continue
             if not isinstance(mapping, dict):
-                raise ValueError(f"{label} must be a mapping user/room/server -> 'allow'|'deny'")
+                raise ValueError(
+                    f"{label} must be a mapping user/room/server -> 'allow'|'deny'"
+                )
             for key, value in mapping.items():
                 if value not in valid:
                     raise ValueError(

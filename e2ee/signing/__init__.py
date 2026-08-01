@@ -1,7 +1,7 @@
 from .crypto import CrossSigningCryptoMixin
 from .restore import CrossSigningRestoreMixin
-from .upload import CrossSigningUploadMixin
 from .sign import CrossSigningSignMixin
+from .upload import CrossSigningUploadMixin
 
 
 class CrossSigning(
@@ -11,4 +11,5 @@ class CrossSigning(
     CrossSigningSignMixin,
 ):
     """Combined mixin."""
+
     pass

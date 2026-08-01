@@ -7,4 +7,5 @@ class CryptoStore(
     CryptoStoreSessionsMixin,
 ):
     """Combined mixin."""
+
     pass

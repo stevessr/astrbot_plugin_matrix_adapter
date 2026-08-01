@@ -1,9 +1,9 @@
-from .upload import MediaUploadMixin
 from .download import MediaDownloadMixin
 from .misc import MediaMiscMixin
+from .upload import MediaUploadMixin
 
+__all__ = ["MediaUploadMixin", "MediaDownloadMixin", "MediaMiscMixin"]
 
-__all__ = ['MediaUploadMixin', 'MediaDownloadMixin', 'MediaMiscMixin']
 
 class MediaMixin(
     MediaUploadMixin,
@@ -11,4 +11,5 @@ class MediaMixin(
     MediaMiscMixin,
 ):
     """Combined mixin."""
+
     pass

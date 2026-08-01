@@ -14,7 +14,6 @@ from ...constants import (
 
 
 class E2EEManagerSessionShareKeysMixin:
-
     @staticmethod
     def _device_cache_key(user_id: str, device_id: str, curve25519_key: str) -> str:
         return f"{user_id}|{device_id}|{curve25519_key}"
@@ -295,4 +294,3 @@ class E2EEManagerSessionShareKeysMixin:
         except Exception as e:
             logger.error(f"密钥分发失败：{e}")
             return 0
-

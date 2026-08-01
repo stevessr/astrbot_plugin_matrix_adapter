@@ -76,7 +76,9 @@ class PushMixin:
         scope_path = quote_path_segment(scope)
         kind_path = quote_path_segment(kind)
         rule = quote_path_segment(rule_id)
-        endpoint = f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/actions"
+        endpoint = (
+            f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/actions"
+        )
         return await self._request("GET", endpoint)
 
     async def set_push_rule_actions(
@@ -88,7 +90,9 @@ class PushMixin:
         scope_path = quote_path_segment(scope)
         kind_path = quote_path_segment(kind)
         rule = quote_path_segment(rule_id)
-        endpoint = f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/actions"
+        endpoint = (
+            f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/actions"
+        )
         return await self._request("PUT", endpoint, data={"actions": actions})
 
     async def get_push_rule_enabled(
@@ -100,7 +104,9 @@ class PushMixin:
         scope_path = quote_path_segment(scope)
         kind_path = quote_path_segment(kind)
         rule = quote_path_segment(rule_id)
-        endpoint = f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/enabled"
+        endpoint = (
+            f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/enabled"
+        )
         return await self._request("GET", endpoint)
 
     async def set_push_rule_enabled(
@@ -112,7 +118,9 @@ class PushMixin:
         scope_path = quote_path_segment(scope)
         kind_path = quote_path_segment(kind)
         rule = quote_path_segment(rule_id)
-        endpoint = f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/enabled"
+        endpoint = (
+            f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/enabled"
+        )
         return await self._request("PUT", endpoint, data={"enabled": enabled})
 
     async def get_pushers(self) -> dict[str, Any]:

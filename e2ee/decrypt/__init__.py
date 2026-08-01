@@ -7,4 +7,5 @@ class E2EEManagerDecryptMixin(
     E2EEManagerDecryptValidateMixin,
 ):
     """Combined mixin."""
+
     pass

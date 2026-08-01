@@ -5,6 +5,7 @@ import secrets
 from astrbot.api import logger
 
 from ..constants import (
+    CONTENT_KEY_RELATES_TO,
     INFO_PREFIX_MAC,
     KEY_AGREEMENT_PROTOCOLS,
     M_KEY_VERIFICATION_ACCEPT,
@@ -13,7 +14,6 @@ from ..constants import (
     M_KEY_VERIFICATION_KEY,
     M_KEY_VERIFICATION_MAC,
     M_KEY_VERIFICATION_READY,
-    CONTENT_KEY_RELATES_TO,
     M_ROOM_ENCRYPTED,
     REL_TYPE_REFERENCE,
 )

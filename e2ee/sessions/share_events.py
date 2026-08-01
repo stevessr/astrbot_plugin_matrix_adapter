@@ -23,7 +23,6 @@ from ..constants import (
 
 
 class E2EEManagerSessionShareEventsMixin:
-
     def invalidate_room_members_cache(self, room_id: str) -> None:
         """Invalidate member cache for a room to force fresh state query next time."""
         cache = getattr(self, "_room_members_cache", None)
@@ -410,4 +409,3 @@ class E2EEManagerSessionShareEventsMixin:
         except Exception as e:
             logger.warning(f"获取房间成员失败：{e}")
             return []
-

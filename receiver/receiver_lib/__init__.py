@@ -1,6 +1,6 @@
+from .convert import MatrixReceiverConvertMixin
 from .media import MatrixReceiverMediaMixin
 from .media_cache import MatrixReceiverMediaCacheMixin
-from .convert import MatrixReceiverConvertMixin
 
 
 class MatrixReceiverMixin(

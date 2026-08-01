@@ -48,11 +48,14 @@ class SyncTokenStore:
                 storage_backend_config,
             )
 
-    def _build_sync_data_store(self, user_storage_dir: Path, storage_config) -> MatrixFolderDataStore | None:
+    def _build_sync_data_store(
+        self, user_storage_dir: Path, storage_config
+    ) -> MatrixFolderDataStore | None:
         if storage_config is None:
             return None
         namespace = build_folder_namespace(
-            user_storage_dir, Path(self.sync_store_path).parent if self.sync_store_path else None
+            user_storage_dir,
+            Path(self.sync_store_path).parent if self.sync_store_path else None,
         )
         try:
             return MatrixFolderDataStore(

@@ -5,10 +5,8 @@ from ...constants import (
     M_MEDIA_KEY,
     MSC1767_AUDIO_KEY,
     MSC1767_FILE_KEY,
-    MSC3245_VOICE_KEY,
 )
 from .text import append_formatted_text, should_append_caption
-
 
 _MEDIA = M_MEDIA_KEY
 

@@ -13,12 +13,12 @@ from astrbot.api import logger
 from ..client.http_client import MatrixAPIError
 from ..constants import DEFAULT_TIMEOUT_MS_30000
 from ..plugin_config import get_plugin_config
-from .sync_retry_policy import SyncRetryPolicy
-from .sync_token_store import SyncTokenStore
 from .sync_lib import (
     MatrixSyncManagerCallbacksMixin,
     MatrixSyncManagerDispatchMixin,
 )
+from .sync_retry_policy import SyncRetryPolicy
+from .sync_token_store import SyncTokenStore
 
 
 class MatrixSyncManager(
@@ -106,7 +106,6 @@ class MatrixSyncManager(
 
     # ---- Callback setters ----
 
-
     # ---- Sync loop ----
 
     async def sync_forever(self):
@@ -137,16 +136,16 @@ class MatrixSyncManager(
 
     def _get_next_batch(self) -> str | None:
         """Get the current sync token from the token store (or legacy attr)."""
-        if hasattr(self, '_next_batch') and self._next_batch is not None:
+        if hasattr(self, "_next_batch") and self._next_batch is not None:
             return self._next_batch
-        if hasattr(self, '_token_store') and self._token_store is not None:
+        if hasattr(self, "_token_store") and self._token_store is not None:
             return self._token_store.next_batch
         return None
 
     def _set_next_batch(self, batch: str) -> None:
         """Set the sync token on both the store and the legacy attr."""
         self._next_batch = batch
-        if hasattr(self, '_token_store') and self._token_store is not None:
+        if hasattr(self, "_token_store") and self._token_store is not None:
             self._token_store.next_batch = batch
 
     async def _do_sync(self) -> None:
@@ -155,7 +154,7 @@ class MatrixSyncManager(
             sync_response = await self.client.sync(
                 timeout=self.sync_timeout,
                 since=self._get_next_batch(),
-                filter_id=self._filter_id,
+                filter_id=getattr(self, "_filter_id", None),
             )
 
             next_batch = sync_response.get("next_batch")
@@ -200,7 +199,7 @@ class MatrixSyncManager(
                 retry_after_ms = (e.data or {}).get("retry_after_ms", 5000)
                 logger.warning(f"Sync rate limited, retrying after {retry_after_ms}ms")
                 await asyncio.sleep(retry_after_ms / 1000.0)
-            elif hasattr(self, '_retry_policy') and self._retry_policy is not None:
+            elif hasattr(self, "_retry_policy") and self._retry_policy is not None:
                 await self._retry_policy.sleep(
                     self._sync_consecutive_failures,
                     f"Sync API error: {e}",
@@ -212,14 +211,13 @@ class MatrixSyncManager(
             self._sync_failure_count += 1
             self._last_sync_error = str(e)
             self._sync_consecutive_failures += 1
-            if hasattr(self, '_retry_policy') and self._retry_policy is not None:
+            if hasattr(self, "_retry_policy") and self._retry_policy is not None:
                 await self._retry_policy.sleep(
                     self._sync_consecutive_failures,
                     f"Sync network error: {e}",
                 )
             else:
                 await asyncio.sleep(5)
-
 
     # ---- Lifecycle ----
 
@@ -234,9 +232,7 @@ class MatrixSyncManager(
         if self._sync_request_task and not self._sync_request_task.done():
             self._sync_request_task.cancel()
             try:
-                await asyncio.wait_for(
-                    self._sync_request_task, timeout=timeout_seconds
-                )
+                await asyncio.wait_for(self._sync_request_task, timeout=timeout_seconds)
             except asyncio.TimeoutError:
                 logger.warning("等待 sync 任务停止超时")
 
@@ -248,7 +244,7 @@ class MatrixSyncManager(
 
     async def _save_sync_token(self, *, force: bool = False) -> None:
         """Persist current sync token to storage."""
-        if hasattr(self, '_token_store') and self._token_store is not None:
+        if hasattr(self, "_token_store") and self._token_store is not None:
             await self._token_store.save(force=force)
 
     def get_next_batch(self) -> str | None:
@@ -277,9 +273,7 @@ class MatrixSyncManager(
         return {
             "running": self._running,
             "first_sync": self._first_sync,
-            "next_batch_truncated": (
-                f"{next_batch[:20]}..." if next_batch else None
-            ),
+            "next_batch_truncated": (f"{next_batch[:20]}..." if next_batch else None),
             "consecutive_failures": self._sync_consecutive_failures,
             "last_success_at": self._last_sync_success_at,
             "last_failure_at": self._last_sync_failure_at,

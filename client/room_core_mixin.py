@@ -12,7 +12,9 @@ from .path_utils import quote_path_segment
 class RoomCoreMixin:
     """Core room-related methods for Matrix client"""
 
-    async def join_room(self, room_id: str, server_name: list[str] | None = None) -> dict[str, Any]:
+    async def join_room(
+        self, room_id: str, server_name: list[str] | None = None
+    ) -> dict[str, Any]:
         """
         Join a room
 

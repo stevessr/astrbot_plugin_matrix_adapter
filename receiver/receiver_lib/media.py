@@ -25,7 +25,13 @@ class MatrixReceiverMediaMixin:
 
     def _should_auto_download_media(self, msgtype: str) -> bool:
         """检查是否应该自动下载该类型的媒体文件"""
-        if msgtype not in {MSGTYPE_IMAGE, MSGTYPE_STICKER, MSGTYPE_VIDEO, MSGTYPE_AUDIO, MSGTYPE_FILE}:
+        if msgtype not in {
+            MSGTYPE_IMAGE,
+            MSGTYPE_STICKER,
+            MSGTYPE_VIDEO,
+            MSGTYPE_AUDIO,
+            MSGTYPE_FILE,
+        }:
             return False
         try:
             return get_plugin_config().is_media_auto_download_enabled(msgtype)

@@ -1,7 +1,7 @@
 import html
 
-from .common import send_content
 from ...constants import CONTENT_KEY_RELATES_TO, REL_TYPE_REFERENCE
+from .common import send_content
 
 
 def _build_poll_fallback(question: str, answers: list[str]) -> tuple[str, str]:

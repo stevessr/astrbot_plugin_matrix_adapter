@@ -24,10 +24,15 @@ async def handle_extensible_event(receiver, chain, event, _msgtype: str):
         from .text import append_formatted_text
 
         body = _nested_content(content, MSC1767_TEXT_KEY, "body") or event.body or ""
-        append_formatted_text(receiver, chain, body, {
-            "format": MATRIX_HTML_FORMAT,
-            "formatted_body": html,
-        })
+        append_formatted_text(
+            receiver,
+            chain,
+            body,
+            {
+                "format": MATRIX_HTML_FORMAT,
+                "formatted_body": html,
+            },
+        )
         return
 
     text = _nested_content(content, MSC1767_TEXT_KEY, "body")

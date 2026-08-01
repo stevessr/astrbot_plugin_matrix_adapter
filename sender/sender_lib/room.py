@@ -336,9 +336,7 @@ class SenderRoomMixin:
         """Get pinned Matrix event IDs in a room."""
         return await self.client.get_room_pinned_events(room_id)
 
-    async def set_pinned_messages(
-        self, room_id: str, event_ids
-    ) -> dict:
+    async def set_pinned_messages(self, room_id: str, event_ids) -> dict:
         """Replace pinned Matrix event IDs in a room."""
         return await self.client.set_room_pinned_events(room_id, event_ids)
 
@@ -356,8 +354,6 @@ class SenderRoomMixin:
         """Unpin a Matrix event in a room."""
         return await self.client.unpin_room_event(room_id=room_id, event_id=event_id)
 
-    async def mark_room_unread(
-        self, room_id: str, unread: bool = True
-    ) -> dict:
+    async def mark_room_unread(self, room_id: str, unread: bool = True) -> dict:
         """Mark a room as (un)read for this account (MSC2867)."""
         return await self.client.set_room_marked_unread(room_id, unread)

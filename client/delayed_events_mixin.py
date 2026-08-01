@@ -107,9 +107,7 @@ class DelayedEventsMixin:
             "GET", MSC4140_DELAYED_EVENTS_PATH, params=params or None
         )
 
-    async def manage_delayed_event(
-        self, delay_id: str, action: str
-    ) -> dict[str, Any]:
+    async def manage_delayed_event(self, delay_id: str, action: str) -> dict[str, Any]:
         """
         Run an action against a pending delayed event (MSC4140).
 
@@ -119,9 +117,7 @@ class DelayedEventsMixin:
         """
         action = (action or "").strip().lower()
         if action not in {"send", "restart", "cancel"}:
-            raise ValueError(
-                "action must be one of 'send', 'restart', 'cancel'"
-            )
+            raise ValueError("action must be one of 'send', 'restart', 'cancel'")
         delay = quote_path_segment(delay_id)
         endpoint = f"{MSC4140_DELAYED_EVENTS_PATH}/{delay}"
         return await self._request("POST", endpoint, data={"action": action})

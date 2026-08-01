@@ -91,7 +91,11 @@ async def send_video(
             "mxc": content_uri,
             "mimetype": content_type,
             "size": video_size,
-            **({"width": info["w"], "height": info["h"]} if "w" in info and "h" in info else {}),
+            **(
+                {"width": info["w"], "height": info["h"]}
+                if "w" in info and "h" in info
+                else {}
+            ),
             **({"duration": info["duration"]} if "duration" in info else {}),
         },
     }

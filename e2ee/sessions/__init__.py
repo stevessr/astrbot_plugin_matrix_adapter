@@ -1,5 +1,5 @@
-from .share import E2EEManagerSessionShareMixin
 from .encrypt import E2EEManagerSessionEncryptMixin
+from .share import E2EEManagerSessionShareMixin
 
 
 class E2EEManagerSessionsMixin(
@@ -7,4 +7,5 @@ class E2EEManagerSessionsMixin(
     E2EEManagerSessionEncryptMixin,
 ):
     """Combined mixin."""
+
     pass

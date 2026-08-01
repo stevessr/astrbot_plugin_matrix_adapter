@@ -22,12 +22,12 @@ from ...constants import (
     M_ROOM_TOMBSTONE,
     M_ROOM_TOPIC,
     M_SPACE_CHILD,
+    M_SPACE_PARENT,
     MEMBERSHIP_BAN,
     MEMBERSHIP_INVITE,
     MEMBERSHIP_JOIN,
     MEMBERSHIP_KNOCK,
     MEMBERSHIP_LEAVE,
-    M_SPACE_PARENT,
 )
 
 
@@ -416,7 +416,9 @@ async def handle_space_parent(receiver, chain, event, _: str):
             if len(via) > 3:
                 via_text += f" (+{len(via) - 3} more)"
         canonical = " canonical" if content.get("canonical") is True else ""
-        text = f"[Space] {sender} added{canonical} parent space: {parent_room}{via_text}"
+        text = (
+            f"[Space] {sender} added{canonical} parent space: {parent_room}{via_text}"
+        )
     else:
         text = f"[Space] {sender} removed parent space: {parent_room}"
     chain.chain.append(Plain(text))
@@ -449,9 +451,9 @@ async def handle_room_member_change(receiver, chain, event, _: str):
             )
             if target_display and target_display != prev_display:
                 changes.append(f"display name to {target_display}")
-            if content.get("avatar_url") and content.get("avatar_url") != prev_content.get(
+            if content.get("avatar_url") and content.get(
                 "avatar_url"
-            ):
+            ) != prev_content.get("avatar_url"):
                 changes.append("avatar")
             if changes:
                 text = f"[Room Member] {target} updated " + " and ".join(changes)

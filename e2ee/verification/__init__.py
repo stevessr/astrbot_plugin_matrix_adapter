@@ -7,7 +7,9 @@ class SASVerificationFlowMixin(
     SASVerificationFlowUtilsMixin,
 ):
     """Combined mixin."""
+
     pass
+
 
 from .sas import SASVerification
 

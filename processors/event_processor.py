@@ -85,7 +85,6 @@ class MatrixEventProcessor(
         self.unused_fallback_key_types: list[str] | None = None
         self._init_member_storage()
 
-
     def set_message_callback(self, callback: Callable):
         """
         Set callback for processed messages
@@ -95,12 +94,10 @@ class MatrixEventProcessor(
         """
         self.on_message = callback
 
-
     def _is_message_processed(self, event_id: str | None) -> bool:
         if not event_id:
             return False
         return event_id in self._processed_messages
-
 
     def _mark_message_processed(self, event_id: str | None) -> None:
         if not event_id:
@@ -109,7 +106,6 @@ class MatrixEventProcessor(
         self._processed_messages.move_to_end(event_id, last=True)
         while len(self._processed_messages) > self._max_processed_messages:
             self._processed_messages.popitem(last=False)
-
 
     _parse_bool_like = staticmethod(parse_bool)
 
@@ -397,13 +393,10 @@ class MatrixEventProcessor(
             # Log other event types
             logger.debug(f"收到设备间事件：{event_type} 来自 {sender}")
 
-
     def clear_processed_messages(self):
         """Clear the processed messages cache"""
         self._processed_messages.clear()
 
-
     def get_processed_message_count(self) -> int:
         """Get the number of processed messages in cache"""
         return len(self._processed_messages)
-

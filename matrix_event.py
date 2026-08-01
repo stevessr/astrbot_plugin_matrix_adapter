@@ -9,8 +9,6 @@ from .constants import (
     M_ROOM_MESSAGE,
     MSGTYPE_NOTICE,
     MSGTYPE_TEXT,
-    STREAMING_TYPING_REFRESH_SECONDS,
-    STREAMING_TYPING_TIMEOUT_MS,
 )
 from .matrix_event_send import send_with_client_impl
 from .matrix_event_stream import MatrixPlatformEventStreamMixin
@@ -157,7 +155,7 @@ class MatrixPlatformEvent(MatrixPlatformEventStreamMixin, AstrMessageEvent):
                         _Reply(id=reply_id, sender_id=sender_id),
                     )
             except Exception:
-                logger.debug(f"FC 边界 Reply 处理失败")
+                logger.debug("FC 边界 Reply 处理失败")
 
         # 检查是否需要使用嘟文串模式
         reply_to = None
@@ -178,7 +176,7 @@ class MatrixPlatformEvent(MatrixPlatformEventStreamMixin, AstrMessageEvent):
                     reply_to = str(seg.id)
                     break
         except Exception:
-            logger.debug(f"提取 Reply 组件失败")
+            logger.debug("提取 Reply 组件失败")
 
         # 分段回复的后续消息没有 Reply 组件。优先复用本次事件前一段已经
         # 解析好的线程上下文；如果没有上下文且启用了线程，则使用本次入站
@@ -206,7 +204,9 @@ class MatrixPlatformEvent(MatrixPlatformEventStreamMixin, AstrMessageEvent):
                     if my_user_id:
                         # 节流：每房间每 5 秒最多一次回退查找
                         now = time.time()
-                        last_lookup = getattr(self, '_reply_fallback_cache', {}).get(room_id, 0)
+                        last_lookup = getattr(self, "_reply_fallback_cache", {}).get(
+                            room_id, 0
+                        )
                         if now - last_lookup < 5.0:
                             pass  # 跳过
                         else:
@@ -235,7 +235,7 @@ class MatrixPlatformEvent(MatrixPlatformEventStreamMixin, AstrMessageEvent):
                             except Exception as e:
                                 logger.debug(f"获取自己最近消息失败：{e}")
                             finally:
-                                if not hasattr(self, '_reply_fallback_cache'):
+                                if not hasattr(self, "_reply_fallback_cache"):
                                     self._reply_fallback_cache = {}
                                 self._reply_fallback_cache[room_id] = now
             except Exception as e:

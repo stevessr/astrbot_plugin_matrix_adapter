@@ -69,9 +69,7 @@ async def send_plain(
     text = segment.text or ""
     content = {"msgtype": msg_type, "body": text}
 
-    is_explicit_reply = bool(reply_to) and not (
-        use_thread and thread_is_falling_back
-    )
+    is_explicit_reply = bool(reply_to) and not (use_thread and thread_is_falling_back)
     if original_message_info and is_explicit_reply:
         _merge_reply_mentions(content, client, original_message_info)
 

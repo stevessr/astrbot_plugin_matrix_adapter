@@ -3,6 +3,7 @@
 from typing import Any
 
 from ..constants import (
+    CONTENT_KEY_RELATES_TO,
     M_BEACON,
     M_BEACON_INFO,
     M_PROFILE_KEY,
@@ -11,7 +12,6 @@ from ..constants import (
     MSC1767_TEXT_KEY,
     MSC3488_ASSET_KEY,
     MSC3488_TS_KEY,
-    CONTENT_KEY_RELATES_TO,
     MSC4144_PROFILE_KEY,
     REL_TYPE_REFERENCE,
 )
@@ -297,6 +297,4 @@ class SenderRoomMessagingMixin:
         self, from_token: str | None = None, limit: int | None = None
     ) -> dict:
         """List currently pending delayed events (MSC4140)."""
-        return await self.client.list_delayed_events(
-            from_token=from_token, limit=limit
-        )
+        return await self.client.list_delayed_events(from_token=from_token, limit=limit)

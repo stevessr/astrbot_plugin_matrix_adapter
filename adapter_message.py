@@ -16,7 +16,6 @@ from .constants import (
     M_ROOM_REDACTION,
     MSC4357_LIVE_MESSAGE_MARKER,
     MSGTYPE_NOTICE,
-    MSGTYPE_REACTION,
     MSGTYPE_STICKER,
     REL_TYPE_REPLACE,
 )
@@ -103,7 +102,12 @@ class MatrixAdapterMessageMixin:
             if event_type == M_ROOM_MESSAGE:
                 msgtype = content.get("msgtype") or ""
                 body = content.get("body") or ""
-                if not body and msgtype in (MSGTYPE_IMAGE, MSGTYPE_VIDEO, MSGTYPE_AUDIO, MSGTYPE_FILE):
+                if not body and msgtype in (
+                    MSGTYPE_IMAGE,
+                    MSGTYPE_VIDEO,
+                    MSGTYPE_AUDIO,
+                    MSGTYPE_FILE,
+                ):
                     body = msgtype
                 if msgtype == MSGTYPE_STICKER and not body:
                     body = "sticker"

@@ -169,7 +169,9 @@ class MatrixUtilsReactionMixin:
         client = MatrixUtilsReactionMixin.get_matrix_client(
             context,
             str(platform_id or "").strip(),
-            fallback_to_first=bool(fallback_to_first and not str(platform_id or "").strip()),
+            fallback_to_first=bool(
+                fallback_to_first and not str(platform_id or "").strip()
+            ),
         )
         if client is None:
             suffix = f" {platform_id!r}" if str(platform_id or "").strip() else ""

@@ -7,4 +7,5 @@ class OlmMachineMegolmMixin(
     OlmMachineMegolmOutboundMixin,
 ):
     """Combined mixin."""
+
     pass

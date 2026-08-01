@@ -15,10 +15,10 @@ from ..constants import (
     M_ROOM_JOIN_RULES,
     M_ROOM_NAME,
     M_ROOM_PINNED_EVENTS,
+    M_ROOM_TOPIC,
     MEMBERSHIP_INVITE,
     MEMBERSHIP_JOIN,
     MEMBERSHIP_LEAVE,
-    M_ROOM_TOPIC,
 )
 from .base import MatrixAPIError
 from .path_utils import quote_path_segment

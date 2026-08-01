@@ -222,7 +222,9 @@ def append_formatted_text(
 
 async def handle_text(receiver, chain, event, msgtype: str):
     content = event.content or {}
-    resolved_msgtype = msgtype or content.get("msgtype") or getattr(event, "msgtype", "")
+    resolved_msgtype = (
+        msgtype or content.get("msgtype") or getattr(event, "msgtype", "")
+    )
     body = event.body or content.get("body", "")
     if resolved_msgtype == "m.emote":
         sender = getattr(event, "sender", "") or "Someone"

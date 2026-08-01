@@ -15,8 +15,6 @@ from ...constants import (
     MSC3489_BEACON_INFO_PREFIX,
     MSC3489_BEACON_KEY,
 )
-
-
 from ...utils.utils import _extract_text_repr
 
 
@@ -37,9 +35,7 @@ async def handle_beacon_info(receiver, chain, event, _: str):
     if live:
         suffix = f"（{description}）" if description else ""
         if isinstance(timeout, int) and timeout > 0:
-            chain.chain.append(
-                Plain(f"[实时位置开启{suffix} timeout={timeout}ms]")
-            )
+            chain.chain.append(Plain(f"[实时位置开启{suffix} timeout={timeout}ms]"))
         else:
             chain.chain.append(Plain(f"[实时位置开启{suffix}]"))
     else:

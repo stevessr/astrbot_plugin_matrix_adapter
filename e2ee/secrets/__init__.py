@@ -1,5 +1,5 @@
-from .handlers import E2EEManagerSecretsHandlersMixin
 from .crypto import E2EEManagerSecretsCryptoMixin
+from .handlers import E2EEManagerSecretsHandlersMixin
 
 
 class E2EEManagerSecretsMixin(
@@ -7,4 +7,5 @@ class E2EEManagerSecretsMixin(
     E2EEManagerSecretsCryptoMixin,
 ):
     """Combined mixin."""
+
     pass

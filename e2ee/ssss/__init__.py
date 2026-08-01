@@ -1,5 +1,5 @@
-from .storage import KeyBackupSSSSStorageMixin
 from .crypto import KeyBackupSSSSMixinCrypto
+from .storage import KeyBackupSSSSStorageMixin
 
 
 class KeyBackupSSSSMixin(
@@ -7,4 +7,5 @@ class KeyBackupSSSSMixin(
     KeyBackupSSSSMixinCrypto,
 ):
     """Combined mixin."""
+
     pass

@@ -18,6 +18,7 @@ class E2EEManagerSecretsCryptoMixin:
     @staticmethod
     def _mask_device_id(device_id: str | None) -> str:
         from ...utils.utils import mask_device_id
+
         return mask_device_id(device_id)
 
     @staticmethod

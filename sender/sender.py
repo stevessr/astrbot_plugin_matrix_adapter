@@ -4,10 +4,8 @@ Matrix 消息发送组件
 
 from typing import Any
 
-from astrbot.api.event import MessageChain
-from astrbot.api.message_components import Record, Video
-
 from ..constants import (
+    CONTENT_KEY_RELATES_TO,
     M_BEACON,
     M_BEACON_INFO,
     M_PROFILE_KEY,
@@ -16,13 +14,11 @@ from ..constants import (
     MSC1767_TEXT_KEY,
     MSC3488_ASSET_KEY,
     MSC3488_TS_KEY,
-    CONTENT_KEY_RELATES_TO,
     MSC4144_PROFILE_KEY,
     REL_TYPE_REFERENCE,
 )
 
 # Update import: markdown_utils is now in ..utils.markdown_utils
-
 from .sender_lib import SenderMediaMixin, SenderRoomMixin
 
 
@@ -31,7 +27,6 @@ class MatrixSender(SenderMediaMixin, SenderRoomMixin):
         self.client = client
         self.e2ee_manager = e2ee_manager
         self.use_notice = bool(use_notice)
-
 
     async def get_message_context(
         self,
@@ -135,7 +130,6 @@ class MatrixSender(SenderMediaMixin, SenderRoomMixin):
             allow_backward=allow_backward,
         )
 
-
     # --- MSC4495 Selective Presence ---------------------------------------
 
     async def get_presence_sharing_prefs(self) -> dict:
@@ -195,14 +189,11 @@ class MatrixSender(SenderMediaMixin, SenderRoomMixin):
 
     async def set_room_presence_sharing(self, room_id: str, hint: str) -> dict:
         """写入房间 presence sharing hint（MSC4495），hint 为 'suggest'/'forbid'。"""
-        return await self.client.set_room_presence_sharing(
-            room_id=room_id, hint=hint
-        )
+        return await self.client.set_room_presence_sharing(room_id=room_id, hint=hint)
 
     async def get_room_presence_sharing(self, room_id: str) -> str | None:
         """读取房间 presence sharing hint（MSC4495），缺失视为 'forbid'。"""
         return await self.client.get_room_presence_sharing(room_id=room_id)
-
 
     async def send_call_decline(
         self,
@@ -220,7 +211,6 @@ class MatrixSender(SenderMediaMixin, SenderRoomMixin):
             notification_event_id=notification_event_id,
             reason=reason,
         )
-
 
     async def send_with_per_message_profile(
         self,
@@ -376,7 +366,6 @@ class MatrixSender(SenderMediaMixin, SenderRoomMixin):
             txn_id=None,
         )
 
-
     async def send_delayed_message(
         self,
         room_id: str,
@@ -410,9 +399,7 @@ class MatrixSender(SenderMediaMixin, SenderRoomMixin):
         self, from_token: str | None = None, limit: int | None = None
     ) -> dict:
         """List currently pending delayed events (MSC4140)."""
-        return await self.client.list_delayed_events(
-            from_token=from_token, limit=limit
-        )
+        return await self.client.list_delayed_events(from_token=from_token, limit=limit)
 
     @staticmethod
     def _now_ms() -> int:

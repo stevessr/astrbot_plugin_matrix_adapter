@@ -200,9 +200,7 @@ async def send_with_client_impl(
                 break
 
     if thread_is_falling_back is None:
-        thread_is_falling_back = bool(
-            use_thread and thread_root and reply_to is None
-        )
+        thread_is_falling_back = bool(use_thread and thread_root and reply_to is None)
 
     merged_chain = []
     for segment in message_chain.chain:

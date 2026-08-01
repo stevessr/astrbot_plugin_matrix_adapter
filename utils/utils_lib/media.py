@@ -156,7 +156,9 @@ class MatrixUtilsMediaMixin:
         client = getattr(platform, "client", None)
         if client is None or not hasattr(client, "download_file"):
             return None
-        await asyncio.to_thread(MatrixUtilsMediaMixin._ensure_parent_dir, resolved_output_path)
+        await asyncio.to_thread(
+            MatrixUtilsMediaMixin._ensure_parent_dir, resolved_output_path
+        )
         await client.download_file(
             mxc_url,
             allow_thumbnail_fallback=allow_thumbnail_fallback,

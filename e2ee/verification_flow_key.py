@@ -182,7 +182,6 @@ class SASVerificationFlowKeyMixin:
                     session,
                 )
 
-
     async def _handle_mac(self, sender: str, content: dict, transaction_id: str):
         """处理 MAC 验证"""
         their_mac = content.get("mac") or {}
@@ -338,7 +337,6 @@ class SASVerificationFlowKeyMixin:
                     transaction_id,
                 )
 
-
     async def _handle_done(self, sender: str, content: dict, transaction_id: str):
         """处理验证完成"""
         logger.info(
@@ -412,7 +410,6 @@ class SASVerificationFlowKeyMixin:
                 await e2ee_manager.request_missing_secrets_after_verification(sender)
             except Exception as e:
                 logger.warning(f"[E2EE-Verify] 验证后请求缺失秘密失败：{e}")
-
 
     async def _handle_cancel(self, sender: str, content: dict, transaction_id: str):
         """处理验证取消"""
