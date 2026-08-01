@@ -151,11 +151,14 @@ class MatrixSyncManager(
     async def _do_sync(self) -> None:
         """Execute one /sync request and dispatch results."""
         try:
-            sync_response = await self.client.sync(
-                timeout=self.sync_timeout,
-                since=self._get_next_batch(),
-                filter_id=getattr(self, "_filter_id", None),
-            )
+            sync_kwargs = {
+                "timeout": self.sync_timeout,
+                "since": self._get_next_batch(),
+            }
+            filter_id = getattr(self, "_filter_id", None)
+            if filter_id is not None:
+                sync_kwargs["filter_id"] = filter_id
+            sync_response = await self.client.sync(**sync_kwargs)
 
             next_batch = sync_response.get("next_batch")
             if next_batch:

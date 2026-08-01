@@ -11,3 +11,7 @@ class MessageMixin(
     """Combined mixin."""
 
     pass
+
+    # Keep the primary send method visible on the historical combined class
+    # for callers that inspect the class dictionary.
+    send_message = MessageSendMixin.send_message
