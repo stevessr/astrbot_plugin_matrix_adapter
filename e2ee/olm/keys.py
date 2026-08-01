@@ -2,13 +2,13 @@ from typing import Any
 
 from astrbot.api import logger
 
-from ..constants import (
+from ...constants import (
     DEFAULT_ONE_TIME_KEYS_COUNT,
     MEGOLM_ALGO,
     OLM_ALGO,
 )
-from .olm_machine_types import Ed25519PublicKey, Ed25519Signature
-from .verification_utils import _canonical_json
+from ..verification.crypto_utils import _canonical_json
+from .types import Ed25519PublicKey, Ed25519Signature
 
 
 class OlmMachineKeysMixin:

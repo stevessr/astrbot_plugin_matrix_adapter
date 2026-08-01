@@ -24,13 +24,13 @@ from ...constants import (
 )
 from ...plugin_config import get_plugin_config
 from ..device_store import DeviceStore
-from ..verification_handlers_display import SASVerificationDisplayMixin
-from ..verification_handlers_event import SASVerificationEventMixin
-from ..verification_manual_notify import SASVerificationManualNotifyMixin
-from ..verification_send_device import SASVerificationSendDeviceMixin
-from ..verification_send_room import SASVerificationSendRoomMixin
-from ..verification_utils import _encode_unpadded_base64
 from . import SASVerificationFlowMixin
+from .crypto_utils import _encode_unpadded_base64
+from .display import SASVerificationDisplayMixin
+from .event import SASVerificationEventMixin
+from .manual_notify import SASVerificationManualNotifyMixin
+from .send_device import SASVerificationSendDeviceMixin
+from .send_room import SASVerificationSendRoomMixin
 
 
 class SASVerification(

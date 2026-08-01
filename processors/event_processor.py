@@ -23,6 +23,7 @@ from ..utils import parse_bool
 from .event_lib.msg import MatrixEventProcessorMessagesMixin
 from .event_lib.room import MatrixEventProcessorRoomDispatchMixin
 from .event_lib.states import MatrixEventProcessorStatesMixin
+from .event_processor_members import MatrixEventProcessorMembers
 from .event_processor_streams import MatrixEventProcessorStreams
 
 if TYPE_CHECKING:

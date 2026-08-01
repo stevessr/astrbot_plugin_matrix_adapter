@@ -4,7 +4,7 @@ import json
 from astrbot.api import logger
 
 from ..constants import MEGOLM_MESSAGE_INDEX_FIELD
-from ..olm_machine_types import (
+from ..olm.types import (
     ExportedSessionKey,
     InboundGroupSession,
     MegolmMessage,

@@ -1,5 +1,5 @@
-from ..verification_flow_key import SASVerificationFlowKeyMixin
-from ..verification_flow_start import SASVerificationFlowStartMixin
+from .flow_key import SASVerificationFlowKeyMixin
+from .flow_start import SASVerificationFlowStartMixin
 
 
 class SASVerificationFlowHandlersMixin(

@@ -6,7 +6,7 @@ import time
 
 from astrbot.api import logger
 
-from ..constants import (
+from ...constants import (
     M_KEY_VERIFICATION_REQUEST,
     M_QR_CODE_SCAN_V1_METHOD,
     M_QR_CODE_SHOW_V1_METHOD,

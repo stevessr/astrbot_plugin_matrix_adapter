@@ -10,8 +10,8 @@ from ...constants import (
     SSSS_DEFAULT_KEY,
     SSSS_KEY_PREFIX,
 )
-from ..key_backup_crypto import _decode_recovery_key
-from ..verification_utils import _decode_base64
+from ..backup.crypto_utils import _decode_recovery_key
+from ..verification.crypto_utils import _decode_base64
 
 
 class KeyBackupSSSSStorageMixin:

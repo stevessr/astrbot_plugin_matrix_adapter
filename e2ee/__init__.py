@@ -8,7 +8,7 @@ Matrix E2EE (End-to-End Encryption) Module
 
 from .key_backup import KeyBackup
 from .manager import E2EEManager
-from .olm_machine import VODOZEMAC_AVAILABLE, OlmMachine
+from .olm import VODOZEMAC_AVAILABLE, OlmMachine
 from .signing import CrossSigning
 from .store import CryptoStore
 from .verification import SASVerification

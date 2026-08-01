@@ -1,6 +1,6 @@
 from astrbot.api import logger
 
-from .olm_machine_types import Account
+from .types import Account
 
 
 class OlmMachineAccountMixin:

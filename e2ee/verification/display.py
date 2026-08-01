@@ -2,11 +2,11 @@ import io
 
 from astrbot.api import logger
 
-from ..constants import (
+from ...constants import (
     SAS_BYTES_LENGTH_6,
     SAS_EMOJI_COUNT_7,
 )
-from .verification_constants import (
+from .constants import (
     SAS_EMOJIS,
 )
 

@@ -2,7 +2,7 @@ import asyncio
 
 from astrbot.api import logger
 
-from ..constants import (
+from ...constants import (
     M_KEY_VERIFICATION_ACCEPT,
     M_KEY_VERIFICATION_CANCEL,
     M_KEY_VERIFICATION_DONE,
@@ -13,7 +13,7 @@ from ..constants import (
     M_KEY_VERIFICATION_START,
     PREFIX_ED25519,
 )
-from .verification_constants import (
+from .constants import (
     VODOZEMAC_SAS_AVAILABLE,
     Sas,
 )

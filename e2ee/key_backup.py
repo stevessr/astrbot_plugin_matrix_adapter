@@ -11,7 +11,7 @@ from astrbot.api import logger
 
 from ..constants import CRYPTO_KEY_SIZE_32, HKDF_MEGOLM_BACKUP_INFO
 from .backup import KeyBackupBackupMixin
-from .key_backup_crypto import _compute_hkdf, _decode_recovery_key
+from .backup.crypto_utils import _compute_hkdf, _decode_recovery_key
 from .ssss import KeyBackupSSSSMixin
 
 

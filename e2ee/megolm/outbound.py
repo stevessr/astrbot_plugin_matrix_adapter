@@ -3,7 +3,7 @@ import json
 from astrbot.api import logger
 
 from ...constants import MEGOLM_ALGO
-from ..olm_machine_types import GroupSession, InboundGroupSession
+from ..olm.types import GroupSession, InboundGroupSession
 
 
 class OlmMachineMegolmOutboundMixin:

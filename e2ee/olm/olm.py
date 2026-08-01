@@ -3,15 +3,14 @@ import json
 
 from astrbot.api import logger
 
-from ..constants import M_ROOM_KEY, OLM_ALGO
-from .olm_machine_types import (
+from ...constants import M_ROOM_KEY, OLM_ALGO
+from .types import (
     AnyOlmMessage,
     Curve25519PublicKey,
     PreKeyMessage,
     Session,
 )
 
-# Maximum Olm sessions to keep per peer to prevent memory exhaustion
 # from repeated PreKey messages.  Per the spec, a single active session
 # suffices; older sessions are retained for decryption of out-of-order
 # messages that may still arrive.

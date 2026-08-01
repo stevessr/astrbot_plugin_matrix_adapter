@@ -4,17 +4,17 @@ import hmac
 
 from astrbot.api import logger
 
-from ..constants import (
+from ...constants import (
     INFO_PREFIX_MAC,
     INFO_PREFIX_SAS,
     PREFIX_ED25519,
 )
-from .verification_constants import (
+from .constants import (
     SAS_EMOJIS,
     VODOZEMAC_SAS_AVAILABLE,
     Curve25519PublicKey,
 )
-from .verification_utils import (
+from .crypto_utils import (
     _canonical_json,
     _compute_hkdf,
     _encode_unpadded_base64,

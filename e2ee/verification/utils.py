@@ -15,9 +15,7 @@ from ...constants import (
     QR_CODE_VERSION,
     SAS_BYTES_LENGTH_6,
 )
-from ..verification_utils import (
-    _encode_unpadded_base64,
-)
+from .crypto_utils import _encode_unpadded_base64
 
 
 class SASVerificationFlowUtilsMixin:

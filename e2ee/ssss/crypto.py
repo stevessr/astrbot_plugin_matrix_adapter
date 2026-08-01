@@ -3,13 +3,13 @@ import secrets
 from astrbot.api import logger
 
 from ...constants import CRYPTO_KEY_SIZE_32, SSSS_BACKUP_SECRET
-from ..key_backup_crypto import (
+from ..backup.crypto_utils import (
     CRYPTO_AVAILABLE,
     _aes_ctr_decrypt,
     _compute_hkdf,
     _decode_recovery_key,
 )
-from ..verification_utils import _decode_base64, _encode_unpadded_base64
+from ..verification.crypto_utils import _decode_base64, _encode_unpadded_base64
 
 
 class KeyBackupSSSSMixinCrypto:

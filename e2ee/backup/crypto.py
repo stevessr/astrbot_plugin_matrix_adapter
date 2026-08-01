@@ -10,12 +10,12 @@ from ...constants import (
     MEGOLM_ALGO,
     RECOVERY_KEY_MAC_TRUNCATED_LEN,
 )
-from ..key_backup_crypto import (
+from ..megolm.inbound import _convert_session_key_v2_to_v1
+from .crypto_utils import (
     _aes_decrypt,
     _aes_encrypt,
     _encrypt_backup_data,
 )
-from ..megolm.inbound import _convert_session_key_v2_to_v1
 
 
 class KeyBackupBackupCryptoMixin:

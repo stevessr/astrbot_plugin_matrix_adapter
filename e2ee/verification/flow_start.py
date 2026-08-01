@@ -2,13 +2,13 @@ import hmac
 
 from astrbot.api import logger
 
-from ..constants import (
+from ...constants import (
     M_QR_CODE_SHOW_V1_METHOD,
     M_RECIPROCATE_V1_METHOD,
     M_SAS_V1_METHOD,
     PREFIX_ED25519,
 )
-from .verification_constants import (
+from .constants import (
     VODOZEMAC_SAS_AVAILABLE,
     Sas,
 )

@@ -5,7 +5,7 @@ import secrets
 
 from astrbot.api import logger
 
-from ..constants import (
+from ...constants import (
     AES_BLOCK_SIZE_16,
     AES_GCM_NONCE_LEN,
     BASE58_ALPHABET,

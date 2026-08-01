@@ -9,7 +9,7 @@ from ...constants import (
     MEGOLM_ALGO,
     MEGOLM_BACKUP_ALGO,
 )
-from ..key_backup_crypto import (
+from .crypto_utils import (
     _compute_hkdf,
     _encode_recovery_key,
 )

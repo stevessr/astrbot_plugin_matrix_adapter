@@ -4,7 +4,7 @@ import secrets
 
 from astrbot.api import logger
 
-from ..constants import (
+from ...constants import (
     CONTENT_KEY_RELATES_TO,
     INFO_PREFIX_MAC,
     KEY_AGREEMENT_PROTOCOLS,
@@ -17,14 +17,14 @@ from ..constants import (
     M_ROOM_ENCRYPTED,
     REL_TYPE_REFERENCE,
 )
-from .verification_constants import (
+from .constants import (
     HASHES,
     MESSAGE_AUTHENTICATION_CODES,
     SHORT_AUTHENTICATION_STRING,
     VODOZEMAC_SAS_AVAILABLE,
     Sas,
 )
-from .verification_utils import _canonical_json, _compute_hkdf
+from .crypto_utils import _canonical_json, _compute_hkdf
 
 
 class SASVerificationSendRoomMixin:

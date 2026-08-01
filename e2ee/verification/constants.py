@@ -1,6 +1,6 @@
 from astrbot.api import logger
 
-from .constants import (
+from ..constants import (
     HASHES,
     MESSAGE_AUTHENTICATION_CODES,
     SAME_USER_QR_METHODS,

@@ -6,7 +6,7 @@ import time
 
 from astrbot.api import logger
 
-from ..constants import (
+from ...constants import (
     DEFAULT_ONE_TIME_KEYS_COUNT,
     MEGOLM_ALGO,
     OLM_ALGO,

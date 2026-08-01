@@ -6,8 +6,8 @@ from pathlib import Path
 from astrbot.api import logger
 
 from ...plugin_config import get_plugin_config
+from ..backup.crypto_utils import CRYPTO_AVAILABLE
 from ..constants import DEVICE_SECRET_REQUEST_PENDING, FORCE_OVERWRITE_SERVER_KEYS
-from ..key_backup_crypto import CRYPTO_AVAILABLE
 from ..storage import build_e2ee_data_store
 
 

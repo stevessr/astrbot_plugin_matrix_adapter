@@ -22,7 +22,7 @@ from ..constants import (
     DEFAULT_ROOM_MEMBER_CACHE_TTL_SEC,
 )
 from ..decrypt import E2EEManagerDecryptMixin
-from ..olm_machine import VODOZEMAC_AVAILABLE, OlmMachine
+from ..olm import VODOZEMAC_AVAILABLE, OlmMachine
 from ..requests import E2EEManagerRequestsMixin
 from ..secrets import E2EEManagerSecretsMixin
 from ..sessions import E2EEManagerSessionsMixin

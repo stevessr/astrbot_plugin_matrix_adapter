@@ -7,11 +7,10 @@ from ...constants import (
     AES_GCM_NONCE_LEN,
     CRYPTO_KEY_SIZE_32,
 )
-from ..key_backup_crypto import (
+from .crypto_utils import (
     VODOZEMAC_PK_AVAILABLE,
     Curve25519SecretKey,
     PkDecryption,
-    _decode_recovery_key,
     _decrypt_backup_data,
 )
 
