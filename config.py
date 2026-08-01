@@ -10,7 +10,7 @@ from .call_events import CallEventConfig
 from .constants import DEFAULT_TIMEOUT_MS_30000
 from .device_manager import MatrixDeviceManager
 from .plugin_config import get_plugin_config
-from .storage_backend import StorageBackendConfig
+from .storage.backend import StorageBackendConfig
 from .utils import parse_bool
 from .webhook import build_unified_webhook_url
 

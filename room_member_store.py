@@ -13,8 +13,8 @@ from astrbot.api import logger
 from astrbot.api.star import StarTools
 
 from .plugin_config import get_plugin_config
-from .storage_backend import MatrixFolderDataStore
-from .storage_paths import MatrixStoragePaths
+from .storage.backend import MatrixFolderDataStore
+from .storage.paths import MatrixStoragePaths
 
 
 class MatrixRoomMemberStore:

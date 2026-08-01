@@ -2,7 +2,7 @@
 Matrix data storage backend facade.
 
 This module keeps the public API stable while delegating each backend
-implementation to independent files under `storage_backends/`.
+implementation to independent files under `storage/backends/`.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Any
 
 from astrbot.api import logger
 
-from .storage_backends import (
+from .backends import (
     JsonBackend,
     PgSQLBackend,
     SQLiteBackend,
@@ -22,7 +22,7 @@ from .storage_backends import (
     build_pg_table_name,
     normalize_storage_backend,
 )
-from .storage_paths import MatrixStoragePaths
+from .paths import MatrixStoragePaths
 
 JsonFilenameResolver = Callable[[str], str]
 

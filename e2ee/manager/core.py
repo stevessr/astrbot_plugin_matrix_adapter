@@ -11,8 +11,8 @@ from typing import Literal
 from astrbot.api import logger
 
 from ...plugin_config import get_plugin_config
-from ...storage_backend import build_folder_namespace
-from ...storage_paths import MatrixStoragePaths
+from ...storage.backend import build_folder_namespace
+from ...storage.paths import MatrixStoragePaths
 from ...utils.utils import mask_device_id
 from ..constants import (
     DEFAULT_OLM_RECOVERY_RETRY_SEC,

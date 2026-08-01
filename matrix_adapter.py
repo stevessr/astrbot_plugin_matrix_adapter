@@ -145,7 +145,7 @@ class MatrixPlatformAdapter(
         self.client.runtime_state = self.runtime_state
 
         # 使用新的存储路径逻辑
-        from .storage_paths import MatrixStoragePaths
+        from .storage.paths import MatrixStoragePaths
 
         # 确保 user_id 存在（在 _validate() 中已验证，但为类型检查器添加断言）
         if not self._matrix_config.user_id:

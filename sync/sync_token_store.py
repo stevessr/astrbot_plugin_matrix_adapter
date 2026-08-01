@@ -10,8 +10,8 @@ from pathlib import Path
 
 from astrbot.api import logger
 
-from ..storage_backend import MatrixFolderDataStore, build_folder_namespace
-from ..storage_paths import MatrixStoragePaths
+from ..storage.backend import MatrixFolderDataStore, build_folder_namespace
+from ..storage.paths import MatrixStoragePaths
 
 
 class SyncTokenStore:

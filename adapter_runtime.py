@@ -6,7 +6,7 @@ import asyncio
 
 from astrbot.api import logger
 
-from .storage_paths import MatrixStoragePaths
+from .storage.paths import MatrixStoragePaths
 from .utils.utils import mask_device_id
 
 

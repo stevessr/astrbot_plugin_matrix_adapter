@@ -23,7 +23,7 @@ from .plugin_config_defaults import (
     _normalize_token_list,
     _warn_config_coercion,
 )
-from .storage_backend import StorageBackendConfig, normalize_storage_backend
+from .storage.backend import StorageBackendConfig, normalize_storage_backend
 
 
 class PluginConfig(PluginConfigDefaultsMixin):

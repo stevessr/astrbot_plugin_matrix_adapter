@@ -9,7 +9,7 @@ from pathlib import Path
 
 from astrbot.api import logger
 
-from ..storage_backend import MatrixFolderDataStore, StorageBackendConfig
+from ..storage.backend import MatrixFolderDataStore, StorageBackendConfig
 
 JsonFilenameResolver = Callable[[str], str]
 

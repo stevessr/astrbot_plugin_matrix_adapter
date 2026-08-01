@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from ..plugin_config import get_plugin_config
-from ..storage_backend import (
+from ..storage.backend import (
     MatrixFolderDataStore,
     StorageBackendConfig,
     build_folder_namespace,
@@ -27,7 +27,7 @@ class MatrixAuthStore:
         if self.token_store_path:
             return self.token_store_path
 
-        from ..storage_paths import MatrixStoragePaths
+        from ..storage.paths import MatrixStoragePaths
 
         if self.user_id and self.config.homeserver:
             auth_path = MatrixStoragePaths.get_auth_file_path(
@@ -56,14 +56,14 @@ class MatrixAuthStore:
     def _get_user_storage_dir(self) -> Path | None:
         if not self.user_id or not self.config.homeserver:
             return None
-        from ..storage_paths import MatrixStoragePaths
+        from ..storage.paths import MatrixStoragePaths
 
         return MatrixStoragePaths.get_user_storage_dir(
             self.config.store_path, self.config.homeserver, self.user_id
         )
 
     def _discover_single_user_storage_dir(self) -> Path | None:
-        from ..storage_paths import MatrixStoragePaths
+        from ..storage.paths import MatrixStoragePaths
 
         base = Path(self.config.store_path)
         hs_dir = MatrixStoragePaths.sanitize_homeserver(self.config.homeserver)

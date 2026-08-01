@@ -7,7 +7,7 @@ from typing import Any
 
 from astrbot.api import logger
 
-from .storage_backend import MatrixFolderDataStore, build_folder_namespace
+from .storage.backend import MatrixFolderDataStore, build_folder_namespace
 
 
 class MatrixOutboundTracker:
