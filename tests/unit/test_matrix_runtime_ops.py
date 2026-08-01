@@ -17,7 +17,7 @@ class MatrixOutboundTrackerTests(unittest.IsolatedAsyncioTestCase):
         plugin_config = load_module("plugin_config")
         self.temp_dir = tempfile.TemporaryDirectory()
         plugin_config.init_plugin_config({"data_dir": self.temp_dir.name})
-        self.message_mixin = load_module("client.message_mixin")
+        self.message_mixin = load_module("client.message")
         self.outbound_tracker_mod = load_module("outbound_tracker")
         self.runtime_state_mod = load_module("runtime_state")
 

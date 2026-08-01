@@ -1242,7 +1242,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_message_paths_percent_encode_matrix_identifiers(self):
-        message_mixin = load_module("client.message_mixin")
+        message_mixin = load_module("client.message")
 
         class FakeClient(message_mixin.MessageMixin):
             def __init__(self):
@@ -1290,7 +1290,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_send_to_device_uses_request_and_percent_encodes_path(self):
-        message_mixin = load_module("client.message_mixin")
+        message_mixin = load_module("client.message")
 
         class FakeClient(message_mixin.MessageMixin):
             def __init__(self):
@@ -1326,7 +1326,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_send_to_device_keeps_device_message_map(self):
-        message_mixin = load_module("client.message_mixin")
+        message_mixin = load_module("client.message")
 
         class FakeClient(message_mixin.MessageMixin):
             def __init__(self):
@@ -1353,7 +1353,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_profile_tag_and_device_paths_percent_encode_segments(self):
-        profile_mixin = load_module("client.profile_mixin")
+        profile_mixin = load_module("client.profile")
         tags_mixin = load_module("client.tags_mixin")
         device_mixin = load_module("client.device_mixin")
 
@@ -2313,7 +2313,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_media_download_paths_percent_encode_mxc_segments(self):
-        media_mixin = load_module("client.media_mixin")
+        media_mixin = load_module("client.media")
 
         class FakeResponse:
             status = 404
@@ -2398,7 +2398,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_get_media_config_uses_unified_request(self):
-        media_mixin = load_module("client.media_mixin")
+        media_mixin = load_module("client.media")
 
         class FakeClient(media_mixin.MediaMixin):
             def __init__(self):
@@ -2426,7 +2426,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_thumbnail_retries_rate_limit_and_uses_memory_limit_reader(self):
-        media_mixin = load_module("client.media_mixin")
+        media_mixin = load_module("client.media")
 
         class FakeContent:
             def __init__(self, chunks):
@@ -5138,7 +5138,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.calls[0]["msg_type"], "m.notice")
 
     async def test_client_edit_message_infers_notice_from_new_content(self):
-        message_mixin = load_module("client.message_mixin")
+        message_mixin = load_module("client.message")
 
         class FakeClient(message_mixin.MessageMixin):
             async def send_room_event(self, **kwargs):
@@ -5836,7 +5836,7 @@ class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixDehydratedDeviceCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_restore_skips_dehydrated_when_local_recovery_key_is_valid(self):
-        ssss_module = load_module("e2ee.key_backup_ssss")
+        ssss_module = load_module("e2ee.ssss")
 
         expected_key = b"L" * 32
 
@@ -5869,8 +5869,8 @@ class MatrixDehydratedDeviceCompatTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_restore_supports_legacy_secret_name_without_default_key(self):
         constants = load_module("constants")
-        ssss_module = load_module("e2ee.key_backup_ssss")
-        crypto_module = load_module("e2ee.key_backup_crypto")
+        ssss_module = load_module("e2ee.ssss")
+        crypto_module = load_module("e2ee.backup.crypto_utils")
 
         expected_key = b"K" * 32
         encoded_key = crypto_module._encode_recovery_key(expected_key)
@@ -5915,7 +5915,7 @@ class MatrixDehydratedDeviceCompatTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_secret_storage_roundtrip_bootstraps_default_key(self):
         constants = load_module("constants")
-        ssss_module = load_module("e2ee.key_backup_ssss")
+        ssss_module = load_module("e2ee.ssss")
 
         if not getattr(ssss_module, "CRYPTO_AVAILABLE", False):
             self.skipTest("cryptography unavailable")
@@ -6245,7 +6245,7 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_restored_account_reuploads_device_keys_when_server_missing_device(
         self,
     ):
-        keys_module = load_module("e2ee.e2ee_manager_keys")
+        keys_module = load_module("e2ee.manager.keys")
 
         class DummyClient:
             def __init__(self):
@@ -6322,7 +6322,7 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_restored_account_skips_device_key_upload_when_server_has_device(
         self,
     ):
-        keys_module = load_module("e2ee.e2ee_manager_keys")
+        keys_module = load_module("e2ee.manager.keys")
 
         class DummyClient:
             def __init__(self):
@@ -6402,7 +6402,7 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_restored_account_reuploads_device_keys_when_server_keys_mismatch(
         self,
     ):
-        keys_module = load_module("e2ee.e2ee_manager_keys")
+        keys_module = load_module("e2ee.manager.keys")
 
         class DummyClient:
             def __init__(self):
@@ -6509,7 +6509,7 @@ class MatrixDeviceKeyCompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixRoomKeyShareCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_get_room_members_keeps_current_user_for_same_account_devices(self):
-        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+        sessions_module = load_module("e2ee.sessions")
 
         class DummyClient:
             async def get_room_state(self, room_id):
@@ -6552,7 +6552,7 @@ class MatrixRoomKeyShareCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_room_key_share_includes_own_other_devices_but_skips_current_device(
         self,
     ):
-        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+        sessions_module = load_module("e2ee.sessions")
 
         class DummyClient:
             def __init__(self):
@@ -6704,7 +6704,7 @@ class MatrixRoomKeyShareCompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_proactive_exchange_uses_default_interval_and_runs_immediately(self):
-        manager_module = load_module("e2ee.e2ee_manager")
+        manager_module = load_module("e2ee.manager.core")
         backend_config = types.SimpleNamespace(
             backend="json",
             pgsql_dsn="",
@@ -6759,7 +6759,7 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(checks, ["checked"])
 
     async def test_lazy_mode_shares_existing_key_on_device_list_change(self):
-        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+        sessions_module = load_module("e2ee.sessions")
 
         class DummyClient:
             async def query_keys(self, query):
@@ -6817,8 +6817,8 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manager.share_calls[0]["reason"], "device_list_changed")
 
     async def test_verified_device_request_creates_olm_session_and_forwards_key(self):
-        requests_module = load_module("e2ee.e2ee_manager_requests")
-        secrets_module = load_module("e2ee.e2ee_manager_secrets")
+        requests_module = load_module("e2ee.requests")
+        secrets_module = load_module("e2ee.secrets")
 
         class DummyClient:
             def __init__(self):
@@ -7011,8 +7011,8 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(withheld["code"], "m.unverified")
 
     async def test_room_key_requests_are_deduplicated_reused_and_cancelled(self):
-        requests_module = load_module("e2ee.e2ee_manager_requests")
-        decrypt_module = load_module("e2ee.e2ee_manager_decrypt")
+        requests_module = load_module("e2ee.requests")
+        decrypt_module = load_module("e2ee.decrypt")
 
         class DummyClient:
             def __init__(self):
@@ -7173,8 +7173,8 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_failed_room_key_import_keeps_request_pending(self):
-        requests_module = load_module("e2ee.e2ee_manager_requests")
-        decrypt_module = load_module("e2ee.e2ee_manager_decrypt")
+        requests_module = load_module("e2ee.requests")
+        decrypt_module = load_module("e2ee.decrypt")
 
         class DummyOlm:
             def add_megolm_inbound_session(self, *args):
@@ -7215,7 +7215,7 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_verification_request_caches_fingerprint_for_done_stage(self):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
 
         class DummyClient:
             async def query_keys(self, device_keys, timeout=10000):
@@ -7256,7 +7256,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_same_user_auto_accept_request_does_not_proactively_start_sas(self):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
         constants = load_module("constants")
 
         class DummyClient:
@@ -7324,7 +7324,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(verifier._sessions["txn123"].get("we_are_initiator"))
 
     async def test_handle_ready_prefers_self_verification_qr_when_peer_can_scan(self):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
         constants = load_module("constants")
 
         class DummyVerifier(flow_module.SASVerificationFlowMixin):
@@ -7385,7 +7385,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(verifier.cancel_calls, [])
 
     async def test_handle_accept_uses_cached_target_device_for_initiator(self):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
 
         class DummyVerifier(flow_module.SASVerificationFlowMixin):
             def __init__(self):
@@ -7418,7 +7418,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_prepare_self_verification_qr_builds_trusted_master_payload(self):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
         constants = load_module("constants")
 
         master_key = base64.b64encode(b"M" * 32).decode("ascii").rstrip("=")
@@ -7502,7 +7502,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session["qr_shared_secret"]), 16)
 
     async def test_handle_reciprocate_start_sends_done_after_matching_secret(self):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
         constants = load_module("constants")
 
         shared_secret = (
@@ -7554,7 +7554,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(verifier._sessions["txn123"].get("qr_confirmed"))
 
     async def test_handle_done_accepts_confirmed_qr_session(self):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
 
         class DummyDeviceStore:
             def __init__(self):
@@ -7605,7 +7605,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_handle_done_for_qr_scan_sends_done_back_before_marking_verified(
         self,
     ):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
 
         class DummyDeviceStore:
             def __init__(self):
@@ -7653,7 +7653,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_handle_done_for_qr_scan_publishes_trust_for_same_user_device(self):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
 
         class DummyDeviceStore:
             def __init__(self):
@@ -7705,7 +7705,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_handle_done_publishes_cross_signing_for_same_user_devices_we_started(
         self,
     ):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
 
         class DummyDeviceStore:
             def __init__(self):
@@ -7758,7 +7758,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_handle_done_does_not_publish_cross_signing_for_other_users(self):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
 
         class DummyDeviceStore:
             def __init__(self):
@@ -7799,7 +7799,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(verifier.e2ee_manager.calls, [])
 
     async def test_publish_trusted_device_requires_same_user_and_self_signing_key(self):
-        verification_module = load_module("e2ee.e2ee_manager_verification")
+        verification_module = load_module("e2ee.manager.verification")
 
         class DummyCrossSigning:
             def __init__(self, has_key=True, master_ok=True):
@@ -7854,7 +7854,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_publish_trusted_device_republishes_current_device_keys_for_peer_verification(
         self,
     ):
-        verification_module = load_module("e2ee.e2ee_manager_verification")
+        verification_module = load_module("e2ee.manager.verification")
 
         class DummyCrossSigning:
             def __init__(self):
@@ -7891,7 +7891,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_verify_untrusted_own_devices_does_not_treat_device_self_signature_as_owner_signed(
         self,
     ):
-        verification_module = load_module("e2ee.e2ee_manager_verification")
+        verification_module = load_module("e2ee.manager.verification")
 
         class DummyManager(verification_module.E2EEManagerVerificationMixin):
             def __init__(self):
@@ -7934,7 +7934,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_verify_untrusted_own_devices_does_not_auto_request_same_user_verification(
         self,
     ):
-        verification_module = load_module("e2ee.e2ee_manager_verification")
+        verification_module = load_module("e2ee.manager.verification")
 
         class DummyClient:
             async def query_keys(self, device_keys, timeout=10000):
@@ -7997,7 +7997,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_request_missing_secrets_after_verification_requests_cross_signing_and_backup(
         self,
     ):
-        verification_module = load_module("e2ee.e2ee_manager_verification")
+        verification_module = load_module("e2ee.manager.verification")
         constants = load_module("constants")
 
         class DummyCrossSigning:
@@ -8051,7 +8051,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_request_missing_secrets_after_verification_skips_when_backup_key_exists(
         self,
     ):
-        verification_module = load_module("e2ee.e2ee_manager_verification")
+        verification_module = load_module("e2ee.manager.verification")
 
         class DummyCrossSigning:
             async def _query_server_cross_signing_state(self):
@@ -8084,7 +8084,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_initiate_verification_for_device_includes_qr_show_and_reciprocate(
         self,
     ):
-        verification_module = load_module("e2ee.e2ee_manager_verification")
+        verification_module = load_module("e2ee.manager.verification")
         constants = load_module("constants")
 
         class DummyClient:
@@ -8132,7 +8132,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_initiate_verification_for_device_allows_sas_only_methods(self):
-        verification_module = load_module("e2ee.e2ee_manager_verification")
+        verification_module = load_module("e2ee.manager.verification")
         constants = load_module("constants")
 
         class DummyClient:
@@ -8278,7 +8278,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(verifier._sessions[txn_id]["qr_confirmed"])
 
     async def test_self_signing_secret_persists_and_retries_signing_own_device(self):
-        secrets_module = load_module("e2ee.e2ee_manager_secrets")
+        secrets_module = load_module("e2ee.secrets")
         constants = load_module("constants")
 
         class DummyCrossSigning:
@@ -8317,7 +8317,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manager.calls, [("@bot:example.org", "BOT123")])
 
     async def test_send_mac_for_other_user_includes_only_device_key(self):
-        send_module = load_module("e2ee.verification_send_device")
+        send_module = load_module("e2ee.verification.send_device")
 
         class DummyEstablishedSas:
             def calculate_mac(self, message, info):
@@ -8371,7 +8371,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_send_mac_for_same_user_when_peer_lacks_master_trust_includes_master_key(
         self,
     ):
-        send_module = load_module("e2ee.verification_send_device")
+        send_module = load_module("e2ee.verification.send_device")
 
         class DummyEstablishedSas:
             def calculate_mac(self, message, info):
@@ -8439,8 +8439,8 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_send_in_room_mac_for_same_user_when_peer_has_master_trust_excludes_master_key(
         self,
     ):
-        send_module = load_module("e2ee.verification_send_device")
-        room_module = load_module("e2ee.verification_send_room")
+        send_module = load_module("e2ee.verification.send_device")
+        room_module = load_module("e2ee.verification.send_room")
 
         class DummyEstablishedSas:
             def calculate_mac(self, message, info):
@@ -8510,7 +8510,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_handle_mac_sends_done_only_after_successful_verification(self):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
 
         class DummyEstablishedSas:
             def calculate_mac(self, message, info):
@@ -8569,7 +8569,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(verifier._sessions["txn123"].get("mac_verified"))
 
     async def test_handle_mac_cancels_on_mismatched_mac(self):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
 
         class DummyEstablishedSas:
             def calculate_mac(self, message, info):
@@ -8632,7 +8632,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(verifier._sessions["txn123"].get("done_sent", False))
 
     async def test_handle_mac_cancels_when_fingerprint_missing(self):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
 
         class DummyClient:
             async def query_keys(self, device_keys, timeout=10000):
@@ -8691,7 +8691,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_handle_done_ignores_cancelled_or_unverified_session(self):
-        flow_module = load_module("e2ee.verification_handlers_flow")
+        flow_module = load_module("e2ee.verification")
 
         class DummyDeviceStore:
             def __init__(self):
@@ -8754,8 +8754,8 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
                 f"{PACKAGE_NAME}.client.http_client",
                 MatrixAPIError=DummyMatrixAPIError,
             ),
-            f"{PACKAGE_NAME}.e2ee.key_backup_crypto": _make_module(
-                f"{PACKAGE_NAME}.e2ee.key_backup_crypto",
+            f"{PACKAGE_NAME}.e2ee.backup.crypto_utils": _make_module(
+                f"{PACKAGE_NAME}.e2ee.backup.crypto_utils",
                 CRYPTO_AVAILABLE=True,
             ),
             f"{PACKAGE_NAME}.e2ee.storage": _make_module(
@@ -8767,7 +8767,7 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
             ),
         }
 
-        module_name = f"{PACKAGE_NAME}.e2ee.cross_signing"
+        module_name = f"{PACKAGE_NAME}.e2ee.signing"
         sys.modules.pop(module_name, None)
         with mock.patch.dict(sys.modules, stubs):
             return importlib.import_module(module_name)
@@ -9764,7 +9764,7 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_initialize_prefers_configured_key_for_dehydrated_restore_before_ssss(
         self,
     ):
-        backup_module = load_module("e2ee.key_backup_backup")
+        backup_module = load_module("e2ee.backup")
 
         expected_key = b"D" * 32
 
@@ -9818,7 +9818,7 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(backup.calls, [("dehydrated", b"P" * 32)])
 
     def test_verify_recovery_key_rejects_non_32_byte_key(self):
-        backup_module = load_module("e2ee.key_backup_backup")
+        backup_module = load_module("e2ee.backup")
 
         class DummyBackup(backup_module.KeyBackupBackupMixin):
             def __init__(self):
@@ -9828,7 +9828,7 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(backup._verify_recovery_key(b"short", log_mismatch=False))
 
     def test_encrypt_backup_data_roundtrip(self):
-        crypto_module = load_module("e2ee.key_backup_crypto")
+        crypto_module = load_module("e2ee.backup.crypto_utils")
 
         if not getattr(crypto_module, "CRYPTO_AVAILABLE", False):
             self.skipTest("cryptography unavailable")
@@ -9859,8 +9859,8 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored, plaintext)
 
     async def test_restore_room_keys_supports_legacy_aes_gcm_backup_format(self):
-        backup_module = load_module("e2ee.key_backup_backup")
-        crypto_module = load_module("e2ee.key_backup_crypto")
+        backup_module = load_module("e2ee.backup")
+        crypto_module = load_module("e2ee.backup.crypto_utils")
         key_backup_client_mod = load_module("client.key_backup_mixin")
 
         class DummyClient(key_backup_client_mod.KeyBackupMixin):
@@ -9929,11 +9929,11 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_upload_single_key_uses_matrix_backup_v1_format_when_public_key_exists(
         self,
     ):
-        backup_module = load_module("e2ee.key_backup_backup")
+        backup_module = load_module("e2ee.backup")
         key_backup_client_mod = load_module("client.key_backup_mixin")
 
         if not getattr(
-            load_module("e2ee.key_backup_crypto"), "CRYPTO_AVAILABLE", False
+            load_module("e2ee.backup.crypto_utils"), "CRYPTO_AVAILABLE", False
         ):
             self.skipTest("cryptography unavailable")
 
@@ -9975,7 +9975,7 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(ephemeral), 32)
 
     async def test_upload_single_key_falls_back_to_bulk_endpoint_on_unrecognized(self):
-        backup_module = load_module("e2ee.key_backup_backup")
+        backup_module = load_module("e2ee.backup")
         key_backup_client_mod = load_module("client.key_backup_mixin")
 
         class DummyMatrixError(Exception):
@@ -10029,7 +10029,7 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_upload_single_key_does_not_fall_back_for_other_errors(self):
-        backup_module = load_module("e2ee.key_backup_backup")
+        backup_module = load_module("e2ee.backup")
         key_backup_client_mod = load_module("client.key_backup_mixin")
 
         class DummyMatrixError(Exception):
@@ -10214,7 +10214,7 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("user", storage.saved[-1][1]["tags"])
 
     async def test_room_keys_carry_msc4268_shared_history_flag(self):
-        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+        sessions_module = load_module("e2ee.sessions")
 
         class FakeClient:
             async def query_keys(self, query):
@@ -10271,7 +10271,7 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(manager._olm.room_key_content["shared_history"], True)
 
     async def test_history_visibility_shareability_change_rotates_megolm(self):
-        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+        sessions_module = load_module("e2ee.sessions")
 
         class FakeOlm:
             def __init__(self):
@@ -10313,7 +10313,7 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_membership_changes_respect_session_shareability(self):
-        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+        sessions_module = load_module("e2ee.sessions")
 
         class FakeOlm:
             def __init__(self):
@@ -10352,7 +10352,7 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manager._olm.discarded[-1], "!shared:example.org")
 
     async def test_received_shared_history_is_retained_for_backup(self):
-        decrypt_module = load_module("e2ee.e2ee_manager_decrypt")
+        decrypt_module = load_module("e2ee.decrypt")
 
         class FakeOlm:
             def __init__(self):
@@ -10426,7 +10426,7 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(manager._olm.imports[1][-3], False)
 
     def test_key_backup_plaintext_carries_shared_history(self):
-        backup_module = load_module("e2ee.key_backup_backup")
+        backup_module = load_module("e2ee.backup")
         session_key = base64.b64encode(b"\x02" + b"k" * 32).decode().rstrip("=")
         payload = backup_module.KeyBackupBackupMixin._build_backed_up_session_data(
             session_key,
@@ -10442,7 +10442,7 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored[0], 1)
 
     async def test_account_key_backup_preference_enables_headless_client(self):
-        manager_module = load_module("e2ee.e2ee_manager")
+        manager_module = load_module("e2ee.manager.core")
 
         class FakeClient:
             async def get_key_backup_preference(self):
@@ -10462,8 +10462,8 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(manager.enable_key_backup, True)
 
     async def test_sas_commitment_is_checked_by_start_sender_unpadded(self):
-        flow_module = load_module("e2ee.verification_handlers_flow")
-        utils_module = load_module("e2ee.verification_utils")
+        flow_module = load_module("e2ee.verification")
+        utils_module = load_module("e2ee.verification.crypto_utils")
 
         start_content = {
             "from_device": "BOT",
@@ -10511,7 +10511,7 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(invalid.cancelled[0][3], "m.mismatched_commitment")
 
     async def test_sas_start_keeps_exact_content_for_commitment_check(self):
-        send_module = load_module("e2ee.verification_send_device")
+        send_module = load_module("e2ee.verification.send_device")
 
         class DummySender(send_module.SASVerificationSendDeviceMixin):
             def __init__(self):
@@ -10532,8 +10532,8 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
     def test_real_device_and_one_time_key_signatures_are_verified(self):
-        keys_module = load_module("e2ee.olm_machine_keys")
-        types_module = load_module("e2ee.olm_machine_types")
+        keys_module = load_module("e2ee.olm.keys")
+        types_module = load_module("e2ee.olm.types")
 
         class KeyMachine(keys_module.OlmMachineKeysMixin):
             def __init__(self):
@@ -10582,9 +10582,9 @@ class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_incoming_olm_payload_is_bound_to_signed_device_keys(self):
-        decrypt_module = load_module("e2ee.e2ee_manager_decrypt")
-        keys_module = load_module("e2ee.olm_machine_keys")
-        types_module = load_module("e2ee.olm_machine_types")
+        decrypt_module = load_module("e2ee.decrypt")
+        keys_module = load_module("e2ee.olm.keys")
+        types_module = load_module("e2ee.olm.types")
 
         class KeyMachine(keys_module.OlmMachineKeysMixin):
             def __init__(self, user_id, device_id):
@@ -10653,8 +10653,8 @@ class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
         )
 
     def test_megolm_import_checks_session_id_and_only_accepts_lower_index(self):
-        megolm_module = load_module("e2ee.olm_machine_megolm")
-        types_module = load_module("e2ee.olm_machine_types")
+        megolm_module = load_module("e2ee.megolm")
+        types_module = load_module("e2ee.olm.types")
 
         class Store:
             def __init__(self):
@@ -10744,7 +10744,7 @@ class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(machine.store.inbound[session_id], best_pickle)
 
     async def test_megolm_room_sender_and_replay_binding(self):
-        decrypt_module = load_module("e2ee.e2ee_manager_decrypt")
+        decrypt_module = load_module("e2ee.decrypt")
         constants_module = load_module("e2ee.constants")
 
         class Store:
@@ -10816,7 +10816,7 @@ class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_megolm_rotation_policy_discards_expired_session(self):
-        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+        sessions_module = load_module("e2ee.sessions")
 
         class Store:
             def get_megolm_outbound_metadata(self, room_id):
@@ -10873,7 +10873,7 @@ class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(encrypted["session_id"], "new")
 
     async def test_fallback_key_is_replaced_from_required_sync_state(self):
-        keys_module = load_module("e2ee.e2ee_manager_keys")
+        keys_module = load_module("e2ee.manager.keys")
 
         class Client:
             def __init__(self):
@@ -10924,7 +10924,7 @@ class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(healthy.client.uploads, [])
 
     async def test_joined_history_visibility_excludes_invited_members(self):
-        sessions_module = load_module("e2ee.e2ee_manager_sessions")
+        sessions_module = load_module("e2ee.sessions")
 
         class Client:
             async def get_room_state(self, room_id):
@@ -10996,7 +10996,7 @@ class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_no_olm_notice_is_deduplicated_until_success(self):
-        requests_module = load_module("e2ee.e2ee_manager_requests")
+        requests_module = load_module("e2ee.requests")
 
         class Manager(requests_module.E2EEManagerRequestsMixin):
             def __init__(self):
@@ -11016,7 +11016,7 @@ class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(manager.sent), 2)
 
     async def test_olm_recovery_session_creation_stays_rate_limited_after_success(self):
-        requests_module = load_module("e2ee.e2ee_manager_requests")
+        requests_module = load_module("e2ee.requests")
 
         class Client:
             def __init__(self):
@@ -11152,7 +11152,7 @@ class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
         self.assertCountEqual(order[1:], ["device_lists", "key_counts"])
 
     async def test_secret_request_and_send_require_verified_own_devices(self):
-        secrets_module = load_module("e2ee.e2ee_manager_secrets")
+        secrets_module = load_module("e2ee.secrets")
 
         class Manager(secrets_module.E2EEManagerSecretsMixin):
             def __init__(self):
@@ -11228,7 +11228,7 @@ class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("incoming-request", manager.pending)
 
     async def test_direct_room_key_ignores_spoofed_content_sender_key(self):
-        decrypt_module = load_module("e2ee.e2ee_manager_decrypt")
+        decrypt_module = load_module("e2ee.decrypt")
 
         class Olm:
             def __init__(self):
@@ -11269,7 +11269,7 @@ class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(imported[5], [])
 
     async def test_forwarded_room_key_requires_verified_own_device(self):
-        decrypt_module = load_module("e2ee.e2ee_manager_decrypt")
+        decrypt_module = load_module("e2ee.decrypt")
 
         class Olm:
             def __init__(self):
