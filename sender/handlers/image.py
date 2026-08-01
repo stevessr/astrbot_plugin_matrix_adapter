@@ -8,6 +8,7 @@ from astrbot.api import logger
 from astrbot.api.message_components import Image
 
 from ...utils.utils import compress_image_if_needed
+from ..constants import M_MEDIA_KEY
 from .common import send_content
 
 try:
@@ -102,6 +103,13 @@ async def send_image(
         "filename": filename,
         "url": content_uri,
         "info": info,
+        # MSC3267 extensible media block
+        M_MEDIA_KEY: {
+            "mxc": content_uri,
+            "mimetype": content_type,
+            "size": uploaded_size,
+            **({"width": width, "height": height} if width and height else {}),
+        },
     }
 
     await send_content(

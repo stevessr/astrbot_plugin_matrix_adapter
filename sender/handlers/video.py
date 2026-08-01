@@ -7,6 +7,7 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.api.message_components import Video
 
+from ..constants import M_MEDIA_KEY
 from .common import send_content
 
 
@@ -85,6 +86,14 @@ async def send_video(
         "filename": filename,
         "url": content_uri,
         "info": info,
+        # MSC3267 extensible media block
+        M_MEDIA_KEY: {
+            "mxc": content_uri,
+            "mimetype": content_type,
+            "size": video_size,
+            **({"width": info["w"], "height": info["h"]} if "w" in info and "h" in info else {}),
+            **({"duration": info["duration"]} if "duration" in info else {}),
+        },
     }
 
     await send_content(

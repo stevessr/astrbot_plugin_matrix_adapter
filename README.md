@@ -774,6 +774,7 @@ await adapter.sender.client.delete_extended_profile_field("us.cloke.msc4175.tz")
 | MSC | 名称 | 角色 | 说明 |
 |-----|------|------|------|
 | MSC1767 | Extensible Events | 收/发 | 在音频/文本/投票内容中携带 `m.text` / `m.audio` / `m.file` |
+| MSC2403 | Knock Rooms | 收 | 同步 /sync 的 `knocked` 房间，成员事件处理 `knock` 状态 |
 | MSC2746 | VoIP (m.call.*) | 收 | 1 对 1 VoIP 通话事件（invite/answer/hangup/reject 等） |
 | MSC2746 | MatrixRTC (m.call.member) | 收 | 群组 Live 通话状态（成员加入/离开通话） |
 | MSC2697 | Dehydrated Devices | 收 | E2EE 脱水设备恢复 |
@@ -782,6 +783,7 @@ await adapter.sender.client.delete_extended_profile_field("us.cloke.msc4175.tz")
 | MSC2967 | OAuth2 Scopes | 发 | API/设备 scope（兼容 legacy） |
 | MSC3026 | Busy Presence | 发 | 支持 `busy` 忙绿状态，`set_presence("busy")` |
 | MSC3245 | Voice Messages | 发 | 发送音频时附加 `org.matrix.msc3245.voice` 标记 |
+| MSC3267 | Extensible Media (m.media) | 收/发 | 图片/视频/音频/文件消息携带 `m.media` 块，接收时回退解析 |
 | MSC3381 | Polls | 收/发 | 双向兼容稳定 `m.poll` 与 `org.matrix.msc3381.*` |
 | MSC3488 | Location | 收/发 | `m.location` 与 `org.matrix.msc3488.*` 双写/双解 |
 | MSC3489 / MSC3672 | Live Location Sharing | 收/发 | `m.beacon_info` + `m.beacon` |
@@ -795,6 +797,10 @@ await adapter.sender.client.delete_extended_profile_field("us.cloke.msc4175.tz")
 | MSC4144 | Per-Message Profiles | 发 | `send_with_per_message_profile` 单条消息携带 displayname/avatar |
 | MSC4145 | Edits in Threads | 发 | 编辑消息列内消息时保留 `m.thread` 关系，编辑聚合在消息列内 |
 | MSC4357 | Live Messages（流式编辑） | 发 | 见下方"流式输出"章节 |
+
+### MSC2246 Asynchronous Media Uploads
+
+`upload_file` / `upload_file_path` 现在兼容异步上传（MSC2246）：服务器返回 `upload_id` 时自动轮询 `GET /_matrix/client/v1/media/upload/{uploadId}` 直至 `status == "done"` 并返回 `content_uri`；仍兼容同步返回 `content_uri` 的服务器。
 
 ### MSC3874 Sync Filter
 

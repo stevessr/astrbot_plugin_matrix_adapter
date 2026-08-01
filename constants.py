@@ -38,6 +38,9 @@ MSC1767_VIDEO_KEY = "org.matrix.msc1767.video"
 MSC1767_AUDIO_KEY = "org.matrix.msc1767.audio"
 MSC1767_CAPTION_KEY = "org.matrix.msc1767.caption"
 
+# MSC3267 Extensible Media (m.media block inside message content)
+M_MEDIA_KEY = "m.media"
+
 # MSC3245 Voice Messages
 MSC3245_VOICE_KEY = "org.matrix.msc3245.voice"
 MSC3245_VOICE_V2_KEY = "org.matrix.msc3245.voice.v2"

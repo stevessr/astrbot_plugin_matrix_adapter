@@ -1,14 +1,26 @@
 from astrbot.api import logger
 from astrbot.api.message_components import File, Plain
 
+from ...constants import M_MEDIA_KEY
 from .text import append_formatted_text, should_append_caption
+
+
+def _extract_media_block(content: dict) -> dict:
+    media = content.get(M_MEDIA_KEY)
+    return media if isinstance(media, dict) else {}
 
 
 async def handle_file(receiver, chain, event, _: str):
     content = event.content or {}
-    mxc_url = content.get("url")
+    media_block = _extract_media_block(content)
+    mxc_url = content.get("url") or media_block.get("mxc")
     file_info = content.get("file")
     info_data = content.get("info") or {}
+    if not info_data and media_block:
+        info_data = {
+            "mimetype": media_block.get("mimetype"),
+            "size": media_block.get("size"),
+        }
     filename = content.get("filename") or content.get("body", "file.bin")
     mimetype = info_data.get("mimetype")
     size_bytes = receiver._extract_media_size(content)

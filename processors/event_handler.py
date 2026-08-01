@@ -44,3 +44,17 @@ class MatrixEventHandler:
                 f"Error handling room invite: {e}",
                 extra={"plugin_tag": "matrix", "short_levelname": "ERRO"},
             )
+
+    async def knock_callback(self, room_id, knock_data):
+        """Handle a knock-pending room from /sync (MSC2403).
+
+        The user has requested to join this room but approval is pending;
+        nothing to auto-join yet. Log the pending knock for visibility.
+        """
+        try:
+            logger.info(
+                f"Knock pending on room {room_id} (awaiting approval)",
+                extra={"plugin_tag": "matrix", "short_levelname": "INFO"},
+            )
+        except Exception as e:
+            logger.debug(f"Error logging knock event: {e}")

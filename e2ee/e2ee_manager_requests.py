@@ -488,7 +488,7 @@ class E2EEManagerRequestsMixin:
         Returns:
             Whether the requested session was forwarded successfully.
         """
-        if not self._olm or not self._initialized:
+        if not self._olm or not self._initialized or getattr(self, "_closing", False):
             logger.warning("未初始化，无法响应密钥请求")
             return False
         if not all(

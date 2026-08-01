@@ -71,6 +71,7 @@ class MatrixSyncManager:
         self.on_room_event: Callable | None = None
         self.on_to_device_event: Callable | None = None
         self.on_invite: Callable | None = None
+        self.on_knock: Callable | None = None
         self.on_leave: Callable | None = None
         self.on_ephemeral_event: Callable | None = None
         self.on_room_account_data: Callable | None = None
@@ -124,6 +125,15 @@ class MatrixSyncManager:
             callback: Async function(room_id, invite_data) -> None
         """
         self.on_invite = callback
+
+    def set_knock_callback(self, callback: Callable):
+        """
+        Set callback for knock events (MSC2403)
+
+        Args:
+            callback: Async function(room_id, knock_data) -> None
+        """
+        self.on_knock = callback
 
     def set_leave_callback(self, callback: Callable):
         """
@@ -438,6 +448,22 @@ class MatrixSyncManager:
                             self.on_leave,
                             room_id,
                             leave_data,
+                        )
+                    )
+                )
+
+        # Knock events (MSC2403) — rooms the user has knocked on
+        # where membership is still pending.
+        knocked_rooms = rooms.get("knocked", {})
+        for room_id, knock_data in knocked_rooms.items():
+            if self.on_knock:
+                room_tasks.append(
+                    asyncio.create_task(
+                        self._run_callback_with_guard(
+                            f"on_knock:{room_id}",
+                            self.on_knock,
+                            room_id,
+                            knock_data,
                         )
                     )
                 )

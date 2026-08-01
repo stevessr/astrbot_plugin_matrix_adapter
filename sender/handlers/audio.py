@@ -8,8 +8,10 @@ from astrbot.api import logger
 from astrbot.api.message_components import Record
 
 from ...constants import (
+    M_MEDIA_KEY,
     MSC1767_AUDIO_KEY,
     MSC3245_VOICE_KEY,
+    MSC3245_VOICE_V2_KEY,
 )
 from .common import send_content
 
@@ -81,6 +83,14 @@ async def send_audio(
         "url": content_uri,
         "info": info,
         MSC3245_VOICE_KEY: {},
+        MSC3245_VOICE_V2_KEY: {},
+        # MSC3267 extensible media block
+        M_MEDIA_KEY: {
+            "mxc": content_uri,
+            "mimetype": content_type,
+            "size": audio_size,
+            **({"duration": info["duration"]} if "duration" in info else {}),
+        },
     }
     if isinstance(info.get("duration"), int):
         content[MSC1767_AUDIO_KEY] = {"duration": info["duration"]}

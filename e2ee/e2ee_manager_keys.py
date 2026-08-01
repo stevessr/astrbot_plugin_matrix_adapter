@@ -198,7 +198,7 @@ class E2EEManagerKeysMixin:
         unused_fallback_key_types: list[str] | None = None,
     ) -> None:
         """Top up OTKs and replace a fallback key after the server uses it."""
-        if not self._olm or not self._initialized:
+        if not self._olm or not self._initialized or getattr(self, "_closing", False):
             return
 
         try:

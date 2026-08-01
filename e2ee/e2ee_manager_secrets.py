@@ -58,7 +58,12 @@ class E2EEManagerSecretsMixin:
         if not isinstance(content, dict):
             return
         action = content.get("action")
-        requesting_device_id = content.get("requesting_device_id", sender_device)
+        # Prefer the authenticated sender_device from to-device metadata over
+        # the unauthenticated requesting_device_id inside the event content
+        # (defense-in-depth; the device is still verified later).
+        requesting_device_id = sender_device or content.get(
+            "requesting_device_id", sender_device
+        )
         request_id = content.get("request_id", "")
         name = content.get("name", "")
 

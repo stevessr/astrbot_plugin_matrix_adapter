@@ -30,7 +30,7 @@ class E2EEManagerDecryptMixin:
         Returns:
             解密后的事件内容，或 None
         """
-        if not self._olm or not self._initialized:
+        if not self._olm or not self._initialized or getattr(self, "_closing", False):
             logger.warning("E2EE 未初始化，无法解密")
             return None
         if not isinstance(event_content, dict):
@@ -440,7 +440,7 @@ class E2EEManagerDecryptMixin:
             sender_user_id: Sender user ID authenticated by the Olm plaintext
             forwarded: Whether the decrypted event was m.forwarded_room_key.
         """
-        if not self._olm or not self._initialized:
+        if not self._olm or not self._initialized or getattr(self, "_closing", False):
             return
 
         if not isinstance(event, dict):

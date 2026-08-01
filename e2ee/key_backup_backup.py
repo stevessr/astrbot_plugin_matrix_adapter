@@ -380,7 +380,7 @@ class KeyBackupBackupMixin:
             return
 
         try:
-            session_ids = list(self.store._megolm_inbound)
+            session_ids = list(self.store.get_megolm_inbound_ids())
             if not session_ids:
                 logger.debug("没有可上传的会话密钥")
                 return

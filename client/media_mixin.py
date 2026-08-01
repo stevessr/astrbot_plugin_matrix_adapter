@@ -19,6 +19,7 @@ from astrbot.api import logger
 
 from ..constants import HTTP_ERROR_STATUS_400
 from ..plugin_config import get_plugin_config
+from .base import MatrixAPIError
 from .path_utils import quote_path_segment
 
 
@@ -31,6 +32,8 @@ class MediaMixin:
     _MEDIA_RETRY_BASE_DELAY_SECONDS = 0.75
     _MEDIA_RETRY_MAX_DELAY_SECONDS = 10.0
     _MEDIA_UPLOAD_SNIFF_BYTES = 4096
+    _MEDIA_UPLOAD_POLL_TIMEOUT_SECONDS = 120.0
+    _MEDIA_UPLOAD_POLL_INTERVAL_SECONDS = 0.5
     _MEDIA_DOWNLOAD_CONCURRENCY_DEFAULT = 4
     _MEDIA_DOWNLOAD_MAX_IN_MEMORY_BYTES_DEFAULT = 32 * 1024 * 1024
     _MEDIA_UPLOAD_DEFAULT_BLOCKED_EXTENSIONS = frozenset(
@@ -707,6 +710,53 @@ class MediaMixin:
         )
 
     @staticmethod
+    def _get_media_upload_status_endpoint(upload_id: str) -> str:
+        """Return the upload status endpoint for async upload (MSC2246)."""
+        return f"/_matrix/client/v1/media/upload/{quote_path_segment(upload_id)}"
+
+    async def _poll_upload_status(
+        self, upload_id: str
+    ) -> dict[str, Any]:
+        """
+        Poll the upload status endpoint until the async upload completes
+        (MSC2246 asynchronous media uploads).
+
+        Returns the final response dict containing ``content_uri``.
+        """
+        endpoint = self._get_media_upload_status_endpoint(upload_id)
+        deadline = time.monotonic() + self._MEDIA_UPLOAD_POLL_TIMEOUT_SECONDS
+        last_error: Exception | None = None
+
+        while time.monotonic() < deadline:
+            try:
+                response = await self._request("GET", endpoint)
+                status = response.get("status", "")
+                if status == "done":
+                    content_uri = response.get("content_uri", "")
+                    if content_uri:
+                        return response
+                    raise Exception(
+                        "Matrix async upload done but missing content_uri"
+                    )
+                if status in ("failed", "cancelled"):
+                    error_msg = response.get("error", "unknown error")
+                    raise Exception(
+                        f"Matrix async upload {status}: {error_msg}"
+                    )
+                # Still pending — wait and retry
+                await asyncio.sleep(self._MEDIA_UPLOAD_POLL_INTERVAL_SECONDS)
+            except MatrixAPIError:
+                raise
+            except Exception as e:
+                last_error = e
+                await asyncio.sleep(self._MEDIA_UPLOAD_POLL_INTERVAL_SECONDS)
+
+        raise Exception(
+            f"Matrix async upload timed out after "
+            f"{self._MEDIA_UPLOAD_POLL_TIMEOUT_SECONDS}s (upload_id={upload_id})"
+        )
+
+    @staticmethod
     def _should_try_next_media_upload_endpoint(
         status: int,
         endpoint_index: int,
@@ -892,14 +942,29 @@ class MediaMixin:
                                 raise last_error
 
                             content_uri = response_data.get("content_uri")
-                            if not isinstance(content_uri, str) or not content_uri:
+                            upload_id = response_data.get("upload_id")
+                            if isinstance(content_uri, str) and content_uri:
+                                # Synchronous upload — content_uri available immediately
+                                self._save_upload_cache_result(cache_key, content_uri)
+                                return response_data
+                            elif isinstance(upload_id, str) and upload_id:
+                                # Async upload (MSC2246) — poll until done
+                                poll_response = await self._poll_upload_status(upload_id)
+                                poll_uri = poll_response.get("content_uri", "")
+                                if isinstance(poll_uri, str) and poll_uri:
+                                    self._save_upload_cache_result(cache_key, poll_uri)
+                                    return poll_response
                                 last_error = Exception(
-                                    "Matrix media upload error: missing content_uri"
+                                    f"Matrix async upload finished but missing "
+                                    f"content_uri (upload_id={upload_id})"
                                 )
                                 raise last_error
-
-                            self._save_upload_cache_result(cache_key, content_uri)
-                            return response_data
+                            else:
+                                last_error = Exception(
+                                    "Matrix media upload error: "
+                                    "missing content_uri or upload_id in response"
+                                )
+                                raise last_error
 
                     except aiohttp.ClientError as e:
                         last_error = e
@@ -1042,23 +1107,45 @@ class MediaMixin:
                                 raise last_error
 
                             content_uri = response_data.get("content_uri")
-                            if not isinstance(content_uri, str) or not content_uri:
+                            upload_id = response_data.get("upload_id")
+                            if isinstance(content_uri, str) and content_uri:
+                                # Synchronous upload
+                                digest_cache_key = (
+                                    self._build_media_upload_cache_key_from_digest(
+                                        hashing_reader.hexdigest(),
+                                        safe_content_type,
+                                    )
+                                )
+                                self._save_upload_cache_result(path_cache_key, content_uri)
+                                self._save_upload_cache_result(
+                                    digest_cache_key, content_uri
+                                )
+                                return response_data
+                            elif isinstance(upload_id, str) and upload_id:
+                                # Async upload (MSC2246) — poll until done
+                                poll_response = await self._poll_upload_status(upload_id)
+                                poll_uri = poll_response.get("content_uri", "")
+                                if isinstance(poll_uri, str) and poll_uri:
+                                    self._save_upload_cache_result(path_cache_key, poll_uri)
+                                    self._save_upload_cache_result(
+                                        self._build_media_upload_cache_key_from_digest(
+                                            hashing_reader.hexdigest(),
+                                            safe_content_type,
+                                        ),
+                                        poll_uri,
+                                    )
+                                    return poll_response
                                 last_error = Exception(
-                                    "Matrix media upload error: missing content_uri"
+                                    f"Matrix async upload finished but missing "
+                                    f"content_uri (upload_id={upload_id})"
                                 )
                                 raise last_error
-
-                            digest_cache_key = (
-                                self._build_media_upload_cache_key_from_digest(
-                                    hashing_reader.hexdigest(),
-                                    safe_content_type,
+                            else:
+                                last_error = Exception(
+                                    "Matrix media upload error: "
+                                    "missing content_uri or upload_id in response"
                                 )
-                            )
-                            self._save_upload_cache_result(path_cache_key, content_uri)
-                            self._save_upload_cache_result(
-                                digest_cache_key, content_uri
-                            )
-                            return response_data
+                                raise last_error
 
                     except aiohttp.ClientError as e:
                         last_error = e

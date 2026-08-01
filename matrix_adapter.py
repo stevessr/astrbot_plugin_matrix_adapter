@@ -279,6 +279,9 @@ class MatrixPlatformAdapter(
         self.sync_manager.set_invite_callback(
             self.event_handler.invite_callback
         )  # Fixed: using event_handler method
+        self.sync_manager.set_knock_callback(
+            self.event_handler.knock_callback
+        )  # MSC2403 pending-knock visibility
         self.sync_manager.set_leave_callback(self.event_processor.process_leave_events)
         self.sync_manager.set_ephemeral_callback(
             self.event_processor.process_ephemeral_events

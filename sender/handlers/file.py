@@ -4,7 +4,7 @@ from pathlib import Path
 from astrbot.api import logger
 from astrbot.api.message_components import File
 
-from ...constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES
+from ...constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES, M_MEDIA_KEY
 from .common import send_content
 
 
@@ -47,6 +47,12 @@ async def send_file(
         "url": content_uri,
         "filename": filename,
         "info": {
+            "mimetype": content_type,
+            "size": file_size,
+        },
+        # MSC3267 extensible media block
+        M_MEDIA_KEY: {
+            "mxc": content_uri,
             "mimetype": content_type,
             "size": file_size,
         },

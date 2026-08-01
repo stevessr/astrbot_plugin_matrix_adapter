@@ -265,7 +265,7 @@ class E2EEManagerSessionsMixin:
         Args:
             changed_users: Matrix users whose device lists changed.
         """
-        if not self._olm or not self._initialized:
+        if not self._olm or not self._initialized or getattr(self, "_closing", False):
             return
 
         changed_set = {
@@ -399,7 +399,7 @@ class E2EEManagerSessionsMixin:
         force_members_refresh: bool = False,
     ) -> None:
         """Share an existing outbound Megolm session key to selected users."""
-        if not self._olm or not self._initialized:
+        if not self._olm or not self._initialized or getattr(self, "_closing", False):
             return
 
         session_info = self._olm.get_megolm_outbound_session_info(room_id)
@@ -437,7 +437,7 @@ class E2EEManagerSessionsMixin:
         Returns:
             加密后的 m.room.encrypted 内容，或 None
         """
-        if not self._olm or not self._initialized:
+        if not self._olm or not self._initialized or getattr(self, "_closing", False):
             logger.warning("E2EE 未初始化，无法加密")
             return None
 

@@ -6,7 +6,15 @@ import asyncio
 
 from astrbot.api import logger
 
-from ..constants import M_ROOM_LIVE_MESSAGING, MEMBERSHIP_BAN, MEMBERSHIP_INVITE, MEMBERSHIP_JOIN, MEMBERSHIP_LEAVE, MSC4357_LIVE_MESSAGING_STATE
+from ..constants import (
+    M_ROOM_LIVE_MESSAGING,
+    MEMBERSHIP_BAN,
+    MEMBERSHIP_INVITE,
+    MEMBERSHIP_JOIN,
+    MEMBERSHIP_KNOCK,
+    MEMBERSHIP_LEAVE,
+    MSC4357_LIVE_MESSAGING_STATE,
+)
 from ..room_member_store import MatrixRoomMemberStore
 from ..user_store import MatrixUserStore
 
@@ -199,6 +207,20 @@ class MatrixEventProcessorMembers:
                         await on_member_invited(room.room_id, user_id)
                 except Exception as e:
                     logger.debug(f"Post-invite room-key sharing failed: {e}")
+        elif membership == MEMBERSHIP_KNOCK:
+            # MSC2403: a user is requesting to join the room.
+            # Update profile info and persist; the knock system message
+            # is rendered by the receiver's room_state handler.
+            if display_name or avatar_url:
+                room.members[user_id] = display_name
+                if avatar_url:
+                    room.member_avatars[user_id] = avatar_url
+                await asyncio.to_thread(
+                    self.user_store.upsert, user_id, display_name, avatar_url
+                )
+            logger.info(
+                f"用户 {user_id} ({display_name}) 敲门房间 {room.room_id}"
+            )
         elif membership in (MEMBERSHIP_LEAVE, MEMBERSHIP_BAN):
             was_member = user_id in room.members
             room.members.pop(user_id, None)

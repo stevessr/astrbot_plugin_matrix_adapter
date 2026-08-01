@@ -1,14 +1,29 @@
 from astrbot.api import logger
 from astrbot.api.message_components import Image, Plain
 
+from ...constants import M_MEDIA_KEY
 from .text import append_formatted_text, should_append_caption
+
+
+def _extract_media_block(content: dict) -> dict:
+    media = content.get(M_MEDIA_KEY)
+    return media if isinstance(media, dict) else {}
 
 
 async def handle_image(receiver, chain, event, _: str):
     content = event.content or {}
+    media_block = _extract_media_block(content)
     info_data = content.get("info") or {}
     file_info = content.get("file")
-    mxc_url = content.get("url")
+    # MSC3267: fall back to the m.media block when legacy url/info are absent
+    mxc_url = content.get("url") or media_block.get("mxc")
+    if not info_data and media_block:
+        info_data = {
+            "mimetype": media_block.get("mimetype"),
+            "size": media_block.get("size"),
+            "w": media_block.get("width"),
+            "h": media_block.get("height"),
+        }
     filename = content.get("filename") or content.get("body", "image.jpg")
     mimetype = info_data.get("mimetype")
     size_bytes = receiver._extract_media_size(content)
