@@ -1,21 +1,15 @@
-"""
-Matrix 配置与初始化组件
-"""
-
-from pathlib import Path
+"""Matrix authentication, sync, and feature configuration state."""
 
 from astrbot.api import logger
 
-from ..auth.webhook import build_unified_webhook_url
-from ..constants import DEFAULT_TIMEOUT_MS_30000
-from ..events.call import CallEventConfig
-from ..storage.backend import StorageBackendConfig
-from ..storage.stores.device import MatrixDeviceManager
-from ..utils import parse_bool
-from .plugin import get_plugin_config
+from ...constants import DEFAULT_TIMEOUT_MS_30000
+from ...storage.stores.device import MatrixDeviceManager
+from ...utils import parse_bool
 
 
-class MatrixConfig:
+class MatrixConfigCoreMixin:
+    """Initialize the main Matrix configuration state."""
+
     _parse_bool = staticmethod(parse_bool)
 
     @staticmethod
@@ -221,111 +215,3 @@ class MatrixConfig:
         )
 
         self._validate()
-
-    @property
-    def device_id(self) -> str:
-        """获取设备 ID，如果不存在则自动生成"""
-        if self._device_id is None:
-            self._ensure_device_manager()
-            self._device_id = self._device_manager.get_or_create_device_id()
-        return self._device_id
-
-    def _ensure_device_manager(self):
-        """确保设备管理器已初始化"""
-        if self._device_manager is None and self.user_id:
-            # 使用插件级别配置的存储路径
-            self._device_manager = MatrixDeviceManager(
-                user_id=self.user_id,
-                homeserver=self.homeserver,
-                store_path=self.store_path,
-            )
-
-    def set_device_id(self, device_id: str):
-        """设置设备 ID"""
-        self._ensure_device_manager()
-        self._device_manager.set_device_id(device_id)
-        self._device_id = device_id
-
-    def reset_device_id(self) -> str:
-        """重置设备 ID（生成新的设备 ID）"""
-        self._ensure_device_manager()
-        self._device_id = self._device_manager.reset_device_id()
-        return self._device_id
-
-    @property
-    def store_path(self) -> Path:
-        return get_plugin_config().store_path
-
-    @property
-    def call_event_config(self) -> CallEventConfig:
-        """Live 通话事件呈现配置。"""
-        return CallEventConfig(
-            enabled=self.enable_call_events,
-            include_1to1=self.call_include_1to1,
-            include_group=self.call_include_group,
-            include_ringing=self.call_include_ringing,
-            suppress_signalling=self.call_suppress_signalling,
-        )
-
-    @property
-    def e2ee_store_path(self) -> Path:
-        return get_plugin_config().e2ee_store_path
-
-    @property
-    def media_cache_dir(self) -> Path:
-        return get_plugin_config().media_cache_dir
-
-    @property
-    def auth_callback_url(self) -> str:
-        if not self.webhook_uuid:
-            raise ValueError("webhook_uuid is required for Matrix auth callback")
-        return build_unified_webhook_url(self.webhook_uuid)
-
-    @property
-    def storage_backend_config(self) -> StorageBackendConfig:
-        return get_plugin_config().storage_backend_config
-
-    @property
-    def data_storage_backend(self) -> str:
-        return get_plugin_config().data_storage_backend
-
-    @property
-    def pgsql_dsn(self) -> str:
-        return get_plugin_config().pgsql_dsn
-
-    @property
-    def pgsql_schema(self) -> str:
-        return get_plugin_config().pgsql_schema
-
-    @property
-    def pgsql_table_prefix(self) -> str:
-        return get_plugin_config().pgsql_table_prefix
-
-    def _validate(self):
-        if not self.user_id and self.auth_method != "oauth2":
-            raise ValueError(
-                "matrix_user_id is required in configuration. Format: @username:homeserver.com"
-            )
-        if not self.homeserver:
-            raise ValueError(
-                "matrix_homeserver is required in configuration. Example: https://matrix.org"
-            )
-
-        valid_auth_methods = ["password", "token", "oauth2", "qr"]
-        if self.auth_method not in valid_auth_methods:
-            raise ValueError(
-                f"Invalid matrix_auth_method: {self.auth_method}. Must be one of: {', '.join(valid_auth_methods)}"
-            )
-
-        if self.auth_method == "password" and not self.password:
-            raise ValueError(
-                "matrix_password is required when matrix_auth_method='password'"
-            )
-
-        if self.auth_method == "token" and not self.access_token:
-            raise ValueError(
-                "matrix_access_token is required when matrix_auth_method='token'"
-            )
-
-        # OAuth2: client_id is now optional (can be auto-registered if server supports it)
-        # No strict validation needed for OAuth2 mode
