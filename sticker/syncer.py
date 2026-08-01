@@ -16,7 +16,7 @@ from astrbot.api import logger
 from ..constants import M_IMAGE_PACK_ROOMS, M_ROOM_IMAGE_PACK
 from .availability import StickerAvailabilityStore
 from .component import Sticker, StickerInfo
-from .storage import StickerStorage
+from .storage_lib import StickerStorage
 
 
 @dataclass

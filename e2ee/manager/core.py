@@ -10,25 +10,25 @@ from typing import Literal
 
 from astrbot.api import logger
 
-from ..plugin_config import get_plugin_config
-from ..storage_backend import build_folder_namespace
-from ..storage_paths import MatrixStoragePaths
-from ..utils.utils import mask_device_id
-from .constants import (
+from ...plugin_config import get_plugin_config
+from ...storage_backend import build_folder_namespace
+from ...storage_paths import MatrixStoragePaths
+from ...utils.utils import mask_device_id
+from ..constants import (
     DEFAULT_OLM_RECOVERY_RETRY_SEC,
     DEFAULT_PROACTIVE_KEY_SHARE_INTERVAL_SEC,
     DEFAULT_ROOM_KEY_REQUEST_EXPIRY_SEC,
     DEFAULT_ROOM_KEY_REQUEST_RETRY_SEC,
     DEFAULT_ROOM_MEMBER_CACHE_TTL_SEC,
 )
-from .crypto_store import CryptoStore
-from .e2ee_manager_decrypt import E2EEManagerDecryptMixin
-from .e2ee_manager_keys import E2EEManagerKeysMixin
-from .e2ee_manager_requests import E2EEManagerRequestsMixin
-from .e2ee_manager_secrets import E2EEManagerSecretsMixin
-from .e2ee_manager_sessions import E2EEManagerSessionsMixin
-from .e2ee_manager_verification import E2EEManagerVerificationMixin
-from .olm_machine import VODOZEMAC_AVAILABLE, OlmMachine
+from ..decrypt import E2EEManagerDecryptMixin
+from ..olm_machine import VODOZEMAC_AVAILABLE, OlmMachine
+from ..requests import E2EEManagerRequestsMixin
+from ..secrets import E2EEManagerSecretsMixin
+from ..sessions import E2EEManagerSessionsMixin
+from ..store import CryptoStore
+from .keys import E2EEManagerKeysMixin
+from .verification import E2EEManagerVerificationMixin
 
 
 class E2EEManager(
@@ -357,7 +357,7 @@ class E2EEManager(
             await self._upload_device_keys()
 
             # 初始化 SAS 验证
-            from .verification import SASVerification
+            from ..verification import SASVerification
 
             self._verification = SASVerification(
                 client=self.client,
@@ -375,8 +375,8 @@ class E2EEManager(
             logger.info(f"SAS 验证已初始化 (mode: {self.auto_verify_mode})")
 
             # 初始化密钥备份和交叉签名
-            from .cross_signing import CrossSigning
-            from .key_backup import KeyBackup
+            from ..key_backup import KeyBackup
+            from ..signing import CrossSigning
 
             self._key_backup = KeyBackup(
                 self.client,

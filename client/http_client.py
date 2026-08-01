@@ -23,10 +23,10 @@ from .delayed_events_mixin import DelayedEventsMixin
 from .device_mixin import DeviceMixin
 from .e2ee_mixin import E2EEMixin
 from .key_backup_mixin import KeyBackupMixin
-from .media_mixin import MediaMixin
-from .message_mixin import MessageMixin
+from .media import MediaMixin
+from .message import MessageMixin
 from .message_override_mixin import MessageOverrideMixin
-from .profile_mixin import ProfileMixin
+from .profile import ProfileMixin
 from .push_mixin import PushMixin
 from .room_mixin import RoomMixin
 from .tags_mixin import TagsMixin

@@ -6,7 +6,7 @@ Matrix Sticker 模块
 
 from .availability import StickerAvailabilityStore
 from .component import Sticker, StickerInfo
-from .storage import StickerStorage
+from .storage_lib import StickerStorage
 from .syncer import StickerPackInfo, StickerPackSyncer
 
 __all__ = [

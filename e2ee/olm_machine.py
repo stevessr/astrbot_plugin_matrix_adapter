@@ -5,10 +5,9 @@ Olm Machine - Olm/Megolm 加密操作封装
 注意：此模块需要安装 vodozemac 库。
 """
 
-from .crypto_store import CryptoStore
+from .megolm import OlmMachineMegolmMixin
 from .olm_machine_account import OlmMachineAccountMixin
 from .olm_machine_keys import OlmMachineKeysMixin
-from .olm_machine_megolm import OlmMachineMegolmMixin
 from .olm_machine_olm import OlmMachineOlmMixin
 from .olm_machine_types import (
     VODOZEMAC_AVAILABLE,
@@ -17,6 +16,7 @@ from .olm_machine_types import (
     InboundGroupSession,
     Session,
 )
+from .store import CryptoStore
 
 
 class OlmMachine(

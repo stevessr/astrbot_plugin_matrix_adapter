@@ -15,7 +15,7 @@ from ..key_backup_crypto import (
     _aes_encrypt,
     _encrypt_backup_data,
 )
-from ..olm_machine_megolm import _convert_session_key_v2_to_v1
+from ..megolm.inbound import _convert_session_key_v2_to_v1
 
 
 class KeyBackupBackupCryptoMixin:

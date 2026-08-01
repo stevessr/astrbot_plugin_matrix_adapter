@@ -20,10 +20,9 @@ from ..constants import (
 )
 from ..plugin_config import get_plugin_config
 from ..utils import parse_bool
-from .event_processor_members import MatrixEventProcessorMembers
-from .event_processor_msg import MatrixEventProcessorMessagesMixin
-from .event_processor_room import MatrixEventProcessorRoomDispatchMixin
-from .event_processor_states import MatrixEventProcessorStatesMixin
+from .event_lib.msg import MatrixEventProcessorMessagesMixin
+from .event_lib.room import MatrixEventProcessorRoomDispatchMixin
+from .event_lib.states import MatrixEventProcessorStatesMixin
 from .event_processor_streams import MatrixEventProcessorStreams
 
 if TYPE_CHECKING:

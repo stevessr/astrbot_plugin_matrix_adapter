@@ -3,7 +3,6 @@ Matrix authentication flows.
 """
 
 
-
 class MatrixAuthLogin:
     """Mixin providing login/refresh flows."""
 

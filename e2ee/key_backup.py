@@ -10,9 +10,9 @@ from pathlib import Path
 from astrbot.api import logger
 
 from ..constants import CRYPTO_KEY_SIZE_32, HKDF_MEGOLM_BACKUP_INFO
-from .key_backup_backup import KeyBackupBackupMixin
+from .backup import KeyBackupBackupMixin
 from .key_backup_crypto import _compute_hkdf, _decode_recovery_key
-from .key_backup_ssss import KeyBackupSSSSMixin
+from .ssss import KeyBackupSSSSMixin
 
 
 class KeyBackup(KeyBackupSSSSMixin, KeyBackupBackupMixin):
