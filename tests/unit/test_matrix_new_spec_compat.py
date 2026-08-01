@@ -301,6 +301,7 @@ def _install_aiohttp_stub() -> None:
 
 def _install_package_stubs() -> None:
     import importlib.util  # needed for spec_from_file_location
+
     package_paths = {
         PACKAGE_NAME: REPO_ROOT,
         f"{PACKAGE_NAME}.auth": REPO_ROOT / "auth",
@@ -327,7 +328,9 @@ def _install_package_stubs() -> None:
         f"{PACKAGE_NAME}.e2ee.secrets": REPO_ROOT / "e2ee" / "secrets",
         f"{PACKAGE_NAME}.e2ee.signing": REPO_ROOT / "e2ee" / "signing",
         f"{PACKAGE_NAME}.e2ee.requests": REPO_ROOT / "e2ee" / "requests",
-        f"{PACKAGE_NAME}.receiver.receiver_lib": REPO_ROOT / "receiver" / "receiver_lib",
+        f"{PACKAGE_NAME}.receiver.receiver_lib": REPO_ROOT
+        / "receiver"
+        / "receiver_lib",
         f"{PACKAGE_NAME}.sync.sync_lib": REPO_ROOT / "sync" / "sync_lib",
         f"{PACKAGE_NAME}.sticker.storage_lib": REPO_ROOT / "sticker" / "storage_lib",
         f"{PACKAGE_NAME}.processors.event_lib": REPO_ROOT / "processors" / "event_lib",
@@ -355,9 +358,7 @@ def _install_package_stubs() -> None:
     )
 
     split_package_names = {
-        name
-        for name in package_paths
-        if name.endswith(split_package_suffixes)
+        name for name in package_paths if name.endswith(split_package_suffixes)
     }
 
     for name, path in package_paths.items():
@@ -365,7 +366,6 @@ def _install_package_stubs() -> None:
             continue
         module = sys.modules.setdefault(name, types.ModuleType(name))
         module.__path__ = [str(path)]
-
 
     # Pre-load root-level modules imported via relative imports by
     # submodules under test. The root package stub shadows the real
@@ -800,8 +800,8 @@ class MatrixTextMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         _install_aiohttp_stub()
         _install_package_stubs()
         sys.modules.pop(f"{PACKAGE_NAME}.receiver.handlers", None)
-        sys.modules.pop(f"{PACKAGE_NAME}.receiver.receiver", None)
-        receiver_module = importlib.import_module(f"{PACKAGE_NAME}.receiver.receiver")
+        sys.modules.pop(f"{PACKAGE_NAME}.receiver.core", None)
+        receiver_module = importlib.import_module(f"{PACKAGE_NAME}.receiver.core")
         event_types = load_module("client.event_types")
         body = "> 你能看到这句话吗\n\n@[toushou.little.bot] "
         plugin_config_stub = types.SimpleNamespace(
@@ -856,7 +856,7 @@ class MatrixTextMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with mock.patch(
-            f"{PACKAGE_NAME}.receiver.receiver.get_plugin_config",
+            f"{PACKAGE_NAME}.receiver.core.get_plugin_config",
             return_value=plugin_config_stub,
         ):
             receiver = receiver_module.MatrixReceiver(
@@ -1109,7 +1109,7 @@ class MatrixLocationCompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixLiveLocationCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_beacon_info_sender_uses_room_state_event(self):
-        sender_module = load_module("sender.sender")
+        sender_module = load_module("sender.core")
 
         calls = []
 
@@ -1155,7 +1155,7 @@ class MatrixLiveLocationCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_beacon_sender_references_beacon_info_event(self):
-        sender_module = load_module("sender.sender")
+        sender_module = load_module("sender.core")
 
         calls = []
 
@@ -1553,7 +1553,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.calls[1][2], {"pinned": ["$event/1:example.org"]})
 
     async def test_sender_pinned_message_helpers_delegate_to_client(self):
-        sender_module = load_module("sender.sender")
+        sender_module = load_module("sender.core")
 
         class FakeClient:
             def __init__(self):
@@ -1605,7 +1605,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_sender_message_management_helpers_delegate_to_client(self):
-        sender_module = load_module("sender.sender")
+        sender_module = load_module("sender.core")
 
         class FakeClient:
             def __init__(self):
@@ -1703,7 +1703,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_sender_room_lifecycle_and_query_helpers_delegate_to_client(self):
-        sender_module = load_module("sender.sender")
+        sender_module = load_module("sender.core")
 
         class FakeClient:
             def __init__(self):
@@ -1955,7 +1955,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_sender_room_member_management_helpers_delegate_to_client(self):
-        sender_module = load_module("sender.sender")
+        sender_module = load_module("sender.core")
 
         class FakeClient:
             def __init__(self):
@@ -2074,7 +2074,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_sender_room_state_helpers_delegate_to_client(self):
-        sender_module = load_module("sender.sender")
+        sender_module = load_module("sender.core")
 
         class FakeClient:
             def __init__(self):
@@ -2513,7 +2513,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_matrix_sender_uses_configured_notice_by_default(self):
-        sender_module = load_module("sender.sender")
+        sender_module = load_module("sender.core")
         message_chain = sys.modules["astrbot.api.event"].MessageChain()
         captured = []
 
@@ -2585,7 +2585,7 @@ class MatrixSenderHtmlCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(client.content["msgtype"], "m.notice")
 
     async def test_per_message_profile_follows_notice_mode_by_default(self):
-        sender_module = load_module("sender.sender")
+        sender_module = load_module("sender.core")
 
         class FakeClient:
             async def send_message(self, **kwargs):
@@ -2873,7 +2873,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_event_processor_accepts_top_level_location_events(self):
         location_handler = load_module("receiver.handlers.location")
 
-        module_name = f"{PACKAGE_NAME}.processors.event_processor"
+        module_name = f"{PACKAGE_NAME}.processors.core"
         sys.modules.pop(module_name, None)
 
         def _make_module(name: str, **attrs):
@@ -2950,12 +2950,12 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                     storage_backend_config=None
                 ),
             ),
-            f"{PACKAGE_NAME}.processors.event_processor_members": _make_module(
-                f"{PACKAGE_NAME}.processors.event_processor_members",
+            f"{PACKAGE_NAME}.processors.event_lib.members": _make_module(
+                f"{PACKAGE_NAME}.processors.event_lib.members",
                 MatrixEventProcessorMembers=_MatrixEventProcessorMembers,
             ),
-            f"{PACKAGE_NAME}.processors.event_processor_streams": _make_module(
-                f"{PACKAGE_NAME}.processors.event_processor_streams",
+            f"{PACKAGE_NAME}.processors.event_lib.streams": _make_module(
+                f"{PACKAGE_NAME}.processors.event_lib.streams",
                 MatrixEventProcessorStreams=_MatrixEventProcessorStreams,
             ),
             f"{PACKAGE_NAME}.utils": _make_module(
@@ -3017,7 +3017,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                     )
 
     async def test_read_receipt_follows_plugin_switch(self):
-        module_name = f"{PACKAGE_NAME}.processors.event_processor"
+        module_name = f"{PACKAGE_NAME}.processors.core"
 
         def _make_module(name: str, **attrs):
             module = types.ModuleType(name)
@@ -3043,12 +3043,12 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                             send_read_receipt=enabled,
                         ),
                     ),
-                    f"{PACKAGE_NAME}.processors.event_processor_members": _make_module(
-                        f"{PACKAGE_NAME}.processors.event_processor_members",
+                    f"{PACKAGE_NAME}.processors.event_lib.members": _make_module(
+                        f"{PACKAGE_NAME}.processors.event_lib.members",
                         MatrixEventProcessorMembers=_MatrixEventProcessorMembers,
                     ),
-                    f"{PACKAGE_NAME}.processors.event_processor_streams": _make_module(
-                        f"{PACKAGE_NAME}.processors.event_processor_streams",
+                    f"{PACKAGE_NAME}.processors.event_lib.streams": _make_module(
+                        f"{PACKAGE_NAME}.processors.event_lib.streams",
                         MatrixEventProcessorStreams=_MatrixEventProcessorStreams,
                     ),
                     f"{PACKAGE_NAME}.utils": _make_module(
@@ -3063,7 +3063,9 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                     receipts = []
 
                     class FakeClient:
-                        async def send_read_receipt(self, room_id, event_id, thread_id=None):
+                        async def send_read_receipt(
+                            self, room_id, event_id, thread_id=None
+                        ):
                             receipts.append((room_id, event_id))
                             return {}
 
@@ -3101,7 +3103,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(receipts, [])
 
     async def test_event_processor_handles_encrypted_secret_request(self):
-        module_name = f"{PACKAGE_NAME}.processors.event_processor"
+        module_name = f"{PACKAGE_NAME}.processors.core"
         sys.modules.pop(module_name, None)
 
         def _make_module(name: str, **attrs):
@@ -3126,12 +3128,12 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
                     storage_backend_config=None
                 ),
             ),
-            f"{PACKAGE_NAME}.processors.event_processor_members": _make_module(
-                f"{PACKAGE_NAME}.processors.event_processor_members",
+            f"{PACKAGE_NAME}.processors.event_lib.members": _make_module(
+                f"{PACKAGE_NAME}.processors.event_lib.members",
                 MatrixEventProcessorMembers=_MatrixEventProcessorMembers,
             ),
-            f"{PACKAGE_NAME}.processors.event_processor_streams": _make_module(
-                f"{PACKAGE_NAME}.processors.event_processor_streams",
+            f"{PACKAGE_NAME}.processors.event_lib.streams": _make_module(
+                f"{PACKAGE_NAME}.processors.event_lib.streams",
                 MatrixEventProcessorStreams=_MatrixEventProcessorStreams,
             ),
             f"{PACKAGE_NAME}.utils": _make_module(
@@ -3197,7 +3199,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_event_processor_reparses_decrypted_edits(self):
-        event_processor = load_module("processors.event_processor")
+        event_processor = load_module("processors.core")
 
         class DummyE2EEManager:
             device_id = "BOT123"
@@ -3263,7 +3265,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_event_processor_forwards_visible_room_state_events(self):
-        module_name = f"{PACKAGE_NAME}.processors.event_processor"
+        module_name = f"{PACKAGE_NAME}.processors.core"
         sys.modules.pop(module_name, None)
 
         def _make_module(name: str, **attrs):
@@ -3360,12 +3362,12 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                     storage_backend_config=None
                 ),
             ),
-            f"{PACKAGE_NAME}.processors.event_processor_members": _make_module(
-                f"{PACKAGE_NAME}.processors.event_processor_members",
+            f"{PACKAGE_NAME}.processors.event_lib.members": _make_module(
+                f"{PACKAGE_NAME}.processors.event_lib.members",
                 MatrixEventProcessorMembers=_MatrixEventProcessorMembers,
             ),
-            f"{PACKAGE_NAME}.processors.event_processor_streams": _make_module(
-                f"{PACKAGE_NAME}.processors.event_processor_streams",
+            f"{PACKAGE_NAME}.processors.event_lib.streams": _make_module(
+                f"{PACKAGE_NAME}.processors.event_lib.streams",
                 MatrixEventProcessorStreams=_MatrixEventProcessorStreams,
             ),
             f"{PACKAGE_NAME}.utils": _make_module(
@@ -3622,7 +3624,7 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(chain.chain[0].text, expected)
 
     async def test_event_processor_applies_live_messaging_state_events(self):
-        module_name = f"{PACKAGE_NAME}.processors.event_processor"
+        module_name = f"{PACKAGE_NAME}.processors.core"
         sys.modules.pop(module_name, None)
 
         def _make_module(name: str, **attrs):
@@ -3699,12 +3701,12 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                     storage_backend_config=None
                 ),
             ),
-            f"{PACKAGE_NAME}.processors.event_processor_members": _make_module(
-                f"{PACKAGE_NAME}.processors.event_processor_members",
+            f"{PACKAGE_NAME}.processors.event_lib.members": _make_module(
+                f"{PACKAGE_NAME}.processors.event_lib.members",
                 MatrixEventProcessorMembers=_MatrixEventProcessorMembers,
             ),
-            f"{PACKAGE_NAME}.processors.event_processor_streams": _make_module(
-                f"{PACKAGE_NAME}.processors.event_processor_streams",
+            f"{PACKAGE_NAME}.processors.event_lib.streams": _make_module(
+                f"{PACKAGE_NAME}.processors.event_lib.streams",
                 MatrixEventProcessorStreams=_MatrixEventProcessorStreams,
             ),
             f"{PACKAGE_NAME}.utils": _make_module(
@@ -3759,7 +3761,7 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_process_room_events_applies_initial_unstable_live_messaging_state(
         self,
     ):
-        module_name = f"{PACKAGE_NAME}.processors.event_processor"
+        module_name = f"{PACKAGE_NAME}.processors.core"
         sys.modules.pop(module_name, None)
 
         def _make_module(name: str, **attrs):
@@ -3836,12 +3838,12 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                     storage_backend_config=None
                 ),
             ),
-            f"{PACKAGE_NAME}.processors.event_processor_members": _make_module(
-                f"{PACKAGE_NAME}.processors.event_processor_members",
+            f"{PACKAGE_NAME}.processors.event_lib.members": _make_module(
+                f"{PACKAGE_NAME}.processors.event_lib.members",
                 MatrixEventProcessorMembers=_MatrixEventProcessorMembers,
             ),
-            f"{PACKAGE_NAME}.processors.event_processor_streams": _make_module(
-                f"{PACKAGE_NAME}.processors.event_processor_streams",
+            f"{PACKAGE_NAME}.processors.event_lib.streams": _make_module(
+                f"{PACKAGE_NAME}.processors.event_lib.streams",
                 MatrixEventProcessorStreams=_MatrixEventProcessorStreams,
             ),
             f"{PACKAGE_NAME}.utils": _make_module(
@@ -3922,8 +3924,8 @@ class MatrixMemberEventCompatTests(unittest.IsolatedAsyncioTestCase):
         _install_aiohttp_stub()
         _install_package_stubs()
         sys.modules.pop(f"{PACKAGE_NAME}.receiver.handlers", None)
-        sys.modules.pop(f"{PACKAGE_NAME}.receiver.receiver", None)
-        receiver_module = importlib.import_module(f"{PACKAGE_NAME}.receiver.receiver")
+        sys.modules.pop(f"{PACKAGE_NAME}.receiver.core", None)
+        receiver_module = importlib.import_module(f"{PACKAGE_NAME}.receiver.core")
         event_types = load_module("client.event_types")
 
         plugin_config_stub = types.SimpleNamespace(
@@ -3935,7 +3937,7 @@ class MatrixMemberEventCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with mock.patch(
-            f"{PACKAGE_NAME}.receiver.receiver.get_plugin_config",
+            f"{PACKAGE_NAME}.receiver.core.get_plugin_config",
             return_value=plugin_config_stub,
         ):
             receiver = receiver_module.MatrixReceiver(
@@ -3999,7 +4001,7 @@ class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_event_processor_forwards_room_redactions(self):
         redaction_handler = load_module("receiver.handlers.redaction")
 
-        module_name = f"{PACKAGE_NAME}.processors.event_processor"
+        module_name = f"{PACKAGE_NAME}.processors.core"
         sys.modules.pop(module_name, None)
 
         def _make_module(name: str, **attrs):
@@ -4076,12 +4078,12 @@ class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
                     storage_backend_config=None
                 ),
             ),
-            f"{PACKAGE_NAME}.processors.event_processor_members": _make_module(
-                f"{PACKAGE_NAME}.processors.event_processor_members",
+            f"{PACKAGE_NAME}.processors.event_lib.members": _make_module(
+                f"{PACKAGE_NAME}.processors.event_lib.members",
                 MatrixEventProcessorMembers=_MatrixEventProcessorMembers,
             ),
-            f"{PACKAGE_NAME}.processors.event_processor_streams": _make_module(
-                f"{PACKAGE_NAME}.processors.event_processor_streams",
+            f"{PACKAGE_NAME}.processors.event_lib.streams": _make_module(
+                f"{PACKAGE_NAME}.processors.event_lib.streams",
                 MatrixEventProcessorStreams=_MatrixEventProcessorStreams,
             ),
             f"{PACKAGE_NAME}.utils": _make_module(
@@ -4137,8 +4139,8 @@ class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
         _install_aiohttp_stub()
         _install_package_stubs()
         sys.modules.pop(f"{PACKAGE_NAME}.receiver.handlers", None)
-        sys.modules.pop(f"{PACKAGE_NAME}.receiver.receiver", None)
-        receiver_module = importlib.import_module(f"{PACKAGE_NAME}.receiver.receiver")
+        sys.modules.pop(f"{PACKAGE_NAME}.receiver.core", None)
+        receiver_module = importlib.import_module(f"{PACKAGE_NAME}.receiver.core")
         event_types = load_module("client.event_types")
 
         plugin_config_stub = types.SimpleNamespace(
@@ -4149,7 +4151,7 @@ class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with mock.patch(
-            f"{PACKAGE_NAME}.receiver.receiver.get_plugin_config",
+            f"{PACKAGE_NAME}.receiver.core.get_plugin_config",
             return_value=plugin_config_stub,
         ):
             receiver = receiver_module.MatrixReceiver(
@@ -4286,12 +4288,12 @@ class MatrixVoiceCompatTests(unittest.IsolatedAsyncioTestCase):
 class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
     def _load_matrix_event_for_test(self):
         """Load MatrixPlatformEvent without importing the full sender graph."""
-        module_name = f"{PACKAGE_NAME}.matrix_event"
+        module_name = f"{PACKAGE_NAME}.matrix_event.core"
+        sys.modules.pop(f"{PACKAGE_NAME}.matrix_event", None)
         sys.modules.pop(module_name, None)
-        # Also pop the stream mixin submodule so its lazy _matrix_event_module
-        # reference (from from . import matrix_event) resolves to the fresh
-        # matrix_event module rather than a stale one from a prior test.
-        sys.modules.pop(f"{PACKAGE_NAME}.matrix_event_stream", None)
+        # Also pop the stream mixin submodule so its lazy core reference
+        # resolves to the fresh event module rather than a stale one.
+        sys.modules.pop(f"{PACKAGE_NAME}.matrix_event.stream", None)
 
         event_send_stub = types.ModuleType(f"{PACKAGE_NAME}.matrix_event_send")
 
@@ -4308,7 +4310,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             sys.modules,
             {f"{PACKAGE_NAME}.matrix_event_send": event_send_stub},
         ):
-            module = load_module("matrix_event")
+            module = load_module("matrix_event.core")
 
         base_event = sys.modules["astrbot.api.event"].AstrMessageEvent
 
@@ -4871,9 +4873,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
     def _metrics_patch():
         metric_stub = types.ModuleType("astrbot.core.utils.metrics")
         metric_stub.Metric = types.SimpleNamespace(upload=mock.AsyncMock())
-        return mock.patch.dict(
-            sys.modules, {"astrbot.core.utils.metrics": metric_stub}
-        )
+        return mock.patch.dict(sys.modules, {"astrbot.core.utils.metrics": metric_stub})
 
     async def test_streaming_sends_and_clears_typing_when_enabled(self):
         matrix_event = self._load_matrix_event_for_test()
@@ -7097,7 +7097,7 @@ class MatrixRoomKeyRequestCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_to_device_key_imports_then_requests_precede_other_events(self):
-        event_processor = load_module("processors.event_processor")
+        event_processor = load_module("processors.core")
         call_order = []
 
         class DummyE2EEManager:
@@ -8770,7 +8770,9 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
         module_name = f"{PACKAGE_NAME}.e2ee.signing"
         sys.modules.pop(module_name, None)
         with mock.patch.dict(sys.modules, stubs):
-            return importlib.import_module(module_name)
+            module = importlib.import_module(module_name)
+        module.MatrixAPIError = DummyMatrixAPIError
+        return module
 
     async def test_sign_device_checks_failures_and_refreshed_signatures(self):
         cross_signing_module = self._load_cross_signing_module()
@@ -9366,6 +9368,7 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_request_missing_private_keys_from_devices_skips_pending_names(self):
         cross_signing_module = self._load_cross_signing_module()
+        e2ee_constants = load_module("e2ee.constants")
         constants = load_module("constants")
 
         request_mock = mock.AsyncMock(return_value="req-user")
@@ -9392,7 +9395,7 @@ class MatrixCrossSigningCompatTests(unittest.IsolatedAsyncioTestCase):
             "U" * 43,
         )
 
-        self.assertEqual(result, cross_signing_module.DEVICE_SECRET_REQUEST_PENDING)
+        self.assertEqual(result, e2ee_constants.DEVICE_SECRET_REQUEST_PENDING)
         self.assertEqual(
             request_mock.await_args_list,
             [mock.call(constants.SECRET_CROSS_SIGNING_USER_SIGNING)],
@@ -10960,7 +10963,7 @@ class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_limited_sync_non_join_membership_rotates_megolm(self):
-        members_module = load_module("processors.event_processor_members")
+        members_module = load_module("processors.event_lib.members")
 
         class E2EEManager:
             def __init__(self):
@@ -11084,7 +11087,7 @@ class MatrixE2EEV119SecurityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(manager.client.sent), 1)
 
     async def test_sync_processes_to_device_before_peer_and_fallback_keys(self):
-        sync_module = load_module("sync.sync_manager")
+        sync_module = load_module("sync.core")
 
         class Client:
             async def sync(self, **kwargs):

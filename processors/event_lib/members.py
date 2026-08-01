@@ -6,7 +6,7 @@ import asyncio
 
 from astrbot.api import logger
 
-from ..constants import (
+from ...constants import (
     M_ROOM_LIVE_MESSAGING,
     MEMBERSHIP_BAN,
     MEMBERSHIP_INVITE,
@@ -15,8 +15,8 @@ from ..constants import (
     MEMBERSHIP_LEAVE,
     MSC4357_LIVE_MESSAGING_STATE,
 )
-from ..room_member_store import MatrixRoomMemberStore
-from ..user_store import MatrixUserStore
+from ...room_member_store import MatrixRoomMemberStore
+from ...user_store import MatrixUserStore
 
 
 class MatrixEventProcessorMembers:

@@ -18,7 +18,7 @@ from ..constants import (
     MSGTYPE_VIDEO,
 )
 
-# Kept importable: tests patch receiver.receiver.get_plugin_config to stub
+# Kept importable: tests patch receiver.core.get_plugin_config to stub
 # plugin config. The mixin modules import it directly from ..plugin_config.
 from ..plugin_config import get_plugin_config  # noqa: F401
 from ..utils.media_cache_index import MediaCacheIndexStore

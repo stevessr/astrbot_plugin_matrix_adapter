@@ -1,1 +1,3 @@
-from .sync_manager import MatrixSyncManager as MatrixSyncManager
+from .core import MatrixSyncManager
+
+__all__ = ["MatrixSyncManager"]

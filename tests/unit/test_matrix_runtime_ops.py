@@ -31,14 +31,27 @@ class MatrixOutboundTrackerTests(unittest.IsolatedAsyncioTestCase):
             def __init__(self):
                 self.fail_once = fail_once
                 self.calls = 0
-                self.outbound_tracker = outer.outbound_tracker_mod.MatrixOutboundTracker(
-                    user_storage_dir=Path(outer.temp_dir.name) / "store" / "example.org" / "bot",
-                    store_path=Path(outer.temp_dir.name) / "store",
-                    backend="json",
+                self.outbound_tracker = (
+                    outer.outbound_tracker_mod.MatrixOutboundTracker(
+                        user_storage_dir=Path(outer.temp_dir.name)
+                        / "store"
+                        / "example.org"
+                        / "bot",
+                        store_path=Path(outer.temp_dir.name) / "store",
+                        backend="json",
+                    )
                 )
                 self.runtime_state = outer.runtime_state_mod.MatrixRuntimeState()
 
-            async def _request(self, method, endpoint, data=None, params=None, authenticated=True, _retry_count=0):
+            async def _request(
+                self,
+                method,
+                endpoint,
+                data=None,
+                params=None,
+                authenticated=True,
+                _retry_count=0,
+            ):
                 self.calls += 1
                 if self.fail_once and self.calls == 1:
                     raise RuntimeError("boom")
@@ -137,7 +150,7 @@ class MatrixSyncReconnectTests(unittest.IsolatedAsyncioTestCase):
         utils_mod = load_module("utils.utils")
         utils_pkg = sys.modules["astrbot_plugin_matrix_adapter.utils"]
         utils_pkg.parse_bool = utils_mod.parse_bool
-        sync_manager_mod = load_module("sync.sync_manager")
+        sync_manager_mod = load_module("sync.core")
 
         class FakeClient:
             def __init__(self):
@@ -399,9 +412,13 @@ class MatrixMessageOverrideMixinTests(unittest.IsolatedAsyncioTestCase):
 
         # 真实实现仍然在 MRO 后段，super() 调用不会落空
         self.assertLess(names.index("MessageOverrideMixin"), names.index("RoomMixin"))
-        self.assertLess(names.index("MessageOverrideMixin"), names.index("MessageMixin"))
+        self.assertLess(
+            names.index("MessageOverrideMixin"), names.index("MessageMixin")
+        )
         self.assertIn("send_message", http_client.MessageMixin.__dict__)
-        self.assertIn("get_event", sys.modules[
-            "astrbot_plugin_matrix_adapter.client.room_core_mixin"
-        ].RoomCoreMixin.__dict__)
-
+        self.assertIn(
+            "get_event",
+            sys.modules[
+                "astrbot_plugin_matrix_adapter.client.room_core_mixin"
+            ].RoomCoreMixin.__dict__,
+        )

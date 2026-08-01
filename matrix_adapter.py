@@ -24,15 +24,15 @@ from .constants import (
     LOGO_PATH,
 )
 from .outbound_tracker import MatrixOutboundTracker
+from .processors.core import MatrixEventProcessor
 from .processors.event_handler import MatrixEventHandler
-from .processors.event_processor import MatrixEventProcessor
-from .receiver.receiver import MatrixReceiver
+from .receiver.core import MatrixReceiver
 from .runtime_state import MatrixRuntimeState
-from .sender.sender import MatrixSender
+from .sender.core import MatrixSender
 
 # Sticker 支持
 from .sticker import StickerAvailabilityStore, StickerPackSyncer, StickerStorage
-from .sync.sync_manager import MatrixSyncManager
+from .sync.core import MatrixSyncManager
 from .utils.utils import MatrixUtils
 
 

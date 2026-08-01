@@ -20,11 +20,11 @@ from ..constants import (
 )
 from ..plugin_config import get_plugin_config
 from ..utils import parse_bool
+from .event_lib.members import MatrixEventProcessorMembers
 from .event_lib.msg import MatrixEventProcessorMessagesMixin
 from .event_lib.room import MatrixEventProcessorRoomDispatchMixin
 from .event_lib.states import MatrixEventProcessorStatesMixin
-from .event_processor_members import MatrixEventProcessorMembers
-from .event_processor_streams import MatrixEventProcessorStreams
+from .event_lib.streams import MatrixEventProcessorStreams
 
 if TYPE_CHECKING:
     from ..e2ee import E2EEManager

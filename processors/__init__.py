@@ -1,2 +1,4 @@
-from .event_handler import MatrixEventHandler as MatrixEventHandler
-from .event_processor import MatrixEventProcessor as MatrixEventProcessor
+from .core import MatrixEventProcessor
+from .event_handler import MatrixEventHandler
+
+__all__ = ["MatrixEventHandler", "MatrixEventProcessor"]
