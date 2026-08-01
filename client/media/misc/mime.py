@@ -1,21 +1,13 @@
-"""
-Matrix HTTP Client - Media Misc Mixin
-Provides shared media helper methods
-"""
+"""Media MIME normalization and upload security helpers."""
 
-import hashlib
-import io
 import mimetypes
 from pathlib import Path
-from typing import Any
 
-from astrbot.api import logger
-
-from ...config.plugin import get_plugin_config
+from ....config.plugin import get_plugin_config
 
 
-class MediaMiscMixin:
-    """Media helper methods for Matrix client"""
+class MediaMimeMixin:
+    """Validate media uploads using extension, signature, and MIME policy."""
 
     _MEDIA_UPLOAD_DEFAULT_BLOCKED_EXTENSIONS = frozenset(
         {
@@ -49,94 +41,6 @@ class MediaMiscMixin:
         "audio/x-wav": "audio/wav",
         "application/x-zip-compressed": "application/zip",
     }
-
-    class _HashingFileReader(io.IOBase):
-        """IOBase-compatible file wrapper that hashes uploaded bytes."""
-
-        def __init__(self, file_handle: io.BufferedReader):
-            self._file_handle = file_handle
-            self._hasher = hashlib.sha256()
-
-        def read(self, size: int = -1) -> bytes:
-            chunk = self._file_handle.read(size)
-            if chunk:
-                self._hasher.update(chunk)
-            return chunk
-
-        def readinto(self, b) -> int:
-            reader = getattr(self._file_handle, "readinto", None)
-            if callable(reader):
-                n = reader(b)
-                if n and n > 0:
-                    self._hasher.update(memoryview(b)[:n])
-                return n
-
-            chunk = self._file_handle.read(len(b))
-            if not chunk:
-                return 0
-            n = len(chunk)
-            b[:n] = chunk
-            self._hasher.update(chunk)
-            return n
-
-        def readline(self, size: int = -1) -> bytes:
-            chunk = self._file_handle.readline(size)
-            if chunk:
-                self._hasher.update(chunk)
-            return chunk
-
-        def readable(self) -> bool:
-            return True
-
-        def seekable(self) -> bool:
-            return self._file_handle.seekable()
-
-        def writable(self) -> bool:
-            return False
-
-        def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
-            return self._file_handle.seek(offset, whence)
-
-        def tell(self) -> int:
-            return self._file_handle.tell()
-
-        def fileno(self) -> int:
-            return self._file_handle.fileno()
-
-        @property
-        def closed(self) -> bool:
-            return self._file_handle.closed
-
-        def close(self) -> None:
-            self._file_handle.close()
-
-        def hexdigest(self) -> str:
-            return self._hasher.hexdigest()
-
-        def __getattr__(self, name: str):
-            return getattr(self._file_handle, name)
-
-    @staticmethod
-    def _parse_mxc_server_media_id(mxc_url: str) -> tuple[str, str]:
-        """Parse an ``mxc://server/media`` URI into Matrix path segments.
-
-        Some bridges and clients append query strings or fragments to MXC
-        references for local UI hints.  The Matrix media repository path only
-        accepts the server name and media ID, so strip those suffixes before
-        percent-encoding each segment.
-        """
-        if not isinstance(mxc_url, str) or not mxc_url.startswith("mxc://"):
-            raise ValueError(f"Invalid MXC URL: {mxc_url}")
-
-        parts = mxc_url[6:].split("/", 1)
-        if len(parts) != 2:
-            raise ValueError(f"Invalid MXC URL format: {mxc_url}")
-
-        server_name = parts[0].strip()
-        media_id = parts[1].split("?", 1)[0].split("#", 1)[0].strip().lstrip("/")
-        if not server_name or not media_id:
-            raise ValueError(f"Invalid MXC URL format: {mxc_url}")
-        return server_name, media_id
 
     @classmethod
     def _normalize_mime_type(cls, content_type: str | None) -> str:
@@ -363,51 +267,3 @@ class MediaMiscMixin:
         ):
             return extension_mime
         return normalized_declared
-
-    async def get_media_config(self) -> dict[str, Any]:
-        """
-        获取 Matrix 媒体服务器配置
-
-        返回服务器的媒体配置，包括最大上传文件大小。
-        参考：https://spec.matrix.org/latest/client-server-api/#get_matrixclientv1mediaconfig
-
-        Returns:
-            包含 m.upload.size 等配置的字典
-        """
-        endpoint = "/_matrix/client/v1/media/config"
-        try:
-            return await self._request("GET", endpoint)
-        except Exception as e:
-            logger.debug(f"获取媒体配置失败 ({endpoint}): {e}")
-
-        logger.warning("无法获取 Matrix 媒体服务器配置，将使用默认值")
-        return {}
-
-    async def get_url_preview(
-        self, url: str, timestamp_ms: int | None = None
-    ) -> dict[str, Any]:
-        """
-        Get URL preview metadata
-
-        Args:
-            url: URL to preview
-            timestamp_ms: Optional timestamp in milliseconds
-
-        Returns:
-            Preview response
-        """
-        params: dict[str, Any] = {"url": url}
-        if timestamp_ms is not None:
-            params["ts"] = timestamp_ms
-
-        endpoints = ["/_matrix/client/v1/media/preview_url"]
-
-        last_error: Exception | None = None
-        for endpoint in endpoints:
-            try:
-                return await self._request("GET", endpoint, params=params)
-            except Exception as e:
-                last_error = e
-                continue
-
-        raise Exception(f"Matrix URL preview error: {last_error}")
