@@ -1,40 +1,10 @@
-import base64
-import json
-
 from astrbot.api import logger
 
-from ..constants import MEGOLM_MESSAGE_INDEX_FIELD
-from ..olm.types import (
-    ExportedSessionKey,
-    InboundGroupSession,
-    MegolmMessage,
-)
+from ...olm.types import ExportedSessionKey, InboundGroupSession
+from .conversion import _convert_session_key_v2_to_v1
 
 
-def _convert_session_key_v2_to_v1(session_key_b64: str) -> str:
-    """
-    将 SessionKey 格式（版本 2）转换为 ExportedSessionKey 格式（版本 1）
-
-    m.room_key 事件中的 session_key 使用版本 2 格式（以 "Ag" 开头），
-    但 vodozemac 的 ExportedSessionKey 只接受版本 1 格式（以 "AQ" 开头）。
-    两者的区别只是第一个字节（版本号）不同，其余数据相同。
-    """
-    # 添加 base64 填充
-    padded = session_key_b64 + "=" * (-len(session_key_b64) % 4)
-    raw = base64.b64decode(padded)
-    if not raw:
-        return session_key_b64
-
-    if raw[0] == 2:
-        # 版本 2 -> 版本 1
-        modified = bytes([1]) + raw[1:]
-        return base64.b64encode(modified).decode().rstrip("=")
-    else:
-        # 已经是版本 1 或其他格式，直接返回
-        return session_key_b64
-
-
-class OlmMachineMegolmInboundMixin:
+class OlmMachineMegolmInboundImportMixin:
     def add_megolm_inbound_session(
         self,
         room_id: str,
@@ -221,87 +191,3 @@ class OlmMachineMegolmInboundMixin:
         except Exception as e:
             logger.error(f"添加 Megolm 入站会话失败：{e}")
             return False
-
-    @staticmethod
-    def get_megolm_first_known_index(session) -> int:
-        """Return a Megolm session index across supported vodozemac versions."""
-        value = session.first_known_index
-        value = value() if callable(value) else value
-        if type(value) is not int or value < 0:
-            raise ValueError("Invalid Megolm first-known index")
-        return value
-
-    def decrypt_megolm(self, session_id: str, ciphertext: str) -> dict | None:
-        """
-        解密 Megolm 消息
-
-        Args:
-            session_id: 会话 ID
-            ciphertext: 密文
-
-        Returns:
-            解密后的事件内容，或 None
-        """
-        # 尝试从缓存获取会话
-        session = self._megolm_inbound.get(session_id)
-
-        # 尝试从存储加载 vodozemac session
-        if not session:
-            pickle = self.store.get_megolm_inbound(session_id)
-            if pickle:
-                try:
-                    session = InboundGroupSession.from_pickle(pickle, self._pickle_key)
-                    self._megolm_inbound[session_id] = session
-                except Exception as e:
-                    logger.error(f"加载 Megolm 会话失败：{e}")
-                    return None
-
-        if not session:
-            logger.warning(f"未找到 Megolm 会话：{(session_id or '')[:8]}...")
-            return None
-
-        try:
-            # Convert ciphertext string to MegolmMessage
-            if isinstance(ciphertext, str):
-                message = MegolmMessage.from_base64(ciphertext)
-            else:
-                message = ciphertext
-            plaintext = session.decrypt(message)
-            # 解析解密后的 JSON
-            decrypted = json.loads(plaintext.plaintext)
-            if not isinstance(decrypted, dict):
-                logger.warning("Megolm plaintext is not a JSON object")
-                return None
-            decrypted[MEGOLM_MESSAGE_INDEX_FIELD] = plaintext.message_index
-            return decrypted
-        except Exception as e:
-            logger.error(f"Megolm 解密失败：{e}")
-            return None
-
-    def get_megolm_inbound_session(self, session_id: str):
-        """
-        获取 Megolm 入站会话对象（用于导出会话密钥等操作）
-
-        Args:
-            session_id: 会话 ID
-
-        Returns:
-            InboundGroupSession 或 None
-        """
-        # 先从缓存获取
-        session = self._megolm_inbound.get(session_id)
-        if session:
-            return session
-
-        # 尝试从存储加载
-        pickle = self.store.get_megolm_inbound(session_id)
-        if pickle:
-            try:
-                session = InboundGroupSession.from_pickle(pickle, self._pickle_key)
-                self._megolm_inbound[session_id] = session
-                return session
-            except Exception as e:
-                logger.error(f"加载 Megolm 会话失败：{e}")
-                return None
-
-        return None
