@@ -1,89 +1,22 @@
 import asyncio
-import json
 import time
 import uuid
-from pathlib import Path
 
 from astrbot.api import logger
 from astrbot.api.platform import Platform, PlatformMetadata, register_platform_adapter
 
-from ..client import MatrixHTTPClient
-from ..config.matrix import MatrixConfig
-from ..constants import DEFAULT_CONFIG, LOGO_PATH
-from .composition import build_adapter_services
-from .message import MatrixAdapterMessageMixin
-from .runtime import MatrixAdapterRuntimeMixin
-from .send import MatrixAdapterSendMixin
-
-
-def _cleanup_platform_registration(adapter_name: str = "matrix") -> None:
-    """清理之前的平台适配器注册（用于热重载）
-
-    在模块重新加载时，需要清理之前注册的适配器，避免重复注册错误。
-    """
-    try:
-        from astrbot.core.platform.register import platform_cls_map, platform_registry
-
-        # 从 platform_cls_map 中移除
-        if adapter_name in platform_cls_map:
-            del platform_cls_map[adapter_name]
-            logger.debug(f"已清理平台适配器 {adapter_name} 的类映射")
-
-        # 从 platform_registry 中移除匹配的 PlatformMetadata
-        to_remove = [pm for pm in platform_registry if pm.name == adapter_name]
-        for pm in to_remove:
-            platform_registry.remove(pm)
-            logger.debug(f"已清理平台适配器 {adapter_name} 的注册元数据")
-
-    except Exception as e:
-        logger.debug(f"清理平台适配器注册时出错（可忽略）: {e}")
-
+from ...client import MatrixHTTPClient
+from ...config.matrix import MatrixConfig
+from ...constants import DEFAULT_CONFIG, LOGO_PATH
+from ..composition import build_adapter_services
+from ..message import MatrixAdapterMessageMixin
+from ..runtime import MatrixAdapterRuntimeMixin
+from ..send import MatrixAdapterSendMixin
+from .registration import _cleanup_platform_registration
+from .resources import _inject_astrbot_field_metadata, _load_i18n_resources
 
 # 在模块加载时执行清理，避免热重载时的重复注册错误
 _cleanup_platform_registration("matrix")
-
-
-def _inject_astrbot_field_metadata() -> dict | None:
-    """注入 Matrix 适配器的字段元数据到 AstrBot 配置系统
-
-    将 config_metadata.json 中定义的字段描述注入到 CONFIG_METADATA_2 和 CONFIG_METADATA_3 中，
-    以便 WebUI 能够显示 Matrix 适配器各配置项的说明。
-    """
-    try:
-        metadata_path = Path(__file__).resolve().parent.parent / "config_metadata.json"
-        try:
-            matrix_items = json.loads(metadata_path.read_text(encoding="utf-8"))
-        except Exception as e:
-            logger.debug(f"读取 Matrix 字段元数据失败：{e}")
-            return
-        if not isinstance(matrix_items, dict):
-            logger.debug("Matrix 字段元数据格式错误，期望为 dict")
-            return
-
-        return matrix_items
-
-    except Exception as e:
-        logger.error(f"注入 AstrBot 字段元数据失败：{e}")
-        return None
-
-
-def _load_i18n_resources() -> dict[str, dict]:
-    """加载 i18n 资源文件
-
-    Returns:
-        包含各语言 i18n 数据的字典
-    """
-    LANG = ["zh-CN", "en-US", "ru-RU"]
-    i18n_data = {}
-    try:
-        for lang in LANG:
-            path = Path(__file__).resolve().parent.parent / "i18n" / f"{lang}.json"
-            if path.exists():
-                i18n_data[lang] = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as e:
-        logger.debug(f"加载 i18n 资源失败：{e}")
-
-    return i18n_data
 
 
 @register_platform_adapter(
