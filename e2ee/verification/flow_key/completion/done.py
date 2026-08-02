@@ -1,10 +1,10 @@
-"""Verification completion persistence and cancellation handling."""
+"""Verification completion persistence and trust publication."""
 
 from astrbot.api import logger
 
 
-class SASVerificationFlowCompletionMixin:
-    """处理 done 后的设备持久化、信任发布和取消状态。"""
+class SASVerificationFlowDoneMixin:
+    """处理 done 后的设备持久化与信任发布。"""
 
     async def _handle_done(self, sender: str, content: dict, transaction_id: str):
         """处理验证完成"""
@@ -79,18 +79,3 @@ class SASVerificationFlowCompletionMixin:
                 await e2ee_manager.request_missing_secrets_after_verification(sender)
             except Exception as e:
                 logger.warning(f"[E2EE-Verify] 验证后请求缺失秘密失败：{e}")
-
-    async def _handle_cancel(self, sender: str, content: dict, transaction_id: str):
-        """处理验证取消"""
-        code = content.get("code")
-        reason = content.get("reason")
-
-        logger.warning(f"[E2EE-Verify] ❌ 验证被取消：code={code} reason={reason}")
-
-        if transaction_id in self._sessions:
-            self._sessions[transaction_id]["state"] = "cancelled"
-            self._sessions[transaction_id]["cancel_code"] = code
-            self._sessions[transaction_id]["cancel_reason"] = reason
-
-
-__all__ = ["SASVerificationFlowCompletionMixin"]
