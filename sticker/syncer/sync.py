@@ -1,85 +1,13 @@
-"""
-Matrix Sticker 包同步器
+"""Sticker pack synchronization operations."""
 
-自动同步房间和用户的 sticker 包。
-
-支持 Matrix v1.19 的稳定 MSC2545 格式，并保留旧版
-``im.ponies.*`` 事件兼容。
-"""
-
-import asyncio
-from dataclasses import dataclass
 from typing import Any
 
 from astrbot.api import logger
 
-from ..constants import M_IMAGE_PACK_ROOMS, M_ROOM_IMAGE_PACK
-from .availability import StickerAvailabilityStore
-from .component import Sticker, StickerInfo
-from .storage_lib import StickerStorage
+from ..component import Sticker, StickerInfo
 
 
-@dataclass
-class StickerPackInfo:
-    """Sticker 包信息"""
-
-    pack_name: str
-    display_name: str
-    avatar_url: str | None
-    sticker_count: int
-    room_id: str | None  # 如果是房间 sticker 包
-    is_user_pack: bool  # 是否是用户级别的包
-
-
-class StickerPackSyncer:
-    """
-    Sticker 包同步器
-
-    负责：
-    - 从 ``m.room.image_pack`` 房间状态读取稳定 image pack
-    - 从 ``m.image_pack.rooms`` 账户数据读取全局启用的房间 image pack
-    - 兼容旧版 ``im.ponies.room_emotes`` / ``im.ponies.user_emotes``
-    - 同步 sticker 包到本地存储
-    """
-
-    # 支持的 sticker 包事件类型
-    ROOM_EMOTES_TYPE = "im.ponies.room_emotes"
-    USER_EMOTES_TYPE = "im.ponies.user_emotes"
-    ROOM_IMAGE_PACK_TYPE = M_ROOM_IMAGE_PACK
-    USER_IMAGE_PACK_ROOMS_TYPE = M_IMAGE_PACK_ROOMS
-    # 非标准备用类型（某些旧客户端使用）
-    ROOM_EMOTES_ALT = "m.room.sticker_pack"
-    ROOM_PACK_TYPES = frozenset(
-        {ROOM_IMAGE_PACK_TYPE, ROOM_EMOTES_TYPE, ROOM_EMOTES_ALT}
-    )
-
-    def __init__(
-        self,
-        storage: StickerStorage,
-        client=None,
-        availability_store: StickerAvailabilityStore | None = None,
-    ):
-        """
-        初始化同步器
-
-        Args:
-            storage: StickerStorage 实例
-            client: MatrixHTTPClient 实例
-        """
-        self.storage = storage
-        self.client = client
-        self.availability_store = availability_store
-        self._synced_rooms: set[str] = set()
-        self._sync_lock = asyncio.Lock()
-
-    def set_client(self, client):
-        """设置 Matrix 客户端"""
-        self.client = client
-
-    def reset_available(self):
-        if self.availability_store:
-            self.availability_store.clear()
-
+class StickerPackOperationsMixin:
     async def sync_room_stickers(self, room_id: str, force: bool = False) -> int:
         """
         同步房间的 sticker 包
@@ -95,7 +23,6 @@ class StickerPackSyncer:
             logger.warning("无法同步 sticker：未设置 Matrix 客户端")
             return 0
 
-        # 避免重复同步
         if room_id in self._synced_rooms and not force:
             return 0
 
@@ -104,15 +31,11 @@ class StickerPackSyncer:
                 return 0
 
             try:
-                # 获取房间状态
                 state = await self.client.get_room_state(room_id)
-
                 synced_count = 0
 
                 for event in state:
                     event_type = event.get("type", "")
-
-                    # 检查是否是 sticker 包事件
                     if event_type in self.ROOM_PACK_TYPES:
                         content = event.get("content", {})
                         state_key = event.get("state_key", "")
@@ -121,7 +44,6 @@ class StickerPackSyncer:
                         ):
                             continue
 
-                        # 解析 sticker 包
                         pack_name = self._get_pack_name(content, state_key, room_id)
                         images = content.get("images", {})
 
@@ -160,7 +82,6 @@ class StickerPackSyncer:
         try:
             synced_ids: set[str] = set()
 
-            # 旧版用户级 image pack 直接把 images 放在账户数据中。
             account_data = await self.client.get_global_account_data(
                 self.USER_EMOTES_TYPE
             )
@@ -177,8 +98,6 @@ class StickerPackSyncer:
                 synced_ids.update(ids)
                 logger.info(f"同步旧版用户 sticker 包：{len(ids)} 个")
 
-            # Matrix v1.19: 账户数据只保存 room_id/state_key 引用，实际
-            # images 必须从对应 m.room.image_pack 状态事件读取。
             references = await self.client.get_global_account_data(
                 self.USER_IMAGE_PACK_ROOMS_TYPE
             )
@@ -259,7 +178,6 @@ class StickerPackSyncer:
                 if not mxc_url:
                     continue
 
-                # 解析 sticker 信息
                 info_data = sticker_data.get("info", {})
                 info = StickerInfo(
                     mimetype=info_data.get("mimetype", "image/png"),
@@ -269,7 +187,6 @@ class StickerPackSyncer:
                     thumbnail_url=info_data.get("thumbnail_url"),
                 )
 
-                # 创建 Sticker 对象
                 sticker = Sticker(
                     body=sticker_data.get("body", shortcode),
                     url=mxc_url,
@@ -278,14 +195,12 @@ class StickerPackSyncer:
                     pack_name=pack_name,
                 )
 
-                # 使用 shortcode 作为标签
                 tags = [shortcode]
                 if room_id:
                     tags.append(f"room:{(room_id or '')[:20]}")
                 if is_user_pack:
                     tags.append("user")
 
-                # 保存到存储（会自动下载并缓存）
                 meta = await self.storage.save_sticker(
                     sticker=sticker,
                     client=self.client,
@@ -301,91 +216,5 @@ class StickerPackSyncer:
 
         return synced_ids
 
-    def _get_pack_name(self, content: dict, state_key: str, room_id: str) -> str:
-        """从事件内容提取包名称"""
-        # 优先使用 pack 中的 display_name
-        pack_info = content.get("pack", {})
-        if isinstance(pack_info, dict) and pack_info.get("display_name"):
-            return pack_info["display_name"]
 
-        # 其次使用 state_key
-        if state_key:
-            return state_key
-
-        # 最后使用房间 ID 的简短形式
-        return f"room_{(room_id or '')[:8]}"
-
-    @staticmethod
-    def _supports_stickers(content: dict[str, Any]) -> bool:
-        """Whether an MSC2545 pack is intended for standalone stickers."""
-        pack = content.get("pack")
-        if not isinstance(pack, dict):
-            return True
-        usage = pack.get("usage")
-        # Absent/empty means all usage types according to Matrix v1.19.
-        if not isinstance(usage, list) or not usage:
-            return True
-        return "sticker" in usage
-
-    async def get_room_sticker_packs(self, room_id: str) -> list[StickerPackInfo]:
-        """
-        获取房间的 sticker 包信息（不下载）
-
-        Args:
-            room_id: 房间 ID
-
-        Returns:
-            StickerPackInfo 列表
-        """
-        if not self.client:
-            return []
-
-        packs = []
-
-        try:
-            state = await self.client.get_room_state(room_id)
-
-            for event in state:
-                event_type = event.get("type", "")
-
-                if event_type in self.ROOM_PACK_TYPES:
-                    content = event.get("content", {})
-                    state_key = event.get("state_key", "")
-                    if not isinstance(content, dict) or not self._supports_stickers(
-                        content
-                    ):
-                        continue
-                    pack_info = content.get("pack", {})
-                    images = content.get("images", {})
-
-                    if not isinstance(pack_info, dict):
-                        pack_info = {}
-                    if not isinstance(images, dict):
-                        images = {}
-
-                    pack = StickerPackInfo(
-                        pack_name=self._get_pack_name(content, state_key, room_id),
-                        display_name=pack_info.get("display_name", state_key),
-                        avatar_url=pack_info.get("avatar_url"),
-                        sticker_count=len(images),
-                        room_id=room_id,
-                        is_user_pack=False,
-                    )
-                    packs.append(pack)
-
-        except Exception as e:
-            logger.error(f"获取房间 {room_id} 的 sticker 包信息失败：{e}")
-
-        return packs
-
-    def clear_room_sync_cache(self, room_id: str | None = None):
-        """
-        清除房间同步缓存
-
-        Args:
-            room_id: 可选，指定房间。如果为 None，清除所有缓存
-        """
-        if room_id:
-            self._synced_rooms.discard(room_id)
-        else:
-            self._synced_rooms.clear()
+__all__ = ["StickerPackOperationsMixin"]
