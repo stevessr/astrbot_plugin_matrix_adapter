@@ -9,7 +9,7 @@ import secrets
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from ..constants import LOGIN_TYPE_SSO
-from .oauth2_core import (
+from .oauth2.core import (
     _get_query_param,
     _get_request_query_params,
     _has_query_param,

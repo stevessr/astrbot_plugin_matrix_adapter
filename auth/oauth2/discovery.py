@@ -4,7 +4,7 @@ OAuth2 discovery and client registration.
 
 import aiohttp
 
-from .oauth2_core import _log
+from .core import _log
 
 
 class MatrixOAuth2Discovery:

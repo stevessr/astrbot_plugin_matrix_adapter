@@ -5532,7 +5532,7 @@ class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(handler.device_id, "LEGACYDEVICE")
 
     async def test_discovery_prefers_auth_metadata(self):
-        discovery_module = load_module("auth.oauth2_discovery")
+        discovery_module = load_module("auth.oauth2.discovery")
 
         class DummyDiscovery(discovery_module.MatrixOAuth2Discovery):
             def __init__(self):
@@ -5603,7 +5603,7 @@ class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_well_known_discovery_explicitly_follows_redirects(self):
-        discovery_module = load_module("auth.oauth2_discovery")
+        discovery_module = load_module("auth.oauth2.discovery")
 
         class DummyDiscovery(discovery_module.MatrixOAuth2Discovery):
             def __init__(self):
@@ -5685,7 +5685,7 @@ class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["issuer"], "https://issuer.example.org")
 
     async def test_oauth2_callback_controller_handles_unified_webhook_request(self):
-        oauth2_core = load_module("auth.oauth2_core")
+        oauth2_core = load_module("auth.oauth2.core")
 
         controller = oauth2_core.OAuth2CallbackServer(
             "https://astrbot.example/api/platform/webhook/matrix123"
@@ -5704,7 +5704,7 @@ class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(code, "oauth-code-xyz")
 
     async def test_oauth2_callback_accepts_query_params_and_list_values(self):
-        oauth2_core = load_module("auth.oauth2_core")
+        oauth2_core = load_module("auth.oauth2.core")
 
         controller = oauth2_core.OAuth2CallbackServer(
             "https://astrbot.example/api/platform/webhook/matrix123"
@@ -5728,7 +5728,7 @@ class MatrixOAuth2CompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(code, "oauth-code-list")
 
     async def test_oauth2_callback_rejects_error_with_wrong_state_first(self):
-        oauth2_core = load_module("auth.oauth2_core")
+        oauth2_core = load_module("auth.oauth2.core")
 
         controller = oauth2_core.OAuth2CallbackServer(
             "https://astrbot.example/api/platform/webhook/matrix123"
