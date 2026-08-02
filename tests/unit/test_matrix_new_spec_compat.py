@@ -1414,7 +1414,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         room_state_mixin = load_module("client.room_state_mixin")
         room_management_mixin = load_module("client.room_management_mixin")
         room_directory_mixin = load_module("client.room_directory_mixin")
-        user_mixin = load_module("client.user_mixin")
+        user_mixin = load_module("client.user")
         delayed_mixin = load_module("client.delayed_events_mixin")
 
         class FakeClient(
@@ -10070,7 +10070,7 @@ class MatrixKeyBackupCompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_mutual_rooms_uses_stable_v1_endpoint_and_pagination(self):
-        user_module = load_module("client.user_mixin")
+        user_module = load_module("client.user")
 
         class DummyClient(user_module.UserMixin):
             def __init__(self):
