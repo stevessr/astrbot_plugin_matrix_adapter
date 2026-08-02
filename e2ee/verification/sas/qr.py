@@ -1,20 +1,12 @@
-"""
-SAS Verification - Matrix 设备验证流程
-
-实现 SAS (Short Authentication String) 验证协议。
-使用 vodozemac 提供的真正 X25519 密钥交换和 HKDF。
-支持 auto_accept / auto_reject / manual 三种模式。
-所有模式都会打印详细的验证日志。
-"""
+"""QR verification payload decoding and scan flow."""
 
 import base64
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from astrbot.api import logger
 
-from ...config.plugin import get_plugin_config
-from ...constants import (
+from ....constants import (
     M_KEY_VERIFICATION_START,
     M_RECIPROCATE_V1_METHOD,
     PREFIX_ED25519,
@@ -23,75 +15,11 @@ from ...constants import (
     QR_CODE_MODE_SELF_VERIFICATION_UNTRUSTED_MASTER,
     QR_CODE_VERSION,
 )
-from ..device_store import DeviceStore
-from . import SASVerificationFlowMixin
-from .crypto_utils import _encode_unpadded_base64
-from .display import SASVerificationDisplayMixin
-from .event import SASVerificationEventMixin
-from .manual_notify import SASVerificationManualNotifyMixin
-from .send_device import SASVerificationSendDeviceMixin
-from .send_room import SASVerificationSendRoomMixin
+from ..crypto_utils import _encode_unpadded_base64
 
 
-class SASVerification(
-    SASVerificationEventMixin,
-    SASVerificationFlowMixin,
-    SASVerificationDisplayMixin,
-    SASVerificationManualNotifyMixin,
-    SASVerificationSendDeviceMixin,
-    SASVerificationSendRoomMixin,
-):
-    """
-    SAS 验证流程管理器
-
-    使用 vodozemac 提供的真正密码学实现
-    """
-
-    def __init__(
-        self,
-        client,
-        user_id: str,
-        device_id: str,
-        olm_machine,
-        store_path: Path,
-        *,
-        namespace_key: str | None = None,
-        auto_verify_mode: Literal[
-            "auto_accept", "auto_reject", "manual"
-        ] = "auto_accept",
-        trust_on_first_use: bool = False,
-    ):
-        self.client = client
-        self.user_id = user_id
-        self.device_id = device_id
-        self.olm = olm_machine
-        self.auto_verify_mode = auto_verify_mode
-        self.trust_on_first_use = trust_on_first_use
-        self.admin_notify_room_id: str | None = None
-        self.admin_notify_room_ids: list[str] = []
-
-        # 活跃的验证会话：transaction_id -> session_data
-        self._sessions: dict[str, dict[str, Any]] = {}
-        self.storage_backend_config = get_plugin_config().storage_backend_config
-        self.device_store = DeviceStore(
-            store_path,
-            namespace_key=namespace_key,
-        )
-
-    def initiate_verification(self, transaction_id: str, to_user: str, to_device: str):
-        """记录主动发起的验证会话"""
-        self._sessions[transaction_id] = {
-            "sender": to_user,  # 目标用户
-            "their_device": to_device,
-            "state": "request_sent",
-            "we_started_it": True,  # 标记我们发起了 request
-            "we_are_initiator": True,  # 通常发起 request 的也会发 start，所以也是 SAS initiator
-        }
-
-    def set_admin_notify_room(self, room_id: str | None):
-        """设置管理员验证通知房间（用于手动 SAS 验证提示）。"""
-        normalized_room = str(room_id or "").strip()
-        self.admin_notify_room_id = normalized_room or None
+class SASVerificationQRMixin:
+    """二维码载荷解析、会话匹配和 reciprocate 发送。"""
 
     @staticmethod
     def _decode_base64_payload(payload: str) -> bytes:
@@ -261,65 +189,5 @@ class SASVerification(
             logger.warning(f"[E2EE-Verify] 扫描验证二维码失败：{e}")
             return False, str(e)
 
-    async def approve_device(self, device_id: str) -> tuple[bool, str]:
-        """手动确认某个设备的验证（SAS 或 QR）。"""
-        candidates: list[tuple[str, dict[str, Any]]] = []
-        for txn_id, session in self._sessions.items():
-            if (
-                session.get("from_device") == device_id
-                or session.get("their_device") == device_id
-            ):
-                candidates.append((txn_id, session))
 
-        if not candidates:
-            return False, f"未找到设备 {device_id} 的待验证会话"
-
-        # 优先选择已收到 QR reciprocate 或已完成 SAS 密钥交换的会话
-        txn_id, session = candidates[0]
-        for tid, s in candidates:
-            if s.get("qr_reciprocated") or s.get("sas_emojis") or s.get("sas_decimals"):
-                txn_id, session = tid, s
-                break
-
-        sender = session.get("sender", "")
-        target_device = (
-            session.get("from_device") or session.get("their_device") or device_id
-        )
-        if not sender or not target_device:
-            return False, "会话信息不完整，无法发送验证消息"
-
-        is_in_room = session.get("is_in_room", False)
-        room_id = session.get("room_id")
-
-        qr_pending_confirm = bool(
-            session.get("qr_reciprocated") and not session.get("qr_confirmed")
-        )
-
-        if (
-            not qr_pending_confirm
-            and not session.get("sas_emojis")
-            and not session.get("sas_decimals")
-        ):
-            return False, "SAS 尚未就绪，请稍后再试"
-
-        try:
-            if qr_pending_confirm:
-                session["qr_confirmed"] = True
-            elif not session.get("mac_sent"):
-                session["mac_sent"] = True
-                if is_in_room and room_id:
-                    await self._send_in_room_mac(room_id, txn_id, session)
-                else:
-                    await self._send_mac(sender, target_device, txn_id, session)
-            if not session.get("done_sent"):
-                session["done_sent"] = True
-                if is_in_room and room_id:
-                    await self._send_in_room_done(room_id, txn_id)
-                else:
-                    await self._send_done(sender, target_device, txn_id)
-            session["state"] = "qr_confirmed" if qr_pending_confirm else "done"
-        except Exception as e:
-            return False, f"发送验证消息失败：{e}"
-
-        flow_name = "QR" if qr_pending_confirm else "SAS"
-        return True, f"已发送 {flow_name} 验证确认（device_id={device_id}）"
+__all__ = ["SASVerificationQRMixin"]
