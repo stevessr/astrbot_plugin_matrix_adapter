@@ -1,31 +1,12 @@
-"""Identity and device-key serialization helpers."""
+"""Matrix device-keys object construction."""
 
 from typing import Any
 
-from ....constants import (
-    MEGOLM_ALGO,
-    OLM_ALGO,
-)
-from ...verification.crypto_utils import _canonical_json
+from .....constants import MEGOLM_ALGO, OLM_ALGO
+from ....verification.crypto_utils import _canonical_json
 
 
-class OlmMachineKeyIdentityMixin:
-    """设备身份密钥与 Matrix device-keys 对象构造能力。"""
-
-    def get_identity_keys(self) -> dict[str, str]:
-        """获取设备身份密钥"""
-        if not self._account:
-            raise RuntimeError("Olm 账户未初始化")
-
-        # vodozemac 返回的是 Key 对象，需要转换为字符串
-        curve25519 = self._account.curve25519_key.to_base64()
-        ed25519 = self._account.ed25519_key.to_base64()
-
-        return {
-            f"curve25519:{self.device_id}": curve25519,
-            f"ed25519:{self.device_id}": ed25519,
-        }
-
+class OlmMachineKeyDeviceSerializationMixin:
     def get_device_keys(self) -> dict[str, Any]:
         """
         获取用于上传的设备密钥
@@ -65,17 +46,3 @@ class OlmMachineKeyIdentityMixin:
         }
 
         return device_keys
-
-    @property
-    def curve25519_key(self) -> str:
-        """获取本设备的 curve25519 密钥"""
-        if not self._account:
-            raise RuntimeError("Olm 账户未初始化")
-        return self._account.curve25519_key.to_base64()
-
-    @property
-    def ed25519_key(self) -> str:
-        """获取本设备的 ed25519 密钥"""
-        if not self._account:
-            raise RuntimeError("Olm 账户未初始化")
-        return self._account.ed25519_key.to_base64()
