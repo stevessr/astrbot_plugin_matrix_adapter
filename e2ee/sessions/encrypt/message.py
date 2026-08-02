@@ -1,51 +1,16 @@
+"""Room-message encryption and rotation orchestration."""
+
 import time
 
 from astrbot.api import logger
 
-from ..constants import (
+from ...constants import (
     DEFAULT_MEGOLM_ROTATION_PERIOD_MS,
     DEFAULT_MEGOLM_ROTATION_PERIOD_MSGS,
 )
 
 
-class E2EEManagerSessionEncryptMixin:
-    def _discard_outbound_session(self, room_id: str) -> bool:
-        """Discard a room session and its per-session distribution state."""
-        if not self._olm:
-            return False
-        get_session_info = getattr(
-            self._olm,
-            "get_megolm_outbound_session_info",
-            None,
-        )
-        session_info = get_session_info(room_id) if callable(get_session_info) else None
-        session_id = session_info[0] if session_info else None
-        discard = getattr(self._olm, "discard_megolm_outbound_session", None)
-        discarded = bool(callable(discard) and discard(room_id))
-        if discarded and session_id:
-            share_cache = getattr(self, "_room_key_share_cache", None)
-            if isinstance(share_cache, dict):
-                share_cache.pop(session_id, None)
-            locks = getattr(self, "_room_key_share_locks", None)
-            if isinstance(locks, dict):
-                locks.pop(session_id, None)  # always pop, task keeps own reference
-        return discarded
-
-    def _outbound_session_is_current(self, room_id: str, session_id: str) -> bool:
-        if not self._olm:
-            return False
-        get_session_info = getattr(
-            self._olm,
-            "get_megolm_outbound_session_info",
-            None,
-        )
-        if not callable(get_session_info):
-            # Lightweight test/custom Olm shims do not expose persistence
-            # metadata. The production OlmMachine always does.
-            return True
-        current = get_session_info(room_id)
-        return bool(current and current[0] == session_id)
-
+class E2EEManagerSessionEncryptMessageMixin:
     async def encrypt_message(
         self, room_id: str, event_type: str, content: dict
     ) -> dict | None:
@@ -169,35 +134,3 @@ class E2EEManagerSessionEncryptMixin:
         except Exception as e:
             logger.error(f"加密消息失败：{e}")
             return None
-
-    async def _create_and_share_session(
-        self,
-        room_id: str,
-        *,
-        shared_history: bool = False,
-    ):
-        """创建 Megolm 出站会话并分发密钥"""
-        if not self._olm:
-            return
-
-        # 创建会话
-        session_id, session_key = self._olm.create_megolm_outbound_session(
-            room_id,
-            shared_history=shared_history,
-        )
-        logger.info(f"为房间 {room_id} 创建了 Megolm 会话")
-
-        # 获取房间成员
-        try:
-            members = await self._get_room_members(room_id, force_refresh=True)
-            if members:
-                await self.ensure_room_keys_sent(
-                    room_id,
-                    members,
-                    session_id,
-                    session_key,
-                    reason="new_session",
-                    shared_history=shared_history,
-                )
-        except Exception as e:
-            logger.error(f"分发密钥失败：{e}")
