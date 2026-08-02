@@ -1,48 +1,7 @@
-"""
-Matrix 消息发送组件
-"""
-
-from typing import Any
-
-from .room_messaging import SenderRoomMessagingMixin
-from .sender_lib import SenderMediaMixin, SenderRoomMixin
+"""Selective-presence sender operations (MSC4495)."""
 
 
-class MatrixSender(SenderRoomMessagingMixin, SenderMediaMixin, SenderRoomMixin):
-    def __init__(self, client, e2ee_manager=None, *, use_notice: bool = False):
-        self.client = client
-        self.e2ee_manager = e2ee_manager
-        self.use_notice = bool(use_notice)
-
-    async def get_message_context(
-        self,
-        room_id: str,
-        event_id: str,
-        *,
-        limit: int | None = None,
-        filter: dict[str, Any] | None = None,
-    ) -> dict:
-        """Get events before/after a Matrix event."""
-        return await self.client.get_event_context(
-            room_id=room_id,
-            event_id=event_id,
-            limit=limit,
-            filter=filter,
-        )
-
-    async def promote_to_moderator(self, room_id: str, user_id: str) -> dict:
-        """Promote a Matrix user to moderator (power level 50)."""
-        return await self.client.promote_to_moderator(
-            room_id=room_id,
-            user_id=user_id,
-        )
-
-    async def demote_user(self, room_id: str, user_id: str) -> dict:
-        """Demote a Matrix user to the room default power level."""
-        return await self.client.demote_user(room_id=room_id, user_id=user_id)
-
-    # --- MSC4495 Selective Presence ---------------------------------------
-
+class SenderPresenceMixin:
     async def get_presence_sharing_prefs(self) -> dict:
         """读取 selective presence 配置（MSC4495）。"""
         return await self.client.get_presence_sharing_prefs()
@@ -106,8 +65,5 @@ class MatrixSender(SenderRoomMessagingMixin, SenderMediaMixin, SenderRoomMixin):
         """读取房间 presence sharing hint（MSC4495），缺失视为 'forbid'。"""
         return await self.client.get_room_presence_sharing(room_id=room_id)
 
-    @staticmethod
-    def _now_ms() -> int:
-        import time
 
-        return int(time.time() * 1000)
+__all__ = ["SenderPresenceMixin"]
