@@ -1,4 +1,4 @@
-"""Matrix platform event message sending operations."""
+"""Matrix platform event message orchestration."""
 
 import time
 
@@ -6,41 +6,12 @@ from astrbot.api import logger
 from astrbot.api.event import MessageChain
 from astrbot.api.message_components import Reply as _Reply
 
-from ....constants import M_ROOM_MESSAGE, MSGTYPE_NOTICE, MSGTYPE_TEXT
-from ....sender.event_send import send_with_client_impl
+from .....constants import M_ROOM_MESSAGE, MSGTYPE_NOTICE, MSGTYPE_TEXT
+from .transport import MatrixPlatformEventTransportMixin
 
 
-class MatrixPlatformEventSendMixin:
+class MatrixPlatformEventSendMixin(MatrixPlatformEventTransportMixin):
     """Send message chains and resolve Matrix thread/reply context."""
-
-    @staticmethod
-    async def send_with_client(
-        client,
-        message_chain: MessageChain,
-        room_id: str,
-        reply_to: str | None = None,
-        thread_root: str | None = None,
-        use_thread: bool = False,
-        original_message_info: dict | None = None,
-        e2ee_manager=None,
-        max_upload_size: int | None = None,
-        use_notice: bool = False,
-        thread_is_falling_back: bool | None = None,
-    ) -> int:
-        """使用提供的 client 将指定消息链发送到指定房间。"""
-        return await send_with_client_impl(
-            client=client,
-            message_chain=message_chain,
-            room_id=room_id,
-            reply_to=reply_to,
-            thread_root=thread_root,
-            use_thread=use_thread,
-            original_message_info=original_message_info,
-            e2ee_manager=e2ee_manager,
-            max_upload_size=max_upload_size,
-            use_notice=use_notice,
-            thread_is_falling_back=thread_is_falling_back,
-        )
 
     async def send(self, message_chain: MessageChain):
         """发送消息"""

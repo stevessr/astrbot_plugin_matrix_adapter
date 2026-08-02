@@ -4300,6 +4300,12 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             f"{PACKAGE_NAME}.events.matrix.stream.typing",
         ):
             sys.modules.pop(stream_module, None)
+        for send_module in (
+            f"{PACKAGE_NAME}.events.matrix.core.send",
+            f"{PACKAGE_NAME}.events.matrix.core.send.mixin",
+            f"{PACKAGE_NAME}.events.matrix.core.send.transport",
+        ):
+            sys.modules.pop(send_module, None)
 
         event_send_stub = types.ModuleType(f"{PACKAGE_NAME}.sender.event_send")
         event_send_stub.__path__ = [str(REPO_ROOT / "sender" / "event_send")]
