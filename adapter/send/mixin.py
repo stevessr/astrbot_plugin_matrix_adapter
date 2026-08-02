@@ -1,21 +1,17 @@
-"""
-Matrix adapter send helpers.
-"""
+"""Session-oriented Matrix adapter send operations."""
 
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
-from astrbot.api.message_components import Plain, Reply
+from astrbot.api.message_components import Reply
 
-from ..config.plugin import get_plugin_config
-from ..constants import DEFAULT_TYPING_TIMEOUT_MS, MATRIX_HTML_FORMAT
-from ..utils.markdown_utils import markdown_to_html
-
-_MARKDOWN_MARKERS = ("**", "*", "`", "#", "- ", "> ", "[", "](")
+from ...constants import DEFAULT_TYPING_TIMEOUT_MS
+from .formatting import build_message_chain, format_plain_segment
 
 
-def _looks_like_markdown(text: str) -> bool:
-    """检测文本是否包含 Markdown 标记特征。"""
-    return any(marker in text for marker in _MARKDOWN_MARKERS)
+def _get_plugin_config():
+    from . import get_plugin_config
+
+    return get_plugin_config()
 
 
 class MatrixAdapterSendMixin:
@@ -27,7 +23,7 @@ class MatrixAdapterSendMixin:
             thread_root = None
             use_thread = False
             original_message_info = None
-            send_typing = get_plugin_config().send_typing
+            send_typing = _get_plugin_config().send_typing
 
             if send_typing:
                 try:
@@ -72,42 +68,9 @@ class MatrixAdapterSendMixin:
                 except Exception as e:
                     logger.warning(f"获取事件用于嘟文串失败：{e}")
 
-            header_comps = []
-            plain_comps = []
-            other_comps = []
-
-            for seg in message_chain.chain:
-                if isinstance(seg, Plain):
-                    plain_comps.append(seg)
-                elif seg.type in ["Reply", "At"]:
-                    header_comps.append(seg)
-                else:
-                    other_comps.append(seg)
-
-            merged_text = "".join(seg.text or "" for seg in plain_comps)
-
-            if merged_text or other_comps:
-                new_chain = []
-
-                if merged_text:
-                    if _looks_like_markdown(merged_text) or reply_to:
-                        html = markdown_to_html(merged_text)
-                        new_chain.append(
-                            Plain(
-                                text=merged_text,
-                                format=MATRIX_HTML_FORMAT,
-                                formatted_body=html,
-                                convert=True,
-                            )
-                        )
-                    else:
-                        new_chain.append(Plain(merged_text))
-
-                new_chain.extend(other_comps)
-
-                new_message_chain = MessageChain(new_chain)
-
-                from ..events.matrix import MatrixPlatformEvent
+            new_message_chain = build_message_chain(message_chain, reply_to)
+            if new_message_chain is not None:
+                from ...events.matrix import MatrixPlatformEvent
 
                 await MatrixPlatformEvent.send_with_client(
                     self.client,
@@ -141,26 +104,16 @@ class MatrixAdapterSendMixin:
         original_message_info: dict | None = None,
     ):
         """发送单个消息段落"""
-        if isinstance(segment, Plain):
-            text = segment.text or ""
-            if _looks_like_markdown(text) or (reply_to and len(header_comps) > 0):
-                html = markdown_to_html(text)
-                processed_segment = Plain(
-                    text=text,
-                    format=MATRIX_HTML_FORMAT,
-                    formatted_body=html,
-                    convert=True,
-                )
-            else:
-                processed_segment = segment
-        else:
-            processed_segment = segment
-
+        processed_segment = format_plain_segment(
+            segment,
+            reply_to=reply_to,
+            has_header=bool(header_comps),
+        )
         chain = (
             [*header_comps, processed_segment] if header_comps else [processed_segment]
         )
 
-        from ..events.matrix import MatrixPlatformEvent
+        from ...events.matrix import MatrixPlatformEvent
 
         await MatrixPlatformEvent.send_with_client(
             self.client,
@@ -174,3 +127,6 @@ class MatrixAdapterSendMixin:
             max_upload_size=self.max_upload_size,
             use_notice=self._matrix_config.use_notice,
         )
+
+
+__all__ = ["MatrixAdapterSendMixin"]
