@@ -1,32 +1,17 @@
-"""In-room SAS MAC, completion, and cancellation messages."""
+"""In-room SAS MAC message construction."""
 
 import base64
 import hashlib
-import sys
 
 from astrbot.api import logger
 
-from ....constants import (
-    INFO_PREFIX_MAC,
-    M_KEY_VERIFICATION_CANCEL,
-    M_KEY_VERIFICATION_DONE,
-    M_KEY_VERIFICATION_MAC,
-)
-from ..constants import VODOZEMAC_SAS_AVAILABLE
-from ..crypto_utils import _compute_hkdf
+from .....constants import INFO_PREFIX_MAC, M_KEY_VERIFICATION_MAC
+from ...crypto_utils import _compute_hkdf
+from .compat import _vodozemac_sas_available
 
 
-def _vodozemac_sas_available() -> bool:
-    package = sys.modules.get(__package__)
-    if package is not None:
-        return bool(
-            getattr(package, "VODOZEMAC_SAS_AVAILABLE", VODOZEMAC_SAS_AVAILABLE)
-        )
-    return VODOZEMAC_SAS_AVAILABLE
-
-
-class SASVerificationSendRoomMessagesMixin:
-    """发送房间内 MAC、done 和 cancel 消息。"""
+class SASVerificationSendRoomMACMixin:
+    """构造房间内 SAS MAC 消息。"""
 
     async def _send_in_room_mac(self, room_id: str, transaction_id: str, session: dict):
         """发送房间内 MAC - 使用 HKDF-HMAC-SHA256.v2"""
@@ -94,27 +79,3 @@ class SASVerificationSendRoomMessagesMixin:
             room_id, M_KEY_VERIFICATION_MAC, content, transaction_id
         )
         logger.info("[E2EE-Verify] 已发送 mac")
-
-    async def _send_in_room_done(self, room_id: str, transaction_id: str):
-        """发送房间内 done"""
-        content = {}
-        await self._send_in_room_event(
-            room_id, M_KEY_VERIFICATION_DONE, content, transaction_id
-        )
-        logger.info("[E2EE-Verify] 已发送 done")
-
-    async def _send_in_room_cancel(
-        self, room_id: str, transaction_id: str, code: str, reason: str
-    ):
-        """发送房间内取消"""
-        content = {
-            "code": code,
-            "reason": reason,
-        }
-        await self._send_in_room_event(
-            room_id, M_KEY_VERIFICATION_CANCEL, content, transaction_id
-        )
-        logger.info(f"[E2EE-Verify] 已发送房间内 cancel: {code} - {reason}")
-
-
-__all__ = ["SASVerificationSendRoomMessagesMixin"]
