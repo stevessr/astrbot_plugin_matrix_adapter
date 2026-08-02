@@ -4292,9 +4292,14 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         module_name = f"{PACKAGE_NAME}.events.matrix.core"
         sys.modules.pop(f"{PACKAGE_NAME}.events.matrix", None)
         sys.modules.pop(module_name, None)
-        # Also pop the stream mixin submodule so its lazy core reference
-        # resolves to the fresh event module rather than a stale one.
-        sys.modules.pop(f"{PACKAGE_NAME}.events.matrix.stream", None)
+        # Also pop the stream package and its implementation submodules so
+        # the lazy core reference resolves to the fresh event module.
+        for stream_module in (
+            f"{PACKAGE_NAME}.events.matrix.stream",
+            f"{PACKAGE_NAME}.events.matrix.stream.messages",
+            f"{PACKAGE_NAME}.events.matrix.stream.typing",
+        ):
+            sys.modules.pop(stream_module, None)
 
         event_send_stub = types.ModuleType(f"{PACKAGE_NAME}.sender.event_send")
         event_send_stub.__path__ = [str(REPO_ROOT / "sender" / "event_send")]
