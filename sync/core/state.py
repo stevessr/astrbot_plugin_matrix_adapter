@@ -7,7 +7,7 @@ from pathlib import Path
 from ...config.plugin import get_plugin_config
 from ...constants import DEFAULT_TIMEOUT_MS_30000
 from ..sync_retry_policy import SyncRetryPolicy
-from ..sync_token_store import SyncTokenStore
+from ..token_store import SyncTokenStore
 
 
 class MatrixSyncManagerStateMixin:
