@@ -6,7 +6,7 @@ Combines room-related API methods from sub-mixins
 from .room_core_mixin import RoomCoreMixin
 from .room_directory_mixin import RoomDirectoryMixin
 from .room_management_mixin import RoomManagementMixin
-from .room_state_mixin import RoomStateMixin
+from .room_state import RoomStateMixin
 
 
 class RoomMixin(

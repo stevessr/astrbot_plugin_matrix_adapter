@@ -1411,7 +1411,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
     async def test_room_directory_user_and_delayed_paths_percent_encode_segments(
         self,
     ):
-        room_state_mixin = load_module("client.room_state_mixin")
+        room_state_mixin = load_module("client.room_state")
         room_management_mixin = load_module("client.room_management_mixin")
         room_directory_mixin = load_module("client.room_directory_mixin")
         user_mixin = load_module("client.user")
@@ -1481,7 +1481,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_room_pinned_event_helpers_read_modify_write_state(self):
         room_core_mixin = load_module("client.room_core_mixin")
-        room_state_mixin = load_module("client.room_state_mixin")
+        room_state_mixin = load_module("client.room_state")
 
         class FakeClient(
             room_core_mixin.RoomCoreMixin,
