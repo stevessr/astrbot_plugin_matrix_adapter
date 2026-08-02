@@ -1,46 +1,13 @@
-"""Secret Storage key validation and context resolution."""
+"""Secret Storage key lookup and context creation."""
 
 import secrets
 
 from astrbot.api import logger
 
-from ....constants import CRYPTO_KEY_SIZE_32, SSSS_DEFAULT_KEY, SSSS_KEY_PREFIX
-from ...verification.crypto_utils import _decode_base64
+from .....constants import SSSS_DEFAULT_KEY, SSSS_KEY_PREFIX
 
 
-class KeyBackupSSSSStorageContextMixin:
-    """验证 Secret Storage key 并构建可用的加密上下文。"""
-
-    def _secret_storage_key_matches(self, key: bytes, key_data: dict | None) -> bool:
-        if not key or len(key) != CRYPTO_KEY_SIZE_32:
-            return False
-        if not isinstance(key_data, dict) or not key_data:
-            return True
-
-        algorithm = key_data.get("algorithm")
-        if algorithm and algorithm != self._SSSS_ALGORITHM:
-            logger.warning(f"不支持的 Secret Storage 算法：{algorithm}")
-            return False
-
-        iv_b64 = key_data.get("iv")
-        mac_b64 = key_data.get("mac")
-        if not iv_b64 or not mac_b64:
-            return True
-
-        try:
-            encrypted = self._encrypt_ssss_data(
-                key,
-                b"\x00" * CRYPTO_KEY_SIZE_32,
-                secret_name="",
-                iv=_decode_base64(iv_b64),
-            )
-            expected_mac = _decode_base64(mac_b64)
-            actual_mac = _decode_base64(encrypted["mac"])
-            return actual_mac == expected_mac
-        except Exception as e:
-            logger.warning(f"验证 Secret Storage Key 失败：{e}")
-            return False
-
+class KeyBackupSSSSStorageContextResolutionMixin:
     async def _resolve_secret_storage_key(
         self, key_id: str, provided_key_bytes: bytes | None = None
     ) -> bytes | None:
@@ -113,16 +80,3 @@ class KeyBackupSSSSStorageContextMixin:
 
         logger.info(f"已创建最小可用 Secret Storage：default_key={new_key_id}")
         return new_key_id, bootstrap_key
-
-    def _build_secret_storage_key_account_data(self, key_bytes: bytes) -> dict:
-        validation_data = self._encrypt_ssss_data(
-            key_bytes,
-            b"\x00" * CRYPTO_KEY_SIZE_32,
-            secret_name="",
-        )
-        return {
-            "algorithm": self._SSSS_ALGORITHM,
-            "name": self._SSSS_BOOTSTRAP_KEY_NAME,
-            "iv": validation_data["iv"],
-            "mac": validation_data["mac"],
-        }
