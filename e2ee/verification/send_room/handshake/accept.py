@@ -1,51 +1,27 @@
-"""In-room SAS ready/accept/key handshake messages."""
+"""In-room SAS accept negotiation and commitment construction."""
 
 import base64
 import hashlib
 import secrets
-import sys
 
 from astrbot.api import logger
 
-from ....constants import (
+from .....constants import (
     KEY_AGREEMENT_PROTOCOLS,
     M_KEY_VERIFICATION_ACCEPT,
-    M_KEY_VERIFICATION_KEY,
-    M_KEY_VERIFICATION_READY,
 )
-from ..constants import (
+from ...constants import (
     HASHES,
     MESSAGE_AUTHENTICATION_CODES,
     SHORT_AUTHENTICATION_STRING,
-    VODOZEMAC_SAS_AVAILABLE,
     Sas,
 )
-from ..crypto_utils import _canonical_json
+from ...crypto_utils import _canonical_json
+from .compat import _vodozemac_sas_available
 
 
-def _vodozemac_sas_available() -> bool:
-    package = sys.modules.get(__package__)
-    if package is not None:
-        return bool(
-            getattr(package, "VODOZEMAC_SAS_AVAILABLE", VODOZEMAC_SAS_AVAILABLE)
-        )
-    return VODOZEMAC_SAS_AVAILABLE
-
-
-class SASVerificationSendRoomHandshakeMixin:
-    """发送房间内 ready、accept 和 key 握手消息。"""
-
-    async def _send_in_room_ready(self, room_id: str, transaction_id: str):
-        """发送房间内 ready 响应"""
-        session = self._sessions.get(transaction_id, {})
-        content = {
-            "from_device": self.device_id,
-            "methods": self._get_supported_verification_methods(session.get("sender")),
-        }
-        await self._send_in_room_event(
-            room_id, M_KEY_VERIFICATION_READY, content, transaction_id
-        )
-        logger.info("[E2EE-Verify] 已发送 ready")
+class SASVerificationSendRoomAcceptMixin:
+    """协商房间内 SAS 算法并构造 accept 消息。"""
 
     async def _send_in_room_accept(
         self, room_id: str, transaction_id: str, start_content: dict
@@ -135,31 +111,3 @@ class SASVerificationSendRoomHandshakeMixin:
         logger.info(
             f"[E2EE-Verify] 已发送房间内 accept (commitment: {(commitment or '')[:16]}...)"
         )
-
-    async def _send_in_room_key(self, room_id: str, transaction_id: str):
-        """发送房间内公钥"""
-        session = self._sessions.get(transaction_id, {})
-
-        # 优先使用已存储的公钥（在 accept 中计算 commitment 时使用的同一个）
-        our_public_key = session.get("our_public_key")
-        if not our_public_key:
-            sas = session.get("sas")
-            if sas and _vodozemac_sas_available():
-                our_public_key = sas.public_key.to_base64()
-            else:
-                our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
-            session["our_public_key"] = our_public_key
-
-        session["key_sent"] = True
-
-        content = {
-            "key": our_public_key,
-        }
-
-        await self._send_in_room_event(
-            room_id, M_KEY_VERIFICATION_KEY, content, transaction_id
-        )
-        logger.info("[E2EE-Verify] 已发送 key")
-
-
-__all__ = ["SASVerificationSendRoomHandshakeMixin"]
