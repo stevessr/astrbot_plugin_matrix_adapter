@@ -1,15 +1,12 @@
-"""
-Matrix HTTP Client - Push/Notifications Mixin
-Provides push rules and notifications methods
-"""
+"""Matrix push-rule operations."""
 
 from typing import Any
 
-from .path_utils import quote_path_segment
+from ..path_utils import quote_path_segment
 
 
-class PushMixin:
-    """Push rules and notifications methods for Matrix client"""
+class PushRuleMixin:
+    """Create, inspect, and update Matrix push rules."""
 
     async def get_push_rules(self) -> dict[str, Any]:
         """
@@ -122,32 +119,3 @@ class PushMixin:
             f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/enabled"
         )
         return await self._request("PUT", endpoint, data={"enabled": enabled})
-
-    async def get_pushers(self) -> dict[str, Any]:
-        """
-        Get registered pushers
-        """
-        return await self._request("GET", "/_matrix/client/v3/pushers")
-
-    async def set_pusher(self, pusher: dict[str, Any]) -> dict[str, Any]:
-        """
-        Create or update a pusher
-        """
-        return await self._request(
-            "POST", "/_matrix/client/v3/pushers/set", data=pusher
-        )
-
-    async def get_notifications(
-        self, from_token: str, limit: int | None = None, only: str | None = None
-    ) -> dict[str, Any]:
-        """
-        Get notifications
-        """
-        params: dict[str, Any] = {"from": from_token}
-        if limit is not None:
-            params["limit"] = limit
-        if only:
-            params["only"] = only
-        return await self._request(
-            "GET", "/_matrix/client/v3/notifications", params=params
-        )
