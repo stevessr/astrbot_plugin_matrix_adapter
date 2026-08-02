@@ -1,64 +1,19 @@
-"""Core lifecycle and local-state support for cross-signing."""
+"""Cross-signing construction and initialization lifecycle."""
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from astrbot.api import logger
 
-from ...config.plugin import get_plugin_config
-from ..backup.crypto_utils import CRYPTO_AVAILABLE
-from ..constants import DEVICE_SECRET_REQUEST_PENDING, FORCE_OVERWRITE_SERVER_KEYS
-from ..storage import build_e2ee_data_store
+from ....config.plugin import get_plugin_config as _DEFAULT_GET_PLUGIN_CONFIG
+from ...backup.crypto_utils import CRYPTO_AVAILABLE as _DEFAULT_CRYPTO_AVAILABLE
+from ...constants import DEVICE_SECRET_REQUEST_PENDING, FORCE_OVERWRITE_SERVER_KEYS
+from ...storage import build_e2ee_data_store as _DEFAULT_BUILD_E2EE_DATA_STORE
+from .compat import resolve_core_symbol
 
 
-class CrossSigningCoreMixin:
-    """
-    交叉签名管理器
-
-    使用 vodozemac/ed25519 进行真正的签名操作
-    """
-
-    @property
-    def has_master_key(self) -> bool:
-        return bool(self._master_key)
-
-    @property
-    def master_key(self) -> str | None:
-        return self._master_key
-
-    @property
-    def self_signing_key(self) -> str | None:
-        return self._self_signing_key
-
-    @property
-    def device_key_id(self) -> str:
-        return f"ed25519:{self.device_id}"
-
-    @property
-    def master_private_key(self) -> bytes | None:
-        return self._master_priv
-
-    @master_private_key.setter
-    def master_private_key(self, value: bytes | None) -> None:
-        self._master_priv = value
-
-    @property
-    def self_signing_private_key(self) -> bytes | None:
-        return self._self_signing_priv
-
-    @self_signing_private_key.setter
-    def self_signing_private_key(self, value: bytes | None) -> None:
-        self._self_signing_priv = value
-
-    @property
-    def user_signing_private_key(self) -> bytes | None:
-        return self._user_signing_priv
-
-    @user_signing_private_key.setter
-    def user_signing_private_key(self, value: bytes | None) -> None:
-        self._user_signing_priv = value
-
-    _RECORD_CROSS_SIGNING = "cross_signing"
+class CrossSigningCoreInitializationMixin:
+    """初始化交叉签名并准备本地持久化状态。"""
 
     def __init__(
         self,
@@ -97,12 +52,19 @@ class CrossSigningCoreMixin:
         self._user_signing_priv = None
         self._pending_secret_requests: set[str] = set()
 
-        self.storage_backend_config = get_plugin_config().storage_backend_config
+        get_config = resolve_core_symbol(
+            "get_plugin_config", _DEFAULT_GET_PLUGIN_CONFIG
+        )
+        self.storage_backend_config = get_config().storage_backend_config
 
         # 本地持久化存储（与 E2EE store 同目录）
         try:
-            store_path = Path(self.olm.store.store_path)
-            self._storage_store = build_e2ee_data_store(
+            path_cls = resolve_core_symbol("Path", Path)
+            build_store = resolve_core_symbol(
+                "build_e2ee_data_store", _DEFAULT_BUILD_E2EE_DATA_STORE
+            )
+            store_path = path_cls(self.olm.store.store_path)
+            self._storage_store = build_store(
                 folder_path=store_path,
                 namespace_key=namespace_key or store_path.as_posix(),
                 storage_backend_config=self.storage_backend_config,
@@ -112,13 +74,9 @@ class CrossSigningCoreMixin:
         except Exception:
             self._storage_store = None
 
-    @staticmethod
-    def _json_filename_resolver(_: str) -> str:
-        return "cross_signing.json"
-
     async def initialize(self):
         """初始化交叉签名"""
-        if not CRYPTO_AVAILABLE:
+        if not resolve_core_symbol("CRYPTO_AVAILABLE", _DEFAULT_CRYPTO_AVAILABLE):
             logger.debug(
                 "[E2EE-CrossSign] cryptography 不可用，无法生成/签名交叉签名密钥"
             )
@@ -175,7 +133,10 @@ class CrossSigningCoreMixin:
                                 server_user_signing,
                             )
                         )
-                        if request_status == DEVICE_SECRET_REQUEST_PENDING:
+                        if request_status == resolve_core_symbol(
+                            "DEVICE_SECRET_REQUEST_PENDING",
+                            DEVICE_SECRET_REQUEST_PENDING,
+                        ):
                             logger.info(
                                 "[E2EE-CrossSign] 已向其他设备请求 cross-signing 私钥，"
                                 "等待设备间恢复后再继续"
@@ -187,7 +148,10 @@ class CrossSigningCoreMixin:
                             if not local_ready
                             else "本地私钥与服务器公钥不匹配（可能已被其他客户端重置）"
                         )
-                        if FORCE_OVERWRITE_SERVER_KEYS:
+                        if resolve_core_symbol(
+                            "FORCE_OVERWRITE_SERVER_KEYS",
+                            FORCE_OVERWRITE_SERVER_KEYS,
+                        ):
                             logger.warning(
                                 f"[E2EE-CrossSign] {overwrite_reason}，恢复路径失败后将重新生成"
                             )
