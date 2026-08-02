@@ -1,87 +1,19 @@
-import base64
-import hashlib
 import secrets
 
 from astrbot.api import logger
 
-from ...constants import (
+from ....constants import (
     M_QR_CODE_SCAN_V1_METHOD,
-    M_QR_CODE_SHOW_V1_METHOD,
-    M_RECIPROCATE_V1_METHOD,
     PREFIX_ED25519,
     QR_CODE_HEADER,
     QR_CODE_MODE_SELF_VERIFICATION_TRUSTED_MASTER,
     QR_CODE_MODE_SELF_VERIFICATION_UNTRUSTED_MASTER,
     QR_CODE_VERSION,
-    SAS_BYTES_LENGTH_6,
 )
-from .crypto_utils import _encode_unpadded_base64
+from ..crypto_utils import _encode_unpadded_base64
 
 
-class SASVerificationFlowUtilsMixin:
-    @staticmethod
-    def _mask_identifier(value: str | None) -> str:
-        if not isinstance(value, str) or not value:
-            return "<empty>"
-        normalized = value.strip()
-        if len(normalized) <= 4:
-            return "***"
-        return f"{normalized[:2]}***{normalized[-2:]}"
-
-    @staticmethod
-    def _mask_txn_id(value: str | None) -> str:
-        if not isinstance(value, str) or not value:
-            return "<empty>"
-        normalized = value.strip()
-        if len(normalized) <= 8:
-            return "***"
-        return f"{normalized[:8]}..."
-
-    @staticmethod
-    def _supports_method(methods: object, method: str) -> bool:
-        if not isinstance(methods, (list, tuple, set)):
-            return False
-        return method in methods
-
-    @staticmethod
-    def _decode_unpadded_base64(data: str) -> bytes:
-        normalized = str(data or "").strip()
-        if not normalized:
-            return b""
-        padding = "=" * (-len(normalized) % 4)
-        return base64.b64decode(normalized + padding)
-
-    def _get_local_device_ed25519_key(self) -> str | None:
-        olm = getattr(self, "olm", None)
-        device_key = getattr(olm, "ed25519_key", None)
-        if isinstance(device_key, str) and device_key:
-            return device_key
-        if olm and hasattr(olm, "get_identity_keys"):
-            try:
-                keys = olm.get_identity_keys() or {}
-                key_id = f"{PREFIX_ED25519}{self.device_id}"
-                candidate = keys.get(key_id)
-                if isinstance(candidate, str) and candidate:
-                    return candidate
-            except Exception:
-                return None
-        return None
-
-    @staticmethod
-    def _device_trusts_master_key(response: dict, user_id: str, device_id: str) -> bool:
-        master_key = (response.get("master_keys") or {}).get(user_id) or {}
-        signatures = (master_key.get("signatures") or {}).get(user_id) or {}
-        return f"{PREFIX_ED25519}{device_id}" in signatures
-
-    def _can_continue_with_qr(self, sender: str, methods: object) -> bool:
-        if sender != self.user_id:
-            return False
-        can_show_to_peer = self._supports_method(methods, M_QR_CODE_SCAN_V1_METHOD)
-        can_scan_peer = self._supports_method(
-            methods, M_QR_CODE_SHOW_V1_METHOD
-        ) and self._supports_method(methods, M_RECIPROCATE_V1_METHOD)
-        return can_show_to_peer or can_scan_peer
-
+class SASVerificationFlowQRMixin:
     def _build_self_verification_qr_payload(
         self,
         transaction_id: str,
@@ -187,21 +119,3 @@ class SASVerificationFlowUtilsMixin:
         except Exception as e:
             logger.warning(f"[E2EE-Verify] 准备同账号 QR 自验证失败：{e}")
             return False
-
-    def _compute_sas_fallback(self, session: dict, their_key: str):
-        """回退的 SAS 计算（当 vodozemac SAS 不可用时）"""
-        our_key = session.get("our_public_key", "")
-        combined = f"{our_key}{their_key}".encode()
-        sas_bytes = hashlib.sha256(combined).digest()[:SAS_BYTES_LENGTH_6]
-
-        emojis = self._bytes_to_emoji(sas_bytes)
-        decimals = self._bytes_to_decimal(sas_bytes)
-
-        session["sas_bytes"] = sas_bytes
-        session["sas_emojis"] = emojis
-        session["sas_decimals"] = decimals
-
-        emoji_str = " ".join(e[0] for e in emojis)
-        logger.info(
-            f"[E2EE-Verify] SAS 验证码 (fallback): {emoji_str} | 数字：{decimals}"
-        )
