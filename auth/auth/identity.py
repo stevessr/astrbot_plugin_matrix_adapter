@@ -1,17 +1,13 @@
-"""
-Matrix 登录认证组件（不依赖 matrix-nio）
-支持密码、Token 和 OAuth2 认证
-"""
+"""Matrix authentication identity and callback state."""
 
 from pathlib import Path
 
 from astrbot.api import logger
 
-from .login import MatrixAuthLogin
-from .store import MatrixAuthStore
 
+class MatrixAuthIdentityMixin:
+    """Initialize authentication state and expose identity helpers."""
 
-class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
     def __init__(self, client, config, token_store_path: str | Path | None = None):
         self.client = client
         self.config = config
@@ -46,13 +42,6 @@ class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
     def device_id(self) -> str:
         """获取设备 ID"""
         return self.config.device_id
-
-    def login(self):
-        """
-        Perform login based on configured authentication method
-        Supports: password, token, oauth2
-        """
-        return self._login_wrapper()
 
     def _current_device_id_for_logging(self) -> str | None:
         try:
@@ -97,75 +86,3 @@ class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
             return await handler.handle_webhook_callback(request)
         self._log("info", "收到 Matrix 认证回调，但当前没有进行中的认证流程")
         return "Matrix authentication flow is not ready, please retry.", 503
-
-    async def _login_wrapper(self):
-        self._device_id_rotated_for_reauth = False
-        # Always try to load token first for potential restoration
-        self._load_token()
-
-        if self.auth_method == "oauth2":
-            if await self._restore_oauth2_session():
-                return
-            if self.access_token:
-                self._reset_device_id_for_reauth("OAuth2 session restore failed")
-            await self._login_via_oauth2()
-        elif self.auth_method == "qr":
-            if self.access_token:
-                try:
-                    await self._login_via_token()
-                    return
-                except RuntimeError:
-                    self._log(
-                        "info",
-                        "Stored token expired or invalid, falling back to QR login",
-                    )
-                    self._reset_device_id_for_reauth(
-                        "Stored token invalid before QR login"
-                    )
-
-            await self._login_via_qr()
-        elif self.auth_method == "token":
-            await self._login_via_token()
-        elif self.auth_method == "password":
-            # Token loaded at start of function
-            if self.access_token:
-                try:
-                    await self._login_via_token()
-                    return
-                except RuntimeError:
-                    self._log(
-                        "info",
-                        "Stored token expired or invalid, falling back to password login",
-                    )
-                    self._reset_device_id_for_reauth(
-                        "Stored token invalid before password login"
-                    )
-
-            await self._login_via_password()
-            self._save_token()
-        else:
-            # Auto-detect authentication method
-            if self.access_token:
-                await self._login_via_token()
-            elif self.password:
-                # Token loaded at start of function
-                if self.access_token:
-                    try:
-                        await self._login_via_token()
-                        return
-                    except RuntimeError:
-                        self._log(
-                            "info",
-                            "Stored token expired or invalid, falling back to password login",
-                        )
-                        self._reset_device_id_for_reauth(
-                            "Stored token invalid before password login"
-                        )
-
-                await self._login_via_password()
-                self._save_token()
-            else:
-                raise ValueError(
-                    "Either matrix_access_token or matrix_password is required. "
-                    "For OAuth2/QR, set matrix_auth_method='oauth2' or 'qr'"
-                )
