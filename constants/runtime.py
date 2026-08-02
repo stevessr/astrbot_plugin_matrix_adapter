@@ -1,0 +1,62 @@
+"""Runtime, networking, display, and media-processing constants."""
+
+# 默认数量/超时
+DEFAULT_ONE_TIME_KEYS_COUNT = 50
+DEFAULT_TYPING_TIMEOUT_MS = 5000
+
+# 流式回复期间的 typing 保活。Matrix 的 typing 状态会在 timeout 后自动过期，
+# 而流式生成通常远长于此，因此需要在过期前重新声明。
+STREAMING_TYPING_TIMEOUT_MS = 15000
+STREAMING_TYPING_REFRESH_SECONDS = 10.0
+
+# 在线状态
+PRESENCE_ONLINE = "online"
+PRESENCE_OFFLINE = "offline"
+# MSC3026 忙绿状态（busy presence）
+PRESENCE_BUSY = "busy"
+
+# 协议和加密常量
+CRYPTO_KEY_SIZE_32 = 32
+AES_BLOCK_SIZE_16 = 16
+MAC_TRUNCATED_BYTES_8 = 8
+SAS_BYTES_LENGTH_6 = 6
+SAS_EMOJI_COUNT_7 = 7
+
+# 消息和数据处理常量
+TEXT_TRUNCATE_LENGTH_50 = 50
+ERROR_TRUNCATE_LENGTH_200 = 200
+HTTP_ERROR_STATUS_400 = 400
+RESPONSE_TRUNCATE_LENGTH_400 = 400
+
+# 时间和网络常量
+DEFAULT_TIMEOUT_MS_30000 = 30000
+KEY_QUERY_TIMEOUT_MS_10000 = 10000
+
+# OAuth2 回调服务器默认端口
+DEFAULT_OAUTH2_CALLBACK_PORT = 8765
+
+# 显示和格式化常量
+DISPLAY_TRUNCATE_LENGTH_4 = 4
+TXN_DISPLAY_LENGTH_8 = 8
+DISPLAY_TRUNCATE_LENGTH_20 = 20
+
+# 消息处理常量
+MAX_PROCESSED_MESSAGES_1000 = 1000
+TIMESTAMP_BUFFER_MS_1000 = 1000
+GROUP_CHAT_MIN_MEMBERS_2 = 2
+
+# 文件上传常量
+# 默认最大上传文件大小 (10MB)，超过此大小将尝试压缩
+DEFAULT_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
+# 图片压缩最低质量
+IMAGE_MIN_QUALITY = 30
+# 图片压缩步进
+IMAGE_QUALITY_STEP = 10
+# 图片最大尺寸（宽或高的最大像素数）
+IMAGE_MAX_DIMENSION = 2048
+# 图片缩小尺寸的缩放因子（每次迭代）
+IMAGE_RESIZE_SCALE_FACTOR = 0.7
+# 图片缩小的最小宽度（像素）
+IMAGE_MIN_WIDTH = 100
+
+__all__ = [name for name in globals() if not name.startswith("_")]
