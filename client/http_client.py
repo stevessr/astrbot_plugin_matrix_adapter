@@ -17,7 +17,7 @@ This module provides a modular HTTP client for Matrix, composed of:
 """
 
 from .account_mixin import AccountMixin
-from .auth_mixin import AuthMixin
+from .auth import AuthMixin
 from .base import MatrixAPIError, MatrixClientBase
 from .delayed_events_mixin import DelayedEventsMixin
 from .device_mixin import DeviceMixin

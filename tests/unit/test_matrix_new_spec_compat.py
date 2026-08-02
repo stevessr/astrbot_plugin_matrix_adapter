@@ -2248,7 +2248,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
     ):
         key_backup_mixin = load_module("client.key_backup_mixin")
         push_mixin = load_module("client.push_mixin")
-        auth_mixin = load_module("client.auth_mixin")
+        auth_mixin = load_module("client.auth")
         thirdparty_mixin = load_module("client.thirdparty_mixin")
 
         class FakeClient(
