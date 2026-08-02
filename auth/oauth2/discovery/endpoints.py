@@ -1,58 +1,11 @@
-"""
-OAuth2 discovery and client registration.
-"""
+"""Discover OAuth2 and OIDC endpoints from a homeserver."""
 
 import aiohttp
 
-from .core import _log
+from ..core import _log
 
 
-class MatrixOAuth2Discovery:
-    """Mixin for OAuth2 discovery and registration."""
-
-    def _get_oauth_http_timeout_seconds(self) -> float:
-        resolver = getattr(self, "_resolve_oauth_http_timeout_seconds", None)
-        if callable(resolver):
-            try:
-                return float(resolver(cap_seconds=120))
-            except Exception:
-                pass
-        return 30.0
-
-    def _apply_discovered_oauth_metadata(self, metadata: dict) -> dict:
-        issuer = metadata.get("issuer")
-        authorization_endpoint = metadata.get("authorization_endpoint")
-        token_endpoint = metadata.get("token_endpoint")
-        registration_endpoint = metadata.get("registration_endpoint")
-        account_management_uri = metadata.get("account_management_uri") or metadata.get(
-            "account"
-        )
-
-        if not issuer or not authorization_endpoint or not token_endpoint:
-            raise Exception("Missing required OAuth2 metadata fields")
-
-        self.issuer = issuer
-        self.authorization_endpoint = authorization_endpoint
-        self.token_endpoint = token_endpoint
-        self.registration_endpoint = registration_endpoint
-        self.account_management_uri = account_management_uri
-
-        _log("info", "✅ OAuth2 discovery successful!")
-        _log("info", f"  Authorization endpoint: {self.authorization_endpoint}")
-        _log("info", f"  Token endpoint: {self.token_endpoint}")
-        if self.registration_endpoint:
-            _log("info", f"  Registration endpoint: {self.registration_endpoint}")
-        if self.account_management_uri:
-            _log("info", f"  Account management URI: {self.account_management_uri}")
-
-        return {
-            "issuer": self.issuer,
-            "authorization_endpoint": self.authorization_endpoint,
-            "token_endpoint": self.token_endpoint,
-            "registration_endpoint": self.registration_endpoint,
-            "account": self.account_management_uri,
-        }
-
+class MatrixOAuth2DiscoveryEndpointsMixin:
     async def _discover_oauth_endpoints(self) -> dict:
         try:
             _log("info", f"Discovering OAuth2 configuration from {self.homeserver}")
@@ -199,58 +152,4 @@ class MatrixOAuth2Discovery:
                     "Check the server's /_matrix/client/v1/auth_metadata or "
                     "/.well-known/matrix/client endpoint.",
                 )
-            raise
-
-    async def _register_client(self, redirect_uri: str) -> dict[str, str]:
-        if not self.registration_endpoint:
-            raise Exception(
-                "Dynamic client registration not supported by this server. "
-                "Please provide a client_id manually."
-            )
-
-        try:
-            _log("info", f"Registering OAuth2 client with {self.registration_endpoint}")
-
-            registration_data = {
-                "client_name": "AstrBot Matrix Client",
-                "client_uri": "https://github.com/Soulter/AstrBot",
-                "redirect_uris": [redirect_uri],
-                "grant_types": ["authorization_code", "refresh_token"],
-                "response_types": ["code"],
-                "token_endpoint_auth_method": "none",
-                "application_type": "native",
-            }
-
-            timeout_cfg = aiohttp.ClientTimeout(
-                total=self._get_oauth_http_timeout_seconds()
-            )
-            async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
-                async with session.post(
-                    self.registration_endpoint,
-                    json=registration_data,
-                    headers={"Content-Type": "application/json"},
-                ) as response:
-                    if response.status not in [200, 201]:
-                        error_text = await response.text()
-                        raise Exception(
-                            f"Client registration failed: HTTP {response.status} - {error_text}"
-                        )
-
-                    registration_response = await response.json()
-
-                    client_id = registration_response.get("client_id")
-                    client_secret = registration_response.get("client_secret")
-
-                    if not client_id:
-                        raise Exception("No client_id in registration response")
-
-                    _log("info", f"✅ Successfully registered client: {client_id}")
-
-                    return {
-                        "client_id": client_id,
-                        "client_secret": client_secret,
-                    }
-
-        except Exception as e:
-            _log("error", f"❌ Failed to register OAuth2 client: {e}")
             raise
