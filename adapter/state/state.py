@@ -1,20 +1,12 @@
+"""Runtime health state for one Matrix adapter instance."""
+
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-@dataclass
-class MatrixRuntimeErrorEntry:
-    category: str
-    message: str
-    ts: str = field(default_factory=_utc_now_iso)
+from .errors import MatrixRuntimeErrorEntry
+from .time import _utc_now_iso
 
 
 class MatrixRuntimeState:
@@ -135,3 +127,6 @@ class MatrixRuntimeState:
             "reconnect_requests": self.reconnect_requests,
             "recent_errors": self.recent_errors(),
         }
+
+
+__all__ = ["MatrixRuntimeState"]
