@@ -7,8 +7,8 @@ from pathlib import Path
 
 from astrbot.api import logger
 
-from .auth_store import MatrixAuthStore
 from .login import MatrixAuthLogin
+from .store import MatrixAuthStore
 
 
 class MatrixAuth(MatrixAuthStore, MatrixAuthLogin):
