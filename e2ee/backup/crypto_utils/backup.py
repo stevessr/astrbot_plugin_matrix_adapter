@@ -1,125 +1,24 @@
+"""Matrix m.megolm_backup.v1 encryption and decryption helpers."""
+
 import base64
 import hashlib
 import hmac
-import secrets
 
 from astrbot.api import logger
 
-from ...constants import (
+from ....constants import (
     AES_BLOCK_SIZE_16,
-    AES_GCM_NONCE_LEN,
-    BASE58_ALPHABET,
     CRYPTO_KEY_SIZE_32,
     HKDF_KEY_MATERIAL_LEN,
     HKDF_MEGOLM_BACKUP_INFO,
     MAC_TRUNCATED_BYTES_8,
-    RECOVERY_KEY_HDR_BYTE1,
-    RECOVERY_KEY_HDR_BYTE2,
-    RECOVERY_KEY_PRIV_LEN,
-    RECOVERY_KEY_TOTAL_LEN,
 )
-
-# 尝试导入加密库
-try:
-    from cryptography.hazmat.backends import default_backend
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives import hmac as crypto_hmac  # noqa: F401
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-
-    CRYPTO_AVAILABLE = True
-except ImportError:
-    CRYPTO_AVAILABLE = False
-    logger.debug("cryptography 库不可用，密钥备份将使用简化加密")
-
-# 尝试导入 vodozemac (用于 Matrix 兼容的 PkDecryption)
-try:
-    from vodozemac import (  # noqa: F401
-        Curve25519PublicKey,
-        Curve25519SecretKey,
-        PkDecodeException,
-        PkDecryption,
-        PkEncryption,
-    )
-
-    VODOZEMAC_PK_AVAILABLE = True
-except ImportError:
-    VODOZEMAC_PK_AVAILABLE = False
-    Curve25519PublicKey = None
-    Curve25519SecretKey = None
-    PkDecryption = None
-    PkEncryption = None
-    PkDecodeException = Exception  # 回退到通用异常
-    logger.debug("vodozemac PkDecryption 不可用")
-
-
-def _compute_hkdf(
-    input_key: bytes, salt: bytes, info: bytes, length: int = CRYPTO_KEY_SIZE_32
-) -> bytes:
-    """计算 HKDF-SHA256"""
-    if CRYPTO_AVAILABLE:
-        hkdf = HKDF(
-            algorithm=hashes.SHA256(),
-            length=length,
-            salt=salt if salt else None,
-            info=info,
-            backend=default_backend(),
-        )
-        return hkdf.derive(input_key)
-    else:
-        # 简化的 HKDF 实现
-        if not salt:
-            salt = b"\x00" * CRYPTO_KEY_SIZE_32
-        prk = hmac.new(salt, input_key, hashlib.sha256).digest()
-        output = b""
-        t = b""
-        counter = 1
-        while len(output) < length:
-            t = hmac.new(prk, t + info + bytes([counter]), hashlib.sha256).digest()
-            output += t
-            counter += 1
-        return output[:length]
-
-
-def _aes_encrypt(key: bytes, plaintext: bytes) -> tuple[bytes, bytes]:
-    """AES-GCM 加密"""
-    nonce = secrets.token_bytes(AES_GCM_NONCE_LEN)
-    if CRYPTO_AVAILABLE:
-        aesgcm = AESGCM(key)
-        ciphertext = aesgcm.encrypt(nonce, plaintext, None)
-    else:
-        # 简化实现 (不安全，仅用于测试)
-        ciphertext = bytes(
-            a ^ b for a, b in zip(plaintext, key * (len(plaintext) // len(key) + 1))
-        )
-    return nonce, ciphertext
-
-
-def _aes_decrypt(key: bytes, nonce: bytes, ciphertext: bytes) -> bytes:
-    """AES-GCM 解密"""
-    if CRYPTO_AVAILABLE:
-        aesgcm = AESGCM(key)
-        return aesgcm.decrypt(nonce, ciphertext, None)
-    else:
-        # 简化实现 (不安全，仅用于测试)
-        return bytes(
-            a ^ b for a, b in zip(ciphertext, key * (len(ciphertext) // len(key) + 1))
-        )
-
-
-def _aes_ctr_decrypt(key: bytes, iv: bytes, ciphertext: bytes) -> bytes:
-    """
-    AES-256-CTR 解密 (Matrix 密钥备份使用此模式)
-    """
-    if CRYPTO_AVAILABLE:
-        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-
-        cipher = Cipher(algorithms.AES(key), modes.CTR(iv), backend=default_backend())
-        decryptor = cipher.decryptor()
-        return decryptor.update(ciphertext) + decryptor.finalize()
-    else:
-        # 无法使用简化实现，因为 CTR 模式需要正确的计数器处理
-        raise RuntimeError("需要 cryptography 库来解密密钥备份")
+from . import CRYPTO_AVAILABLE as _DEFAULT_CRYPTO_AVAILABLE
+from . import VODOZEMAC_PK_AVAILABLE as _DEFAULT_VODOZEMAC_PK_AVAILABLE
+from . import Curve25519PublicKey as _DEFAULT_CURVE25519_PUBLIC_KEY
+from . import PkEncryption as _DEFAULT_PK_ENCRYPTION
+from . import default_backend as _DEFAULT_DEFAULT_BACKEND
+from .compat import crypto_available, resolve_attribute, vodozemac_pk_available
 
 
 def _encrypt_backup_data(
@@ -137,14 +36,22 @@ def _encrypt_backup_data(
             f"备份公钥长度无效：期望 {CRYPTO_KEY_SIZE_32} 字节，实际 {len(backup_public_key)} 字节"
         )
 
-    if VODOZEMAC_PK_AVAILABLE:
-        public_key = Curve25519PublicKey.from_base64(
+    if vodozemac_pk_available(_DEFAULT_VODOZEMAC_PK_AVAILABLE):
+        public_key_cls = resolve_attribute(
+            "Curve25519PublicKey",
+            _DEFAULT_CURVE25519_PUBLIC_KEY,
+        )
+        pk_encryption_cls = resolve_attribute(
+            "PkEncryption",
+            _DEFAULT_PK_ENCRYPTION,
+        )
+        public_key = public_key_cls.from_base64(
             base64.b64encode(backup_public_key).decode()
         )
-        message = PkEncryption.from_key(public_key).encrypt(plaintext)
+        message = pk_encryption_cls.from_key(public_key).encrypt(plaintext)
         return message.ephemeral_key, message.ciphertext, message.mac
 
-    if not CRYPTO_AVAILABLE:
+    if not crypto_available(_DEFAULT_CRYPTO_AVAILABLE):
         raise RuntimeError("需要 cryptography 或 vodozemac 库来加密密钥备份")
 
     from cryptography.hazmat.primitives import hashes, padding, serialization
@@ -152,6 +59,10 @@ def _encrypt_backup_data(
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+    backend_factory = resolve_attribute(
+        "default_backend",
+        _DEFAULT_DEFAULT_BACKEND,
+    )
     ephemeral_private_key = x25519.X25519PrivateKey.generate()
     ephemeral_public_key = ephemeral_private_key.public_key().public_bytes(
         encoding=serialization.Encoding.Raw,
@@ -165,7 +76,7 @@ def _encrypt_backup_data(
         length=HKDF_KEY_MATERIAL_LEN,
         salt=b"\x00" * CRYPTO_KEY_SIZE_32,
         info=HKDF_MEGOLM_BACKUP_INFO,
-        backend=default_backend(),
+        backend=backend_factory(),
     )
     key_material = hkdf.derive(shared_secret)
     encryption_key = key_material[:CRYPTO_KEY_SIZE_32]
@@ -177,7 +88,7 @@ def _encrypt_backup_data(
     cipher = Cipher(
         algorithms.AES(encryption_key),
         modes.CTR(b"\x00" * AES_BLOCK_SIZE_16),
-        backend=default_backend(),
+        backend=backend_factory(),
     )
     encryptor = cipher.encryptor()
     ciphertext = encryptor.update(padded_plaintext) + encryptor.finalize()
@@ -342,94 +253,3 @@ def _manual_decrypt_v1(
     except Exception as e:
         logger.warning(f"手动解密失败：{e}")
         return None
-
-
-def _encode_recovery_key(key_bytes: bytes) -> str:
-    """
-    将 32 字节密钥编码为 Matrix 恢复密钥 (Base58)
-    """
-    if len(key_bytes) != RECOVERY_KEY_PRIV_LEN:
-        raise ValueError("恢复密钥长度必须为 32 字节")
-
-    data = bytearray()
-    data.append(RECOVERY_KEY_HDR_BYTE1)
-    data.append(RECOVERY_KEY_HDR_BYTE2)
-    data.extend(key_bytes)
-
-    checksum = 0
-    for b in data:
-        checksum ^= b
-    data.append(checksum)
-
-    # Base58 编码
-    value = int.from_bytes(data, "big")
-    encoded = ""
-    while value > 0:
-        value, rem = divmod(value, 58)
-        encoded = BASE58_ALPHABET[rem] + encoded
-
-    # 补前导零
-    for b in data:
-        if b == 0:
-            encoded = BASE58_ALPHABET[0] + encoded
-        else:
-            break
-
-    # 每 4 字符插入空格（可读格式）
-    groups = [encoded[i : i + 4] for i in range(0, len(encoded), 4)]
-    return " ".join(groups)
-
-
-def _decode_recovery_key(key_str: str) -> bytes:
-    """
-    解析 Matrix 恢复密钥 (Base58 或 Base64)
-    """
-    key_str = key_str.replace(" ", "")
-
-    # 尝试 Base58（标准恢复密钥格式）
-    try:
-        value = 0
-        for c in key_str:
-            value = value * 58 + BASE58_ALPHABET.index(c)
-
-        decoded = value.to_bytes(RECOVERY_KEY_TOTAL_LEN, "big")
-        if (
-            len(decoded) != RECOVERY_KEY_TOTAL_LEN
-            or decoded[0] != RECOVERY_KEY_HDR_BYTE1
-            or decoded[1] != RECOVERY_KEY_HDR_BYTE2
-        ):
-            raise ValueError("恢复密钥头部不匹配，应为 0x8B01")
-
-        checksum = 0
-        for b in decoded[:-1]:
-            checksum ^= b
-        if checksum != decoded[-1]:
-            raise ValueError("恢复密钥校验失败 (XOR mismatch)")
-
-        private_key = decoded[2 : 2 + RECOVERY_KEY_PRIV_LEN]
-        return private_key
-    except Exception as e:
-        logger.debug(f"Base58 恢复密钥解析失败：{e}")
-
-    # 尝试 Base64（兼容旧格式或直接私钥字符串）
-    try:
-        decoded = base64.b64decode(key_str + "===")
-
-        if (
-            len(decoded) >= RECOVERY_KEY_TOTAL_LEN
-            and decoded[0] == RECOVERY_KEY_HDR_BYTE1
-            and decoded[1] == RECOVERY_KEY_HDR_BYTE2
-        ):
-            checksum = 0
-            for b in decoded[:-1]:
-                checksum ^= b
-            if checksum != decoded[-1]:
-                raise ValueError("Base64 恢复密钥校验失败 (XOR mismatch)")
-            return decoded[2 : 2 + RECOVERY_KEY_PRIV_LEN]
-
-        if len(decoded) >= RECOVERY_KEY_PRIV_LEN:
-            return decoded[:RECOVERY_KEY_PRIV_LEN]
-    except Exception:
-        logger.debug("Base64 解码失败，尝试其他格式")
-
-    raise ValueError("无法解码恢复密钥，请检查输入格式（应为 Matrix Base58 或 Base64）")
