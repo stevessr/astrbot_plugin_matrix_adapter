@@ -1,65 +1,23 @@
-"""
-Matrix data storage backend facade.
-
-This module keeps the public API stable while delegating each backend
-implementation to independent files under `storage/backends/`.
-"""
+"""Folder-scoped multi-backend data store."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from astrbot.api import logger
 
-from .backends import (
+from ..backends import (
     JsonBackend,
     PgSQLBackend,
     SQLiteBackend,
-    build_folder_namespace,
     build_pg_table_name,
     normalize_storage_backend,
 )
-from .paths import MatrixStoragePaths
+from ..paths import MatrixStoragePaths
 
 JsonFilenameResolver = Callable[[str], str]
-
-__all__ = [
-    "normalize_storage_backend",
-    "build_pg_table_name",
-    "build_folder_namespace",
-    "StorageBackendConfig",
-    "MatrixFolderDataStore",
-]
-
-
-@dataclass(frozen=True)
-class StorageBackendConfig:
-    """Runtime storage backend config shared across components."""
-
-    backend: str = "json"
-    pgsql_dsn: str = ""
-    pgsql_schema: str = "public"
-    pgsql_table_prefix: str = "matrix_store"
-
-    @classmethod
-    def create(
-        cls,
-        *,
-        backend: str | None = None,
-        pgsql_dsn: str | None = None,
-        pgsql_schema: str | None = None,
-        pgsql_table_prefix: str | None = None,
-    ) -> StorageBackendConfig:
-        return cls(
-            backend=normalize_storage_backend(backend),
-            pgsql_dsn=(pgsql_dsn or "").strip(),
-            pgsql_schema=(pgsql_schema or "public").strip() or "public",
-            pgsql_table_prefix=(pgsql_table_prefix or "matrix_store").strip()
-            or "matrix_store",
-        )
 
 
 class MatrixFolderDataStore:
@@ -145,3 +103,6 @@ class MatrixFolderDataStore:
         if not record_key:
             return
         self._backend_impl.delete(record_key)
+
+
+__all__ = ["MatrixFolderDataStore"]
