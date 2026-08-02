@@ -1,112 +1,19 @@
-"""QR verification payload decoding and scan flow."""
-
-import base64
-from pathlib import Path
-from typing import Any
+"""QR scan validation and reciprocate event sending."""
 
 from astrbot.api import logger
 
-from ....constants import (
+from .....constants import (
     M_KEY_VERIFICATION_START,
     M_RECIPROCATE_V1_METHOD,
     PREFIX_ED25519,
-    QR_CODE_HEADER,
     QR_CODE_MODE_SELF_VERIFICATION_TRUSTED_MASTER,
     QR_CODE_MODE_SELF_VERIFICATION_UNTRUSTED_MASTER,
-    QR_CODE_VERSION,
 )
-from ..crypto_utils import _encode_unpadded_base64
+from ...crypto_utils import _encode_unpadded_base64
 
 
-class SASVerificationQRMixin:
-    """二维码载荷解析、会话匹配和 reciprocate 发送。"""
-
-    @staticmethod
-    def _decode_base64_payload(payload: str) -> bytes:
-        normalized = str(payload or "").strip()
-        if not normalized:
-            raise ValueError("二维码载荷不能为空")
-        padding = "=" * (-len(normalized) % 4)
-        return base64.b64decode(normalized + padding)
-
-    @staticmethod
-    def _decode_qr_image(image_path: Path) -> bytes:
-        try:
-            from PIL import Image
-            from pyzbar.pyzbar import decode
-        except Exception as e:
-            raise RuntimeError("二维码图片解码依赖缺失，请安装 Pillow 和 pyzbar") from e
-
-        with Image.open(image_path) as image:
-            results = decode(image)
-        if not results:
-            raise ValueError("未在图片中识别到二维码")
-        if len(results) > 1:
-            raise ValueError("图片中包含多个二维码，请只保留一个")
-        return bytes(results[0].data)
-
-    @staticmethod
-    def _parse_verification_qr_payload(payload: bytes) -> dict[str, object]:
-        if len(payload) < 6 + 1 + 1 + 2 + 32 + 32 + 1:
-            raise ValueError("二维码载荷长度无效")
-        if payload[:6] != QR_CODE_HEADER:
-            raise ValueError("二维码载荷头部不是 MATRIX")
-        version = payload[6]
-        if version != QR_CODE_VERSION:
-            raise ValueError(f"不支持的二维码版本：{version}")
-        mode = payload[7]
-        txn_len = int.from_bytes(payload[8:10], "big")
-        if len(payload) < 10 + txn_len + 64 + 1:
-            raise ValueError("二维码载荷缺少事务或密钥字段")
-        txn_start = 10
-        txn_end = txn_start + txn_len
-        key1_start = txn_end
-        key2_start = key1_start + 32
-        secret_start = key2_start + 32
-        transaction_id = payload[txn_start:txn_end].decode("ascii")
-        return {
-            "version": version,
-            "mode": mode,
-            "transaction_id": transaction_id,
-            "key1": payload[key1_start:key2_start],
-            "key2": payload[key2_start:secret_start],
-            "secret": payload[secret_start:],
-        }
-
-    def _load_qr_payload_bytes(self, qr_input: str) -> bytes:
-        candidate = Path(str(qr_input or "").strip()).expanduser()
-        if candidate.exists():
-            return self._decode_qr_image(candidate)
-        return self._decode_base64_payload(str(qr_input or "").strip())
-
-    def _find_session_for_qr_scan(
-        self,
-        user_id: str,
-        device_id: str,
-        transaction_id: str | None = None,
-    ) -> tuple[str, dict[str, Any]] | tuple[None, None]:
-        candidates: list[tuple[str, dict[str, Any]]] = []
-        for txn_id, session in self._sessions.items():
-            if transaction_id and txn_id != transaction_id:
-                continue
-            if session.get("sender") != user_id:
-                continue
-            if (
-                session.get("from_device") != device_id
-                and session.get("their_device") != device_id
-            ):
-                continue
-            if session.get("state") in ("done", "cancelled"):
-                continue
-            candidates.append((txn_id, session))
-
-        if not candidates:
-            return None, None
-
-        for txn_id, session in candidates:
-            if session.get("state") in ("ready", "ready_for_qr_scan", "requested"):
-                return txn_id, session
-        return candidates[0]
+class SASVerificationQRScanningMixin:
+    """校验扫描的二维码并发送 reciprocate 事件。"""
 
     async def scan_qr(
         self, user_id: str, device_id: str, qr_input: str
@@ -188,6 +95,3 @@ class SASVerificationQRMixin:
         except Exception as e:
             logger.warning(f"[E2EE-Verify] 扫描验证二维码失败：{e}")
             return False, str(e)
-
-
-__all__ = ["SASVerificationQRMixin"]
