@@ -1,8 +1,4 @@
-"""
-E2EE Manager - 端到端加密管理器
-
-整合 OlmMachine 和 HTTP 客户端，提供高层 E2EE 操作接口。
-"""
+"""Initialization and trust setup for the high-level E2EE manager."""
 
 import asyncio
 from pathlib import Path
@@ -10,47 +6,26 @@ from typing import Literal
 
 from astrbot.api import logger
 
-from ...config.plugin import get_plugin_config
-from ...storage.backend import build_folder_namespace
-from ...storage.paths import MatrixStoragePaths
-from ...utils.utils import mask_device_id
-from ..constants import (
+from ....storage.backend import (
+    build_folder_namespace as _DEFAULT_BUILD_FOLDER_NAMESPACE,
+)
+from ....storage.paths import MatrixStoragePaths as _DEFAULT_MATRIX_STORAGE_PATHS
+from ...constants import (
     DEFAULT_OLM_RECOVERY_RETRY_SEC,
     DEFAULT_PROACTIVE_KEY_SHARE_INTERVAL_SEC,
     DEFAULT_ROOM_KEY_REQUEST_EXPIRY_SEC,
     DEFAULT_ROOM_KEY_REQUEST_RETRY_SEC,
     DEFAULT_ROOM_MEMBER_CACHE_TTL_SEC,
 )
-from ..decrypt import E2EEManagerDecryptMixin
-from ..olm import VODOZEMAC_AVAILABLE, OlmMachine
-from ..requests import E2EEManagerRequestsMixin
-from ..secrets import E2EEManagerSecretsMixin
-from ..sessions import E2EEManagerSessionsMixin
-from ..store import CryptoStore
-from .keys import E2EEManagerKeysMixin
-from .verification import E2EEManagerVerificationMixin
+from ...olm import OlmMachine
+from ...olm import OlmMachine as _DEFAULT_OLM_MACHINE
+from ...store import CryptoStore
+from ...store import CryptoStore as _DEFAULT_CRYPTO_STORE
+from .compat import resolve_manager_symbol, resolve_plugin_config, vodozemac_available
 
 
-class E2EEManager(
-    E2EEManagerVerificationMixin,
-    E2EEManagerKeysMixin,
-    E2EEManagerDecryptMixin,
-    E2EEManagerRequestsMixin,
-    E2EEManagerSecretsMixin,
-    E2EEManagerSessionsMixin,
-):
-    """
-    端到端加密管理器
-
-    负责：
-    - 初始化加密组件
-    - 设备密钥上传
-    - 消息加密/解密
-    - 密钥交换
-    - SAS 设备验证
-    - 密钥备份
-    - 交叉签名
-    """
+class E2EEManagerCoreInitializationMixin:
+    """初始化 E2EE 组件并完成本机信任配置。"""
 
     def __init__(
         self,
@@ -100,15 +75,21 @@ class E2EEManager(
 
         # 使用 MatrixStoragePaths 生成用户存储目录
         self._store_base_path = Path(store_path)
-        self.store_path = MatrixStoragePaths.get_user_storage_dir(
+        storage_paths = resolve_manager_symbol(
+            "MatrixStoragePaths",
+            _DEFAULT_MATRIX_STORAGE_PATHS,
+        )
+        self.store_path = storage_paths.get_user_storage_dir(
             str(self._store_base_path), homeserver, user_id
         )
-        self._store_namespace = build_folder_namespace(
-            self.store_path, self._store_base_path
+        build_namespace = resolve_manager_symbol(
+            "build_folder_namespace",
+            _DEFAULT_BUILD_FOLDER_NAMESPACE,
         )
+        self._store_namespace = build_namespace(self.store_path, self._store_base_path)
 
         # Ensure the directory exists
-        MatrixStoragePaths.ensure_directory(self.store_path, treat_as_file=False)
+        storage_paths.ensure_directory(self.store_path, treat_as_file=False)
         self.auto_verify_mode = auto_verify_mode
         self.enable_key_backup = enable_key_backup
         self.recovery_key = recovery_key
@@ -121,7 +102,8 @@ class E2EEManager(
         self.key_share_check_interval = max(0, key_share_check_interval)
         if self.proactive_key_exchange and self.key_share_check_interval == 0:
             self.key_share_check_interval = DEFAULT_PROACTIVE_KEY_SHARE_INTERVAL_SEC
-        self.storage_backend_config = get_plugin_config().storage_backend_config
+        plugin_config = resolve_plugin_config()
+        self.storage_backend_config = plugin_config.storage_backend_config
         self.data_storage_backend = self.storage_backend_config.backend
         self.pgsql_dsn = self.storage_backend_config.pgsql_dsn
         self.pgsql_schema = self.storage_backend_config.pgsql_schema
@@ -160,134 +142,6 @@ class E2EEManager(
         self._olm_recovery_attempts: dict[tuple[str, str], float] = {}
         self._olm_recovery_retry_interval_sec = DEFAULT_OLM_RECOVERY_RETRY_SEC
         self._room_key_withheld: dict[tuple[str, str, str], dict] = {}
-
-    # 使用公共工具函数代替内联实现
-    _mask_device_id = staticmethod(mask_device_id)
-
-    @property
-    def is_available(self) -> bool:
-        """检查 E2EE 是否可用"""
-        return VODOZEMAC_AVAILABLE
-
-    async def _start_key_share_check_task(self):
-        """
-        启动定期密钥分发检查任务
-        """
-        if self._key_share_check_task and not self._key_share_check_task.done():
-            return
-
-        async def _check_loop():
-            while self._initialized:
-                try:
-                    await self._proactive_check_key_sharing()
-                except asyncio.CancelledError:
-                    break
-                except Exception as e:
-                    logger.warning(f"Periodic room-key distribution check failed: {e}")
-                if not self._initialized:
-                    break
-                try:
-                    await asyncio.sleep(self.key_share_check_interval)
-                except asyncio.CancelledError:
-                    break
-
-        self._key_share_check_task = asyncio.create_task(
-            _check_loop(),
-            name="matrix-key-share-check",
-        )
-        self._key_share_check_task.add_done_callback(
-            self._handle_key_share_check_task_done
-        )
-
-    def _handle_key_share_check_task_done(self, task: asyncio.Task) -> None:
-        if self._key_share_check_task is task:
-            self._key_share_check_task = None
-        try:
-            task.result()
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            logger.error(f"定期密钥分发检查任务异常退出：{e}")
-
-    def stop_key_share_check_task(self) -> asyncio.Task | None:
-        """停止定期密钥分发检查任务"""
-        task = self._key_share_check_task
-        if task and not task.done():
-            task.cancel()
-            logger.debug("已停止定期密钥分发检查任务")
-        self._key_share_check_task = None
-        return task
-
-    async def close(self) -> None:
-        """Release runtime resources and flush pending persistence jobs."""
-        self._closing = True
-        self._initialized = False
-        key_share_task = self.stop_key_share_check_task()
-        if key_share_task and not key_share_task.done():
-            try:
-                await key_share_task
-            except asyncio.CancelledError:
-                pass
-        store = self._store
-        self._store = None
-        self._olm = None
-        self._verification = None
-        self._key_backup = None
-        self._cross_signing = None
-        self._pending_room_key_requests.clear()
-        self._room_key_share_locks.clear()
-        self._room_encryption_config.clear()
-        self._no_olm_withheld_sent.clear()
-        self._olm_recovery_attempts.clear()
-        self._room_key_withheld.clear()
-        if store is not None and hasattr(store, "close"):
-            try:
-                await asyncio.to_thread(store.close)
-            except Exception as e:
-                logger.warning(f"E2EE store close failed: {e}")
-
-    async def _proactive_check_key_sharing(self):
-        """主动检查并分发房间密钥"""
-        if self._closing or not self._olm or not self._initialized:
-            return
-
-        async with self._key_share_check_lock:
-            try:
-                room_ids = self._olm.get_megolm_outbound_room_ids()
-                if not room_ids:
-                    return
-
-                affected_rooms = 0
-                affected_devices = 0
-
-                for room_id in room_ids:
-                    members = await self._get_room_members(room_id)
-                    if not members:
-                        continue
-
-                    session_info = self._olm.get_megolm_outbound_session_info(room_id)
-                    if not session_info:
-                        continue
-
-                    session_id, session_key = session_info
-                    sent_count = await self.ensure_room_keys_sent(
-                        room_id=room_id,
-                        members=members,
-                        session_id=session_id,
-                        session_key=session_key,
-                        reason="proactive_check",
-                    )
-                    if sent_count:
-                        affected_rooms += 1
-                        affected_devices += sent_count
-
-                if affected_rooms > 0:
-                    logger.info(
-                        f"主动密钥分发检查完成：rooms={affected_rooms} devices={affected_devices}"
-                    )
-
-            except Exception as e:
-                logger.warning(f"主动密钥分发检查失败：{e}")
 
     async def _finalize_own_device_trust(self, log_prefix: str) -> None:
         if not self._cross_signing or not self._cross_signing.has_master_key:
@@ -339,19 +193,21 @@ class E2EEManager(
 
     async def initialize(self):
         """初始化 E2EE 组件"""
-        if not VODOZEMAC_AVAILABLE:
+        if not vodozemac_available():
             logger.warning("vodozemac 未安装，E2EE 功能不可用")
             return False
 
         try:
             # 创建存储和加密机器
-            self._store = CryptoStore(
+            store_cls = resolve_manager_symbol("CryptoStore", _DEFAULT_CRYPTO_STORE)
+            self._store = store_cls(
                 self.store_path,
                 self.user_id,
                 self.device_id,
                 namespace_key=self._store_namespace,
             )
-            self._olm = OlmMachine(self._store, self.user_id, self.device_id)
+            olm_cls = resolve_manager_symbol("OlmMachine", _DEFAULT_OLM_MACHINE)
+            self._olm = olm_cls(self._store, self.user_id, self.device_id)
 
             # 上传设备密钥
             await self._upload_device_keys()
@@ -375,8 +231,8 @@ class E2EEManager(
             logger.info(f"SAS 验证已初始化 (mode: {self.auto_verify_mode})")
 
             # 初始化密钥备份和交叉签名
-            from ..key_backup import KeyBackup
-            from ..signing import CrossSigning
+            from ...key_backup import KeyBackup
+            from ...signing import CrossSigning
 
             self._key_backup = KeyBackup(
                 self.client,
