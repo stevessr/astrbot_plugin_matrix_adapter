@@ -1,92 +1,20 @@
-"""Core HTTP request functionality for the Matrix client."""
+"""Matrix HTTP request, retry, and error handling helpers."""
 
-import asyncio
 from typing import Any
 
 import aiohttp
 
 from astrbot.api import logger
 
-from ...config.plugin import get_plugin_config
-from ...constants import (
+from ....constants import (
     ERROR_TRUNCATE_LENGTH_200,
     HTTP_ERROR_STATUS_400,
 )
-from .errors import MatrixAPIError
+from ..errors import MatrixAPIError
 
 
-class MatrixClientBase:
-    """
-    Base class for Matrix HTTP client
-    Provides core HTTP request functionality
-    """
-
-    _DEFAULT_HTTP_TIMEOUT_SECONDS = 120.0
-    _MIN_HTTP_TIMEOUT_SECONDS = 5.0
-    _MAX_HTTP_TIMEOUT_SECONDS = 600.0
-
-    def __init__(self, homeserver: str):
-        """
-        Initialize Matrix HTTP client base
-
-        Args:
-            homeserver: Matrix homeserver URL (e.g., https://matrix.org)
-        """
-        self.homeserver = homeserver.rstrip("/")
-        self.access_token: str | None = None
-        self.user_id: str | None = None
-        self.device_id: str | None = None
-        self.session: aiohttp.ClientSession | None = None
-        self._session_lock = asyncio.Lock()
-        self._next_batch: str | None = None
-
-    @classmethod
-    def _normalize_http_timeout_seconds(cls, value: Any) -> float:
-        try:
-            timeout = float(value)
-        except Exception:
-            timeout = cls._DEFAULT_HTTP_TIMEOUT_SECONDS
-        if timeout < cls._MIN_HTTP_TIMEOUT_SECONDS:
-            timeout = cls._MIN_HTTP_TIMEOUT_SECONDS
-        if timeout > cls._MAX_HTTP_TIMEOUT_SECONDS:
-            timeout = cls._MAX_HTTP_TIMEOUT_SECONDS
-        return timeout
-
-    def get_http_timeout_seconds(self) -> float:
-        try:
-            configured = get_plugin_config().http_timeout_seconds
-        except Exception:
-            configured = self._DEFAULT_HTTP_TIMEOUT_SECONDS
-        return self._normalize_http_timeout_seconds(configured)
-
-    def _build_http_timeout(
-        self, override_seconds: int | None = None
-    ) -> aiohttp.ClientTimeout:
-        seconds = (
-            override_seconds
-            if override_seconds is not None
-            else self.get_http_timeout_seconds()
-        )
-        return aiohttp.ClientTimeout(
-            total=seconds,
-            connect=seconds,
-            sock_connect=seconds,
-            sock_read=seconds,
-        )
-
-    async def _ensure_session(self):
-        """Ensure aiohttp session exists"""
-        if self.session is None or self.session.closed:
-            async with self._session_lock:
-                if self.session is None or self.session.closed:  # double-check
-                    self.session = aiohttp.ClientSession(
-                        timeout=self._build_http_timeout()
-                    )
-
-    async def close(self):
-        """Close the HTTP session"""
-        if self.session and not self.session.closed:
-            await self.session.close()
+class MatrixHTTPRequestMixin:
+    """Issue Matrix API requests and normalize failures."""
 
     def _get_headers(self) -> dict[str, str]:
         """Get HTTP headers for authenticated requests"""
@@ -260,6 +188,3 @@ class MatrixClientBase:
                     _retry_count=_retry_count + 1,
                 )
             raise
-
-
-__all__ = ["MatrixClientBase"]
