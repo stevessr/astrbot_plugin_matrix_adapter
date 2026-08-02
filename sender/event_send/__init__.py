@@ -15,7 +15,7 @@ __all__ = [
 
 def __getattr__(name: str):
     if name == "send_with_client_impl":
-        return import_module(".send", __name__).send_with_client_impl
+        return import_module(".dispatch.core", __name__).send_with_client_impl
     if name in __all__[1:]:
         return getattr(import_module(".content", __name__), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
