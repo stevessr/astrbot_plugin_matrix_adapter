@@ -1,21 +1,14 @@
-"""
-Matrix adapter message helpers.
-"""
+"""Matrix message callback and event conversion integration."""
 
-import base64
-import json
 import time
-from pathlib import Path
 
 from astrbot.api import logger
 
-from ..config.plugin import get_plugin_config
-from ..constants import (
+from ...constants import (
     M_REACTION,
     M_ROOM_ENCRYPTED,
     M_ROOM_MESSAGE,
     M_ROOM_REDACTION,
-    MSC4357_LIVE_MESSAGE_MARKER,
     MSGTYPE_AUDIO,
     MSGTYPE_FILE,
     MSGTYPE_IMAGE,
@@ -24,66 +17,18 @@ from ..constants import (
     MSGTYPE_VIDEO,
     REL_TYPE_REPLACE,
 )
+from .archive import (
+    _append_stalk_archive,
+    _find_stalk_archive_message,
+    _is_live_message_draft,
+    _normalize_text,
+)
 
 
-def _stalk_archive_path(room_id: str) -> Path:
-    encoded = (
-        base64.urlsafe_b64encode(room_id.encode("utf-8")).decode("ascii").rstrip("=")
-    )
-    base_dir = get_plugin_config().store_path / "stalk_archive"
-    return base_dir / f"{encoded}.jsonl"
+def _get_plugin_config():
+    from . import get_plugin_config
 
-
-def _append_stalk_archive(room_id: str, record: dict) -> None:
-    try:
-        archive_path = _stalk_archive_path(room_id)
-        archive_path.parent.mkdir(parents=True, exist_ok=True)
-        with archive_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=True) + "\n")
-    except Exception as e:
-        logger.warning(f"写入 stalk 存档失败：{e}")
-
-
-def _normalize_text(text: str, limit: int = 120) -> str:
-    if not text:
-        return ""
-    cleaned = " ".join(str(text).split())
-    if len(cleaned) <= limit:
-        return cleaned
-    return cleaned[: max(0, limit - 3)] + "..."
-
-
-def _is_live_message_draft(event) -> bool:
-    content = getattr(event, "content", {}) or {}
-    return isinstance(content, dict) and (
-        content.get(MSC4357_LIVE_MESSAGE_MARKER) is not None
-    )
-
-
-def _find_stalk_archive_message(room_id: str, event_id: str) -> str:
-    if not event_id:
-        return ""
-    archive_path = _stalk_archive_path(room_id)
-    if not archive_path.exists():
-        return ""
-    try:
-        with archive_path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if record.get("event_id") == event_id:
-                    sender_name = record.get("sender_name") or record.get("sender_id")
-                    message_str = _normalize_text(record.get("message_str", ""))
-                    if sender_name and message_str:
-                        return f"{sender_name}: {message_str}"
-                    if sender_name:
-                        return str(sender_name)
-                    return message_str
-    except Exception as e:
-        logger.debug(f"读取 stalk 存档失败：{e}")
-    return ""
+    return get_plugin_config()
 
 
 class MatrixAdapterMessageMixin:
@@ -224,7 +169,7 @@ class MatrixAdapterMessageMixin:
                 logger.warning(f"转换消息失败：{event}")
                 return
 
-            force_message_type = get_plugin_config().force_message_type
+            force_message_type = _get_plugin_config().force_message_type
 
             if abm and force_message_type == "stalk":
                 record = {
@@ -265,7 +210,7 @@ class MatrixAdapterMessageMixin:
         room_live_messaging_enabled: bool | None = None,
     ):
         try:
-            from ..events.matrix import MatrixPlatformEvent
+            from ...events.matrix import MatrixPlatformEvent
 
             message_event = MatrixPlatformEvent(
                 message_str=message.message_str,
@@ -282,8 +227,8 @@ class MatrixAdapterMessageMixin:
                 ),
                 e2ee_manager=self.e2ee_manager,
                 use_notice=self._matrix_config.use_notice,
-                adaptive_thread_reply=get_plugin_config().adaptive_thread_reply,
-                send_typing=get_plugin_config().send_typing,
+                adaptive_thread_reply=_get_plugin_config().adaptive_thread_reply,
+                send_typing=_get_plugin_config().send_typing,
             )
 
             self.commit_event(message_event)
