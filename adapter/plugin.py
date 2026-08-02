@@ -1,4 +1,3 @@
-
 import bleach  # noqa: F401
 import markdown_it  # noqa: F401
 
