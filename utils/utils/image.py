@@ -1,12 +1,10 @@
-"""
-Matrix 工具方法组件
-"""
+"""Image compression helpers for Matrix uploads."""
 
 import io
 
 from astrbot.api import logger
 
-from ..constants import (
+from ...constants import (
     DEFAULT_MAX_UPLOAD_SIZE_BYTES,
     IMAGE_MAX_DIMENSION,
     IMAGE_MIN_QUALITY,
@@ -14,53 +12,6 @@ from ..constants import (
     IMAGE_QUALITY_STEP,
     IMAGE_RESIZE_SCALE_FACTOR,
 )
-from .utils_lib import MatrixUtilsMixin
-
-
-def parse_bool(value: object, default: bool = False) -> bool:
-    """Consolidated boolean parsing helper."""
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return default
-    normalized = str(value).strip().lower()
-    if normalized in {"1", "true", "yes", "on", "enable", "enabled"}:
-        return True
-    if normalized in {"0", "false", "no", "off", "disable", "disabled"}:
-        return False
-    return default
-
-
-def mask_device_id(device_id: str | None) -> str:
-    """统一的 device_id 脱敏显示函数。
-
-    将 device_id 脱敏为 ``前 2 + *** + 后 2`` 的格式，
-    用于日志输出。短于 4 字符的 ID 返回 ``***``。
-    """
-    if not isinstance(device_id, str) or not device_id:
-        return "<empty>"
-    normalized = device_id.strip()
-    if len(normalized) <= 4:
-        return "***"
-    return f"{normalized[:2]}***{normalized[-2:]}"
-
-
-def _extract_text_repr(value) -> str:
-    """Extract a text representation from a Matrix event content value.
-
-    Handles strings, dicts with body/text keys, and lists of such items.
-    Used by event_types.py, beacon.py, location.py.
-    """
-    if isinstance(value, str):
-        return value
-    if isinstance(value, dict):
-        return str(value.get("body") or value.get("text") or "")
-    if isinstance(value, list):
-        for item in value:
-            text = _extract_text_repr(item)
-            if text:
-                return text
-    return ""
 
 
 def compress_image_if_needed(
@@ -91,11 +42,8 @@ def compress_image_if_needed(
             f"({max_size / 1024 / 1024:.2f}MB)，尝试压缩"
         )
 
-        # 打开图片
         with PILImage.open(io.BytesIO(image_data)) as img:
-            # 转换为 RGB 模式（处理 RGBA、P 等模式）
             if img.mode in ("RGBA", "P", "LA"):
-                # 保留 alpha 通道的图片转换为带白色背景的 RGB
                 background = PILImage.new("RGB", img.size, (255, 255, 255))
                 if img.mode == "P":
                     img = img.convert("RGBA")
@@ -106,7 +54,6 @@ def compress_image_if_needed(
             elif img.mode != "RGB":
                 img = img.convert("RGB")
 
-            # 第一步：缩小尺寸（如果太大）
             width, height = img.size
             if width > IMAGE_MAX_DIMENSION or height > IMAGE_MAX_DIMENSION:
                 ratio = min(IMAGE_MAX_DIMENSION / width, IMAGE_MAX_DIMENSION / height)
@@ -117,8 +64,7 @@ def compress_image_if_needed(
                     f"图片尺寸从 {width}x{height} 缩小到 {new_width}x{new_height}"
                 )
 
-            # 第二步：逐步降低质量直到满足大小要求
-            quality = 85  # 起始质量
+            quality = 85
             compressed_data = b""
 
             while quality >= IMAGE_MIN_QUALITY:
@@ -135,7 +81,6 @@ def compress_image_if_needed(
 
                 quality -= IMAGE_QUALITY_STEP
 
-            # 如果最低质量仍然超过限制，进一步缩小尺寸
             current_width, current_height = img.size
             while len(compressed_data) > max_size and current_width > IMAGE_MIN_WIDTH:
                 current_width = int(current_width * IMAGE_RESIZE_SCALE_FACTOR)
@@ -176,16 +121,4 @@ def compress_image_if_needed(
         return image_data, content_type, False
 
 
-class MatrixUtils(MatrixUtilsMixin):
-    """
-    Matrix 工具类（静态工具类）。
-
-    The protocol-specific operations live in ``utils_lib`` mixins; this
-    compatibility class keeps the historical import path and constructor
-    contract.
-    """
-
-    def __init__(self):
-        raise TypeError(
-            "MatrixUtils is a static utility class and should not be instantiated"
-        )
+__all__ = ["compress_image_if_needed"]
