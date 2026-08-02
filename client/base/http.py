@@ -1,7 +1,4 @@
-"""
-Matrix HTTP Client - Base module
-Provides core HTTP request functionality
-"""
+"""Core HTTP request functionality for the Matrix client."""
 
 import asyncio
 from typing import Any
@@ -10,21 +7,12 @@ import aiohttp
 
 from astrbot.api import logger
 
-from ..config.plugin import get_plugin_config
-from ..constants import (
+from ...config.plugin import get_plugin_config
+from ...constants import (
     ERROR_TRUNCATE_LENGTH_200,
     HTTP_ERROR_STATUS_400,
 )
-
-
-class MatrixAPIError(Exception):
-    """Matrix API Error"""
-
-    def __init__(self, status: int, data: dict | str, message: str):
-        self.status = status
-        self.data = data
-        self.message = message
-        super().__init__(message)
+from .errors import MatrixAPIError
 
 
 class MatrixClientBase:
@@ -272,3 +260,6 @@ class MatrixClientBase:
                     _retry_count=_retry_count + 1,
                 )
             raise
+
+
+__all__ = ["MatrixClientBase"]
