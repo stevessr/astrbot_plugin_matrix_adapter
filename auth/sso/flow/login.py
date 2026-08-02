@@ -1,22 +1,16 @@
-"""Matrix SSO login URL and callback flow."""
+"""Matrix SSO login flow."""
 
 import secrets
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import urlencode
 
-from ...constants import LOGIN_TYPE_SSO
-from ..oauth2.core import _log
-from .callback import SSOCallbackServer
-from .qr import _build_terminal_qr
-
-
-def _attach_state_param(url: str, state: str) -> str:
-    parsed = urlparse(url)
-    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    query["state"] = state
-    return urlunparse(parsed._replace(query=urlencode(query)))
+from ....constants import LOGIN_TYPE_SSO
+from ...oauth2.core import _log
+from ..callback import SSOCallbackServer
+from ..qr import _build_terminal_qr
+from .state import _attach_state_param
 
 
-class MatrixSSO:
+class MatrixSSOLoginMixin:
     def __init__(
         self,
         client,
@@ -104,8 +98,3 @@ class MatrixSSO:
             if self.callback_server:
                 await self.callback_server.stop()
                 self.callback_server = None
-
-    async def handle_webhook_callback(self, request):
-        if not self.callback_server:
-            return "SSO flow is not ready, please retry.", 503
-        return await self.callback_server.handle_callback(request)
