@@ -1,57 +1,28 @@
-"""Composition root for Matrix adapter services.
-
-The platform boundary should expose lifecycle operations, not construct every
-transport, storage, and event-processing implementation itself.  This module
-owns that wiring and returns one typed service bundle to the platform class.
-"""
+"""Construct and wire Matrix adapter services."""
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from astrbot.api import logger
 
-from ..auth.auth import MatrixAuth
-from ..client import MatrixHTTPClient
-from ..config.matrix import MatrixConfig
-from ..constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES
-
-if TYPE_CHECKING:
-    from ..e2ee import E2EEManager
-from ..processors.core import MatrixEventProcessor
-from ..processors.event_handler import MatrixEventHandler
-from ..receiver.core import MatrixReceiver
-from ..sender.core import MatrixSender
-from ..sticker import StickerAvailabilityStore, StickerPackSyncer, StickerStorage
-from ..storage.paths import MatrixStoragePaths
-from ..storage.stores.outbound import MatrixOutboundTracker
-from ..sync.core import MatrixSyncManager
-from ..utils.utils import MatrixUtils
-from .state import MatrixRuntimeState
-
-
-@dataclass(slots=True)
-class MatrixAdapterServices:
-    """Runtime services owned by one Matrix platform instance."""
-
-    client: MatrixHTTPClient
-    runtime_state: MatrixRuntimeState
-    storage_dir: str
-    outbound_tracker: MatrixOutboundTracker
-    auth: MatrixAuth
-    sender: MatrixSender
-    receiver: MatrixReceiver
-    event_handler: MatrixEventHandler
-    sync_manager: MatrixSyncManager
-    event_processor: MatrixEventProcessor
-    e2ee_manager: E2EEManager | None
-    sticker_available: StickerAvailabilityStore
-    sticker_storage: StickerStorage
-    sticker_syncer: StickerPackSyncer
-    max_upload_size: int
+from ...auth.auth import MatrixAuth
+from ...client import MatrixHTTPClient
+from ...config.matrix import MatrixConfig
+from ...constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES
+from ...processors.core import MatrixEventProcessor
+from ...processors.event_handler import MatrixEventHandler
+from ...receiver.core import MatrixReceiver
+from ...sender.core import MatrixSender
+from ...sticker import StickerAvailabilityStore, StickerPackSyncer, StickerStorage
+from ...storage.paths import MatrixStoragePaths
+from ...storage.stores.outbound import MatrixOutboundTracker
+from ...sync.core import MatrixSyncManager
+from ...utils.utils import MatrixUtils
+from ..state import MatrixRuntimeState
+from .services import MatrixAdapterServices
 
 
 async def _noop_token_invalid() -> bool:
@@ -139,7 +110,7 @@ def build_adapter_services(
 
     e2ee_manager: E2EEManager | None = None
     if matrix_config.enable_e2ee:
-        from ..e2ee import VODOZEMAC_AVAILABLE, E2EEManager
+        from ...e2ee import VODOZEMAC_AVAILABLE, E2EEManager
 
         if VODOZEMAC_AVAILABLE:
             recovery_key = matrix_config.e2ee_recovery_key
@@ -217,6 +188,3 @@ def build_adapter_services(
         sticker_syncer=sticker_syncer,
         max_upload_size=DEFAULT_MAX_UPLOAD_SIZE_BYTES,
     )
-
-
-__all__ = ["MatrixAdapterServices", "build_adapter_services"]
