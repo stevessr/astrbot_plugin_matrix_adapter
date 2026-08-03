@@ -1,13 +1,10 @@
-"""
-Matrix HTTP Client - VoIP Mixin
-Provides VoIP helper methods (TURN server discovery)
-"""
+"""Matrix TURN server discovery operations."""
 
 from typing import Any
 
 
-class VoipMixin:
-    """VoIP methods for Matrix client"""
+class VoipTurnMixin:
+    """Discover TURN server configuration for Matrix VoIP."""
 
     async def get_turn_server(self) -> dict[str, Any]:
         """
