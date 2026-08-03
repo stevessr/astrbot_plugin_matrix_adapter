@@ -1,28 +1,14 @@
-"""Matrix media upload endpoint and async-status helpers."""
+"""Matrix asynchronous media upload status polling operations."""
 
 import asyncio
 import time
 from typing import Any
 
-from ...base import MatrixAPIError
-from ...path_utils import quote_path_segment
+from ....base import MatrixAPIError
 
 
-class MediaUploadEndpointMixin:
-    """Select upload endpoints and poll asynchronous uploads."""
-
-    @staticmethod
-    def _get_media_upload_endpoints() -> tuple[str, ...]:
-        """Return preferred media upload endpoints in compatibility order."""
-        return (
-            "/_matrix/client/v1/media/upload",
-            "/_matrix/media/v3/upload",
-        )
-
-    @staticmethod
-    def _get_media_upload_status_endpoint(upload_id: str) -> str:
-        """Return the upload status endpoint for async upload (MSC2246)."""
-        return f"/_matrix/client/v1/media/upload/{quote_path_segment(upload_id)}"
+class MediaUploadEndpointPollingMixin:
+    """Poll asynchronous Matrix media upload status."""
 
     async def _poll_upload_status(self, upload_id: str) -> dict[str, Any]:
         """
@@ -57,11 +43,3 @@ class MediaUploadEndpointMixin:
             f"Matrix async upload timed out after "
             f"{self._MEDIA_UPLOAD_POLL_TIMEOUT_SECONDS}s (upload_id={upload_id})"
         )
-
-    @staticmethod
-    def _should_try_next_media_upload_endpoint(
-        status: int,
-        endpoint_index: int,
-        total_endpoints: int,
-    ) -> bool:
-        return status == 404 and endpoint_index < (total_endpoints - 1)
