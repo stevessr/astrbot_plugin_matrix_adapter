@@ -2,12 +2,12 @@
 
 from astrbot.api import logger
 
-from ...constants import DEFAULT_TIMEOUT_MS_30000
-from ...storage.stores.device import MatrixDeviceManager
-from ...utils import parse_bool
+from ....constants import DEFAULT_TIMEOUT_MS_30000
+from ....storage.stores.device import MatrixDeviceManager
+from ....utils import parse_bool
 
 
-class MatrixConfigCoreMixin:
+class MatrixConfigCoreOperationsMixin:
     """Initialize the main Matrix configuration state."""
 
     _parse_bool = staticmethod(parse_bool)
