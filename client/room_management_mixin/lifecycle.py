@@ -1,15 +1,12 @@
-"""
-Matrix HTTP Client - Room Management Mixin
-Provides room lifecycle and hierarchy methods
-"""
+"""Room forgetting, upgrading, and knock-management operations."""
 
 from typing import Any
 
-from .path_utils import quote_path_segment
+from ..path_utils import quote_path_segment
 
 
-class RoomManagementMixin:
-    """Room management methods for Matrix client"""
+class RoomLifecycleMixin:
+    """Manage room lifecycle transitions and knock requests."""
 
     async def forget_room(self, room_id: str) -> dict[str, Any]:
         """
@@ -113,26 +110,3 @@ class RoomManagementMixin:
         if reason:
             data["reason"] = reason
         return await self._request("POST", endpoint, data=data)
-
-    async def get_room_hierarchy(
-        self, room_id: str, limit: int | None = None, from_token: str | None = None
-    ) -> dict[str, Any]:
-        """
-        Get room hierarchy (spaces)
-
-        Args:
-            room_id: Room ID
-            limit: Optional limit
-            from_token: Pagination token
-
-        Returns:
-            Hierarchy response
-        """
-        room = quote_path_segment(room_id)
-        endpoint = f"/_matrix/client/v1/rooms/{room}/hierarchy"
-        params: dict[str, Any] = {}
-        if limit is not None:
-            params["limit"] = limit
-        if from_token:
-            params["from"] = from_token
-        return await self._request("GET", endpoint, params=params)
