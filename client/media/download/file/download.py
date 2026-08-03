@@ -9,10 +9,10 @@ import aiohttp
 
 from astrbot.api import logger
 
-from ...path_utils import quote_path_segment
+from ....path_utils import quote_path_segment
 
 
-class MediaDownloadFileMixin:
+class MediaDownloadFileOperationMixin:
     """Download full-size media with retry and thumbnail fallback support."""
 
     async def download_file(
