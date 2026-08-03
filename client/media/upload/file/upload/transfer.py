@@ -1,4 +1,4 @@
-"""File-backed Matrix media upload operation."""
+"""Matrix media upload endpoint transfer and retry logic."""
 
 import asyncio
 from pathlib import Path
@@ -8,53 +8,21 @@ import aiohttp
 
 from astrbot.api import logger
 
-from .....constants import HTTP_ERROR_STATUS_400
+from ......constants import HTTP_ERROR_STATUS_400
 
 
-class MediaUploadFileOperationMixin:
-    """Upload local files without buffering the complete file in memory."""
+class MediaUploadTransferMixin:
+    """Upload a prepared file to Matrix endpoints."""
 
-    async def upload_file_path(
-        self, file_path: str | Path, content_type: str, filename: str | None = None
+    async def _perform_upload_from_path(
+        self,
+        *,
+        path: Path,
+        safe_content_type: str,
+        upload_filename: str,
+        path_cache_key: str,
     ) -> dict[str, Any]:
-        """
-        Upload a local file to the Matrix media repository without loading it fully
-        into memory.
-        """
-        await self._ensure_session()
-        self._ensure_media_upload_cache()
-
-        path = Path(file_path)
-        if not await asyncio.to_thread(path.is_file):
-            raise FileNotFoundError(
-                f"Matrix media upload source file not found: {path}"
-            )
-
-        upload_filename = filename or path.name
-        file_head = await asyncio.to_thread(
-            self._read_file_head, path, self._MEDIA_UPLOAD_SNIFF_BYTES
-        )
-        safe_content_type = self._validate_media_upload_security(
-            filename=upload_filename,
-            declared_content_type=content_type,
-            file_head=file_head,
-        )
-
-        path_cache_key = await asyncio.to_thread(
-            self._build_media_upload_cache_key_from_file_state,
-            path,
-            safe_content_type,
-        )
-        cached_response = self._get_cached_upload_result(path_cache_key)
-        if cached_response:
-            return cached_response
-
-        existing_task = self._media_upload_inflight.get(path_cache_key)
-        if existing_task:
-            logger.debug("Joining in-flight Matrix media upload task")
-            return await existing_task
-
-        async def _perform_upload_from_path() -> dict[str, Any]:
+        async def _upload_to_endpoints() -> dict[str, Any]:
             headers = {
                 "Content-Type": safe_content_type,
                 "Authorization": f"Bearer {self.access_token}",
@@ -195,11 +163,4 @@ class MediaUploadFileOperationMixin:
                 raise last_error
             raise Exception("Matrix media upload error: no upload endpoint available")
 
-        upload_task = asyncio.create_task(_perform_upload_from_path())
-        self._media_upload_inflight[path_cache_key] = upload_task
-        try:
-            return await upload_task
-        finally:
-            current_task = self._media_upload_inflight.get(path_cache_key)
-            if current_task is upload_task:
-                self._media_upload_inflight.pop(path_cache_key, None)
+        return await _upload_to_endpoints()
