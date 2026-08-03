@@ -20,134 +20,15 @@ Matrix Live 通话（VoIP / MatrixRTC）事件适配的共享逻辑。
 而不会触发 LLM 自动「接听」。
 """
 
-from dataclasses import dataclass
-
-from ..constants import M_RTC_DECLINE, MSC4310_RTC_DECLINE
-
-# --- 事件类型常量 -----------------------------------------------------------
-
-# 1 对 1 通话生命周期事件（值得呈现给用户）
-CALL_1TO1_LIFECYCLE_EVENT_TYPES = frozenset(
-    {
-        "m.call.invite",
-        "m.call.answer",
-        "m.call.hangup",
-        "m.call.reject",
-        "m.call.replaces",
-    }
+from .classification import classify_call_event
+from .constants import (
+    CATEGORY_1TO1,
+    CATEGORY_DECLINE,
+    CATEGORY_GROUP_MEMBER,
+    CATEGORY_GROUP_OBJECT,
+    CATEGORY_RINGING,
+    CATEGORY_SIGNALLING,
 )
-
-# 高频 / 底层信令事件（默认抑制，避免刷屏）
-CALL_SIGNALLING_EVENT_TYPES = frozenset(
-    {
-        "m.call.candidates",
-        "m.call.negotiate",
-        "m.call.select_answer",
-        "m.call.sdp_stream_metadata_changed",
-        "m.call.asserted_identity",
-        "org.matrix.call.asserted_identity",
-    }
-)
-
-# MatrixRTC 群组通话对象状态事件（state event，state_key 为 call id）
-CALL_GROUP_OBJECT_EVENT_TYPES = frozenset({"m.call"})
-
-# MatrixRTC 成员状态事件（state event）
-CALL_GROUP_MEMBER_EVENT_TYPES = frozenset(
-    {
-        "m.call.member",
-        "org.matrix.msc3401.call.member",
-        "m.rtc.member",
-    }
-)
-
-# 来电响铃 / 通知事件（MSC4075）
-CALL_NOTIFY_EVENT_TYPES = frozenset(
-    {
-        "m.call.notify",
-        "org.matrix.msc4075.call.notify",
-    }
-)
-
-# 通话拒接事件（MSC4310）：以 m.reference 关联 m.rtc.notification
-CALL_DECLINE_EVENT_TYPES = frozenset({M_RTC_DECLINE, MSC4310_RTC_DECLINE})
-
-# 事件类别标识
-CATEGORY_1TO1 = "1to1"
-CATEGORY_GROUP_OBJECT = "group_object"
-CATEGORY_GROUP_MEMBER = "group_member"
-CATEGORY_RINGING = "ringing"
-CATEGORY_DECLINE = "decline"
-CATEGORY_SIGNALLING = "signalling"
-
-
-# --- 配置对象 ---------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class CallEventConfig:
-    """Live 通话事件呈现配置（per-adapter）。"""
-
-    enabled: bool = False
-    include_1to1: bool = True
-    include_group: bool = True
-    include_ringing: bool = True
-    suppress_signalling: bool = True
-
-
-# 默认配置：未启用，等价于历史行为（直接忽略 m.call.* 事件）。
-DEFAULT_CALL_EVENT_CONFIG = CallEventConfig()
-
-
-# --- 分类与门控逻辑 ---------------------------------------------------------
-
-
-def classify_call_event(event_type: object) -> str | None:
-    """将事件类型映射到通话事件类别；非通话事件返回 None。"""
-    if not isinstance(event_type, str) or not event_type:
-        return None
-    if event_type in CALL_NOTIFY_EVENT_TYPES:
-        return CATEGORY_RINGING
-    if event_type in CALL_DECLINE_EVENT_TYPES:
-        return CATEGORY_DECLINE
-    if event_type in CALL_GROUP_MEMBER_EVENT_TYPES:
-        return CATEGORY_GROUP_MEMBER
-    if event_type in CALL_GROUP_OBJECT_EVENT_TYPES:
-        return CATEGORY_GROUP_OBJECT
-    if event_type in CALL_1TO1_LIFECYCLE_EVENT_TYPES:
-        return CATEGORY_1TO1
-    if event_type in CALL_SIGNALLING_EVENT_TYPES:
-        return CATEGORY_SIGNALLING
-    # 兜底：未知的 m.call.* 子类型按信令处理（默认抑制）。
-    if event_type.startswith("m.call."):
-        return CATEGORY_SIGNALLING
-    return None
-
-
-def is_call_event_type(event_type: object) -> bool:
-    """判断事件类型是否属于 VoIP / MatrixRTC 通话事件族。"""
-    return classify_call_event(event_type) is not None
-
-
-def should_surface_call_event(event_type: object, config: object) -> bool:
-    """根据配置判断某通话事件是否应被呈现为系统消息。"""
-    category = classify_call_event(event_type)
-    if category is None:
-        return False
-    if not getattr(config, "enabled", False):
-        return False
-    if category == CATEGORY_1TO1:
-        return bool(getattr(config, "include_1to1", True))
-    if category in (CATEGORY_GROUP_OBJECT, CATEGORY_GROUP_MEMBER):
-        return bool(getattr(config, "include_group", True))
-    if category == CATEGORY_RINGING:
-        return bool(getattr(config, "include_ringing", True))
-    if category == CATEGORY_DECLINE:
-        return bool(getattr(config, "include_ringing", True))
-    if category == CATEGORY_SIGNALLING:
-        return not bool(getattr(config, "suppress_signalling", True))
-    return False
-
 
 # --- 文本格式化 -------------------------------------------------------------
 
