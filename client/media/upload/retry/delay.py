@@ -1,12 +1,12 @@
-"""Retry policy helpers for Matrix media uploads."""
+"""Matrix media upload retry delay calculations."""
 
 from typing import Any
 
 import aiohttp
 
 
-class MediaUploadRetryMixin:
-    """Calculate retry delays and classify retryable responses."""
+class MediaUploadRetryDelayMixin:
+    """Calculate retry-after and exponential backoff delays."""
 
     @staticmethod
     def _coerce_retry_after_seconds(value: Any) -> float | None:
@@ -50,7 +50,3 @@ class MediaUploadRetryMixin:
             self._MEDIA_RETRY_BASE_DELAY_SECONDS * (2**attempt),
             self._MEDIA_RETRY_MAX_DELAY_SECONDS,
         )
-
-    @staticmethod
-    def _should_retry_http_status(status: int) -> bool:
-        return status == 429 or status >= 500
