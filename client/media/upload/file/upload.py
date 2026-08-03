@@ -8,10 +8,10 @@ import aiohttp
 
 from astrbot.api import logger
 
-from ....constants import HTTP_ERROR_STATUS_400
+from .....constants import HTTP_ERROR_STATUS_400
 
 
-class MediaUploadFileMixin:
+class MediaUploadFileOperationMixin:
     """Upload local files without buffering the complete file in memory."""
 
     async def upload_file_path(
