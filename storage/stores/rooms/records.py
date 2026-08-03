@@ -1,95 +1,13 @@
-"""
-Matrix room member store for persisting room member information.
-
-Stores member list and metadata under plugin data dir / rooms.
-"""
+"""Room member record persistence operations."""
 
 import time
-from collections import OrderedDict
-from pathlib import Path
 from typing import Any
 
 from astrbot.api import logger
-from astrbot.api.star import StarTools
-
-from ...config.plugin import get_plugin_config
-from ..backend import MatrixFolderDataStore
-from ..paths import MatrixStoragePaths
 
 
-class MatrixRoomMemberStore:
-    """Persist room member lists and metadata."""
-
-    _MAX_CACHE_ENTRIES = 512
-
-    def __init__(
-        self,
-        data_dir: Path | None = None,
-    ) -> None:
-        if data_dir is None:
-            try:
-                data_dir = StarTools.get_data_dir("astrbot_plugin_matrix_adapter")
-            except Exception:
-                data_dir = Path("./data/astrbot_plugin_matrix_adapter")
-        self._rooms_dir = data_dir / "rooms"
-        self._rooms_dir.mkdir(parents=True, exist_ok=True)
-        self._cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
-
-        self._storage_backend_config = get_plugin_config().storage_backend_config
-        self._storage_backend = self._storage_backend_config.backend
-        self._pgsql_dsn = self._storage_backend_config.pgsql_dsn
-        self._pgsql_schema = self._storage_backend_config.pgsql_schema
-        self._pgsql_table_prefix = self._storage_backend_config.pgsql_table_prefix
-
-        self._store = self._build_store()
-
-    @staticmethod
-    def _json_filename(room_id: str) -> str:
-        safe_room = MatrixStoragePaths.sanitize_username(room_id)
-        if not safe_room:
-            safe_room = "unknown"
-        return f"{safe_room}.json"
-
-    def _build_store(self) -> MatrixFolderDataStore:
-        try:
-            return MatrixFolderDataStore(
-                folder_path=self._rooms_dir,
-                namespace_key="rooms",
-                backend=self._storage_backend,
-                json_filename_resolver=self._json_filename,
-                pgsql_dsn=self._pgsql_dsn,
-                pgsql_schema=self._pgsql_schema,
-                pgsql_table_prefix=self._pgsql_table_prefix,
-            )
-        except Exception as e:
-            logger.warning(
-                f"初始化房间存储后端 {self._storage_backend} 失败，回退 json: {e}"
-            )
-            return MatrixFolderDataStore(
-                folder_path=self._rooms_dir,
-                namespace_key="rooms",
-                backend="json",
-                json_filename_resolver=self._json_filename,
-            )
-
-    def get(self, room_id: str) -> dict[str, Any] | None:
-        """Get room member data from storage."""
-        if not room_id:
-            return None
-        if room_id in self._cache:
-            self._cache.move_to_end(room_id, last=True)
-            return self._cache[room_id]
-        try:
-            data = self._store.get(room_id)
-            if isinstance(data, dict):
-                self._cache[room_id] = data
-                self._cache.move_to_end(room_id, last=True)
-                while len(self._cache) > self._MAX_CACHE_ENTRIES:
-                    self._cache.popitem(last=False)
-                return data
-        except Exception as e:
-            logger.debug(f"Failed to read room member data {room_id}: {e}")
-        return None
+class MatrixRoomMemberRecordsMixin:
+    """Save room member records."""
 
     def upsert(
         self,
@@ -294,15 +212,3 @@ class MatrixRoomMemberStore:
                 logger.info(f"已保存房间成员数据：{room_id} ({member_count} 个成员)")
             except Exception as e:
                 logger.error(f"保存房间成员数据失败 {room_id}: {e}")
-
-    def delete(self, room_id: str):
-        """Delete room member data from storage."""
-        if not room_id:
-            return
-        try:
-            self._store.delete(room_id)
-            if room_id in self._cache:
-                del self._cache[room_id]
-            logger.debug(f"Deleted room member data: {room_id}")
-        except Exception as e:
-            logger.debug(f"Failed to delete room member data {room_id}: {e}")
