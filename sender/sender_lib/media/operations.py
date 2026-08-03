@@ -6,7 +6,7 @@ from astrbot.api.event import MessageChain
 from astrbot.api.message_components import Record, Video
 
 
-class SenderMediaMixin:
+class SenderMediaOperationsMixin:
     async def send_message(
         self,
         room_id: str,
@@ -19,7 +19,7 @@ class SenderMediaMixin:
         """
         Send a message to a room
         """
-        from ..event_send import send_with_client_impl
+        from ...event_send import send_with_client_impl
 
         resolved_use_notice = self.use_notice if use_notice is None else use_notice
         return await send_with_client_impl(
@@ -107,7 +107,7 @@ class SenderMediaMixin:
         if not isinstance(content, dict):
             raise ValueError("content must be a dict")
 
-        from ..events.common import send_content
+        from ...events.common import send_content
 
         is_encrypted_room = False
         if self.e2ee_manager:
@@ -191,7 +191,7 @@ class SenderMediaMixin:
         fallback_html: str | None = None,
     ) -> dict | None:
         """Send a poll to a room."""
-        from ..events import send_poll
+        from ...events import send_poll
 
         is_encrypted_room = False
         if self.e2ee_manager:
@@ -240,7 +240,7 @@ class SenderMediaMixin:
         Returns:
             The response from the server, or None on failure
         """
-        from ..events import send_poll_response
+        from ...events import send_poll_response
 
         return await send_poll_response(
             self.client,
