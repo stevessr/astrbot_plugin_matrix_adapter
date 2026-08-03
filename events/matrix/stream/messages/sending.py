@@ -1,4 +1,4 @@
-"""Live Matrix message streaming and thread relations."""
+"""Live Matrix message sending and update operations."""
 
 import html
 import time
@@ -6,64 +6,24 @@ import time
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
 
-from ....constants import (
+from .....constants import (
     M_ROOM_MESSAGE,
     MATRIX_HTML_FORMAT,
     MSC4357_LIVE_MESSAGE_MARKER,
     MSGTYPE_NOTICE,
     MSGTYPE_TEXT,
 )
-from ....sender.event_send.crypto import (
+from .....sender.event_send.crypto import (
     edit_message_encrypted,
     edit_message_plain,
     send_message_encrypted,
     send_message_plain,
 )
-from ....utils.markdown_utils import markdown_to_html
-from .. import core as _matrix_event_module
+from .....utils.markdown_utils import markdown_to_html
 
 
-class MatrixPlatformEventMessagesMixin:
-    """Send live Matrix messages and preserve thread relationships."""
-
-    @staticmethod
-    def _stream_event_module():
-        """Return the current event module even after test/app reloads."""
-
-        import sys
-
-        package_name = __package__.rpartition(".")[0]
-        package = sys.modules.get(package_name)
-        return getattr(package, "core", None) or _matrix_event_module
-
-    def _build_stream_thread_relation(self) -> dict | None:
-        """Build the initial message relation for a streamed thread reply.
-
-        Replacement events point at the initial live event with ``m.replace``;
-        Matrix keeps the initial event's thread relation when applying edits.
-        """
-
-        source_event_id = self._inbound_event_id()
-        if not source_event_id:
-            return None
-
-        thread_root = self._inbound_thread_root()
-        if thread_root:
-            # 回复自适应：入站消息已在消息列内，流式回复必须留在同一消息列。
-            if not (self.adaptive_thread_reply or self.enable_threading):
-                return None
-        else:
-            # 入站消息不在消息列内，只有显式开启线程回复才新建消息列。
-            if not self.enable_threading:
-                return None
-            thread_root = source_event_id
-
-        return {
-            "rel_type": "m.thread",
-            "event_id": thread_root,
-            "is_falling_back": True,
-            "m.in_reply_to": {"event_id": source_event_id},
-        }
+class MatrixPlatformEventMessagesSendingMixin:
+    """Send live Matrix messages and preserve thread updates."""
 
     async def send_streaming(self, generator, use_fallback: bool = False) -> None:
         """发送流式消息。
