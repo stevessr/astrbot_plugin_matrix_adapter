@@ -1,24 +1,12 @@
-"""
-Matrix HTTP Client - Third-Party Mixin
-Provides third-party protocol lookup methods
-"""
+"""Matrix third-party location and user lookup operations."""
 
 from typing import Any
 
-from .path_utils import quote_path_segment
+from ..path_utils import quote_path_segment
 
 
-class ThirdPartyMixin:
-    """Third-party protocol lookup methods for Matrix client"""
-
-    async def get_thirdparty_protocols(self) -> dict[str, Any]:
-        """
-        Get supported third-party protocols
-
-        Returns:
-            Protocols response
-        """
-        return await self._request("GET", "/_matrix/client/v3/thirdparty/protocols")
+class ThirdPartyLookupMixin:
+    """Query third-party locations and users."""
 
     async def get_thirdparty_protocol(self, protocol: str) -> dict[str, Any]:
         """
