@@ -1,96 +1,16 @@
-"""Matrix message callback and event conversion integration."""
+"""Inbound message callback operations."""
 
 import time
 
 from astrbot.api import logger
 
-from ...constants import (
-    M_REACTION,
-    M_ROOM_ENCRYPTED,
-    M_ROOM_MESSAGE,
-    M_ROOM_REDACTION,
-    MSGTYPE_AUDIO,
-    MSGTYPE_FILE,
-    MSGTYPE_IMAGE,
-    MSGTYPE_NOTICE,
-    MSGTYPE_STICKER,
-    MSGTYPE_VIDEO,
-    REL_TYPE_REPLACE,
-)
-from .archive import (
-    _append_stalk_archive,
-    _find_stalk_archive_message,
-    _is_live_message_draft,
-    _normalize_text,
-)
+from ....constants import M_REACTION, MSGTYPE_NOTICE, REL_TYPE_REPLACE
+from ..archive import _append_stalk_archive, _is_live_message_draft
+from .common import _get_plugin_config
 
 
-def _get_plugin_config():
-    from . import get_plugin_config
-
-    return get_plugin_config()
-
-
-class MatrixAdapterMessageMixin:
-    async def _resolve_reaction_target_summary(self, room, event_id: str) -> str:
-        if not event_id or not self.client:
-            return ""
-        try:
-            event = await self.client.get_event(room.room_id, event_id)
-        except Exception as e:
-            logger.debug(f"获取 reaction 目标事件失败：{e}")
-            event = None
-
-        if event:
-            sender_id = event.get("sender", "") or ""
-            sender_name = room.members.get(sender_id, sender_id) if sender_id else ""
-            event_type = event.get("type") or event.get("event_type") or ""
-            content = event.get("content") or {}
-
-            body = ""
-            if event_type == M_ROOM_MESSAGE:
-                msgtype = content.get("msgtype") or ""
-                body = content.get("body") or ""
-                if not body and msgtype in (
-                    MSGTYPE_IMAGE,
-                    MSGTYPE_VIDEO,
-                    MSGTYPE_AUDIO,
-                    MSGTYPE_FILE,
-                ):
-                    body = msgtype
-                if msgtype == MSGTYPE_STICKER and not body:
-                    body = "sticker"
-            elif event_type == M_REACTION:
-                reaction = content.get("m.relates_to", {}).get("key", "")
-                body = f"[reaction] {reaction}".strip()
-            elif event_type == M_ROOM_ENCRYPTED:
-                body = "[encrypted]"
-            elif event_type == M_ROOM_REDACTION:
-                body = "[redaction]"
-            else:
-                body = (
-                    content.get("body")
-                    or content.get("name")
-                    or content.get("topic")
-                    or ""
-                )
-
-            body = _normalize_text(body)
-            if sender_name and sender_id:
-                sender = f"{sender_name}/{sender_id}"
-            else:
-                sender = sender_name or sender_id
-
-            if sender and body:
-                return f"{sender}: {body}"
-            if sender:
-                return sender
-            if body:
-                return body
-            if event_type:
-                return event_type
-
-        return _find_stalk_archive_message(room.room_id, event_id)
+class MatrixAdapterMessageCallbackMixin:
+    """Process converted inbound Matrix messages."""
 
     async def message_callback(self, room, event):
         """
@@ -202,39 +122,3 @@ class MatrixAdapterMessageMixin:
                 )
         except Exception as e:
             logger.error(f"消息回调时出错：{e}")
-
-    async def handle_msg(
-        self,
-        message,
-        event_id: str | None = None,
-        room_live_messaging_enabled: bool | None = None,
-    ):
-        try:
-            from ...events.matrix import MatrixPlatformEvent
-
-            message_event = MatrixPlatformEvent(
-                message_str=message.message_str,
-                message_obj=message,
-                platform_meta=self.meta(),
-                session_id=message.session_id,
-                client=self.client,
-                enable_threading=self._matrix_config.enable_threading,
-                room_live_messaging_enabled=room_live_messaging_enabled,
-                live_message_update_interval_ms=getattr(
-                    self._matrix_config,
-                    "live_message_update_interval_ms",
-                    2000,
-                ),
-                e2ee_manager=self.e2ee_manager,
-                use_notice=self._matrix_config.use_notice,
-                adaptive_thread_reply=_get_plugin_config().adaptive_thread_reply,
-                send_typing=_get_plugin_config().send_typing,
-            )
-
-            self.commit_event(message_event)
-            # 仅记录必要的事件元信息，避免在 debug 中打印过多用户标识
-            logger.debug(
-                f"Message event committed: session={getattr(message, 'session_id', 'N/A')}, type={getattr(message, 'type', 'N/A')}"
-            )
-        except Exception as e:
-            logger.error(f"处理消息失败：{e}")
