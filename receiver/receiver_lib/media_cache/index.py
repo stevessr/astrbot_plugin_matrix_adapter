@@ -7,11 +7,11 @@ from pathlib import Path
 from astrbot.api import logger
 from astrbot.core.utils import astrbot_path
 
-from ...config.plugin import get_plugin_config
-from ...utils.media_cache_index import MediaCacheIndexStore
+from ....config.plugin import get_plugin_config
+from ....utils.media_cache_index import MediaCacheIndexStore
 
 
-class MatrixReceiverMediaCacheMixin:
+class MatrixReceiverMediaCacheOperationsMixin:
     """MatrixReceiver 媒体缓存索引与路径 mixin"""
 
     def _get_media_cache_dir(self) -> Path:
