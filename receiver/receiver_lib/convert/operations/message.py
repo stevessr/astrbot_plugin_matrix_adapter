@@ -1,4 +1,4 @@
-"""Matrix 消息接收组件 - 消息转换 mixin"""
+"""Matrix message event conversion."""
 
 import asyncio
 
@@ -8,14 +8,12 @@ from astrbot.api.platform import AstrBotMessage
 from astrbot.core.platform.astrbot_message import MessageMember
 from astrbot.core.platform.message_type import MessageType
 
-from ....client.event_types import MatrixRoom
-from ....config.plugin import get_plugin_config
-from ....constants import (
+from .....client.event_types import MatrixRoom
+from .....config.plugin import get_plugin_config
+from .....constants import (
     M_POLL_END,
     M_POLL_RESPONSE,
     M_POLL_START,
-    MSC1767_HTML_KEY,
-    MSC1767_TEXT_KEY,
     MSC3381_POLL_END,
     MSC3381_POLL_RESPONSE,
     MSC3381_POLL_START,
@@ -27,34 +25,22 @@ from ....constants import (
     MSGTYPE_VIDEO,
     REL_TYPE_THREAD,
 )
-from ....utils.utils import MatrixUtils
-from ...events import (
+from .....utils.utils import MatrixUtils
+from ....events import (
     BEACON_EVENT_TYPES,
-    ROOM_STATE_HANDLERS,
     handle_beacon,
     handle_beacon_info,
-    handle_call_event,
     handle_extensible_event,
     handle_poll_end,
     handle_poll_response,
     handle_poll_start,
     handle_unknown,
-    is_call_event_type,
 )
+from .helpers import _has_extensible_content
 
 
-def _has_extensible_content(content: dict | None) -> bool:
-    """Check if event content uses MSC1767 extensible event keys."""
-    if not isinstance(content, dict):
-        return False
-    for key in (MSC1767_TEXT_KEY, MSC1767_HTML_KEY):
-        if isinstance(content.get(key), dict):
-            return True
-    return False
-
-
-class MatrixReceiverConvertOperationsMixin:
-    """MatrixReceiver 消息转换 mixin"""
+class MatrixReceiverMessageConvertMixin:
+    """Convert Matrix message events to AstrBot messages."""
 
     async def convert_message(self, room: MatrixRoom, event) -> AstrBotMessage:
         """
@@ -205,57 +191,4 @@ class MatrixReceiverConvertOperationsMixin:
         message.message = (
             chain.chain
         )  # AstrBotMessage 需要列表格式的消息链 (list[BaseMessageComponent])
-        return message
-
-    async def convert_system_event(self, room: MatrixRoom, event) -> AstrBotMessage:
-        """
-        将 Matrix 非消息事件转换为 AstrBot 消息格式（OtherMessage）
-        """
-        message = AstrBotMessage()
-        message.raw_message = event
-        message.session_id = room.room_id
-        message.message_id = event.event_id
-        message.self_id = self.user_id
-        message.type = MessageType.OTHER_MESSAGE
-
-        force_type = get_plugin_config().force_message_type
-        if force_type == "group" or (force_type in {"auto", "stalk"} and room.is_group):
-            from astrbot.core.platform.astrbot_message import Group
-
-            message.group = Group(group_id=room.room_id)
-
-        sender_id = getattr(event, "sender", None)
-        if not isinstance(sender_id, str) or not sender_id:
-            logger.warning(
-                f"系统事件缺少 sender，使用占位发送者：event_id={getattr(event, 'event_id', '<unknown>')}"
-            )
-            sender_id = ""
-        sender_name = room.members.get(sender_id, sender_id)
-        message.sender = MessageMember(
-            user_id=sender_id,
-            nickname=sender_name,
-        )
-
-        # Build message chain for state events
-        chain = MessageChain()
-        event_type = getattr(event, "event_type", None)
-
-        # Resolve a handler: room state events, then VoIP / MatrixRTC call events
-        handler = None
-        if event_type and event_type in ROOM_STATE_HANDLERS:
-            handler = ROOM_STATE_HANDLERS[event_type]
-        elif event_type and is_call_event_type(event_type):
-            handler = handle_call_event
-
-        if handler is not None:
-            await handler(self, chain, event, event_type)
-            if chain.chain and chain.chain[0] is not None:
-                first_comp = chain.chain[0]
-                message.message_str = getattr(first_comp, "text", "")
-            else:
-                message.message_str = ""
-        else:
-            message.message_str = ""
-
-        message.message = chain.chain if chain.chain else []
         return message
