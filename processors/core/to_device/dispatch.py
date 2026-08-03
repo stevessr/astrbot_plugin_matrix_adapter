@@ -2,7 +2,7 @@
 
 from astrbot.api import logger
 
-from ...constants import (
+from ....constants import (
     M_FORWARDED_ROOM_KEY,
     M_ROOM_ENCRYPTED,
     M_ROOM_KEY,
@@ -12,7 +12,7 @@ from ...constants import (
 )
 
 
-class MatrixEventProcessorToDeviceMixin:
+class MatrixEventProcessorToDeviceOperationsMixin:
     """Handle encrypted room-key, verification, and secret events."""
 
     async def process_to_device_events(self, events: list):
