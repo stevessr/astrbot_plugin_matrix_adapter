@@ -2,21 +2,21 @@ import secrets
 
 from astrbot.api import logger
 
-from ...constants import (
+from ....constants import (
     M_FORWARDED_ROOM_KEY,
     M_ROOM_ENCRYPTED,
     MEGOLM_ALGO,
     PREFIX_CURVE25519,
     PREFIX_ED25519,
 )
-from ..constants import (
+from ...constants import (
     WITHHELD_UNAUTHORISED,
     WITHHELD_UNAVAILABLE,
     WITHHELD_UNVERIFIED,
 )
 
 
-class E2EEManagerRequestsRespondMixin:
+class E2EEManagerRequestsRespondOperationsMixin:
     async def respond_to_key_request(
         self,
         sender: str,
