@@ -1,17 +1,14 @@
-"""
-Matrix HTTP Client - E2EE Mixin
-Provides end-to-end encryption related methods
-"""
+"""Matrix device-key upload, query, and claim operations."""
 
 from typing import Any
 
 from astrbot.api import logger
 
-from ..constants import KEY_QUERY_TIMEOUT_MS_10000
+from ...constants import KEY_QUERY_TIMEOUT_MS_10000
 
 
-class E2EEMixin:
-    """End-to-end encryption methods for Matrix client"""
+class E2EEKeyMixin:
+    """Upload device keys and claim one-time keys."""
 
     async def upload_keys(
         self,
@@ -87,62 +84,3 @@ class E2EEMixin:
         endpoint = "/_matrix/client/v3/keys/claim"
         data = {"one_time_keys": one_time_keys, "timeout": timeout}
         return await self._request("POST", endpoint, data=data)
-
-    async def upload_signatures(self, signatures: dict[str, Any]) -> dict[str, Any]:
-        """
-        Upload signatures for device and cross-signing keys
-
-        Args:
-            signatures: Signed objects dict, keyed by user_id
-
-        Returns:
-            Response with failures
-        """
-        endpoint = "/_matrix/client/v3/keys/signatures/upload"
-        return await self._request("POST", endpoint, data=signatures)
-
-    async def upload_signing_keys(
-        self,
-        master_key: dict[str, Any] | None = None,
-        self_signing_key: dict[str, Any] | None = None,
-        user_signing_key: dict[str, Any] | None = None,
-        auth: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """
-        Upload cross-signing keys
-
-        Args:
-            master_key: Master signing key
-            self_signing_key: Self-signing key
-            user_signing_key: User-signing key
-            auth: Optional UIA auth dict
-
-        Returns:
-            Response data
-        """
-        endpoint = "/_matrix/client/v3/keys/device_signing/upload"
-        data: dict[str, Any] = {}
-        if master_key:
-            data["master_key"] = master_key
-        if self_signing_key:
-            data["self_signing_key"] = self_signing_key
-        if user_signing_key:
-            data["user_signing_key"] = user_signing_key
-        if auth:
-            data["auth"] = auth
-        return await self._request("POST", endpoint, data=data)
-
-    async def get_keys_changes(self, from_token: str, to_token: str) -> dict[str, Any]:
-        """
-        Get key changes between two sync tokens
-
-        Args:
-            from_token: Start token
-            to_token: End token
-
-        Returns:
-            Keys changes response
-        """
-        endpoint = "/_matrix/client/v3/keys/changes"
-        params = {"from": from_token, "to": to_token}
-        return await self._request("GET", endpoint, params=params)
