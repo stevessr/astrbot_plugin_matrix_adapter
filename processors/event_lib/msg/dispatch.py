@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 from astrbot.api import logger
 
-from ...client.event_types import parse_event
-from ...constants import (
+from ....client.event_types import parse_event
+from ....constants import (
     M_ROOM_ENCRYPTED,
     M_ROOM_MESSAGE,
     TIMESTAMP_BUFFER_MS_1000,
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     pass
 
 
-class MatrixEventProcessorMessagesMixin:
+class MatrixEventProcessorMessagesOperationsMixin:
     """Mixin for message event processing."""
 
     async def _process_message_event(self, room, event):
@@ -225,7 +225,7 @@ class MatrixEventProcessorMessagesMixin:
                 # Send read receipt after successful processing.
                 # When the message is in a thread, pass the thread ID so the
                 # read receipt marks the thread as read (MSC3771).
-                from ...config.plugin import get_plugin_config as _get_plugin_config
+                from ....config.plugin import get_plugin_config as _get_plugin_config
 
                 if _get_plugin_config().send_read_receipt:
                     try:
