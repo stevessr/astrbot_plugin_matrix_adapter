@@ -1,39 +1,10 @@
-"""
-Matrix HTTP Client - Widget Mixin
-Provides widget management methods
-"""
+"""Matrix widget add, remove, and update operations."""
 
 from typing import Any
 
-from astrbot.api import logger
 
-
-class WidgetMixin:
-    """Widget management methods for Matrix client"""
-
-    async def get_widgets(self, room_id: str) -> list[dict[str, Any]]:
-        """
-        Get all widgets in a room
-
-        Args:
-            room_id: Room ID
-
-        Returns:
-            List of widget state events
-        """
-        try:
-            state = await self.get_room_state(room_id)
-            widgets = []
-            for event in state:
-                # Check both widget event types
-                if event.get("type") in ["im.vector.modular.widgets", "m.widget"]:
-                    # Only include active widgets (non-empty content)
-                    if event.get("content"):
-                        widgets.append(event)
-            return widgets
-        except Exception as e:
-            logger.error(f"Failed to get widgets for room {room_id}: {e}")
-            return []
+class WidgetOperationsMixin:
+    """Create, remove, and update room widgets."""
 
     async def add_widget(
         self,
