@@ -1,8 +1,8 @@
-"""Room invitation and configurable state-event operations."""
+"""Common room state-event configuration operations."""
 
 from typing import Any
 
-from ...constants import (
+from ....constants import (
     M_ROOM_AVATAR,
     M_ROOM_CANONICAL_ALIAS,
     M_ROOM_GUEST_ACCESS,
@@ -11,31 +11,10 @@ from ...constants import (
     M_ROOM_NAME,
     M_ROOM_TOPIC,
 )
-from ..path_utils import quote_path_segment
 
 
-class RoomStateConfigurationMixin:
-    """Third-party invitations and common room state settings."""
-
-    async def invite_3pid(
-        self, room_id: str, id_server: str, medium: str, address: str
-    ) -> dict[str, Any]:
-        """
-        Invite a third-party identifier to a room
-
-        Args:
-            room_id: Room ID
-            id_server: Identity server host
-            medium: "email" or "msisdn"
-            address: Third-party address
-
-        Returns:
-            Response data
-        """
-        room = quote_path_segment(room_id)
-        endpoint = f"/_matrix/client/v3/rooms/{room}/invite"
-        data = {"id_server": id_server, "medium": medium, "address": address}
-        return await self._request("POST", endpoint, data=data)
+class RoomStateEventsMixin:
+    """Set common room name, topic, access, and alias state events."""
 
     async def set_room_name(self, room_id: str, name: str) -> dict[str, Any]:
         """
