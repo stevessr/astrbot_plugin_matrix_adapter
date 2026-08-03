@@ -1,4 +1,4 @@
-"""Matrix HTTP request, retry, and error handling helpers."""
+"""Matrix HTTP request and response handling."""
 
 from typing import Any
 
@@ -6,25 +6,12 @@ import aiohttp
 
 from astrbot.api import logger
 
-from ....constants import (
-    ERROR_TRUNCATE_LENGTH_200,
-    HTTP_ERROR_STATUS_400,
-)
-from ..errors import MatrixAPIError
+from .....constants import ERROR_TRUNCATE_LENGTH_200, HTTP_ERROR_STATUS_400
+from ...errors import MatrixAPIError
 
 
-class MatrixHTTPRequestMixin:
+class MatrixHTTPTransportMixin:
     """Issue Matrix API requests and normalize failures."""
-
-    def _get_headers(self) -> dict[str, str]:
-        """Get HTTP headers for authenticated requests"""
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "AstrBot Matrix Client/1.0",
-        }
-        if self.access_token:
-            headers["Authorization"] = f"Bearer {self.access_token}"
-        return headers
 
     async def _request(
         self,
