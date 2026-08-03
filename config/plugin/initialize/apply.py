@@ -1,7 +1,7 @@
 """Configuration-dictionary initialization for the plugin singleton."""
 
-from ...storage.backend import StorageBackendConfig, normalize_storage_backend
-from ..defaults import (
+from ....storage.backend import StorageBackendConfig, normalize_storage_backend
+from ...defaults import (
     _DEFAULT_E2EE_STORE_MAX_PENDING_WRITES,
     _DEFAULT_HTTP_TIMEOUT_SECONDS,
     _DEFAULT_MEDIA_DOWNLOAD_MAX_IN_MEMORY_BYTES,
@@ -19,7 +19,7 @@ from ..defaults import (
 )
 
 
-class PluginConfigInitializationMixin:
+class PluginConfigInitializationOperationsMixin:
     """Apply external configuration values to a PluginConfig instance."""
 
     def initialize(self, config: dict):
