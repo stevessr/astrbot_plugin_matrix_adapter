@@ -1,43 +1,18 @@
-import html
+"""Matrix poll start event sender."""
 
-from ...constants import CONTENT_KEY_RELATES_TO, REL_TYPE_REFERENCE
-from .common import send_content
+from collections.abc import Awaitable, Callable
 
+from ..common import send_content as _default_send_content
+from .fallback import (
+    _build_extensible_text,
+    _build_poll_fallback,
+    _build_poll_fallback_msc1767,
+)
 
-def _build_poll_fallback(question: str, answers: list[str]) -> tuple[str, str]:
-    safe_question = question.strip()
-    text_lines = [safe_question] + [
-        f"{idx + 1}. {ans}" for idx, ans in enumerate(answers)
-    ]
-    text_body = "\n".join(text_lines)
-
-    html_items = "\n".join(f"<li>{html.escape(ans)}</li>" for ans in answers if ans)
-    html_body = (
-        f"<p>{html.escape(safe_question)}</p><ol>{html_items}</ol>"
-        if html_items
-        else f"<p>{html.escape(safe_question)}</p>"
-    )
-    return text_body, html_body
+SendContent = Callable[..., Awaitable[dict | None]]
 
 
-def _build_poll_fallback_msc1767(question: str, answers: list[str]) -> str:
-    safe_question = question.strip()
-    text_lines = [safe_question] + [
-        f"{idx + 1}. {ans}" for idx, ans in enumerate(answers)
-    ]
-    return "\n".join(text_lines)
-
-
-def _build_extensible_text(
-    body: str, mimetype: str | None = None
-) -> list[dict[str, str]]:
-    text = {"body": body}
-    if mimetype:
-        text["mimetype"] = mimetype
-    return [text]
-
-
-async def send_poll(
+async def _send_poll(
     client,
     room_id: str,
     question: str,
@@ -54,6 +29,8 @@ async def send_poll(
     fallback_text: str | None = None,
     fallback_html: str | None = None,
     thread_is_falling_back: bool | None = None,
+    *,
+    send_content_fn: SendContent | None = None,
 ) -> dict | None:
     clean_question = (question or "").strip()
     if not clean_question:
@@ -133,7 +110,8 @@ async def send_poll(
             "body": fallback_text,
         }
 
-    return await send_content(
+    sender = send_content_fn or _default_send_content
+    return await sender(
         client,
         content,
         room_id,
@@ -144,65 +122,4 @@ async def send_poll(
         e2ee_manager,
         msg_type=event_type,
         thread_is_falling_back=thread_is_falling_back,
-    )
-
-
-async def send_poll_response(
-    client,
-    room_id: str,
-    poll_start_event_id: str,
-    answer_ids: list[str],
-    event_type: str = "m.poll.response",
-    poll_key: str = "m.poll",
-) -> dict | None:
-    """Send a response to an existing poll.
-
-    Args:
-        client: Matrix HTTP client
-        room_id: Room ID
-        poll_start_event_id: The event ID of the poll start event
-        answer_ids: List of answer IDs to vote for
-        event_type: Event type to use (m.poll.response or org.matrix.msc3381.poll.response)
-        poll_key: Poll key to use (m.poll or org.matrix.msc3381.poll.response)
-
-    Returns:
-        The response from the server, or None on failure
-    """
-    if not poll_start_event_id:
-        raise ValueError("poll_start_event_id is required for poll response")
-
-    clean_answer_ids = [str(a).strip() for a in (answer_ids or []) if str(a).strip()]
-    if not clean_answer_ids:
-        raise ValueError("at least one answer_id is required for poll response")
-
-    use_msc3381 = bool(
-        (event_type or "").startswith("org.matrix.msc3381.")
-        or (poll_key or "").startswith("org.matrix.msc3381.")
-    )
-
-    if use_msc3381:
-        content = {
-            poll_key: {
-                "answers": clean_answer_ids,
-            }
-        }
-    else:
-        content = {"m.selections": clean_answer_ids}
-
-    # Poll responses reference the corresponding poll start event.
-    content[CONTENT_KEY_RELATES_TO] = {
-        "rel_type": REL_TYPE_REFERENCE,
-        "event_id": poll_start_event_id,
-    }
-
-    return await send_content(
-        client,
-        content,
-        room_id,
-        reply_to=None,
-        thread_root=None,
-        use_thread=False,
-        is_encrypted_room=False,  # Poll responses are typically not encrypted separately
-        e2ee_manager=None,
-        msg_type=event_type,
     )
