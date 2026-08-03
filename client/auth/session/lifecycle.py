@@ -1,10 +1,10 @@
-"""Logout, session restoration, identity, and token refresh operations."""
+"""Matrix logout and access-token refresh operations."""
 
 from typing import Any
 
 
-class AuthSessionMixin:
-    """Manage the currently authenticated Matrix session."""
+class AuthSessionLifecycleMixin:
+    """End Matrix sessions and refresh access tokens."""
 
     async def logout(self) -> dict[str, Any]:
         """
@@ -23,30 +23,6 @@ class AuthSessionMixin:
             Empty dict on success
         """
         return await self._request("POST", "/_matrix/client/v3/logout/all")
-
-    def restore_login(
-        self, user_id: str, access_token: str, device_id: str | None = None
-    ):
-        """
-        Restore login session with access token
-
-        Args:
-            user_id: Matrix user ID
-            access_token: Access token from previous login
-            device_id: Device ID (optional)
-        """
-        self.user_id = user_id
-        self.access_token = access_token
-        self.device_id = device_id
-
-    async def whoami(self) -> dict[str, Any]:
-        """
-        Get information about the current user
-
-        Returns:
-            User information including user_id and device_id
-        """
-        return await self._request("GET", "/_matrix/client/v3/account/whoami")
 
     async def refresh_access_token(self, refresh_token: str) -> dict[str, Any]:
         """
