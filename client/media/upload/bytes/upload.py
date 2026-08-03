@@ -7,10 +7,10 @@ import aiohttp
 
 from astrbot.api import logger
 
-from ....constants import HTTP_ERROR_STATUS_400
+from .....constants import HTTP_ERROR_STATUS_400
 
 
-class MediaUploadBytesMixin:
+class MediaUploadBytesOperationMixin:
     """Upload in-memory media with retry and async-upload support."""
 
     async def upload_file(
