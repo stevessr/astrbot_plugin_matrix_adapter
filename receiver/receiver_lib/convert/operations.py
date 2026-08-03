@@ -8,9 +8,9 @@ from astrbot.api.platform import AstrBotMessage
 from astrbot.core.platform.astrbot_message import MessageMember
 from astrbot.core.platform.message_type import MessageType
 
-from ...client.event_types import MatrixRoom
-from ...config.plugin import get_plugin_config
-from ...constants import (
+from ....client.event_types import MatrixRoom
+from ....config.plugin import get_plugin_config
+from ....constants import (
     M_POLL_END,
     M_POLL_RESPONSE,
     M_POLL_START,
@@ -27,8 +27,8 @@ from ...constants import (
     MSGTYPE_VIDEO,
     REL_TYPE_THREAD,
 )
-from ...utils.utils import MatrixUtils
-from ..events import (
+from ....utils.utils import MatrixUtils
+from ...events import (
     BEACON_EVENT_TYPES,
     ROOM_STATE_HANDLERS,
     handle_beacon,
@@ -53,7 +53,7 @@ def _has_extensible_content(content: dict | None) -> bool:
     return False
 
 
-class MatrixReceiverConvertMixin:
+class MatrixReceiverConvertOperationsMixin:
     """MatrixReceiver 消息转换 mixin"""
 
     async def convert_message(self, room: MatrixRoom, event) -> AstrBotMessage:
