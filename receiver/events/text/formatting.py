@@ -1,17 +1,19 @@
+"""HTML and mention formatting helpers for Matrix text events."""
+
 import html
 import re
 from urllib.parse import unquote
 
 from astrbot.api.message_components import At, AtAll, Plain, Reply
 
-from ...constants import MATRIX_HTML_FORMAT
+from ....constants import MATRIX_HTML_FORMAT
 
 MENTION_HREF_RE = re.compile(
-    r"""href\s*=\s*["'](?:https?://)?matrix\.to/#/([^/"'<> ?#]+)""",
+    r"""href\s*=\s*[\"'](?:https?://)?matrix\.to/#/([^/\"'<> ?#]+)""",
     re.IGNORECASE,
 )
 MENTION_MXID_RE = re.compile(
-    r"""data-mxid\s*=\s*["'](@[^"'<> ]+)["']""",
+    r"""data-mxid\s*=\s*[\"'](@[^\"'<> ]+)[\"']""",
     re.IGNORECASE,
 )
 ANCHOR_RE = re.compile(r"<a\s+[^>]*>.*?</a>", re.IGNORECASE | re.DOTALL)
@@ -22,7 +24,7 @@ PARA_RE = re.compile(r"</\s*p\s*>", re.IGNORECASE)
 REPLY_RE = re.compile(r"<mx-reply>.*?</mx-reply>", re.IGNORECASE | re.DOTALL)
 REPLY_BLOCK_RE = re.compile(r"<mx-reply>.*?</mx-reply>", re.IGNORECASE | re.DOTALL)
 REPLY_EVENT_RE = re.compile(
-    r"""href\s*=\s*["'](?:https?://)?matrix\.to/#/[^/"'<> ?#]+/([^/"'<> ?#]+)""",
+    r"""href\s*=\s*[\"'](?:https?://)?matrix\.to/#/[^/\"'<> ?#]+/([^/\"'<> ?#]+)""",
     re.IGNORECASE,
 )
 PLAIN_MENTION_RE = re.compile(r"^@\[([^\]\r\n]+)\](?=\s|$)")
@@ -218,18 +220,3 @@ def append_formatted_text(
 
         if text:
             _append_plain(text)
-
-
-async def handle_text(receiver, chain, event, msgtype: str):
-    content = event.content or {}
-    resolved_msgtype = (
-        msgtype or content.get("msgtype") or getattr(event, "msgtype", "")
-    )
-    body = event.body or content.get("body", "")
-    if resolved_msgtype == "m.emote":
-        sender = getattr(event, "sender", "") or "Someone"
-        chain.chain.append(Plain(f"* {sender} "))
-        append_formatted_text(receiver, chain, body, content)
-        return
-
-    append_formatted_text(receiver, chain, body, content)
