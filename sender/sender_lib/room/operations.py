@@ -3,7 +3,7 @@
 from typing import Any
 
 
-class SenderRoomMixin:
+class SenderRoomOperationsMixin:
     async def create_room(
         self,
         *,
