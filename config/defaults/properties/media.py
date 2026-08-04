@@ -1,38 +1,13 @@
-"""Default-backed configuration properties."""
-
-from pathlib import Path
-
-from ...storage.backend import StorageBackendConfig
-from .values import _get_default_data_dir
+"""Default-backed configuration properties: media handling."""
 
 
-class PluginConfigDefaultsMixin:
-    """插件配置默认值 mixin：提供默认配置常量辅助函数与全部配置属性的 getter"""
-
-    @property
-    def store_path(self) -> Path:
-        """获取数据存储路径"""
-        return self._store_path
-
-    @property
-    def e2ee_store_path(self) -> Path:
-        """获取 E2EE 存储路径"""
-        return self._e2ee_store_path
-
-    @property
-    def media_cache_dir(self) -> Path:
-        """获取媒体缓存目录"""
-        return self._media_cache_dir
+class PluginConfigDefaultsMediaMixin:
+    """媒体相关的默认配置属性。"""
 
     @property
     def media_cache_gc_days(self) -> int:
         """媒体缓存 GC 天数，<=0 表示禁用"""
         return self._media_cache_gc_days
-
-    @property
-    def http_timeout_seconds(self) -> int:
-        """Global HTTP request timeout in seconds."""
-        return self._http_timeout_seconds
 
     @property
     def media_download_concurrency(self) -> int:
@@ -104,63 +79,3 @@ class PluginConfigDefaultsMixin:
     def media_upload_allowed_mime_rules(self) -> tuple[str, ...]:
         """媒体上传允许的 MIME 规则"""
         return self._media_upload_allowed_mime_rules
-
-    @property
-    def force_message_type(self) -> str:
-        """强制消息类型（auto / private / group / stalk）"""
-        return self._force_message_type
-
-    @property
-    def adaptive_thread_reply(self) -> bool:
-        """回复自适应：入站消息在消息列内时，回复也留在同一消息列"""
-        return self._adaptive_thread_reply
-
-    @property
-    def send_typing(self) -> bool:
-        """是否发送「正在输入」（typing）状态"""
-        return self._send_typing
-
-    @property
-    def send_read_receipt(self) -> bool:
-        """是否在消息处理完成后发送已读回执"""
-        return self._send_read_receipt
-
-    @property
-    def force_private_message(self) -> bool:
-        """兼容旧配置：是否将所有消息强制视为私聊"""
-        return self._force_message_type == "private"
-
-    @property
-    def data_storage_backend(self) -> str:
-        """数据存储后端（json/sqlite/pgsql）"""
-        return self._data_storage_backend
-
-    @property
-    def pgsql_dsn(self) -> str:
-        """PostgreSQL DSN"""
-        return self._pgsql_dsn
-
-    @property
-    def pgsql_schema(self) -> str:
-        """PostgreSQL schema"""
-        return self._pgsql_schema
-
-    @property
-    def pgsql_table_prefix(self) -> str:
-        """PostgreSQL 表名前缀"""
-        return self._pgsql_table_prefix
-
-    @property
-    def e2ee_store_max_pending_writes(self) -> int:
-        """E2EE store async persistence pending queue limit"""
-        return self._e2ee_store_max_pending_writes
-
-    @property
-    def storage_backend_config(self) -> StorageBackendConfig:
-        """运行时固定存储后端配置对象。"""
-        return self._storage_backend_config
-
-    @property
-    def data_dir(self) -> Path:
-        """插件数据目录"""
-        return self._data_dir or _get_default_data_dir()
