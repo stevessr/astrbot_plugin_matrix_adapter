@@ -1,82 +1,10 @@
-"""
-流式发送的加密辅助函数
-"""
+"""Encrypted and plain streaming message edits."""
 
 from astrbot.api import logger
 
-from ...constants import M_ROOM_ENCRYPTED, M_ROOM_MESSAGE, REL_TYPE_REPLACE
-from ..events.common import _copy_cleartext_relates_to
-
-
-def _encrypted_payload_without_relation(content: dict) -> dict:
-    """Keep Matrix relations in the cleartext encrypted-event envelope only."""
-
-    payload = dict(content)
-    payload.pop("m.relates_to", None)
-    return payload
-
-
-def check_encrypted_room(e2ee_manager, room_id: str) -> bool:
-    """检查房间是否启用加密"""
-    if not e2ee_manager:
-        return False
-    try:
-        if e2ee_manager._store and e2ee_manager._store.get_megolm_outbound(room_id):
-            logger.debug(f"流式发送：检测到加密房间 {room_id}")
-            return True
-    except Exception:
-        pass
-    return False
-
-
-async def send_message_encrypted(
-    client,
-    e2ee_manager,
-    room_id: str,
-    msg_type: str,
-    content: dict,
-    tracker_metadata: dict | None = None,
-) -> dict:
-    """加密并发送消息"""
-    try:
-        encrypted = await e2ee_manager.encrypt_message(
-            room_id,
-            msg_type,
-            _encrypted_payload_without_relation(content),
-        )
-        if encrypted:
-            _copy_cleartext_relates_to(encrypted, content)
-            return await client.send_message(
-                room_id=room_id,
-                msg_type=M_ROOM_ENCRYPTED,
-                content=encrypted,
-                tracker_metadata=tracker_metadata,
-            )
-        logger.warning("流式发送：加密失败，回退到未加密发送")
-    except Exception as e:
-        logger.warning(f"流式发送：加密异常 {e}，回退到未加密发送")
-    return await client.send_message(
-        room_id=room_id,
-        msg_type=msg_type,
-        content=content,
-        tracker_metadata=tracker_metadata,
-    )
-
-
-async def send_message_plain(
-    client,
-    room_id: str,
-    msg_type: str,
-    content: dict,
-    tracker_metadata: dict | None = None,
-) -> dict:
-    """发送未加密消息"""
-    return await client.send_message(
-        room_id=room_id,
-        msg_type=msg_type,
-        content=content,
-        tracker_metadata=tracker_metadata,
-    )
+from ....constants import M_ROOM_ENCRYPTED, M_ROOM_MESSAGE, REL_TYPE_REPLACE
+from ...events.common import _copy_cleartext_relates_to
+from .payload import _encrypted_payload_without_relation
 
 
 async def edit_message_encrypted(
