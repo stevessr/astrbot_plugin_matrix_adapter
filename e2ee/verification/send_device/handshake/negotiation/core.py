@@ -1,27 +1,20 @@
 """SAS accept negotiation and commitment construction."""
 
-import base64
-import hashlib
-import secrets
-
 from astrbot.api import logger
 
-from .....constants import (
+from ......constants import (
     KEY_AGREEMENT_PROTOCOLS,
     M_KEY_VERIFICATION_ACCEPT,
     M_SAS_V1_METHOD,
 )
-from ...constants import (
+from ....constants import (
     HASHES,
     MESSAGE_AUTHENTICATION_CODES,
     SHORT_AUTHENTICATION_STRING,
-    Sas,
 )
-from ...crypto_utils import _canonical_json
-from .compat import _vodozemac_sas_available
 
 
-class SASVerificationHandshakeNegotiationMixin:
+class SASVerificationHandshakeNegotiationCoreMixin:
     """协商 SAS 算法并构造 accept 消息。"""
 
     async def _send_accept(
@@ -56,38 +49,7 @@ class SASVerificationHandshakeNegotiationMixin:
 
         session = self._sessions.get(transaction_id, {})
 
-        # 生成我们的公钥
-        sas = session.get("sas")
-        if sas and _vodozemac_sas_available():
-            # vodozemac 返回 Key 对象，需要转换为 base64 字符串
-            our_public_key = sas.public_key.to_base64()
-            logger.info(
-                f"[E2EE-Verify] Using existing SAS object, public_key: {our_public_key}"
-            )
-        elif _vodozemac_sas_available():
-            # SAS object not in session, create new one
-            logger.warning(
-                "[E2EE-Verify] SAS object not in session, creating new SAS for accept"
-            )
-            try:
-                sas = Sas()
-                our_public_key = sas.public_key.to_base64()
-                session["sas"] = sas
-                logger.info(
-                    f"[E2EE-Verify] Created new SAS, public_key: {our_public_key}"
-                )
-            except Exception as e:
-                logger.error(f"[E2EE-Verify] Failed to create SAS: {e}")
-                our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
-                logger.warning(
-                    "[E2EE-Verify] Using fallback random key (commitment will fail!)"
-                )
-        else:
-            logger.warning(
-                "[E2EE-Verify] vodozemac not available, using fallback random key"
-            )
-            # 回退：生成随机密钥 (仅用于显示)
-            our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
+        our_public_key = await self._resolve_our_public_key(session)
 
         session["our_public_key"] = our_public_key
         session["key_agreement"] = key_agreement
@@ -95,14 +57,7 @@ class SASVerificationHandshakeNegotiationMixin:
         session["mac"] = mac
         session["sas_methods"] = sas_methods
 
-        # 计算 commitment = UnpaddedBase64(SHA256(public_key || canonical_json(start_content)))
-        # 根据 Matrix 规范，public_key 使用 unpadded base64 编码
-        commitment_data = our_public_key + _canonical_json(start_content)
-        commitment = (
-            base64.b64encode(hashlib.sha256(commitment_data.encode()).digest())
-            .decode()
-            .rstrip("=")
-        )
+        commitment = self._compute_accept_commitment(our_public_key, start_content)
 
         content = {
             "transaction_id": transaction_id,
