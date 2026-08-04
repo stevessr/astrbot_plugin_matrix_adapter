@@ -4,10 +4,10 @@ import copy
 
 from astrbot.api import logger
 
-from ....client.http_client import MatrixAPIError
+from .....client.http_client import MatrixAPIError
 
 
-class CrossSigningMasterSignMixin:
+class CrossSigningMasterSignCoreMixin:
     """为当前账号 master key 上传当前设备签名。"""
 
     async def sign_master_key_with_device(self, user_id: str | None = None) -> bool:
@@ -22,70 +22,19 @@ class CrossSigningMasterSignMixin:
             return False
 
         try:
-            repaired_current_device = False
-            while True:
-                response = await self.client.query_keys({target_user_id: []})
-                master_key = (response.get("master_keys") or {}).get(target_user_id)
-                device_keys = (
-                    (response.get("device_keys") or {})
-                    .get(target_user_id, {})
-                    .get(self.device_id)
-                )
-                if not master_key:
-                    logger.debug("[E2EE-CrossSign] 未找到 master key，无法添加设备签名")
-                    return False
-
-                usage = master_key.get("usage")
-                keys = master_key.get("keys")
-                if (
-                    not isinstance(usage, list)
-                    or not isinstance(keys, dict)
-                    or not keys
-                ):
-                    logger.debug(
-                        "[E2EE-CrossSign] master key 结构无效，无法添加设备签名"
-                    )
-                    return False
-
-                if not device_keys:
-                    if (
-                        not repaired_current_device
-                        and await self._repair_current_device_keys_once()
-                    ):
-                        repaired_current_device = True
-                        continue
-                    logger.warning(
-                        "[E2EE-CrossSign] 未找到当前设备密钥，无法为 master key 添加设备签名"
-                    )
-                    return False
-
+            context = await self._load_current_master_signing_context(target_user_id)
+            if not context:
+                return False
+            (
+                master_key,
+                keys,
                 (
-                    matches,
                     local_ed25519,
                     local_curve25519,
                     server_ed25519,
                     server_curve25519,
-                ) = self._current_device_matches_server(device_keys)
-                if matches:
-                    break
-
-                if (
-                    not repaired_current_device
-                    and await self._repair_current_device_keys_once()
-                ):
-                    repaired_current_device = True
-                    continue
-
-                logger.warning(
-                    "[E2EE-CrossSign] 当前设备身份密钥与服务器不一致，跳过 master key 设备签名"
-                )
-                logger.debug(
-                    "[E2EE-CrossSign] master key 设备签名失败细节："
-                    f"device_id={self.device_id} "
-                    f"local_ed25519={local_ed25519} server_ed25519={server_ed25519} "
-                    f"local_curve25519={local_curve25519} server_curve25519={server_curve25519}"
-                )
-                return False
+                ),
+            ) = context
 
             master_key_id, _master_key_value = next(iter(keys.items()))
             master_pubkey_b64 = _master_key_value
@@ -132,16 +81,6 @@ class CrossSigningMasterSignMixin:
                 f"[E2EE-CrossSign] 上传载荷验证 canonical JSON：{verify_canonical}"
             )
 
-            async def _verify_uploaded_master_signature() -> bool:
-                refreshed = await self.client.query_keys({target_user_id: []})
-                refreshed_master_key = (refreshed.get("master_keys") or {}).get(
-                    target_user_id
-                ) or {}
-                refreshed_signatures = (
-                    refreshed_master_key.get("signatures") or {}
-                ).get(target_user_id, {})
-                return signing_key_id in refreshed_signatures
-
             logger.debug(
                 "[E2EE-CrossSign] 上传 master key 设备签名："
                 f"master={master_key_id} signer={signing_key_id}"
@@ -149,7 +88,9 @@ class CrossSigningMasterSignMixin:
 
             ok = await self._upload_signature_and_confirm(
                 {target_user_id: {master_pubkey_b64: master_key_to_upload}},
-                _verify_uploaded_master_signature,
+                lambda: self._verify_uploaded_master_signature(
+                    target_user_id, signing_key_id
+                ),
                 "master key 设备签名 ",
             )
             if not ok:
@@ -163,3 +104,15 @@ class CrossSigningMasterSignMixin:
         except Exception as e:
             logger.warning(f"[E2EE-CrossSign] master key 设备签名异常：{e}")
             return False
+
+    async def _verify_uploaded_master_signature(
+        self, target_user_id: str, signing_key_id: str
+    ) -> bool:
+        refreshed = await self.client.query_keys({target_user_id: []})
+        refreshed_master_key = (refreshed.get("master_keys") or {}).get(
+            target_user_id
+        ) or {}
+        refreshed_signatures = (refreshed_master_key.get("signatures") or {}).get(
+            target_user_id, {}
+        )
+        return signing_key_id in refreshed_signatures
