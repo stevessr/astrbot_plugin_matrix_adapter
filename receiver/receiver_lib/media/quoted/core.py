@@ -1,4 +1,4 @@
-"""Quoted media conversion and asynchronous fallback handling."""
+"""Quoted-media conversion and asynchronous fallback handling."""
 
 import asyncio
 
@@ -6,10 +6,11 @@ from astrbot.api import logger
 from astrbot.api.event import MessageChain
 from astrbot.api.message_components import File, Image, Record, Video
 
-from ....constants import MSGTYPE_AUDIO, MSGTYPE_FILE, MSGTYPE_IMAGE, MSGTYPE_VIDEO
+from .....constants import MSGTYPE_AUDIO, MSGTYPE_FILE, MSGTYPE_IMAGE, MSGTYPE_VIDEO
+from .components import append_http_component
 
 
-class MatrixReceiverQuotedMediaMixin:
+class MatrixReceiverQuotedCoreMixin:
     """Append downloaded or remote quoted media components."""
 
     async def _append_quoted_media_component(
@@ -31,20 +32,10 @@ class MatrixReceiverQuotedMediaMixin:
         if self._is_media_over_auto_download_limit(size_bytes):
             if self.mxc_converter and not file_info:
                 http_url = self.mxc_converter(mxc_url)
-                if msgtype == MSGTYPE_IMAGE:
-                    chain.chain.append(Image.fromURL(http_url))
-                    return True
-                if msgtype == MSGTYPE_VIDEO:
-                    chain.chain.append(Video.fromURL(http_url))
-                    return True
-                if msgtype == MSGTYPE_AUDIO:
-                    chain.chain.append(Record.fromURL(http_url))
-                    return True
-                if msgtype == MSGTYPE_FILE:
-                    filename = content.get("filename") or content.get(
-                        "body", "file.bin"
-                    )
-                    chain.chain.append(File(name=filename, url=http_url))
+                fallback_filename = content.get("filename") or content.get(
+                    "body", "file.bin"
+                )
+                if append_http_component(chain, msgtype, fallback_filename, http_url):
                     return True
             logger.debug(
                 f"Quoted media over auto-download limit, skip local download: {msgtype}"
@@ -61,36 +52,6 @@ class MatrixReceiverQuotedMediaMixin:
             }
             filename = content.get("body", default_name_map.get(msgtype, "media.bin"))
 
-        def _append_http_component(http_url: str) -> bool:
-            if msgtype == MSGTYPE_IMAGE:
-                chain.chain.append(Image.fromURL(http_url))
-                return True
-            if msgtype == MSGTYPE_VIDEO:
-                chain.chain.append(Video.fromURL(http_url))
-                return True
-            if msgtype == MSGTYPE_AUDIO:
-                chain.chain.append(Record.fromURL(http_url))
-                return True
-            if msgtype == MSGTYPE_FILE:
-                chain.chain.append(File(name=filename, url=http_url))
-                return True
-            return False
-
-        def _schedule_background_download() -> None:
-            async def _background_download() -> None:
-                async with self._quoted_media_background_download_semaphore:
-                    if isinstance(file_info, dict):
-                        await self._download_encrypted_media_file(
-                            file_info, filename, mimetype
-                        )
-                    else:
-                        await self._download_media_file(mxc_url, filename, mimetype)
-
-            self._track_background_task(
-                asyncio.create_task(_background_download()),
-                f"quoted_media:{msgtype}",
-            )
-
         try:
             if isinstance(file_info, dict):
                 cache_path = await asyncio.wait_for(
@@ -105,9 +66,15 @@ class MatrixReceiverQuotedMediaMixin:
         except asyncio.TimeoutError:
             if self.mxc_converter and not isinstance(file_info, dict):
                 http_url = self.mxc_converter(mxc_url)
-                rendered = _append_http_component(http_url)
+                rendered = append_http_component(chain, msgtype, filename, http_url)
                 if rendered:
-                    _schedule_background_download()
+                    self._schedule_quoted_background_download(
+                        file_info=file_info,
+                        mxc_url=mxc_url,
+                        filename=filename,
+                        mimetype=mimetype,
+                        msgtype=msgtype,
+                    )
                     logger.debug(
                         f"Quoted media download timed out, fallback to URL: {msgtype}"
                     )
