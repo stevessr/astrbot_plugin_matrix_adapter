@@ -4,10 +4,10 @@ import copy
 
 from astrbot.api import logger
 
-from ....client.http_client import MatrixAPIError
+from .....client.http_client import MatrixAPIError
 
 
-class CrossSigningDeviceSignMixin:
+class CrossSigningDeviceSignCoreMixin:
     """为设备上传 self-signing 签名。"""
 
     async def sign_device(self, device_id: str) -> bool:
@@ -82,20 +82,12 @@ class CrossSigningDeviceSignMixin:
             # 避免服务器重新验证旧签名导致 M_INVALID_SIGNATURE。
             device_keys_to_upload["signatures"] = {self.user_id: {signing_key_id: sig}}
 
-            async def _verify_uploaded_device_signature() -> bool:
-                refreshed = await self.client.query_keys({self.user_id: [device_id]})
-                refreshed_device_keys = (refreshed.get("device_keys") or {}).get(
-                    self.user_id, {}
-                ).get(device_id) or {}
-                refreshed_signatures = (
-                    refreshed_device_keys.get("signatures") or {}
-                ).get(self.user_id, {})
-                return signing_key_id in refreshed_signatures
-
             upload_payload = {self.user_id: {device_id: device_keys_to_upload}}
             ok = await self._upload_signature_and_confirm(
                 upload_payload,
-                _verify_uploaded_device_signature,
+                lambda: self._verify_uploaded_device_signature(
+                    device_id, signing_key_id
+                ),
                 f"设备签名 device={device_id} ",
             )
             if not ok:
