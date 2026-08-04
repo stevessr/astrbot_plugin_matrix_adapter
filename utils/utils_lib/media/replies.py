@@ -1,42 +1,11 @@
-"""
-Matrix 媒体工具方法组件
-"""
+"""Matrix rich-reply fallback generation and stripping."""
 
-import asyncio
-from pathlib import Path
+import html
 from urllib.parse import quote
 
 
-class MatrixUtilsMediaMixin:
-    """Matrix 媒体工具方法 Mixin"""
-
-    @staticmethod
-    def _parse_mxc_url(mxc_url: str) -> tuple[str, str] | None:
-        normalized = str(mxc_url or "").strip()
-        if not normalized.startswith("mxc://"):
-            return None
-        parts = normalized[6:].split("/", 1)
-        if len(parts) != 2:
-            return None
-        server_name = parts[0].strip()
-        media_id = parts[1].split("?", 1)[0].split("#", 1)[0].strip().lstrip("/")
-        if not server_name or not media_id:
-            return None
-        return server_name, media_id
-
-    @staticmethod
-    def mxc_to_http(mxc_url: str, homeserver: str) -> str:
-        parsed = MatrixUtilsMediaMixin._parse_mxc_url(mxc_url)
-        if parsed is None:
-            return mxc_url
-        base_url = str(homeserver or "").strip().rstrip("/")
-        if not base_url:
-            return mxc_url
-        server_name, media_id = parsed
-        return (
-            f"{base_url}/_matrix/client/v1/media/download/"
-            f"{quote(server_name, safe='')}/{quote(media_id, safe='')}"
-        )
+class MatrixUtilsMediaReplyMixin:
+    """Build and strip Matrix rich-reply fallback quote blocks."""
 
     @staticmethod
     def create_reply_fallback(
@@ -64,8 +33,6 @@ class MatrixUtilsMediaMixin:
 
         # 转义 HTML 特殊字符，避免注入；matrix.to path segments 也要
         # percent-encode，避免 room/event/user id 中的 /、#、空格等破坏链接。
-        import html
-
         safe_body = html.escape(original_body).replace("\n", "<br />")
         safe_sender = html.escape(str(original_sender or ""))
         room_path = quote(str(room_id or ""), safe="")
@@ -123,49 +90,3 @@ class MatrixUtilsMediaMixin:
             return "\n".join(lines[fallback_line_count:]).lstrip()
 
         return body
-
-    @staticmethod
-    def _ensure_parent_dir(path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-    @staticmethod
-    def _is_existing_nonempty_file(path: Path) -> bool:
-        return path.exists() and path.stat().st_size > 0
-
-    @staticmethod
-    async def download_media_to_path(
-        context,
-        mxc_url: str,
-        output_path: str | Path,
-        *,
-        platform_id: str = "",
-        allow_thumbnail_fallback: bool = False,
-        fallback_to_first: bool = True,
-    ) -> Path | None:
-        """通过 Matrix 适配器客户端下载 MXC 媒体到指定路径。"""
-        if not mxc_url or not str(mxc_url).startswith("mxc://"):
-            return None
-        resolved_output_path = Path(output_path)
-        from .reaction import MatrixUtilsReactionMixin
-
-        platform = MatrixUtilsReactionMixin.get_matrix_platform(
-            context, platform_id, fallback_to_first=fallback_to_first
-        )
-        if platform is None:
-            return None
-        client = getattr(platform, "client", None)
-        if client is None or not hasattr(client, "download_file"):
-            return None
-        await asyncio.to_thread(
-            MatrixUtilsMediaMixin._ensure_parent_dir, resolved_output_path
-        )
-        await client.download_file(
-            mxc_url,
-            allow_thumbnail_fallback=allow_thumbnail_fallback,
-            output_path=resolved_output_path,
-        )
-        if not await asyncio.to_thread(
-            MatrixUtilsMediaMixin._is_existing_nonempty_file, resolved_output_path
-        ):
-            return None
-        return resolved_output_path
