@@ -1,4 +1,4 @@
-"""Room member record persistence operations."""
+"""Room member record upsert orchestration."""
 
 import time
 from typing import Any
@@ -6,8 +6,8 @@ from typing import Any
 from astrbot.api import logger
 
 
-class MatrixRoomMemberRecordsMixin:
-    """Save room member records."""
+class MatrixRoomMemberRecordsCoreMixin:
+    """Persist room member records through a guarded upsert flow."""
 
     def upsert(
         self,
@@ -56,109 +56,30 @@ class MatrixRoomMemberRecordsMixin:
             updated = True
         else:
             # Check if data has changed
-            if members != existing.get("members"):
-                existing["members"] = members
-                updated = True
-
-            if member_avatars != existing.get("member_avatars"):
-                existing["member_avatars"] = member_avatars
-                updated = True
-
-            if member_count != existing.get("member_count"):
-                existing["member_count"] = member_count
-                updated = True
-
-            if is_direct is not None and is_direct != existing.get("is_direct"):
-                existing["is_direct"] = is_direct
-                updated = True
-
-            if room_name is not None and room_name != existing.get("room_name"):
-                existing["room_name"] = room_name
-                updated = True
-
-            if topic is not None and topic != existing.get("topic"):
-                existing["topic"] = topic
-                updated = True
-
-            if avatar_url is not None and avatar_url != existing.get("avatar_url"):
-                existing["avatar_url"] = avatar_url
-                updated = True
-
-            if join_rules is not None and join_rules != existing.get("join_rules"):
-                existing["join_rules"] = join_rules
-                updated = True
-
-            if power_levels is not None and power_levels != existing.get(
-                "power_levels"
-            ):
-                existing["power_levels"] = power_levels
-                updated = True
-
-            if history_visibility is not None and history_visibility != existing.get(
-                "history_visibility"
-            ):
-                existing["history_visibility"] = history_visibility
-                updated = True
-
-            if guest_access is not None and guest_access != existing.get(
-                "guest_access"
-            ):
-                existing["guest_access"] = guest_access
-                updated = True
-
-            if canonical_alias is not None and canonical_alias != existing.get(
-                "canonical_alias"
-            ):
-                existing["canonical_alias"] = canonical_alias
-                updated = True
-
-            if room_aliases is not None and room_aliases != existing.get(
-                "room_aliases"
-            ):
-                existing["room_aliases"] = room_aliases
-                updated = True
-
-            if encryption is not None and encryption != existing.get("encryption"):
-                existing["encryption"] = encryption
-                updated = True
-
-            if create is not None and create != existing.get("create"):
-                existing["create"] = create
-                updated = True
-
-            if tombstone is not None and tombstone != existing.get("tombstone"):
-                existing["tombstone"] = tombstone
-                updated = True
-
-            if pinned_events is not None and pinned_events != existing.get(
-                "pinned_events"
-            ):
-                existing["pinned_events"] = pinned_events
-                updated = True
-
-            if space_children is not None and space_children != existing.get(
-                "space_children"
-            ):
-                existing["space_children"] = space_children
-                updated = True
-
-            if space_parents is not None and space_parents != existing.get(
-                "space_parents"
-            ):
-                existing["space_parents"] = space_parents
-                updated = True
-
-            if third_party_invites is not None and third_party_invites != existing.get(
-                "third_party_invites"
-            ):
-                existing["third_party_invites"] = third_party_invites
-                updated = True
-
-            if state_events is not None and state_events != existing.get(
-                "state_events"
-            ):
-                existing["state_events"] = state_events
-                updated = True
+            updated = self._merge_room_record_diff(
+                existing,
+                members=members,
+                member_avatars=member_avatars,
+                member_count=member_count,
+                is_direct=is_direct,
+                room_name=room_name,
+                topic=topic,
+                avatar_url=avatar_url,
+                join_rules=join_rules,
+                power_levels=power_levels,
+                history_visibility=history_visibility,
+                guest_access=guest_access,
+                canonical_alias=canonical_alias,
+                room_aliases=room_aliases,
+                encryption=encryption,
+                create=create,
+                tombstone=tombstone,
+                pinned_events=pinned_events,
+                space_children=space_children,
+                space_parents=space_parents,
+                third_party_invites=third_party_invites,
+                state_events=state_events,
+            )
 
         # Always update the data if it's a new entry or changed
         if updated:
