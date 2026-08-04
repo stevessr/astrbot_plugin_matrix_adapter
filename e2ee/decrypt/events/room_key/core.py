@@ -1,13 +1,13 @@
+"""m.room_key event handling (Megolm session import)."""
+
 from astrbot.api import logger
 
-from ....constants import MEGOLM_ALGO
-from ...constants import (
-    VALID_WITHHELD_CODES,
-    WITHHELD_NO_OLM,
-)
+from .....constants import MEGOLM_ALGO
 
 
-class E2EEManagerDecryptRoomKeyMixin:
+class E2EEManagerDecryptRoomKeyCoreMixin:
+    """Import received Megolm room keys."""
+
     async def handle_room_key(
         self,
         event: dict,
@@ -49,78 +49,21 @@ class E2EEManagerDecryptRoomKeyMixin:
             logger.warning("m.room_key 事件缺少必要字段")
             return
 
-        withheld = None
-        if forwarded:
-            forwarded_chain = event.get("forwarding_curve25519_key_chain")
-            original_sender_key = event.get("sender_key")
-            forwarded_ed25519 = event.get("sender_claimed_ed25519_key")
-            if (
-                sender_user_id != self.user_id
-                or not isinstance(forwarded_chain, list)
-                or not all(isinstance(key, str) and key for key in forwarded_chain)
-                or not isinstance(original_sender_key, str)
-                or not original_sender_key
-                or not isinstance(forwarded_ed25519, str)
-                or not forwarded_ed25519
-            ):
-                logger.warning("Rejected malformed or cross-user forwarded room key")
-                return
+        provenance = await self._validate_room_key_provenance(
+            event,
+            sender_key,
+            sender_user_id,
+            forwarded,
+        )
+        if provenance is None:
+            return
+        forwarded_chain, original_sender_key, forwarded_ed25519, withheld = provenance
 
-            source = await self._find_device_by_sender_key(
-                sender_key,
-                sender_user_id,
-            )
-            if not source or source[0] != self.user_id:
-                logger.warning("Rejected forwarded room key from an unknown device")
-                return
-            source_device = source[1]
-            device_info = await self._get_validated_device_info(
-                self.user_id,
-                source_device,
-            )
-            if not device_info or not await self._is_own_device_trusted(
-                source_device,
-                device_info,
-            ):
-                logger.warning("Rejected forwarded room key from an unverified device")
-                return
-
-            raw_withheld = event.get("withheld")
-            if raw_withheld is not None:
-                if (
-                    not isinstance(raw_withheld, dict)
-                    or raw_withheld.get("code") not in VALID_WITHHELD_CODES
-                    or raw_withheld.get("code") == WITHHELD_NO_OLM
-                    or not isinstance(raw_withheld.get("reason"), str)
-                ):
-                    logger.warning("Rejected malformed forwarded-key withheld data")
-                    return
-                withheld = {
-                    "code": raw_withheld["code"],
-                    "reason": raw_withheld["reason"],
-                }
-        else:
-            if not isinstance(sender_user_id, str) or not sender_user_id:
-                logger.warning("Rejected room key without an authenticated sender")
-                return
-            forwarded_chain = []
-            original_sender_key = sender_key
-            forwarded_ed25519 = None
-
-        claimed_keys = sender_claimed_keys
-        if isinstance(forwarded_ed25519, str) and forwarded_ed25519:
-            claimed_keys = {"ed25519": forwarded_ed25519}
-        if not isinstance(claimed_keys, dict):
-            claimed_keys = {}
-        else:
-            claimed_keys = {
-                str(algorithm): key
-                for algorithm, key in claimed_keys.items()
-                if isinstance(key, str)
-            }
-        if not isinstance(claimed_keys.get("ed25519"), str) or not claimed_keys.get(
-            "ed25519"
-        ):
+        claimed_keys = self._normalize_room_key_claims(
+            sender_claimed_keys,
+            forwarded_ed25519,
+        )
+        if claimed_keys is None:
             logger.warning("Rejected room key without an authenticated Ed25519 key")
             return
 
