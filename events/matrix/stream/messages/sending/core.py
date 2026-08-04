@@ -1,29 +1,22 @@
-"""Live Matrix message sending and update operations."""
+"""Live Matrix message sending orchestration."""
 
-import html
 import time
 
-from astrbot.api import logger
 from astrbot.api.event import MessageChain
 
-from .....constants import (
-    M_ROOM_MESSAGE,
-    MATRIX_HTML_FORMAT,
-    MSC4357_LIVE_MESSAGE_MARKER,
-    MSGTYPE_NOTICE,
-    MSGTYPE_TEXT,
-)
-from .....sender.event_send.crypto import (
-    edit_message_encrypted,
-    edit_message_plain,
-    send_message_encrypted,
-    send_message_plain,
-)
-from .....utils.markdown_utils import markdown_to_html
+from ......constants import MSGTYPE_NOTICE, MSGTYPE_TEXT
 
 
-class MatrixPlatformEventMessagesSendingMixin:
+class MatrixPlatformEventMessagesSendingCoreMixin:
     """Send live Matrix messages and preserve thread updates."""
+
+    async def _mark_stream_operation(self, metric_cls) -> None:
+        if metric_cls is not None:
+            await metric_cls.upload(
+                msg_event_tick=1,
+                adapter_name=self.platform_meta.name,
+            )
+        self._has_send_oper = True
 
     async def send_streaming(self, generator, use_fallback: bool = False) -> None:
         """发送流式消息。
@@ -71,100 +64,11 @@ class MatrixPlatformEventMessagesSendingMixin:
         except Exception:
             metric_cls = None
 
-        async def _mark_stream_operation() -> None:
-            if metric_cls is not None:
-                await metric_cls.upload(
-                    msg_event_tick=1,
-                    adapter_name=self.platform_meta.name,
-                )
-            self._has_send_oper = True
-
         if self.e2ee_manager:
             try:
                 is_encrypted_room = await self.client.is_room_encrypted(room_id)
             except Exception:
                 is_encrypted_room = False
-
-        async def _send_live_payload(text: str, *, final: bool) -> bool:
-            nonlocal current_event_id, last_sent_text, last_flush_at
-
-            content = {
-                "msgtype": msg_type,
-                "body": text,
-            }
-            try:
-                formatted_body = markdown_to_html(text)
-            except Exception as e:
-                logger.warning(f"Failed to render live message markdown: {e}")
-                formatted_body = html.escape(text).replace("\n", "<br>")
-            if formatted_body:
-                content["format"] = MATRIX_HTML_FORMAT
-                content["formatted_body"] = formatted_body
-            if not final:
-                content[MSC4357_LIVE_MESSAGE_MARKER] = {}
-            if current_event_id is None and initial_relation:
-                content["m.relates_to"] = dict(initial_relation)
-
-            tracker_metadata = {
-                "proposal": "msc4357-live-messages",
-                "live_message": True,
-                "phase": "final"
-                if final
-                else ("initial" if current_event_id is None else "edit"),
-            }
-
-            try:
-                if current_event_id is None:
-                    if is_encrypted_room:
-                        response = await send_message_encrypted(
-                            self.client,
-                            self.e2ee_manager,
-                            room_id,
-                            M_ROOM_MESSAGE,
-                            content,
-                            tracker_metadata=tracker_metadata,
-                        )
-                    else:
-                        response = await send_message_plain(
-                            self.client,
-                            room_id,
-                            M_ROOM_MESSAGE,
-                            content,
-                            tracker_metadata=tracker_metadata,
-                        )
-                    event_id = (response or {}).get("event_id")
-                    if not event_id:
-                        raise RuntimeError(
-                            "Matrix live message initial response omitted event_id"
-                        )
-                    current_event_id = str(event_id)
-                else:
-                    if is_encrypted_room:
-                        await edit_message_encrypted(
-                            self.client,
-                            self.e2ee_manager,
-                            room_id,
-                            current_event_id,
-                            content,
-                            tracker_metadata=tracker_metadata,
-                            thread_root=stream_thread_root,
-                        )
-                    else:
-                        await edit_message_plain(
-                            self.client,
-                            room_id,
-                            current_event_id,
-                            content,
-                            tracker_metadata=tracker_metadata,
-                            thread_root=stream_thread_root,
-                        )
-            except Exception as e:
-                logger.warning(f"Matrix live message update failed: {e}")
-                return False
-
-            last_sent_text = text
-            last_flush_at = time.monotonic()
-            return True
 
         # 流式生成期间持续声明 typing。生成器可能提前 return 或抛错，
         # 因此统一在 finally 中停止保活并清除状态。
@@ -188,7 +92,7 @@ class MatrixPlatformEventMessagesSendingMixin:
                     await self.send(MessageChain().message(buffer))
                     used_self_send = True
                 if not used_self_send:
-                    await _mark_stream_operation()
+                    await self._mark_stream_operation(metric_cls)
                 return
 
             async for chain in generator:
@@ -200,7 +104,23 @@ class MatrixPlatformEventMessagesSendingMixin:
                             await self.send(MessageChain().message(buffer))
                             used_self_send = True
                     else:
-                        await _send_live_payload(buffer, final=True)
+                        (
+                            _,
+                            current_event_id,
+                            last_sent_text,
+                            last_flush_at,
+                        ) = await self._send_live_payload(
+                            buffer,
+                            final=True,
+                            room_id=room_id,
+                            msg_type=msg_type,
+                            current_event_id=current_event_id,
+                            last_sent_text=last_sent_text,
+                            last_flush_at=last_flush_at,
+                            initial_relation=initial_relation,
+                            is_encrypted_room=is_encrypted_room,
+                            stream_thread_root=stream_thread_root,
+                        )
                     self._response_thread_context = None
                     buffer = ""
                     current_event_id = None
@@ -218,21 +138,53 @@ class MatrixPlatformEventMessagesSendingMixin:
                     and (time.monotonic() - last_flush_at) >= flush_interval
                 )
                 if should_flush:
-                    await _send_live_payload(buffer, final=False)
+                    (
+                        _,
+                        current_event_id,
+                        last_sent_text,
+                        last_flush_at,
+                    ) = await self._send_live_payload(
+                        buffer,
+                        final=False,
+                        room_id=room_id,
+                        msg_type=msg_type,
+                        current_event_id=current_event_id,
+                        last_sent_text=last_sent_text,
+                        last_flush_at=last_flush_at,
+                        initial_relation=initial_relation,
+                        is_encrypted_room=is_encrypted_room,
+                        stream_thread_root=stream_thread_root,
+                    )
 
             if current_event_id is None:
                 if buffer:
                     await self.send(MessageChain().message(buffer))
                     used_self_send = True
                 if not used_self_send:
-                    await _mark_stream_operation()
+                    await self._mark_stream_operation(metric_cls)
                 return
 
             if buffer != last_sent_text or last_sent_text:
                 if buffer:
-                    await _send_live_payload(buffer, final=True)
+                    (
+                        _,
+                        current_event_id,
+                        last_sent_text,
+                        last_flush_at,
+                    ) = await self._send_live_payload(
+                        buffer,
+                        final=True,
+                        room_id=room_id,
+                        msg_type=msg_type,
+                        current_event_id=current_event_id,
+                        last_sent_text=last_sent_text,
+                        last_flush_at=last_flush_at,
+                        initial_relation=initial_relation,
+                        is_encrypted_room=is_encrypted_room,
+                        stream_thread_root=stream_thread_root,
+                    )
                 else:
-                    await _mark_stream_operation()
-            await _mark_stream_operation()
+                    await self._mark_stream_operation(metric_cls)
+            await self._mark_stream_operation(metric_cls)
         finally:
             await self._stop_typing_keepalive(typing_task, room_id)
