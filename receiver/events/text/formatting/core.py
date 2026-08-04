@@ -1,39 +1,16 @@
-"""HTML and mention formatting helpers for Matrix text events."""
-
-import html
-import re
-from urllib.parse import unquote
+"""Formatted Matrix text -> message chain conversion."""
 
 from astrbot.api.message_components import At, AtAll, Plain, Reply
 
-from ....constants import MATRIX_HTML_FORMAT
-
-MENTION_HREF_RE = re.compile(
-    r"""href\s*=\s*[\"'](?:https?://)?matrix\.to/#/([^/\"'<> ?#]+)""",
-    re.IGNORECASE,
+from .....constants import MATRIX_HTML_FORMAT
+from .patterns import (
+    INLINE_TAG_RE,
+    MENTION_HREF_RE,
+    MENTION_MXID_RE,
+    PLAIN_MENTION_RE,
+    REPLY_RE,
 )
-MENTION_MXID_RE = re.compile(
-    r"""data-mxid\s*=\s*[\"'](@[^\"'<> ]+)[\"']""",
-    re.IGNORECASE,
-)
-ANCHOR_RE = re.compile(r"<a\s+[^>]*>.*?</a>", re.IGNORECASE | re.DOTALL)
-INLINE_TAG_RE = re.compile(r"<(a|span)\s+[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
-TAG_RE = re.compile(r"<[^>]+>")
-BREAK_RE = re.compile(r"<\s*br\s*/?>", re.IGNORECASE)
-PARA_RE = re.compile(r"</\s*p\s*>", re.IGNORECASE)
-REPLY_RE = re.compile(r"<mx-reply>.*?</mx-reply>", re.IGNORECASE | re.DOTALL)
-REPLY_BLOCK_RE = re.compile(r"<mx-reply>.*?</mx-reply>", re.IGNORECASE | re.DOTALL)
-REPLY_EVENT_RE = re.compile(
-    r"""href\s*=\s*[\"'](?:https?://)?matrix\.to/#/[^/\"'<> ?#]+/([^/\"'<> ?#]+)""",
-    re.IGNORECASE,
-)
-PLAIN_MENTION_RE = re.compile(r"^@\[([^\]\r\n]+)\](?=\s|$)")
-
-
-def _decode_matrix_to_segment(value: str | None) -> str:
-    if not value:
-        return ""
-    return unquote(value)
+from .plain import _decode_matrix_to_segment, _extract_reply_info, _plain_from_html
 
 
 def should_append_caption(content: dict, filename: str | None = None) -> bool:
@@ -76,47 +53,6 @@ def append_formatted_text(
             return
         seen_mentions.add(user_id)
         chain.chain.append(At(qq=user_id, name=display_name or user_id))
-
-    def _plain_from_html(fragment: str) -> str:
-        if not fragment:
-            return ""
-        fragment = BREAK_RE.sub("\n", fragment)
-        fragment = PARA_RE.sub("\n", fragment)
-        fragment = TAG_RE.sub("", fragment)
-        return html.unescape(fragment)
-
-    def _extract_reply_info(
-        html_text: str,
-    ) -> tuple[str | None, str | None, str | None]:
-        if not html_text:
-            return None, None, None
-        match = REPLY_BLOCK_RE.search(html_text)
-        if not match:
-            return None, None, None
-        block = match.group(0)
-        event_id = None
-        event_match = REPLY_EVENT_RE.search(block)
-        if event_match:
-            candidate_event_id = _decode_matrix_to_segment(event_match.group(1))
-            if candidate_event_id.startswith("$"):
-                event_id = candidate_event_id
-
-        sender_id = None
-        for href_match in MENTION_HREF_RE.finditer(block):
-            mxid = _decode_matrix_to_segment(href_match.group(1))
-            if mxid and mxid.startswith("@"):
-                sender_id = mxid
-                break
-        if not sender_id:
-            mxid_match = MENTION_MXID_RE.search(block)
-            if mxid_match:
-                sender_id = mxid_match.group(1)
-
-        body_fragment = re.sub(
-            r"^.*?<\s*br\s*/?>", "", block, flags=re.IGNORECASE | re.DOTALL
-        )
-        body_text = _plain_from_html(body_fragment).strip()
-        return event_id, sender_id, body_text
 
     def _consume_leading_plain_mention(start_index: int) -> bool:
         if start_index >= len(chain.chain):
