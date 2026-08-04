@@ -1,26 +1,19 @@
 """In-room SAS accept negotiation and commitment construction."""
 
-import base64
-import hashlib
-import secrets
-
 from astrbot.api import logger
 
-from .....constants import (
+from ......constants import (
     KEY_AGREEMENT_PROTOCOLS,
     M_KEY_VERIFICATION_ACCEPT,
 )
-from ...constants import (
+from ....constants import (
     HASHES,
     MESSAGE_AUTHENTICATION_CODES,
     SHORT_AUTHENTICATION_STRING,
-    Sas,
 )
-from ...crypto_utils import _canonical_json
-from .compat import _vodozemac_sas_available
 
 
-class SASVerificationSendRoomAcceptMixin:
+class SASVerificationSendRoomAcceptCoreMixin:
     """协商房间内 SAS 算法并构造 accept 消息。"""
 
     async def _send_in_room_accept(
@@ -55,25 +48,7 @@ class SASVerificationSendRoomAcceptMixin:
 
         session = self._sessions.get(transaction_id, {})
 
-        sas = session.get("sas")
-        if sas and _vodozemac_sas_available():
-            our_public_key = sas.public_key.to_base64()
-        elif _vodozemac_sas_available():
-            logger.warning(
-                "[E2EE-Verify] SAS object not in session, creating new SAS for accept"
-            )
-            try:
-                sas = Sas()
-                our_public_key = sas.public_key.to_base64()
-                session["sas"] = sas
-            except Exception as e:
-                logger.error(f"[E2EE-Verify] Failed to create SAS: {e}")
-                our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
-        else:
-            logger.warning(
-                "[E2EE-Verify] vodozemac not available, using fallback random key"
-            )
-            our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
+        our_public_key = await self._resolve_room_accept_public_key(session)
 
         session["our_public_key"] = our_public_key
         session["key_agreement"] = key_agreement
@@ -81,20 +56,7 @@ class SASVerificationSendRoomAcceptMixin:
         session["mac"] = mac
         session["sas_methods"] = sas_methods
 
-        # 计算 commitment = UnpaddedBase64(SHA256(public_key || canonical_json(start_content)))
-        # 根据 Matrix 规范和 matrix-rust-sdk 实现，m.relates_to 应该包含在 canonical JSON 中
-        canonical_start = _canonical_json(start_content)
-        commitment_data = our_public_key + canonical_start
-        commitment = (
-            base64.b64encode(hashlib.sha256(commitment_data.encode("utf-8")).digest())
-            .decode()
-            .rstrip("=")
-        )
-
-        logger.debug(
-            f"[E2EE-Verify] Commitment: public_key={(our_public_key or '')[:16]}..., "
-            f"has_m.relates_to={'m.relates_to' in start_content}"
-        )
+        commitment = self._compute_room_accept_commitment(our_public_key, start_content)
 
         content = {
             "method": "m.sas.v1",
