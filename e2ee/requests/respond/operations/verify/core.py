@@ -1,16 +1,15 @@
-"""Requester verification for room-key requests."""
+"""Requester verification orchestration."""
 
 from astrbot.api import logger
 
-from .....constants import PREFIX_CURVE25519, PREFIX_ED25519
-from ....constants import (
+from .....constants import (
     WITHHELD_UNAUTHORISED,
     WITHHELD_UNAVAILABLE,
     WITHHELD_UNVERIFIED,
 )
 
 
-class E2EEManagerRequestsRespondVerifyMixin:
+class E2EEManagerRequestsRespondVerifyOrchestratorMixin:
     """Verify a requesting device and load its identity keys."""
 
     async def _verify_requester(
@@ -44,25 +43,8 @@ class E2EEManagerRequestsRespondVerifyMixin:
             return None
 
         # 获取请求者的设备密钥信息
-        resp = await self.client.query_keys({sender: []})
-        devices = (resp.get("device_keys") or {}).get(sender) or {}
-        device_info = devices.get(requesting_device_id, {})
-        curve_key = device_info.get("keys", {}).get(
-            f"{PREFIX_CURVE25519}{requesting_device_id}"
-        )
-        ed25519_key = device_info.get("keys", {}).get(
-            f"{PREFIX_ED25519}{requesting_device_id}"
-        )
-
-        if (
-            not curve_key
-            or not ed25519_key
-            or not self._olm.verify_device_keys(
-                sender,
-                requesting_device_id,
-                device_info,
-            )
-        ):
+        identity = await self._load_requester_identity(sender, requesting_device_id)
+        if identity is None:
             logger.warning(
                 f"Missing or invalid signed identity keys for requesting device "
                 f"{sender}/{requesting_device_id}"
@@ -76,6 +58,7 @@ class E2EEManagerRequestsRespondVerifyMixin:
                 "The requesting device keys are unavailable",
             )
             return None
+        device_info, _curve_key, _ed25519_key, resp = identity
 
         if self._store:
             self._store.save_device_keys(sender, requesting_device_id, device_info)
@@ -100,3 +83,6 @@ class E2EEManagerRequestsRespondVerifyMixin:
             return None
 
         return device_info, resp
+
+
+__all__ = ["E2EEManagerRequestsRespondVerifyOrchestratorMixin"]
