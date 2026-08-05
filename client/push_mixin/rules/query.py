@@ -1,0 +1,61 @@
+"""Matrix push-rule query operations."""
+
+from typing import Any
+
+from ...path_utils import quote_path_segment
+
+
+class PushRuleQueryMixin:
+    """Inspect Matrix push rules."""
+
+    async def get_push_rules(self) -> dict[str, Any]:
+        """
+        Get all push rules
+
+        Returns:
+            Push rules response
+        """
+        return await self._request("GET", "/_matrix/client/v3/pushrules")
+
+    async def get_push_rule(
+        self, scope: str, kind: str, rule_id: str
+    ) -> dict[str, Any]:
+        """
+        Get a specific push rule
+        """
+        scope_path = quote_path_segment(scope)
+        kind_path = quote_path_segment(kind)
+        rule = quote_path_segment(rule_id)
+        endpoint = f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}"
+        return await self._request("GET", endpoint)
+
+    async def get_push_rule_actions(
+        self, scope: str, kind: str, rule_id: str
+    ) -> dict[str, Any]:
+        """
+        Get actions for a push rule
+        """
+        scope_path = quote_path_segment(scope)
+        kind_path = quote_path_segment(kind)
+        rule = quote_path_segment(rule_id)
+        endpoint = (
+            f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/actions"
+        )
+        return await self._request("GET", endpoint)
+
+    async def get_push_rule_enabled(
+        self, scope: str, kind: str, rule_id: str
+    ) -> dict[str, Any]:
+        """
+        Get enabled state for a push rule
+        """
+        scope_path = quote_path_segment(scope)
+        kind_path = quote_path_segment(kind)
+        rule = quote_path_segment(rule_id)
+        endpoint = (
+            f"/_matrix/client/v3/pushrules/{scope_path}/{kind_path}/{rule}/enabled"
+        )
+        return await self._request("GET", endpoint)
+
+
+__all__ = ["PushRuleQueryMixin"]
