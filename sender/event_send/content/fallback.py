@@ -1,4 +1,4 @@
-"""Component detection and fallback rendering for Matrix event sending."""
+"""Per-segment fallback rendering for Matrix event sending."""
 
 import html
 import json
@@ -9,51 +9,11 @@ from astrbot.api.message_components import (
     Json,
     Node,
     Nodes,
-    Plain,
     Poke,
     Unknown,
 )
 
-from ...sticker import Sticker
-from .components import Poll
-
-
-def _is_sticker_component(obj) -> bool:
-    """Check if object is a Sticker-like component via duck-typing."""
-    if isinstance(obj, Sticker):
-        return True
-    class_name = type(obj).__name__
-    if class_name != "Sticker":
-        return False
-    required_attrs = ["body", "url", "info", "to_matrix_content"]
-    return all(hasattr(obj, attr) for attr in required_attrs)
-
-
-def _is_poll_component(obj) -> bool:
-    """Check if object is a Poll-like component via duck-typing."""
-    if isinstance(obj, Poll):
-        return True
-    class_name = type(obj).__name__
-    if class_name != "Poll":
-        return False
-    required_attrs = ["question", "answers"]
-    return all(hasattr(obj, attr) for attr in required_attrs)
-
-
-def _truncate_text(text: str, max_len: int = 400) -> str:
-    if len(text) <= max_len:
-        return text
-    return text[: max_len - 20] + "... (truncated)"
-
-
-def _summarize_components(components: list, max_len: int = 300) -> str:
-    parts: list[str] = []
-    for comp in components or []:
-        if isinstance(comp, Plain):
-            parts.append(comp.text)
-        else:
-            parts.append(f"[{type(comp).__name__}]")
-    return _truncate_text(" ".join(parts).strip(), max_len=max_len)
+from .text import _summarize_components, _truncate_text
 
 
 def _fallback_content_for_segment(segment) -> tuple[str, str | None]:
@@ -110,14 +70,4 @@ def _fallback_content_for_segment(segment) -> tuple[str, str | None]:
     return f"[{type(segment).__name__}]", None
 
 
-def _is_media_security_validation_error(err: Exception) -> bool:
-    message = str(err)
-    security_error_prefixes = (
-        "Blocked media upload extension:",
-        "Declared MIME type is not allowed:",
-        "Sniffed MIME type is not allowed:",
-        "Declared MIME does not match file signature:",
-        "Declared MIME does not match file extension:",
-        "File extension does not match file signature:",
-    )
-    return any(message.startswith(prefix) for prefix in security_error_prefixes)
+__all__ = ["_fallback_content_for_segment"]
