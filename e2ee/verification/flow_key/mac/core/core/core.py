@@ -2,16 +2,16 @@
 
 from astrbot.api import logger
 
-from ......constants import INFO_PREFIX_MAC
-from .cancel import SASVerificationFlowMACCancelMixin
-from .done import SASVerificationFlowMACDoneMixin
-from .verify import SASVerificationFlowMACVerifyMixin
+from .......constants import INFO_PREFIX_MAC
+from .finish import SASVerificationFlowMACFinishMixin
+from .keycheck import SASVerificationFlowMACKeyCheckMixin
+from .record import SASVerificationFlowMACRecordMixin
 
 
-class SASVerificationFlowMACHandleMixin(
-    SASVerificationFlowMACCancelMixin,
-    SASVerificationFlowMACVerifyMixin,
-    SASVerificationFlowMACDoneMixin,
+class SASVerificationFlowMACOrchestratorMixin(
+    SASVerificationFlowMACRecordMixin,
+    SASVerificationFlowMACKeyCheckMixin,
+    SASVerificationFlowMACFinishMixin,
 ):
     """校验对端 MAC 并在失败时发送取消。"""
 
@@ -23,8 +23,7 @@ class SASVerificationFlowMACHandleMixin(
         logger.debug(f"[E2EE-Verify] 收到 MAC: keys={their_keys}")
 
         session = self._sessions.get(transaction_id, {})
-        session["their_mac"] = their_mac
-        session["state"] = "mac_received"
+        self._record_mac_received(session, their_mac)
 
         established_sas = session.get("established_sas")
         their_device = session.get("from_device", session.get("their_device", ""))
@@ -61,7 +60,7 @@ class SASVerificationFlowMACHandleMixin(
             return
 
         key_ids = sorted(their_mac.keys())
-        if not key_ids:
+        if not self._check_mac_key_ids(their_mac, key_ids, available_keys):
             await self._abort_mac_verification(
                 session,
                 sender,
@@ -71,28 +70,6 @@ class SASVerificationFlowMACHandleMixin(
                 transaction_id,
             )
             return
-
-        for key_id in key_ids:
-            if key_id not in available_keys:
-                await self._abort_mac_verification(
-                    session,
-                    sender,
-                    their_device,
-                    is_in_room,
-                    room_id,
-                    transaction_id,
-                )
-                return
-            if not isinstance(their_mac.get(key_id), str):
-                await self._abort_mac_verification(
-                    session,
-                    sender,
-                    their_device,
-                    is_in_room,
-                    room_id,
-                    transaction_id,
-                )
-                return
 
         base_info = f"{INFO_PREFIX_MAC}{sender}{their_device}{self.user_id}{self.device_id}{transaction_id}"
         key_ids_csv = ",".join(key_ids)
@@ -151,16 +128,19 @@ class SASVerificationFlowMACHandleMixin(
             )
             return
 
-        session["mac_verified"] = True
-        logger.info(
-            "[E2EE-Verify] ✅ MAC 校验通过："
-            f"device={self._mask_identifier(their_device)}"
-        )
-
-        await self._send_mac_done(
+        await self._complete_mac_verification(
             session,
             sender,
+            their_device,
             transaction_id,
             is_in_room,
             room_id,
         )
+
+
+__all__ = [
+    "SASVerificationFlowMACFinishMixin",
+    "SASVerificationFlowMACKeyCheckMixin",
+    "SASVerificationFlowMACOrchestratorMixin",
+    "SASVerificationFlowMACRecordMixin",
+]
