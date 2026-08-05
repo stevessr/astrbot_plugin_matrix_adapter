@@ -2,11 +2,11 @@
 
 from astrbot.api import logger
 
-from .....client.event_types import parse_event
-from .....constants import M_ROOM_ENCRYPTED, M_ROOM_MESSAGE
+from ......client.event_types import parse_event
+from ......constants import M_ROOM_MESSAGE
 
 
-class MatrixEventProcessorMessagesDecryptMixin:
+class MatrixEventProcessorMessagesDecryptOrchestratorMixin:
     """Decrypt encrypted message events and route verification events."""
 
     async def _handle_encrypted_message_event(
@@ -17,8 +17,7 @@ class MatrixEventProcessorMessagesDecryptMixin:
         Returns (event, event_type, event_content) to continue processing,
         or None if the event was handled (verification) or undecryptable.
         """
-        # Check if message is encrypted
-        if not (event_type == M_ROOM_ENCRYPTED or event_content.get("algorithm")):
+        if not self._is_encrypted_message_event(event_type, event_content):
             return event, event_type, event_content
 
         if self.e2ee_manager:
@@ -59,36 +58,13 @@ class MatrixEventProcessorMessagesDecryptMixin:
                 )
 
                 if is_verification:
-                    # Check if it's from self (same user)
-                    if sender == self.user_id:
-                        # Only process if from a different device
-                        from_device = event.content.get("from_device")
-                        if (
-                            from_device
-                            and self.e2ee_manager
-                            and from_device == self.e2ee_manager.device_id
-                        ):
-                            return None  # Ignore own echo
-
-                    logger.debug(
-                        f"[EventProcessor] 检测到加密的验证事件 (type={event.event_type})"
+                    await self._route_decrypted_verification_event(
+                        room,
+                        event,
+                        sender,
+                        event_content,
+                        cleartext_relates_to,
                     )
-
-                    # CRITICAL: For encrypted in-room verification events,
-                    # m.relates_to is in the CLEARTEXT portion of the encrypted event
-                    # (event_content), not in the decrypted payload.
-                    # We need to copy it to the decrypted content for commitment calculation.
-                    if cleartext_relates_to:
-                        event.content["m.relates_to"] = cleartext_relates_to
-
-                    # Reconstruct event_data for verification handler
-                    verification_event = {
-                        "type": event.event_type,
-                        "sender": sender,
-                        "event_id": event.event_id,
-                        "content": event.content,
-                    }
-                    await self._handle_in_room_verification(room, verification_event)
                     return None
 
                 event = parse_event(
@@ -113,3 +89,6 @@ class MatrixEventProcessorMessagesDecryptMixin:
         else:
             logger.error(f"收到加密消息但 E2EE 未启用 (room_id={room.room_id})")
             return None
+
+
+__all__ = ["MatrixEventProcessorMessagesDecryptOrchestratorMixin"]
