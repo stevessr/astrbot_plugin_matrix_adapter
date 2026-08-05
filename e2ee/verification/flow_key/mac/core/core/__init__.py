@@ -2,6 +2,8 @@
 
 from .core import SASVerificationFlowMACOrchestratorMixin
 from .finish import SASVerificationFlowMACFinishMixin
+from .guard import SASVerificationFlowMACGuardMixin
+from .info import SASVerificationFlowMACInfoMixin
 from .keycheck import SASVerificationFlowMACKeyCheckMixin
 from .record import SASVerificationFlowMACRecordMixin
 
@@ -17,6 +19,8 @@ for _mixin in (
     SASVerificationFlowMACFinishMixin,
     SASVerificationFlowMACKeyCheckMixin,
     SASVerificationFlowMACRecordMixin,
+    SASVerificationFlowMACGuardMixin,
+    SASVerificationFlowMACInfoMixin,
 ):
     for _method_name, _method in _mixin.__dict__.items():
         if _method_name.startswith("__"):
@@ -27,7 +31,9 @@ for _mixin in (
 
 __all__ = [
     "SASVerificationFlowMACFinishMixin",
+    "SASVerificationFlowMACGuardMixin",
     "SASVerificationFlowMACHandleMixin",
+    "SASVerificationFlowMACInfoMixin",
     "SASVerificationFlowMACKeyCheckMixin",
     "SASVerificationFlowMACOrchestratorMixin",
     "SASVerificationFlowMACRecordMixin",

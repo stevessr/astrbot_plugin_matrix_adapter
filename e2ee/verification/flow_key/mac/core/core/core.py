@@ -2,8 +2,9 @@
 
 from astrbot.api import logger
 
-from .......constants import INFO_PREFIX_MAC
 from .finish import SASVerificationFlowMACFinishMixin
+from .guard import SASVerificationFlowMACGuardMixin
+from .info import SASVerificationFlowMACInfoMixin
 from .keycheck import SASVerificationFlowMACKeyCheckMixin
 from .record import SASVerificationFlowMACRecordMixin
 
@@ -12,6 +13,8 @@ class SASVerificationFlowMACOrchestratorMixin(
     SASVerificationFlowMACRecordMixin,
     SASVerificationFlowMACKeyCheckMixin,
     SASVerificationFlowMACFinishMixin,
+    SASVerificationFlowMACGuardMixin,
+    SASVerificationFlowMACInfoMixin,
 ):
     """校验对端 MAC 并在失败时发送取消。"""
 
@@ -48,19 +51,8 @@ class SASVerificationFlowMACOrchestratorMixin(
             their_device,
         )
 
-        if not their_device or not available_keys:
-            await self._abort_mac_verification(
-                session,
-                sender,
-                their_device,
-                is_in_room,
-                room_id,
-                transaction_id,
-            )
-            return
-
         key_ids = sorted(their_mac.keys())
-        if not self._check_mac_key_ids(their_mac, key_ids, available_keys):
+        if self._mac_guard_failure(their_mac, their_device, available_keys, key_ids):
             await self._abort_mac_verification(
                 session,
                 sender,
@@ -71,8 +63,8 @@ class SASVerificationFlowMACOrchestratorMixin(
             )
             return
 
-        base_info = f"{INFO_PREFIX_MAC}{sender}{their_device}{self.user_id}{self.device_id}{transaction_id}"
-        key_ids_csv = ",".join(key_ids)
+        base_info = self._build_mac_base_info(sender, their_device, transaction_id)
+        key_ids_csv = self._build_mac_key_ids_csv(key_ids)
 
         expected = await self._compute_expected_macs(
             session,
@@ -140,6 +132,8 @@ class SASVerificationFlowMACOrchestratorMixin(
 
 __all__ = [
     "SASVerificationFlowMACFinishMixin",
+    "SASVerificationFlowMACGuardMixin",
+    "SASVerificationFlowMACInfoMixin",
     "SASVerificationFlowMACKeyCheckMixin",
     "SASVerificationFlowMACOrchestratorMixin",
     "SASVerificationFlowMACRecordMixin",
