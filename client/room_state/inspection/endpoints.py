@@ -1,14 +1,12 @@
-"""Room state inspection and initial-sync operations."""
+"""Simple room inspection endpoints."""
 
-import json
 from typing import Any
 
-from ...constants import MEMBERSHIP_INVITE, MEMBERSHIP_JOIN, MEMBERSHIP_LEAVE
-from ..path_utils import quote_path_segment
+from ...path_utils import quote_path_segment
 
 
-class RoomStateInspectionMixin:
-    """Read-only room state and timeline inspection helpers."""
+class RoomStateInspectionEndpointMixin:
+    """Read-only room state endpoint helpers."""
 
     async def get_joined_members(self, room_id: str) -> dict[str, Any]:
         """
@@ -71,33 +69,5 @@ class RoomStateInspectionMixin:
         params = {"ts": timestamp, "dir": direction}
         return await self._request("GET", endpoint, params=params)
 
-    async def initial_sync(
-        self, room_id: str, limit: int | None = None, archived: bool | None = None
-    ) -> dict[str, Any]:
-        """
-        Get room initial sync via /sync with a room filter.
 
-        Args:
-            room_id: Room ID
-            limit: Optional timeline limit
-            archived: Ignored (not supported by /sync)
-
-        Returns:
-            Room data from /sync (join/invite/leave), or empty dict if missing.
-        """
-        filter_data: dict[str, Any] = {"room": {"rooms": [room_id]}}
-        if limit is not None:
-            filter_data["room"]["timeline"] = {"limit": limit}
-
-        params: dict[str, Any] = {
-            "filter": json.dumps(filter_data, ensure_ascii=True),
-            "full_state": True,
-        }
-        response = await self._request("GET", "/_matrix/client/v3/sync", params=params)
-
-        rooms = response.get("rooms", {})
-        for bucket in (MEMBERSHIP_JOIN, MEMBERSHIP_INVITE, MEMBERSHIP_LEAVE):
-            room_bucket = rooms.get(bucket, {})
-            if room_id in room_bucket:
-                return room_bucket[room_id]
-        return {}
+__all__ = ["RoomStateInspectionEndpointMixin"]
