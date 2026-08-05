@@ -1,27 +1,7 @@
-"""
-Matrix Live 通话（VoIP / MatrixRTC）事件适配的共享逻辑。
+"""Call event text formatting."""
 
-本模块刻意只依赖标准库，使其可以被 config / event_processor / receiver 等
-任意模块安全导入（包括单元测试中通过 sys.modules 桩注入的环境）。
-
-覆盖的事件族：
-
-- 1 对 1 VoIP（MSC2746，现已进入正式规范的 ``m.call.*``）：
-  invite / answer / hangup / reject / replaces 等生命周期事件，以及
-  candidates / negotiate / select_answer / sdp_stream_metadata_changed /
-  asserted_identity 等高频信令事件。
-- MatrixRTC 群组 / Live 通话（MSC3401 / MSC4143）：
-  ``m.call`` 群组通话状态事件，以及 ``m.call.member`` /
-  ``org.matrix.msc3401.call.member`` / ``m.rtc.member`` 成员状态事件。
-- 来电响铃通知（MSC4075）：``m.call.notify`` / ``org.matrix.msc4075.call.notify``。
-
-机器人无法真正参与 WebRTC 媒体，因此「适配」的含义是：把这些事件归一化为
-系统提示文本，让上层（AstrBot 工作流 / 存档）能够感知通话的发生与状态变化，
-而不会触发 LLM 自动「接听」。
-"""
-
-from .classification import classify_call_event
-from .constants import (
+from ..classification import classify_call_event
+from ..constants import (
     CATEGORY_1TO1,
     CATEGORY_DECLINE,
     CATEGORY_GROUP_MEMBER,
@@ -29,44 +9,8 @@ from .constants import (
     CATEGORY_RINGING,
     CATEGORY_SIGNALLING,
 )
-
-# --- 文本格式化 -------------------------------------------------------------
-
-
-def _invite_media_kind(content: dict) -> str:
-    """从 invite 的 SDP offer 粗略判断是语音还是视频通话。"""
-    offer = content.get("offer")
-    sdp = ""
-    if isinstance(offer, dict):
-        sdp = str(offer.get("sdp") or "")
-    if "m=video" in sdp:
-        return "video"
-    if "m=audio" in sdp:
-        return "voice"
-    return ""
-
-
-def _member_has_left(content: dict) -> bool:
-    """判断 MatrixRTC 成员状态事件表示「离开」还是「加入」通话。"""
-    if not content:
-        return True
-    # MSC3401：memberships / m.calls 数组为空表示离开。
-    for key in ("memberships", "m.calls"):
-        value = content.get(key)
-        if isinstance(value, list):
-            return len(value) == 0
-    # MSC4143 m.rtc.member：包含通话标识字段即视为加入，空字典即离开。
-    for key in (
-        "call_id",
-        "application",
-        "device_id",
-        "focus_active",
-        "foci_preferred",
-        "scope",
-    ):
-        if key in content:
-            return False
-    return len(content) == 0
+from .media import _invite_media_kind
+from .member import _member_has_left
 
 
 def format_call_event_text(event: object) -> str | None:
