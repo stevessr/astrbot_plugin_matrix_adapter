@@ -1,13 +1,13 @@
-"""Single-room-session upload operations for key backups."""
+"""Single-room-session upload orchestration."""
 
 import json
 
 from astrbot.api import logger
 
-from ....constants import MEGOLM_ALGO
+from .....constants import MEGOLM_ALGO
 
 
-class KeyBackupUploadSessionMixin:
+class KeyBackupUploadSessionOrchestratorMixin:
     """上传单个房间会话密钥并处理接口回退。"""
 
     async def upload_single_key(
@@ -38,10 +38,7 @@ class KeyBackupUploadSessionMixin:
         Returns:
             bool: 是否成功
         """
-        if not self._backup_version:
-            return False
-        if algorithm != MEGOLM_ALGO:
-            logger.warning(f"[KeyBackup] 不支持的会话算法：{algorithm}")
+        if not self._check_upload_guard(algorithm):
             return False
 
         try:
@@ -65,38 +62,16 @@ class KeyBackupUploadSessionMixin:
                 "session_data": self._build_encrypted_session_data(plaintext),
             }
 
-            try:
-                await self.client.store_room_key_for_session(
-                    self._backup_version,
-                    room_id,
-                    session_id,
-                    session_data,
-                )
-                return True
-            except Exception as e:
-                errcode = None
-                if isinstance(getattr(e, "data", None), dict):
-                    errcode = e.data.get("errcode")
-                if getattr(e, "status", None) != 404 or errcode != "M_UNRECOGNIZED":
-                    raise
-
-                logger.info(
-                    "[KeyBackup] 单会话备份接口未识别，回退到批量 room_keys 接口"
-                )
-                await self.client.store_room_keys(
-                    self._backup_version,
-                    {
-                        "rooms": {
-                            room_id: {
-                                "sessions": {
-                                    session_id: session_data,
-                                }
-                            }
-                        }
-                    },
-                )
-                return True
+            await self._upload_session_with_fallback(
+                room_id,
+                session_id,
+                session_data,
+            )
+            return True
 
         except Exception as e:
             logger.warning(f"[KeyBackup] 备份单个密钥失败：{e}")
             return False
+
+
+__all__ = ["KeyBackupUploadSessionOrchestratorMixin"]
