@@ -5367,6 +5367,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             {"bleach": bleach_stub, "markdown_it": markdown_it_stub},
         ):
             plain_sender = load_module("sender.events.plain")
+            plain_core = load_module("sender.events.plain.core")
         plain_cls = sys.modules["astrbot.api.message_components"].Plain
         captured = {}
 
@@ -5388,7 +5389,14 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             captured["use_thread"] = use_thread
             return {"event_id": "$thread"}
 
-        with mock.patch.object(plain_sender, "send_content", new=fake_send_content):
+        with (
+            mock.patch.object(
+                plain_core,
+                "markdown_to_html",
+                lambda text: text,
+            ),
+            mock.patch.object(plain_core, "send_content", new=fake_send_content),
+        ):
             await plain_sender.send_plain(
                 client=object(),
                 segment=plain_cls("thread"),
@@ -5440,6 +5448,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             {"bleach": bleach_stub, "markdown_it": markdown_it_stub},
         ):
             plain_sender = load_module("sender.events.plain")
+            plain_core = load_module("sender.events.plain.core")
 
         plain_cls = sys.modules["astrbot.api.message_components"].Plain
         captured = {}
@@ -5459,7 +5468,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
             captured["content"] = content
             return {"event_id": "$reply"}
 
-        with mock.patch.object(plain_sender, "send_content", new=fake_send_content):
+        with mock.patch.object(plain_core, "send_content", new=fake_send_content):
             await plain_sender.send_plain(
                 client=types.SimpleNamespace(user_id="@bot:example.org"),
                 segment=plain_cls("reply"),
@@ -5490,6 +5499,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_send_plain_escapes_html_when_markdown_renderer_fails(self):
         plain_sender = load_module("sender.events.plain")
+        plain_core = load_module("sender.events.plain.core")
         plain_cls = sys.modules["astrbot.api.message_components"].Plain
         captured = {}
 
@@ -5510,11 +5520,11 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             mock.patch.object(
-                plain_sender,
+                plain_core,
                 "markdown_to_html",
                 side_effect=RuntimeError("renderer unavailable"),
             ),
-            mock.patch.object(plain_sender, "send_content", new=fake_send_content),
+            mock.patch.object(plain_core, "send_content", new=fake_send_content),
         ):
             await plain_sender.send_plain(
                 client=object(),
