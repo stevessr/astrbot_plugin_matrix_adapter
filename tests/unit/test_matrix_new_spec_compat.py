@@ -2892,6 +2892,9 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         stubs = {
             f"{PACKAGE_NAME}.constants": _make_module(
                 f"{PACKAGE_NAME}.constants",
+                M_STICKER='m.sticker',
+                M_LOCATION='m.location',
+                M_KEY_VERIFICATION_REQUEST='m.key.verification.request',
                 MAX_PROCESSED_MESSAGES_1000=1000,
                 TIMESTAMP_BUFFER_MS_1000=1000,
                 M_FORWARDED_ROOM_KEY="m.forwarded_room_key",
@@ -3304,6 +3307,9 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
             ),
             f"{PACKAGE_NAME}.constants": _make_module(
                 f"{PACKAGE_NAME}.constants",
+                M_STICKER='m.sticker',
+                M_LOCATION='m.location',
+                M_KEY_VERIFICATION_REQUEST='m.key.verification.request',
                 MAX_PROCESSED_MESSAGES_1000=1000,
                 TIMESTAMP_BUFFER_MS_1000=1000,
                 M_FORWARDED_ROOM_KEY="m.forwarded_room_key",
@@ -3643,6 +3649,9 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
         stubs = {
             f"{PACKAGE_NAME}.constants": _make_module(
                 f"{PACKAGE_NAME}.constants",
+                M_STICKER='m.sticker',
+                M_LOCATION='m.location',
+                M_KEY_VERIFICATION_REQUEST='m.key.verification.request',
                 MAX_PROCESSED_MESSAGES_1000=1000,
                 TIMESTAMP_BUFFER_MS_1000=1000,
                 M_FORWARDED_ROOM_KEY="m.forwarded_room_key",
@@ -3780,6 +3789,9 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
         stubs = {
             f"{PACKAGE_NAME}.constants": _make_module(
                 f"{PACKAGE_NAME}.constants",
+                M_STICKER='m.sticker',
+                M_LOCATION='m.location',
+                M_KEY_VERIFICATION_REQUEST='m.key.verification.request',
                 MAX_PROCESSED_MESSAGES_1000=1000,
                 TIMESTAMP_BUFFER_MS_1000=1000,
                 M_FORWARDED_ROOM_KEY="m.forwarded_room_key",
@@ -4020,6 +4032,9 @@ class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
         stubs = {
             f"{PACKAGE_NAME}.constants": _make_module(
                 f"{PACKAGE_NAME}.constants",
+                M_STICKER='m.sticker',
+                M_LOCATION='m.location',
+                M_KEY_VERIFICATION_REQUEST='m.key.verification.request',
                 MAX_PROCESSED_MESSAGES_1000=1000,
                 TIMESTAMP_BUFFER_MS_1000=1000,
                 M_FORWARDED_ROOM_KEY="m.forwarded_room_key",
