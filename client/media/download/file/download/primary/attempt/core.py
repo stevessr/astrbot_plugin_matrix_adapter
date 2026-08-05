@@ -2,14 +2,21 @@
 
 import asyncio
 from pathlib import Path
-from typing import Any
 
 import aiohttp
 
 from astrbot.api import logger
 
+from .error import MediaDownloadAttemptErrorMixin
+from .success import MediaDownloadAttemptSuccessMixin
+from .throttle import MediaDownloadAttemptThrottleMixin
 
-class MediaDownloadAttemptMixin:
+
+class MediaDownloadAttemptOrchestratorMixin(
+    MediaDownloadAttemptSuccessMixin,
+    MediaDownloadAttemptThrottleMixin,
+    MediaDownloadAttemptErrorMixin,
+):
     """Retry-and-breaker aware download attempts against one endpoint."""
 
     async def _download_from_endpoint(
@@ -36,36 +43,18 @@ class MediaDownloadAttemptMixin:
                     ) as response:
                         last_status = response.status
                         if response.status == 200:
-                            await self._record_media_download_success(source_key)
-                            logger.debug(f"Successfully downloaded media from {url}")
-                            if resolved_output_path is not None:
-                                await self._save_response_to_path(
-                                    response, resolved_output_path
-                                )
-                                return None, 200, None
-                            payload = await self._read_response_with_memory_limit(
+                            return await self._complete_successful_download(
+                                url,
                                 response,
+                                source_key=source_key,
+                                resolved_output_path=resolved_output_path,
                                 max_in_memory_bytes=max_in_memory_bytes,
-                                resource_hint=mxc_url,
+                                mxc_url=mxc_url,
                             )
-                            return None, 200, payload
 
-                        retry_after_seconds = None
-                        if response.status == 429:
-                            retry_payload: dict[str, Any] = {}
-                            try:
-                                parsed = await response.json(content_type=None)
-                                if isinstance(parsed, dict):
-                                    retry_payload = parsed
-                            except Exception:
-                                retry_payload = {}
-                            retry_after_seconds = self._extract_retry_after_seconds(
-                                response.headers, retry_payload
-                            )
-                        elif response.status >= 500:
-                            retry_after_seconds = self._extract_retry_after_seconds(
-                                response.headers, None
-                            )
+                        retry_after_seconds = await self._compute_response_retry_after(
+                            response
+                        )
 
                         if (
                             self._should_retry_http_status(response.status)
@@ -83,21 +72,9 @@ class MediaDownloadAttemptMixin:
                             await asyncio.sleep(delay)
                             continue
 
-                        if self._is_media_download_breaker_failure_status(
-                            response.status
-                        ):
-                            await self._record_media_download_failure(
-                                source_key, response.status
-                            )
-                        if response.status == 404:
-                            last_error = f"Media not found: {response.status}"
-                        elif response.status == 403:
-                            last_error = f"Access denied: {response.status}"
-                            logger.debug(
-                                f"Got 403 on {url} (auth problem or private media)"
-                            )
-                        else:
-                            last_error = f"HTTP {response.status}"
+                        last_error = await self._finalize_http_error(
+                            url, response, source_key
+                        )
                         return last_error, last_status, None
 
             except aiohttp.ClientError as e:
@@ -118,3 +95,11 @@ class MediaDownloadAttemptMixin:
                 last_error = str(e)
                 logger.debug(f"Exception downloading from {url}: {e}")
                 return last_error, last_status, None
+
+
+__all__ = [
+    "MediaDownloadAttemptErrorMixin",
+    "MediaDownloadAttemptOrchestratorMixin",
+    "MediaDownloadAttemptSuccessMixin",
+    "MediaDownloadAttemptThrottleMixin",
+]
