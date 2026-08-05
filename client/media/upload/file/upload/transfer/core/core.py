@@ -8,14 +8,16 @@ import aiohttp
 
 from astrbot.api import logger
 
-from .......constants import HTTP_ERROR_STATUS_400
-from .request import MediaUploadTransferRequestMixin
-from .result import MediaUploadTransferResultMixin
+from ........constants import HTTP_ERROR_STATUS_400
+from ..request import MediaUploadTransferRequestMixin
+from ..result import MediaUploadTransferResultMixin
+from .retry import MediaUploadTransferRetryMixin
 
 
-class MediaUploadTransferCoreMixin(
+class MediaUploadTransferOrchestratorMixin(
     MediaUploadTransferRequestMixin,
     MediaUploadTransferResultMixin,
+    MediaUploadTransferRetryMixin,
 ):
     """Upload a prepared file to Matrix endpoints."""
 
@@ -57,27 +59,19 @@ class MediaUploadTransferCoreMixin(
                     )
 
                     if status >= HTTP_ERROR_STATUS_400:
-                        if self._should_try_next_media_upload_endpoint(
+                        action, action_arg = self._decide_upload_status_action(
                             status,
+                            endpoint,
                             endpoint_index,
-                            len(endpoints),
-                        ):
-                            logger.warning(
-                                "Matrix media upload endpoint returned 404, "
-                                f"trying fallback endpoint: {endpoint}"
-                            )
-                            break
-
-                        retry_after_seconds = self._extract_retry_after_seconds(
-                            response_headers, response_data
+                            endpoints,
+                            response_data,
+                            response_headers,
+                            attempt,
                         )
-                        if (
-                            self._should_retry_http_status(status)
-                            and attempt < self._MEDIA_HTTP_MAX_RETRIES
-                        ):
-                            delay = self._compute_retry_delay(
-                                attempt, retry_after_seconds
-                            )
+                        if action == "switch":
+                            break
+                        if action == "retry":
+                            delay = action_arg
                             attempt += 1
                             logger.warning(
                                 "Matrix media upload failed with status "
@@ -86,12 +80,7 @@ class MediaUploadTransferCoreMixin(
                             )
                             await asyncio.sleep(delay)
                             continue
-
-                        error_code = response_data.get("errcode", "UNKNOWN")
-                        error_msg = response_data.get("error", "Unknown error")
-                        last_error = Exception(
-                            f"Matrix media upload error: {error_code} - {error_msg}"
-                        )
+                        last_error = action_arg
                         raise last_error
 
                     return await self._consume_upload_result(
@@ -120,3 +109,9 @@ class MediaUploadTransferCoreMixin(
         if last_error is not None:
             raise last_error
         raise Exception("Matrix media upload error: no upload endpoint available")
+
+
+__all__ = [
+    "MediaUploadTransferOrchestratorMixin",
+    "MediaUploadTransferRetryMixin",
+]
