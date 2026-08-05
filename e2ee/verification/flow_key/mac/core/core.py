@@ -1,13 +1,18 @@
-"""SAS MAC verification and failure handling."""
-
-import hmac
+"""SAS MAC verification orchestration."""
 
 from astrbot.api import logger
 
-from .....constants import INFO_PREFIX_MAC
+from ......constants import INFO_PREFIX_MAC
+from .cancel import SASVerificationFlowMACCancelMixin
+from .done import SASVerificationFlowMACDoneMixin
+from .verify import SASVerificationFlowMACVerifyMixin
 
 
-class SASVerificationFlowMACCoreMixin:
+class SASVerificationFlowMACHandleMixin(
+    SASVerificationFlowMACCancelMixin,
+    SASVerificationFlowMACVerifyMixin,
+    SASVerificationFlowMACDoneMixin,
+):
     """校验对端 MAC 并在失败时发送取消。"""
 
     async def _handle_mac(self, sender: str, content: dict, transaction_id: str):
@@ -28,14 +33,13 @@ class SASVerificationFlowMACCoreMixin:
         sas_bytes = session.get("sas_bytes", b"\x00" * 32)
 
         if not isinstance(their_mac, dict) or not their_mac:
-            await self._cancel_mac_verification(
+            await self._abort_mac_verification(
                 session,
                 sender,
                 their_device,
                 is_in_room,
                 room_id,
                 transaction_id,
-                "MAC verification failed",
             )
             return
 
@@ -46,51 +50,47 @@ class SASVerificationFlowMACCoreMixin:
         )
 
         if not their_device or not available_keys:
-            await self._cancel_mac_verification(
+            await self._abort_mac_verification(
                 session,
                 sender,
                 their_device,
                 is_in_room,
                 room_id,
                 transaction_id,
-                "MAC verification failed",
             )
             return
 
         key_ids = sorted(their_mac.keys())
         if not key_ids:
-            await self._cancel_mac_verification(
+            await self._abort_mac_verification(
                 session,
                 sender,
                 their_device,
                 is_in_room,
                 room_id,
                 transaction_id,
-                "MAC verification failed",
             )
             return
 
         for key_id in key_ids:
             if key_id not in available_keys:
-                await self._cancel_mac_verification(
+                await self._abort_mac_verification(
                     session,
                     sender,
                     their_device,
                     is_in_room,
                     room_id,
                     transaction_id,
-                    "MAC verification failed",
                 )
                 return
             if not isinstance(their_mac.get(key_id), str):
-                await self._cancel_mac_verification(
+                await self._abort_mac_verification(
                     session,
                     sender,
                     their_device,
                     is_in_room,
                     room_id,
                     transaction_id,
-                    "MAC verification failed",
                 )
                 return
 
@@ -107,53 +107,47 @@ class SASVerificationFlowMACCoreMixin:
             available_keys,
         )
         if expected is None:
-            await self._cancel_mac_verification(
+            await self._abort_mac_verification(
                 session,
                 sender,
                 their_device,
                 is_in_room,
                 room_id,
                 transaction_id,
-                "MAC verification failed",
             )
             return
         expected_mac_map, expected_keys_mac = expected
 
         if not isinstance(their_keys, str):
-            await self._cancel_mac_verification(
+            await self._abort_mac_verification(
                 session,
                 sender,
                 their_device,
                 is_in_room,
                 room_id,
                 transaction_id,
-                "MAC verification failed",
             )
             return
 
-        for key_id in key_ids:
-            actual_mac = their_mac.get(key_id)
-            if not hmac.compare_digest(actual_mac, expected_mac_map[key_id]):
-                await self._cancel_mac_verification(
-                    session,
-                    sender,
-                    their_device,
-                    is_in_room,
-                    room_id,
-                    transaction_id,
-                    "MAC verification failed",
-                )
-                return
-
-        if not hmac.compare_digest(their_keys, expected_keys_mac):
-            await self._cancel_mac_verification(
+        if not self._verify_their_macs(their_mac, key_ids, expected_mac_map):
+            await self._abort_mac_verification(
                 session,
                 sender,
                 their_device,
                 is_in_room,
                 room_id,
                 transaction_id,
-                "MAC verification failed",
+            )
+            return
+
+        if not self._verify_keys_mac(their_keys, expected_keys_mac):
+            await self._abort_mac_verification(
+                session,
+                sender,
+                their_device,
+                is_in_room,
+                room_id,
+                transaction_id,
             )
             return
 
@@ -163,43 +157,10 @@ class SASVerificationFlowMACCoreMixin:
             f"device={self._mask_identifier(their_device)}"
         )
 
-        if self.auto_verify_mode == "auto_accept" and not session.get("done_sent"):
-            session["done_sent"] = True
-            if is_in_room and room_id:
-                await self._send_in_room_done(room_id, transaction_id)
-            else:
-                await self._send_done(
-                    sender,
-                    session.get("their_device", session.get("from_device", "")),
-                    transaction_id,
-                )
-
-    async def _cancel_mac_verification(
-        self,
-        session: dict,
-        sender: str,
-        their_device: str,
-        is_in_room: bool,
-        room_id,
-        transaction_id: str,
-        reason: str,
-    ):
-        logger.warning(f"[E2EE-Verify] MAC 校验失败：{reason}")
-        session["state"] = "cancelled"
-        session["cancel_code"] = "m.key_mismatch"
-        session["cancel_reason"] = reason
-        if is_in_room and room_id:
-            await self._send_in_room_cancel(
-                room_id,
-                transaction_id,
-                "m.key_mismatch",
-                reason,
-            )
-        else:
-            await self._send_cancel(
-                sender,
-                their_device,
-                transaction_id,
-                "m.key_mismatch",
-                reason,
-            )
+        await self._send_mac_done(
+            session,
+            sender,
+            transaction_id,
+            is_in_room,
+            room_id,
+        )
