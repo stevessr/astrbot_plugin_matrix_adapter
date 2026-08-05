@@ -1,22 +1,12 @@
-"""To-device room-key request and withheld event handling."""
+"""To-device room-key request handling."""
 
 from astrbot.api import logger
 
-from .....constants import MEGOLM_ALGO
+from ......constants import MEGOLM_ALGO
 
 
-class MatrixEventProcessorToDeviceKeysMixin:
-    """Handle room-key requests and withheld notices."""
-
-    async def _handle_room_key_withheld(self, sender: str, content: dict) -> None:
-        if self.e2ee_manager:
-            try:
-                await self.e2ee_manager.handle_room_key_withheld(
-                    sender,
-                    content,
-                )
-            except Exception as e:
-                logger.error(f"Failed to process m.room_key.withheld: {e}")
+class MatrixEventProcessorToDeviceKeysRequestMixin:
+    """Handle room-key requests."""
 
     async def _handle_room_key_request(
         self,
@@ -99,3 +89,6 @@ class MatrixEventProcessorToDeviceKeysMixin:
                 logger.debug(f"密钥请求已取消：device={requesting_device_id}")
         except Exception as e:
             logger.error(f"处理 m.room_key_request 事件失败：{e}")
+
+
+__all__ = ["MatrixEventProcessorToDeviceKeysRequestMixin"]

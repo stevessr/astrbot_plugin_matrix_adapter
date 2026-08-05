@@ -1,7 +1,6 @@
 """Room-section dispatch for sync responses."""
 
 
-
 class MatrixSyncManagerEventRoutingRoomsOrchestratorMixin:
     """Dispatch per-room sync response fields to callbacks."""
 
