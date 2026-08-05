@@ -1,4 +1,4 @@
-"""Sticker file persistence and metadata creation."""
+"""Sticker file persistence and metadata creation orchestration."""
 
 import time
 
@@ -6,11 +6,18 @@ import anyio
 
 from astrbot.api import logger
 
-from ....component import Sticker
-from ...meta import StickerMeta
+from .....component import Sticker
+from ....meta import StickerMeta
+from .dimensions import StickerStoragePersistenceDimensionsMixin
+from .fetch import StickerStoragePersistenceFetchMixin
+from .update import StickerStoragePersistenceUpdateMixin
 
 
-class StickerStoragePersistenceMixin:
+class StickerStoragePersistenceOrchestratorMixin(
+    StickerStoragePersistenceUpdateMixin,
+    StickerStoragePersistenceFetchMixin,
+    StickerStoragePersistenceDimensionsMixin,
+):
     """Save sticker bytes and update storage metadata."""
 
     async def save_sticker(
@@ -39,15 +46,8 @@ class StickerStoragePersistenceMixin:
         sticker_id = sticker.generate_sticker_id()
 
         # 如果已存在，更新使用信息
-        if sticker_id in self._index:
-            meta = self._index[sticker_id]
-            meta.last_used = time.time()
-            meta.use_count += 1
-            if pack_name:
-                meta.pack_name = pack_name
-            if tags:
-                meta.tags = tags
-            self.save_index()
+        meta = self._update_existing_sticker(sticker_id, pack_name, tags)
+        if meta is not None:
             return meta
 
         # 确定缓存路径
@@ -59,40 +59,17 @@ class StickerStoragePersistenceMixin:
         )
 
         # 获取文件数据
-        if file_data is None:
-            if sticker.url.startswith("mxc://") and client:
-                # 从 Matrix 媒体服务器下载
-                try:
-                    file_data = await client.download_file(
-                        sticker.url, allow_thumbnail_fallback=True
-                    )
-                except Exception as e:
-                    logger.error(f"下载 sticker 失败：{e}")
-                    raise
-            elif not sticker.url.startswith("mxc://"):
-                # 从本地或 HTTP URL 获取
-                try:
-                    file_path = await sticker.convert_to_file_path()
-                    file_data = await anyio.Path(file_path).read_bytes()
-                except Exception as e:
-                    logger.error(f"获取 sticker 文件失败：{e}")
-                    raise
-            else:
-                raise ValueError("需要提供 file_data 或 client 来下载 mxc:// URL")
+        file_data = await self._fetch_sticker_bytes(sticker, file_data, client)
 
         # 保存文件
-        await anyio.Path(cache_path).write_bytes(bytes(file_data))
+        await anyio.Path(cache_path).write_bytes(file_data)
 
         # 获取图片尺寸
-        width, height = sticker.info.width, sticker.info.height
-        if width is None or height is None:
-            try:
-                from PIL import Image as PILImage
-
-                with PILImage.open(cache_path) as img:
-                    width, height = img.size
-            except Exception:
-                pass
+        width, height = self._probe_image_dimensions(
+            cache_path,
+            sticker.info.width,
+            sticker.info.height,
+        )
 
         # 创建元数据
         now = time.time()
@@ -118,3 +95,11 @@ class StickerStoragePersistenceMixin:
 
         logger.info(f"保存 sticker: {sticker_id}")
         return meta
+
+
+__all__ = [
+    "StickerStoragePersistenceDimensionsMixin",
+    "StickerStoragePersistenceFetchMixin",
+    "StickerStoragePersistenceOrchestratorMixin",
+    "StickerStoragePersistenceUpdateMixin",
+]
