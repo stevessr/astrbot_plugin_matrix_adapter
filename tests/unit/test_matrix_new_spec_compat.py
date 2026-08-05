@@ -4200,7 +4200,7 @@ class MatrixRedactionCompatTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixVoiceCompatTests(unittest.IsolatedAsyncioTestCase):
     async def test_audio_sender_emits_voice_indicator_and_unstable_audio_duration(self):
-        audio_sender = load_module("sender.events.audio")
+        audio_sender = load_module("sender.events.audio.core")
         record_cls = sys.modules["astrbot.api.message_components"].Record
         captured = {}
 
