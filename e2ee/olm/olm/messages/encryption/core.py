@@ -1,15 +1,17 @@
-"""Olm message encryption and Matrix envelope construction."""
+"""Olm message encryption orchestration."""
 
 import base64
 import json
 
 from astrbot.api import logger
 
-from .....constants import M_ROOM_KEY, OLM_ALGO
-from ...types import Session
+from ......constants import M_ROOM_KEY, OLM_ALGO
+from ....types import Session
 
 
-class OlmMachineMessageEncryptionMixin:
+class OlmMachineMessageEncryptionOrchestratorMixin:
+    """Encrypt Olm content and build the Matrix protocol envelope."""
+
     def encrypt_olm(
         self,
         their_identity_key: str,
@@ -19,7 +21,6 @@ class OlmMachineMessageEncryptionMixin:
         recipient_ed25519_key: str = "unknown",
         event_type: str = M_ROOM_KEY,
     ) -> dict:
-        masked_identity_key = (their_identity_key or "")[:8]
         """
         使用 Olm 加密内容并添加 Matrix 协议外壳
 
@@ -34,40 +35,17 @@ class OlmMachineMessageEncryptionMixin:
         Returns:
             符合 m.room.encrypted (Olm) 格式的字典
         """
-        session_index: int | None = None
-        if not session:
-            # 尝试使用现有会话
-            sessions = self._olm_sessions.get(their_identity_key, [])
-            if sessions:
-                session_index = len(sessions) - 1
-                session = sessions[session_index]
-                logger.debug(f"使用现有 Olm 会话对 {masked_identity_key}... 加密")
-            else:
-                logger.warning(f"没有可用于 {masked_identity_key}... 的 Olm 会话")
-                raise RuntimeError(f"没有可用于 {their_identity_key} 的 Olm 会话")
-        else:
-            sessions = self._olm_sessions.get(their_identity_key, [])
-            if sessions:
-                for idx, existing in enumerate(sessions):
-                    if existing is session:
-                        session_index = idx
-                        break
-                if session_index is None:
-                    session_index = len(sessions) - 1
+        session, session_index = self._resolve_olm_encrypt_session(
+            their_identity_key, session
+        )
 
         # 构造 Matrix 协议外壳
-        wrapper = {
-            "sender": self.user_id,
-            "sender_device": self.device_id,
-            "keys": {"ed25519": self.ed25519_key},
-            # Matrix v1.15+ (MSC4147): carrying the signed device object lets
-            # the receiver validate the sender without a racy /keys/query.
-            "sender_device_keys": self.get_device_keys(),
-            "recipient": recipient_user_id,
-            "recipient_keys": {"ed25519": recipient_ed25519_key},
-            "type": event_type,
-            "content": content,
-        }
+        wrapper = self._build_olm_envelope(
+            content,
+            recipient_user_id,
+            recipient_ed25519_key,
+            event_type,
+        )
 
         # 加密
         payload_json = json.dumps(wrapper, ensure_ascii=False)
@@ -102,3 +80,6 @@ class OlmMachineMessageEncryptionMixin:
                 }
             },
         }
+
+
+__all__ = ["OlmMachineMessageEncryptionOrchestratorMixin"]
