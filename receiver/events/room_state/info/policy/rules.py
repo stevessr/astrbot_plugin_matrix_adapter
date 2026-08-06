@@ -1,48 +1,6 @@
-"""Room access-policy state-event handlers."""
+"""Room join-rules, history-visibility, and guest-access handlers."""
 
 from astrbot.api.message_components import Plain
-
-from ..common import _format_limited_list
-
-
-async def handle_room_server_acl(receiver, chain, event, _: str):
-    """Handle m.room.server_acl state event."""
-    content = event.content or {}
-    sender = getattr(event, "sender", "Someone")
-    if not content:
-        chain.chain.append(Plain(f"[Room Info] {sender} removed server ACL rules"))
-        return
-
-    allow = _format_limited_list(content.get("allow"))
-    deny = _format_limited_list(content.get("deny"))
-    allow_ip_literals = content.get("allow_ip_literals")
-    parts: list[str] = []
-    if allow:
-        parts.append(f"allow: {allow}")
-    if deny:
-        parts.append(f"deny: {deny}")
-    if allow_ip_literals is not None:
-        parts.append(f"allow_ip_literals={bool(allow_ip_literals)}")
-    if not parts:
-        parts.append("rules updated")
-    chain.chain.append(
-        Plain(f"[Room Info] {sender} updated server ACL ({'; '.join(parts)})")
-    )
-
-
-async def handle_room_power_levels(receiver, chain, event, _: str):
-    """
-    Handle m.room.power_levels state event
-
-    Args:
-        receiver: MatrixReceiver instance
-        chain: MessageChain to append to
-        event: Matrix event object
-        _: Event type (unused)
-    """
-    sender = getattr(event, "sender", "Someone")
-    text = f"[Room Info] {sender} updated room permissions"
-    chain.chain.append(Plain(text))
 
 
 async def handle_room_join_rules(receiver, chain, event, _: str):
@@ -113,3 +71,10 @@ async def handle_room_guest_access(receiver, chain, event, _: str):
     chain.chain.append(
         Plain(f"[Room Info] {sender} changed guest access to: {description}")
     )
+
+
+__all__ = [
+    "handle_room_guest_access",
+    "handle_room_history_visibility",
+    "handle_room_join_rules",
+]
