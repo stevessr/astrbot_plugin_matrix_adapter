@@ -7,10 +7,6 @@ from .......client.event_types import MatrixRoom
 from .......constants import MSGTYPE_REDACTION
 from .......utils.utils import MatrixUtils
 
-from .parse import MatrixReceiverMessageConvertParseMixin
-from .sender import MatrixReceiverMessageConvertSenderMixin
-from .type import MatrixReceiverMessageConvertTypeMixin
-
 
 class MatrixReceiverMessageConvertOrchestratorMixin:
     """Convert Matrix message events to AstrBot messages."""
