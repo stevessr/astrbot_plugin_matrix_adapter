@@ -5,18 +5,11 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from ....auth.auth import MatrixAuth
-from ....client import MatrixHTTPClient
 from ....config.matrix import MatrixConfig
 from ....constants import DEFAULT_MAX_UPLOAD_SIZE_BYTES
-from ....processors.core import MatrixEventProcessor
-from ....processors.event_handler import MatrixEventHandler
-from ....receiver.core import MatrixReceiver
-from ....sender.core import MatrixSender
-from ....sync.core import MatrixSyncManager
-from ....utils.utils import MatrixUtils
-from ...state import MatrixRuntimeState
 from ..services import MatrixAdapterServices
+from .client import _build_adapter_client
+from .components import _build_adapter_components
 from .e2ee import _init_e2ee_manager
 from .stickers import _init_sticker_services
 from .storage import _init_storage
@@ -43,46 +36,31 @@ def build_adapter_services(
     AstrBot platform assembled them.
     """
 
-    client = MatrixHTTPClient(homeserver=matrix_config.homeserver)
-    runtime_state = MatrixRuntimeState()
-    client.runtime_state = runtime_state
+    client, runtime_state = _build_adapter_client(matrix_config)
 
     user_storage_dir, outbound_tracker = _init_storage(matrix_config)
     client.outbound_tracker = outbound_tracker
 
-    auth = MatrixAuth(client, matrix_config, token_store_path=None)
-    sender = MatrixSender(client, use_notice=matrix_config.use_notice)
-
-    bot_name = platform_config.get("matrix_bot_name", matrix_config.device_name)
-    receiver = MatrixReceiver(
-        matrix_config.user_id,
-        lambda mxc: MatrixUtils.mxc_to_http(mxc, matrix_config.homeserver),
-        bot_name=bot_name,
+    components = _build_adapter_components(
+        matrix_config=matrix_config,
+        platform_config=platform_config,
         client=client,
-    )
-    event_handler = MatrixEventHandler(client, matrix_config.auto_join_rooms)
-    sync_manager = MatrixSyncManager(
-        client=client,
-        sync_timeout=matrix_config.sync_timeout,
-        auto_join_rooms=matrix_config.auto_join_rooms,
-        homeserver=matrix_config.homeserver,
-        user_id=matrix_config.user_id,
-        store_path=matrix_config.store_path,
-        on_token_invalid=on_token_invalid,
-    )
-    event_processor = MatrixEventProcessor(
-        client=client,
-        user_id=matrix_config.user_id,
         startup_ts=startup_ts,
-        call_event_config=matrix_config.call_event_config,
+        on_token_invalid=on_token_invalid,
+        user_storage_dir=user_storage_dir,
     )
 
-    e2ee_manager = _init_e2ee_manager(matrix_config, client, event_processor, sender)
+    e2ee_manager = _init_e2ee_manager(
+        matrix_config,
+        client,
+        components["event_processor"],
+        components["sender"],
+    )
 
     _wire_callbacks(
-        sync_manager,
-        event_processor,
-        event_handler,
+        components["sync_manager"],
+        components["event_processor"],
+        components["event_handler"],
         on_sync_response,
         message_callback,
     )
@@ -96,12 +74,12 @@ def build_adapter_services(
         runtime_state=runtime_state,
         storage_dir=str(user_storage_dir),
         outbound_tracker=outbound_tracker,
-        auth=auth,
-        sender=sender,
-        receiver=receiver,
-        event_handler=event_handler,
-        sync_manager=sync_manager,
-        event_processor=event_processor,
+        auth=components["auth"],
+        sender=components["sender"],
+        receiver=components["receiver"],
+        event_handler=components["event_handler"],
+        sync_manager=components["sync_manager"],
+        event_processor=components["event_processor"],
         e2ee_manager=e2ee_manager,
         sticker_available=sticker_available,
         sticker_storage=sticker_storage,
