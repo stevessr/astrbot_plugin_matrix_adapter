@@ -1,67 +1,26 @@
-"""Matrix key-backup encryption helpers."""
+"""Cryptography-backed key-backup encryption."""
 
-import base64
 import hashlib
 import hmac
 
-from .. import (
+from ... import (
     AES_BLOCK_SIZE_16,
     CRYPTO_KEY_SIZE_32,
     HKDF_KEY_MATERIAL_LEN,
     HKDF_MEGOLM_BACKUP_INFO,
     MAC_TRUNCATED_BYTES_8,
 )
-from .. import (
-    CRYPTO_AVAILABLE as _DEFAULT_CRYPTO_AVAILABLE,
-)
-from .. import (
-    VODOZEMAC_PK_AVAILABLE as _DEFAULT_VODOZEMAC_PK_AVAILABLE,
-)
-from .. import (
-    Curve25519PublicKey as _DEFAULT_CURVE25519_PUBLIC_KEY,
-)
-from .. import (
-    PkEncryption as _DEFAULT_PK_ENCRYPTION,
-)
-from .. import (
+from ... import (
     default_backend as _DEFAULT_DEFAULT_BACKEND,
 )
-from ..compat import crypto_available, resolve_attribute, vodozemac_pk_available
+from ...compat import resolve_attribute
 
 
-def _encrypt_backup_data(
+def _encrypt_backup_data_cryptography(
     backup_public_key: bytes,
     plaintext: bytes,
 ) -> tuple[bytes, bytes, bytes]:
-    """
-    按 Matrix Key Backup v1 规范加密备份数据。
-
-    Returns:
-        (ephemeral_public_key, ciphertext, mac)
-    """
-    if len(backup_public_key) != CRYPTO_KEY_SIZE_32:
-        raise ValueError(
-            f"备份公钥长度无效：期望 {CRYPTO_KEY_SIZE_32} 字节，实际 {len(backup_public_key)} 字节"
-        )
-
-    if vodozemac_pk_available(_DEFAULT_VODOZEMAC_PK_AVAILABLE):
-        public_key_cls = resolve_attribute(
-            "Curve25519PublicKey",
-            _DEFAULT_CURVE25519_PUBLIC_KEY,
-        )
-        pk_encryption_cls = resolve_attribute(
-            "PkEncryption",
-            _DEFAULT_PK_ENCRYPTION,
-        )
-        public_key = public_key_cls.from_base64(
-            base64.b64encode(backup_public_key).decode()
-        )
-        message = pk_encryption_cls.from_key(public_key).encrypt(plaintext)
-        return message.ephemeral_key, message.ciphertext, message.mac
-
-    if not crypto_available(_DEFAULT_CRYPTO_AVAILABLE):
-        raise RuntimeError("需要 cryptography 或 vodozemac 库来加密密钥备份")
-
+    """Encrypt backup data with the cryptography library."""
     from cryptography.hazmat.primitives import hashes, padding, serialization
     from cryptography.hazmat.primitives.asymmetric import x25519
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -103,3 +62,6 @@ def _encrypt_backup_data(
     mac = hmac.new(mac_key, ciphertext, hashlib.sha256).digest()[:MAC_TRUNCATED_BYTES_8]
 
     return ephemeral_public_key, ciphertext, mac
+
+
+__all__ = ["_encrypt_backup_data_cryptography"]
