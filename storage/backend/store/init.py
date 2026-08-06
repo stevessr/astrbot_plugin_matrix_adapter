@@ -1,33 +1,24 @@
-"""Folder-scoped multi-backend data store."""
+"""Folder-scoped data store construction."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
-from astrbot.api import logger
-
-from ..backends import (
+from ...backends import (
     JsonBackend,
     PgSQLBackend,
     SQLiteBackend,
     build_pg_table_name,
     normalize_storage_backend,
 )
-from ..paths import MatrixStoragePaths
+from ...paths import MatrixStoragePaths
 
 JsonFilenameResolver = Callable[[str], str]
 
 
-class MatrixFolderDataStore:
-    """
-    Multi-backend key-value store scoped to one folder namespace.
-
-    For json backend: key -> `<sanitized_key>.json` (or custom filename resolver)
-    For sqlite backend: key -> row in `<folder>/<folder_name>.db`
-    For pgsql backend: key -> row in one table mapped from folder namespace
-    """
+class MatrixFolderDataStoreInitMixin:
+    """Construct the folder-scoped multi-backend data store."""
 
     def __init__(
         self,
@@ -69,40 +60,5 @@ class MatrixFolderDataStore:
             safe_key = "unknown"
         return f"{safe_key}.json"
 
-    def get(self, record_key: str) -> Any | None:
-        """Read one record from selected backend."""
-        if not record_key:
-            return None
 
-        data = self._backend_impl.get(record_key)
-        if data is not None:
-            return data
-
-        # Non-json backend: fallback to legacy json files and auto-migrate.
-        if self.backend != "json":
-            legacy = self._json_backend.get(record_key)
-            if legacy is not None:
-                try:
-                    self._backend_impl.upsert(record_key, legacy)
-                except Exception as e:
-                    logger.debug(
-                        f"Failed to migrate legacy json for {self.namespace_key}:{record_key}: {e}"
-                    )
-            return legacy
-
-        return None
-
-    def upsert(self, record_key: str, data: Any) -> None:
-        """Create or update one record."""
-        if not record_key:
-            return
-        self._backend_impl.upsert(record_key, data)
-
-    def delete(self, record_key: str) -> None:
-        """Delete one record."""
-        if not record_key:
-            return
-        self._backend_impl.delete(record_key)
-
-
-__all__ = ["MatrixFolderDataStore"]
+__all__ = ["MatrixFolderDataStoreInitMixin"]
