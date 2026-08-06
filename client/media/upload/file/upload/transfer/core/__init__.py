@@ -1,7 +1,9 @@
 """Matrix media upload endpoint transfer and retry logic."""
 
+from .attempt import MediaUploadTransferAttemptMixin
 from .core import MediaUploadTransferOrchestratorMixin
 from .retry import MediaUploadTransferRetryMixin
+from .setup import MediaUploadTransferSetupMixin
 
 
 class MediaUploadTransferCoreMixin(MediaUploadTransferOrchestratorMixin):
@@ -13,6 +15,8 @@ class MediaUploadTransferCoreMixin(MediaUploadTransferOrchestratorMixin):
 for _mixin in (
     MediaUploadTransferOrchestratorMixin,
     MediaUploadTransferRetryMixin,
+    MediaUploadTransferAttemptMixin,
+    MediaUploadTransferSetupMixin,
 ):
     for _method_name, _method in _mixin.__dict__.items():
         if isinstance(_method, (staticmethod, classmethod)) or callable(_method):
@@ -20,7 +24,9 @@ for _mixin in (
 
 
 __all__ = [
+    "MediaUploadTransferAttemptMixin",
     "MediaUploadTransferCoreMixin",
     "MediaUploadTransferOrchestratorMixin",
     "MediaUploadTransferRetryMixin",
+    "MediaUploadTransferSetupMixin",
 ]
