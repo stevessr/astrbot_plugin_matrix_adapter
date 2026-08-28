@@ -9,6 +9,7 @@ from .....constants import (
     M_ROOM_GUEST_ACCESS,
     M_ROOM_HISTORY_VISIBILITY,
     M_ROOM_JOIN_RULES,
+    M_ROOM_LIVE_MESSAGING,
     M_ROOM_NAME,
     M_ROOM_PINNED_EVENTS,
     M_ROOM_POWER_LEVELS,
@@ -17,6 +18,7 @@ from .....constants import (
     M_ROOM_TOPIC,
     M_SPACE_CHILD,
     M_SPACE_PARENT,
+    MSC4357_LIVE_MESSAGING_STATE,
 )
 from .types import (
     LIVE_MESSAGING_STATE_EVENT_TYPES,
@@ -85,10 +87,26 @@ class MatrixEventProcessorApplyMixin:
             else:
                 room.third_party_invites.pop(state_key, None)
         elif event_type in LIVE_MESSAGING_STATE_EVENT_TYPES:
-            enabled = content.get("enabled")
-            if isinstance(enabled, bool):
-                room.live_messaging_enabled = enabled
-            else:
-                # MSC4357 defines ``enabled`` as a JSON boolean. Invalid or
-                # absent values behave like no usable room-level override.
-                room.live_messaging_enabled = None
+            # Receiving either stable or unstable policy state through /sync
+            # satisfies the active probe. Prefer the stable event when both are
+            # present, otherwise use the current MSC4357 unstable identifier.
+            room.live_messaging_policy_probed = True
+            resolved = None
+            for candidate_type in (
+                M_ROOM_LIVE_MESSAGING,
+                MSC4357_LIVE_MESSAGING_STATE,
+            ):
+                candidate = (
+                    room.state_events.get(candidate_type, {}).get("", {}) or {}
+                )
+                enabled = (
+                    candidate.get("enabled")
+                    if isinstance(candidate, dict)
+                    else None
+                )
+                if isinstance(enabled, bool):
+                    resolved = enabled
+                    break
+            # MSC4357 defines ``enabled`` as a JSON boolean. Invalid or absent
+            # values behave like no room-level override (default enabled).
+            room.live_messaging_enabled = resolved

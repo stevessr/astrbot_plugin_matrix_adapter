@@ -29,6 +29,10 @@ class MatrixRoom:
     third_party_invites: dict[str, dict[str, Any]] = field(default_factory=dict)
     state_events: dict[str, dict[str, Any]] = field(default_factory=dict)
     live_messaging_enabled: bool | None = None
+    # True after the room-level MSC4357 policy has either arrived via sync or
+    # been actively queried from the homeserver. This prevents one state probe
+    # per inbound message when the optional state event is simply absent.
+    live_messaging_policy_probed: bool = False
     timeline_limited: bool = False
     member_count: int = 0
     is_direct: bool | None = None
