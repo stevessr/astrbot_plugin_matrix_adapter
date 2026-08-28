@@ -26,3 +26,4 @@ from .reaction_helpers import (
 from .utils import MatrixUtils as MatrixUtils
 from .utils import mask_device_id as mask_device_id
 from .utils import parse_bool as parse_bool
+from .utils import resolve_matrix_room_id as resolve_matrix_room_id

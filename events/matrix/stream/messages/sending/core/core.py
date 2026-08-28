@@ -27,7 +27,8 @@ class MatrixPlatformEventMessagesSendStreamCoreMixin:
             await self._send_streaming_fallback(generator)
             return
 
-        room_id = self.session_id
+        # ``session_id`` may be sender-scoped by AstrBot unique sessions.
+        room_id = self.matrix_room_id
         msg_type = MSGTYPE_NOTICE if self.use_notice else MSGTYPE_TEXT
         flush_interval = self.live_message_update_interval_ms / 1000
         initial_relation = self._build_stream_thread_relation()

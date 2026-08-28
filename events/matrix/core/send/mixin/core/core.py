@@ -19,8 +19,9 @@ class MatrixPlatformEventSendCoreOrchestratorMixin(
     async def send(self, message_chain: MessageChain):
         """发送消息"""
         self.message_chain = message_chain
-        # Matrix 的 room_id 即为会话 ID
-        room_id = self.session_id
+        # AstrBot may scope the logical session by sender.  Always use the
+        # native Matrix room captured before that mutation.
+        room_id = self.matrix_room_id
 
         is_fc_boundary = self._prepare_fc_boundary(message_chain)
 

@@ -3,6 +3,7 @@
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
 
+from ....utils.utils import resolve_matrix_room_id
 from ..formatting import build_message_chain, format_plain_segment
 from .config import _get_plugin_config
 from .context import MatrixAdapterSendContextMixin
@@ -21,7 +22,10 @@ class MatrixAdapterSendCoreMixin(
         self, session, message_chain: MessageChain, reply_to: str = None
     ):
         try:
-            room_id = session.session_id
+            # ``unique_session`` changes a group session to
+            # ``<sender_id>_<room_id>``.  It is a logical AstrBot routing key,
+            # not a Matrix room ID, so unwrap it before every Matrix request.
+            room_id = resolve_matrix_room_id(getattr(session, "session_id", ""))
 
             send_typing = _get_plugin_config().send_typing
 

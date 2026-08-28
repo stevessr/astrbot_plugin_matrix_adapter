@@ -3,7 +3,12 @@ Matrix 工具方法组件
 """
 
 from ..utils_lib import MatrixUtilsMixin
-from .helpers import _extract_text_repr, mask_device_id, parse_bool
+from .helpers import (
+    _extract_text_repr,
+    mask_device_id,
+    parse_bool,
+    resolve_matrix_room_id,
+)
 from .image import compress_image_if_needed
 
 
@@ -25,6 +30,7 @@ class MatrixUtils(MatrixUtilsMixin):
 __all__ = [
     "MatrixUtils",
     "parse_bool",
+    "resolve_matrix_room_id",
     "mask_device_id",
     "_extract_text_repr",
     "compress_image_if_needed",

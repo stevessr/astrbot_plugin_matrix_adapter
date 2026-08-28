@@ -36,7 +36,7 @@ class MatrixPlatformEventTypingMixin:
         if not self._send_typing_enabled:
             return
         await self.client.set_typing(
-            self.session_id,
+            self.matrix_room_id,
             typing=True,
             timeout=self._stream_event_module().STREAMING_TYPING_TIMEOUT_MS,
         )
@@ -46,7 +46,7 @@ class MatrixPlatformEventTypingMixin:
 
         if not self._send_typing_enabled:
             return
-        await self.client.set_typing(self.session_id, typing=False)
+        await self.client.set_typing(self.matrix_room_id, typing=False)
 
     async def _start_typing_keepalive(self, room_id: str):
         """按插件开关声明 typing 并启动续期任务；关闭时返回 ``None``。"""

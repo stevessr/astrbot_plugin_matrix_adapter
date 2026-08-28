@@ -15,7 +15,7 @@ class MatrixPlatformEventActionsMixin:
             if not event_id:
                 logger.debug("无法添加反应：缺少 event_id")
                 return
-            await self.client.send_reaction(self.session_id, event_id, emoji)
+            await self.client.send_reaction(self.matrix_room_id, event_id, emoji)
         except Exception as e:
             logger.debug(f"发送表情反应失败：{e}")
 
@@ -31,7 +31,7 @@ class MatrixPlatformEventActionsMixin:
                 logger.warning("无法删除消息：缺少 event_id")
                 return
             await self.client.redact_event(
-                self.session_id, str(target_event_id), reason=reason
+                self.matrix_room_id, str(target_event_id), reason=reason
             )
         except Exception as e:
             logger.error(f"删除消息失败：{e}")

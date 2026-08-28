@@ -1,8 +1,10 @@
 import asyncio
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from test_matrix_new_spec_compat import load_module
 
@@ -143,6 +145,64 @@ class MatrixAdaptiveThreadReplyConfigTests(unittest.TestCase):
         )
         self.assertTrue(config.send_typing)
         self.assertFalse(config.send_read_receipt)
+
+
+class MatrixSessionIsolationTests(unittest.IsolatedAsyncioTestCase):
+    def test_resolve_matrix_room_id_keeps_native_room_ids(self):
+        utils_module = load_module("utils.utils")
+
+        self.assertEqual(
+            utils_module.resolve_matrix_room_id("!room_with_under:example.org"),
+            "!room_with_under:example.org",
+        )
+
+    def test_resolve_matrix_room_id_unwraps_astrbot_unique_session(self):
+        utils_module = load_module("utils.utils")
+
+        self.assertEqual(
+            utils_module.resolve_matrix_room_id(
+                "@alice_name:example.org_!room_with_under:example.org"
+            ),
+            "!room_with_under:example.org",
+        )
+
+    async def test_send_by_session_uses_native_room_for_isolated_session(self):
+        plugin_config = load_module("config.plugin")
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        plugin_config.init_plugin_config(
+            {"data_dir": temp_dir.name, "matrix_send_typing": False}
+        )
+
+        # Load this after the AstrBot stubs/config setup so its MessageChain
+        # and Plain references belong to the same stub generation.
+        send_core = load_module("adapter.send.mixin.core")
+        plain_cls = send_core.build_message_chain.__globals__["Plain"]
+        message_chain = send_core.MessageChain([plain_cls("hello")])
+
+        adapter = types.SimpleNamespace(
+            _resolve_reply_context=mock.AsyncMock(
+                return_value=(None, None, False, None)
+            ),
+            _send_chain=mock.AsyncMock(),
+        )
+        session = types.SimpleNamespace(
+            session_id="@alice_name:example.org_!room_with_under:example.org"
+        )
+
+        await send_core.MatrixAdapterSendCoreMixin.send_by_session(
+            adapter, session, message_chain
+        )
+
+        adapter._resolve_reply_context.assert_awaited_once_with(
+            message_chain,
+            None,
+            "!room_with_under:example.org",
+        )
+        adapter._send_chain.assert_awaited_once()
+        self.assertEqual(
+            adapter._send_chain.await_args.args[1], "!room_with_under:example.org"
+        )
 
 
 class MatrixSyncReconnectTests(unittest.IsolatedAsyncioTestCase):

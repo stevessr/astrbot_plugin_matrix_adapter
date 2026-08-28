@@ -2,6 +2,8 @@
 
 from astrbot.api.platform import AstrBotMessage, PlatformMetadata
 
+from ....utils.utils import resolve_matrix_room_id
+
 
 class MatrixPlatformEventStateMixin:
     """Initialize event state and expose inbound event relation metadata."""
@@ -22,6 +24,18 @@ class MatrixPlatformEventStateMixin:
         send_typing: bool = False,
     ):
         super().__init__(message_str, message_obj, platform_meta, session_id)
+        # AstrBot may replace ``self.session_id`` with a sender-scoped ID
+        # after this event enters the pipeline when ``unique_session`` is
+        # enabled.  Keep the Matrix transport target independent from that
+        # logical session ID.  ``group_id``/message ``session_id`` are still
+        # the native Matrix room ID at this point; the fallback also handles
+        # events created from an already-isolated session.
+        matrix_room_id = (
+            getattr(message_obj, "group_id", None)
+            or getattr(message_obj, "session_id", None)
+            or session_id
+        )
+        self._matrix_room_id = resolve_matrix_room_id(matrix_room_id)
         self.client = client  # MatrixHTTPClient instance
         self.enable_threading = enable_threading  # 试验性：是否默认开启嘟文串模式
         # 回复自适应：入站（唤醒）消息位于消息列内时，回复也留在同一消息列。
@@ -56,6 +70,14 @@ class MatrixPlatformEventStateMixin:
         # send_streaming，只在房间明确禁用时阻止上游产生流。
         if not self.live_messages_allowed:
             self.set_extra("enable_streaming", False)
+
+    @property
+    def matrix_room_id(self) -> str:
+        """Return the native Matrix room ID, not AstrBot's logical session."""
+
+        return getattr(self, "_matrix_room_id", "") or resolve_matrix_room_id(
+            getattr(self, "session_id", "")
+        )
 
     def _inbound_event_id(self) -> str | None:
         """本次入站（唤醒）事件的 ``event_id``。"""

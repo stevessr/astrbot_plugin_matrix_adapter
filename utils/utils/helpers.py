@@ -15,6 +15,25 @@ def parse_bool(value: object, default: bool = False) -> bool:
     return default
 
 
+def resolve_matrix_room_id(session_id: object) -> str:
+    """Resolve a Matrix room ID from a native or isolated AstrBot session.
+
+    AstrBot's ``unique_session`` mode currently builds Matrix group session
+    IDs as ``<sender_id>_<room_id>``.  Matrix room IDs start with ``!``; use
+    that boundary instead of splitting on the last underscore so underscores
+    in either the sender or room ID remain intact.
+    """
+    if not isinstance(session_id, str):
+        return ""
+
+    normalized = session_id.strip()
+    if not normalized:
+        return ""
+
+    _, separator, room_id = normalized.partition("_!")
+    return f"!{room_id}" if separator else normalized
+
+
 def mask_device_id(device_id: str | None) -> str:
     """统一的 device_id 脱敏显示函数。"""
     if not isinstance(device_id, str) or not device_id:
@@ -39,4 +58,9 @@ def _extract_text_repr(value) -> str:
     return ""
 
 
-__all__ = ["parse_bool", "mask_device_id", "_extract_text_repr"]
+__all__ = [
+    "parse_bool",
+    "resolve_matrix_room_id",
+    "mask_device_id",
+    "_extract_text_repr",
+]
