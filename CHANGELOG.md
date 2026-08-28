@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 - under going
+## 0.4.0 - 202-08-28
 
 - **MSC2403 敲门房间处理**：`MatrixSyncManager` 新增 `knocked` 房间同步（`/sync` 的 `rooms.knocked`），新增 `on_knock` 回调和 `set_knock_callback` 接口；`MatrixEventProcessorMembers` 新增 `MEMBERSHIP_KNOCK` 分支处理敲门成员事件；`MatrixEventHandler` 新增 `knock_callback` 用于记录待审批敲门。
 - **E2EE 关闭竞态修复（H3）**：`decrypt_event` / `encrypt_message` / `respond_to_key_request` 等入口统一增加 `_closing` 守卫，避免关停后访问 `None` 的 `_olm`/`_store` 崩溃。
@@ -17,6 +17,7 @@
   - 若原始消息已被处理，跳过编辑事件，避免 LLM 对同一消息的编辑版本重复响应。
   - 若原始消息尚未处理，使用 `m.new_content` 替换事件内容（清理 `* ` 前缀回退），让 LLM 看到修正后的文本。
   - 无 `m.new_content` 时至少去掉 `* ` 前缀。
+- 修复了开启会话隔离下的发送
 
 ## 0.3.9 - 2026-07-29
 
