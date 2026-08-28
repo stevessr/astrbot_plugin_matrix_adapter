@@ -209,3 +209,8 @@ MIT License
 - 贴纸功能支持请移步 <https://github.com/stevessr/astrbot_plugin_matrix_sticker>
 - 推荐自建 homeserver（如 tuwunel），请保存好数据库（内含加密密钥）
 - 不建议在多人群中使用加密，这会造成较重的负担
+
+
+## 安装
+
+前往 [matrix 适配器 位于 Astrbot Cloud 的页面](https://cloud.astrbot.app/plugin/stevessr/astrbot_plugin_matrix_adapter?returnTo=/profile)
