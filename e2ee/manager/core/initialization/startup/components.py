@@ -4,6 +4,7 @@ from astrbot.api import logger
 
 from .....olm import OlmMachine as _DEFAULT_OLM_MACHINE
 from .....store import CryptoStore as _DEFAULT_CRYPTO_STORE
+from .....verification import SASVerification
 from ...compat import resolve_manager_symbol
 
 
@@ -25,7 +26,6 @@ class E2EEManagerCoreInitializationStartupComponentsMixin:
 
     async def _init_verification(self):
         """初始化 SAS 验证。"""
-        from ....verification import SASVerification
 
         self._verification = SASVerification(
             client=self.client,

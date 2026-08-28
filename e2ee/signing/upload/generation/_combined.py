@@ -2,8 +2,8 @@
 
 from astrbot.api import logger
 
-from ...backup.crypto_utils import CRYPTO_AVAILABLE as _DEFAULT_CRYPTO_AVAILABLE
-from .compat import resolve_upload_symbol
+from ....backup.crypto_utils import CRYPTO_AVAILABLE as _DEFAULT_CRYPTO_AVAILABLE
+from ..compat import resolve_upload_symbol
 
 
 class CrossSigningUploadGenerationMixin:
