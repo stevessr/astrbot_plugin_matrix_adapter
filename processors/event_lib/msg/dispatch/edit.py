@@ -2,6 +2,8 @@
 
 from astrbot.api import logger
 
+from .....constants import REL_TYPE_REPLACE
+
 
 class MatrixEventProcessorMessagesEditMixin:
     """Normalize m.replace edit events before delivery."""
@@ -9,29 +11,24 @@ class MatrixEventProcessorMessagesEditMixin:
     def _normalize_message_edit(self, event, event_content) -> bool:
         """Normalize an edit event's content in place.
 
-        Returns True when the edit must be skipped (the original message was
-        already processed), False to continue with the (possibly normalized)
-        event content.
+        Returns True when the edit must be skipped, False to continue with the
+        (possibly normalized) event content.  Edits are delivered even when
+        their target message was already processed; the callback adds the
+        target text as quote context.
         """
-        # MSC4145 / MSC2676: 处理 m.replace 编辑事件
-        # 编辑复用原始事件 ID 检测：如果原始消息已被处理，跳过编辑事件
-        # 避免 LLM 对同一个消息的编辑版本重复响应。
-        # 若原始消息尚未处理，则用 m.new_content 替换事件内容，
-        # 让 LLM 看到的是修正后的文本而非 "* 旧文本" 回退。
+        # MSC4145 / MSC2676: 处理 m.replace 编辑事件。
+        # 编辑事件始终继续进入回调，由回调补充原消息 quote，避免丢失
+        # 编辑前后的上下文。
         relates_to = event_content.get("m.relates_to", {})
         if not (
-            isinstance(relates_to, dict) and relates_to.get("rel_type") == "m.replace"
+            isinstance(relates_to, dict)
+            and relates_to.get("rel_type") == REL_TYPE_REPLACE
         ):
             return False
 
         original_event_id = relates_to.get("event_id")
-        if original_event_id and self._is_message_processed(original_event_id):
-            logger.debug(
-                f"忽略已处理消息的编辑：{original_event_id} -> {event.event_id}"
-            )
-            return True
-
-        # 原始消息未处理：使用 m.new_content 替换事件内容
+        # Normalize the replacement payload, but always deliver the edit.  The
+        # callback fetches the target event and adds ``[quote] ->`` context.
         new_content = event_content.get("m.new_content")
         if isinstance(new_content, dict):
             old_body = event_content.get("body", "")

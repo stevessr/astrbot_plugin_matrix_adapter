@@ -8,6 +8,7 @@ from ..common import _get_plugin_config
 from .convert import _convert_event
 from .dispatch import _dispatch_message
 from .reaction import _handle_reaction_event
+from .replace import _normalize_replace_event
 from .stalk import _record_stalk_archive
 
 
@@ -55,6 +56,7 @@ async def message_callback(self, room, event):
                     runtime_state.mark_live_message_inbound(is_edit=True)
                 except Exception:
                     pass
+            await _normalize_replace_event(self, room, event)
 
         # Convert the Matrix event into an AstrBot message.
         abm = await _convert_event(self, room, event)

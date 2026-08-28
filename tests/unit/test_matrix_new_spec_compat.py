@@ -2792,6 +2792,106 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
             False,
         )
 
+    async def test_replace_callback_delivers_quote_and_new_text(self):
+        adapter_message = load_module("adapter.message")
+        handler_module = load_module("adapter.message.handler")
+
+        converted_event = None
+
+        async def convert_message(_room, event):
+            nonlocal converted_event
+            converted_event = event
+            return types.SimpleNamespace(
+                message_str=event.body,
+                session_id="!room:example.org",
+                message=[],
+            )
+
+        receiver = types.SimpleNamespace(
+            convert_message=convert_message,
+        )
+        handle_msg = mock.AsyncMock()
+        client = types.SimpleNamespace(
+            get_event=mock.AsyncMock(
+                return_value={
+                    "type": "m.room.message",
+                    "content": {
+                        "msgtype": "m.text",
+                        "body": "编辑前的内容",
+                    },
+                }
+            )
+        )
+        adapter = types.SimpleNamespace(
+            client=client,
+            runtime_state=None,
+            receiver=receiver,
+            handle_msg=handle_msg,
+        )
+        room = types.SimpleNamespace(
+            room_id="!room:example.org",
+            members={},
+            live_messaging_enabled=None,
+        )
+        event = types.SimpleNamespace(
+            sender="@alice:example.org",
+            msgtype="m.text",
+            event_id="$edit:example.org",
+            body="* 编辑后的内容",
+            content={
+                "msgtype": "m.text",
+                "body": "* 编辑后的内容",
+                "format": "org.matrix.custom.html",
+                "formatted_body": "<p>编辑后的内容</p>",
+                "m.relates_to": {
+                    "rel_type": "m.replace",
+                    "event_id": "$original:example.org",
+                },
+            },
+        )
+
+        with mock.patch.object(
+            handler_module,
+            "get_plugin_config",
+            return_value=types.SimpleNamespace(force_message_type="auto"),
+        ):
+            await adapter_message.MatrixAdapterMessageMixin.message_callback(
+                adapter, room, event
+            )
+
+        client.get_event.assert_awaited_once_with(
+            "!room:example.org", "$original:example.org"
+        )
+        self.assertIs(converted_event, event)
+        self.assertEqual(event.body, "[编辑前的内容] -> [编辑后的内容]")
+        self.assertEqual(event.content["body"], event.body)
+        self.assertNotIn("format", event.content)
+        self.assertNotIn("formatted_body", event.content)
+        handle_msg.assert_awaited_once()
+
+    async def test_processed_replace_target_is_not_dropped(self):
+        edit_module = load_module("processors.event_lib.msg.dispatch.edit")
+
+        processor = edit_module.MatrixEventProcessorMessagesEditMixin()
+        processor._is_message_processed = lambda _event_id: True
+        event = types.SimpleNamespace(
+            event_id="$edit:example.org",
+            body="* 编辑后的内容",
+            msgtype="m.text",
+            content={
+                "msgtype": "m.text",
+                "body": "* 编辑后的内容",
+                "m.relates_to": {
+                    "rel_type": "m.replace",
+                    "event_id": "$original:example.org",
+                },
+            },
+        )
+
+        self.assertFalse(processor._normalize_message_edit(event, event.content))
+        self.assertEqual(event.body, "编辑后的内容")
+        self.assertEqual(event.content["body"], "编辑后的内容")
+
     async def test_message_callback_does_not_auto_dispatch_notice_messages(self):
         adapter_message = load_module("adapter.message")
 
