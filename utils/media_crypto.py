@@ -1,53 +1,93 @@
-"""Utilities for decrypting Matrix encrypted media (v1.17 spec)."""
+"""Utilities for decrypting Matrix encrypted media (stable v1.19 schema)."""
 
 from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 from typing import Any
 
 
 def _decode_unpadded_base64(value: str) -> bytes:
-    if not value:
+    if not isinstance(value, str) or not value:
         raise ValueError("Empty base64 value")
     padded = value + "=" * (-len(value) % 4)
     try:
         return base64.urlsafe_b64decode(padded)
     except Exception:
-        return base64.b64decode(padded)
+        try:
+            return base64.b64decode(padded, validate=True)
+        except Exception as exc:
+            raise ValueError("Invalid base64 value") from exc
 
 
-def decrypt_encrypted_file(file_info: dict[str, Any], ciphertext: bytes) -> bytes:
-    """Decrypt Matrix encrypted file payload.
+def _validate_encrypted_file_info(
+    file_info: dict[str, Any],
+) -> tuple[bytes, bytes, bytes]:
+    """Validate the Matrix v1.19 ``EncryptedFile`` structure.
 
-    Expects a file_info dict with keys: url, key, iv, hashes, v.
+    Returns ``(key, iv, expected_sha256)`` only after all stable required
+    fields and fixed algorithm parameters have been checked.
     """
     if not isinstance(file_info, dict):
         raise ValueError("Invalid encrypted file info")
 
-    version = file_info.get("v")
-    if version and version != "v2":
-        raise ValueError(f"Unsupported encrypted file version: {version}")
+    url = file_info.get("url")
+    if not isinstance(url, str) or not url.startswith("mxc://"):
+        raise ValueError("Encrypted file is missing a valid mxc:// url")
 
-    key_info = file_info.get("key") or {}
+    if file_info.get("v") != "v2":
+        raise ValueError("Encrypted file version must be v2")
+
+    key_info = file_info.get("key")
+    if not isinstance(key_info, dict):
+        raise ValueError("Encrypted file is missing JWK key metadata")
     if key_info.get("kty") != "oct":
-        raise ValueError("Unsupported key type for encrypted file")
+        raise ValueError("Encrypted file JWK kty must be oct")
+    if key_info.get("alg") != "A256CTR":
+        raise ValueError("Encrypted file JWK alg must be A256CTR")
+    if key_info.get("ext") is not True:
+        raise ValueError("Encrypted file JWK ext must be true")
+
+    key_ops = key_info.get("key_ops")
+    if not isinstance(key_ops, list) or not {"encrypt", "decrypt"}.issubset(
+        {value for value in key_ops if isinstance(value, str)}
+    ):
+        raise ValueError(
+            "Encrypted file JWK key_ops must contain encrypt and decrypt"
+        )
 
     key_b64 = key_info.get("k")
     iv_b64 = file_info.get("iv")
-    if not key_b64 or not iv_b64:
-        raise ValueError("Missing key or iv for encrypted file")
+    hashes = file_info.get("hashes")
+    if not isinstance(hashes, dict):
+        raise ValueError("Encrypted file is missing hashes")
+    expected_hash_b64 = hashes.get("sha256")
+    if not isinstance(expected_hash_b64, str) or not expected_hash_b64:
+        raise ValueError("Encrypted file is missing hashes.sha256")
 
     key = _decode_unpadded_base64(key_b64)
     iv = _decode_unpadded_base64(iv_b64)
+    expected_hash = _decode_unpadded_base64(expected_hash_b64)
+    if len(key) != 32:
+        raise ValueError("Encrypted file A256CTR key must be 32 bytes")
+    if len(iv) != 16:
+        raise ValueError("Encrypted file AES-CTR iv must be 16 bytes")
+    if len(expected_hash) != 32:
+        raise ValueError("Encrypted file sha256 must be 32 bytes")
 
-    hashes = file_info.get("hashes") or {}
-    expected_hash = hashes.get("sha256")
-    if expected_hash:
-        expected = _decode_unpadded_base64(expected_hash)
-        actual = hashlib.sha256(ciphertext).digest()
-        if actual != expected:
-            raise ValueError("Encrypted file sha256 mismatch")
+    return key, iv, expected_hash
+
+
+def decrypt_encrypted_file(file_info: dict[str, Any], ciphertext: bytes) -> bytes:
+    """Validate, authenticate, and decrypt a Matrix encrypted attachment."""
+    if not isinstance(ciphertext, bytes):
+        raise TypeError("ciphertext must be bytes")
+
+    key, iv, expected_hash = _validate_encrypted_file_info(file_info)
+    actual_hash = hashlib.sha256(ciphertext).digest()
+    if not hmac.compare_digest(actual_hash, expected_hash):
+        raise ValueError("Encrypted file sha256 mismatch")
 
     try:
         from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -57,3 +97,6 @@ def decrypt_encrypted_file(file_info: dict[str, Any], ciphertext: bytes) -> byte
     cipher = Cipher(algorithms.AES(key), modes.CTR(iv))
     decryptor = cipher.decryptor()
     return decryptor.update(ciphertext) + decryptor.finalize()
+
+
+__all__ = ["decrypt_encrypted_file"]
