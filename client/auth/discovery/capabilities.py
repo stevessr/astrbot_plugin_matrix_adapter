@@ -4,6 +4,7 @@ from typing import Any
 
 FORGET_FORCED_UPON_LEAVE_CAPABILITY = "m.forget_forced_upon_leave"
 ACCOUNT_MODERATION_CAPABILITY = "m.account_moderation"
+THREEPID_CHANGES_CAPABILITY = "m.3pid_changes"
 
 
 class AuthDiscoveryCapabilitiesMixin:
@@ -54,11 +55,7 @@ class AuthDiscoveryCapabilitiesMixin:
         return isinstance(capability, dict) and capability.get("enabled") is True
 
     async def get_account_moderation_capability(self) -> dict[str, bool]:
-        """Return Matrix v1.18 / MSC4323 account moderation permissions.
-
-        The stable capability is omitted when neither operation is available,
-        therefore missing or malformed values safely resolve to ``False``.
-        """
+        """Return Matrix v1.18 / MSC4323 account moderation permissions."""
         response = await self.get_capabilities()
         capabilities = (
             response.get("capabilities", {}) if isinstance(response, dict) else {}
@@ -71,8 +68,38 @@ class AuthDiscoveryCapabilitiesMixin:
             "suspend": capability.get("suspend") is True,
         }
 
+    async def can_change_3pids(self) -> bool:
+        """Honor ``m.3pid_changes`` as required by OAuth-aware clients.
+
+        Matrix specifies that clients assume 3PID changes are allowed when the
+        capability is absent.
+        """
+        response = await self.get_capabilities()
+        capabilities = (
+            response.get("capabilities", {}) if isinstance(response, dict) else {}
+        )
+        capability = capabilities.get(THREEPID_CHANGES_CAPABILITY)
+        if capability is None:
+            return True
+        return isinstance(capability, dict) and capability.get("enabled") is True
+
     async def get_login_flows(self) -> dict[str, Any]:
         """Get supported login flows from the server."""
         return await self._request(
             "GET", "/_matrix/client/v3/login", authenticated=False
         )
+
+    async def get_oauth_aware_preferred_sso_flow(self) -> dict[str, Any] | None:
+        """Return the stable MSC3824 preferred SSO flow, if advertised."""
+        response = await self.get_login_flows()
+        flows = response.get("flows", []) if isinstance(response, dict) else []
+        if not isinstance(flows, list):
+            return None
+        for flow in flows:
+            if (
+                isinstance(flow, dict)
+                and flow.get("type") == "m.login.sso"
+                and flow.get("oauth_aware_preferred") is True
+            ):
+                return flow
+        return None
