@@ -12,6 +12,8 @@ class MatrixSyncManagerLoopRequestMixin:
         filter_id = getattr(self, "_filter_id", None)
         if filter_id is not None:
             sync_kwargs["filter_id"] = filter_id
+        if getattr(self, "_use_state_after", False):
+            sync_kwargs["use_state_after"] = True
         return await self.client.sync(**sync_kwargs)
 
 
