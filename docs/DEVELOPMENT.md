@@ -20,6 +20,8 @@ await adapter.sender.send_message(
 )
 ```
 
+`m.image` 和 `m.sticker` 会按 Matrix v1.18 / MSC4230 使用 `info.is_animated`。图片发送器在可检测时自动填写该字段，无法判断时保持未设置。
+
 ## 已读回执与 typing
 
 ```python
@@ -92,10 +94,21 @@ adapter.client.register_message_hook(NoticeRewriteHook())
 
 流式输出自动使用 MSC4357 Live Messages；普通 `send()` 始终发送普通消息。流式接口会在初始消息里加入 `org.matrix.msc4357.live` 标记，后续更新持续编辑同一条消息。更新默认每 2 秒合并发送一次，可通过 `matrix_live_message_update_interval_ms` 调整。
 
+> MSC4357 目前仍属于 unstable/proposal 兼容能力，不属于当前 Matrix v1.19 stable 基线。
+
 ## 删除消息
 
 ```python
+# Matrix v1.18+ 默认通过 /send 发送 m.room.redaction
 await adapter.sender.delete_message("!roomid:example.org", "$event_id:example.org")
+
+# 如需兼容尚未实现 v1.18 的 homeserver，可显式走旧 /redact 端点
+await adapter.sender.delete_message(
+    "!roomid:example.org",
+    "$event_id:example.org",
+    use_legacy_endpoint=True,
+)
+
 # 在事件处理器中：
 await event.delete()
 ```
@@ -120,8 +133,16 @@ response = await MatrixUtils.send_reaction(
 ## 消息管理与上下文查询
 
 ```python
-# 举报消息
-await adapter.sender.report_message("!roomid:example.org", "$event_id:example.org", score=-100, reason="spam")
+# 举报消息（Matrix v1.18 / MSC4277 已移除 score）
+await adapter.sender.report_message(
+    "!roomid:example.org",
+    "$event_id:example.org",
+    reason="spam",
+)
+
+# 举报整个房间 / 用户
+await adapter.sender.report_room("!roomid:example.org", reason="abuse")
+await adapter.sender.report_user("@alice:example.org", reason="abuse")
 
 # 查询消息上下文与关系
 ctx = await adapter.sender.get_message_context("!roomid:example.org", "$event_id:example.org", limit=10)
@@ -129,6 +150,25 @@ relations = await adapter.sender.get_message_relations("!roomid:example.org", "$
 
 # 设置 read marker
 await adapter.sender.set_read_markers("!roomid:example.org", fully_read="$event_id:example.org", read="$event_id:example.org")
+```
+
+为了兼容旧插件源码，`report_message(..., score=...)` / `report_event(..., score=...)` 仍接受 `score` 参数，但不会把它发送给 Matrix v1.18+ homeserver。
+
+## Stable account data / capabilities
+
+```python
+client = adapter.sender.client
+
+# MSC4356：最近使用 Emoji
+recent = await client.get_recent_emoji()
+await client.record_recent_emoji("🚀")
+
+# MSC4380：全局邀请阻止开关
+await client.set_invite_blocking(True)
+blocked = await client.get_invite_blocking()
+
+# MSC4267：homeserver 是否会在 leave 后自动 forget
+forced_forget = await client.is_forget_forced_upon_leave()
 ```
 
 ## 房间生命周期、历史和搜索
