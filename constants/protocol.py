@@ -72,6 +72,11 @@ M_MENTIONS_KEY = "m.mentions"
 
 # MSC4133 Custom Profile Fields (extended profile)
 MSC4133_PROFILE_PATH = "/_matrix/client/unstable/uk.tcpip.msc4133/profile"
+M_PROFILE_FIELDS_CAPABILITY = "m.profile_fields"
+
+# MSC4175 stable profile time zone (Matrix v1.16)
+M_PROFILE_TIME_ZONE = "m.tz"
+MSC4175_TIME_ZONE = "us.cloke.msc4175.tz"
 
 # MSC4446 Allow moving the fully read marker to older events
 # 用于 read_markers / receipt/m.fully_read 请求体，允许 m.fully_read 回移到更早事件
