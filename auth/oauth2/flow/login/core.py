@@ -8,7 +8,7 @@ from .prepare import _perform_authorization, _prepare_login_client
 
 
 class MatrixOAuth2FlowLoginMixin:
-    async def login(self) -> dict[str, Any]:
+    async def login(self, *, on_device_verification=None) -> dict[str, Any]:
         """Perform OAuth2 login with automatic stable-flow selection.
 
         Matrix v1.18 / MSC4341 is used automatically when the caller has no
@@ -26,7 +26,9 @@ class MatrixOAuth2FlowLoginMixin:
                         "info",
                         "No OAuth redirect URI configured; using Matrix v1.18 device authorization grant",
                     )
-                    return await self.login_device()
+                    return await self.login_device(
+                        on_verification=on_device_verification
+                    )
                 raise RuntimeError(
                     "OAuth2 redirect_uri is not configured and the homeserver does not advertise the device authorization grant"
                 )
