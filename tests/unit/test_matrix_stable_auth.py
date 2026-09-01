@@ -43,6 +43,49 @@ class StableOAuthAwareCapabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await client.can_change_3pids())
 
 
+class StableOAuthRegistrationMetadataTests(unittest.TestCase):
+    def setUp(self):
+        self.mod = load_module("auth.oauth2.discovery.registration")
+
+    def test_https_callback_uses_same_host_client_uri(self):
+        metadata = self.mod._build_registration_metadata(
+            "https://bot.example:8443/matrix/callback",
+            ["authorization_code", "refresh_token"],
+        )
+        self.assertEqual(metadata["client_uri"], "https://bot.example:8443/")
+        self.assertEqual(metadata["application_type"], "web")
+        self.assertEqual(metadata["token_endpoint_auth_method"], "none")
+        self.assertEqual(
+            metadata["redirect_uris"],
+            ["https://bot.example:8443/matrix/callback"],
+        )
+        self.assertEqual(metadata["response_types"], ["code"])
+
+    def test_http_loopback_callback_is_native(self):
+        metadata = self.mod._build_registration_metadata(
+            "http://127.0.0.1:8765/callback",
+            ["authorization_code"],
+        )
+        self.assertEqual(metadata["client_uri"], "https://127.0.0.1:8765/")
+        self.assertEqual(metadata["application_type"], "native")
+
+    def test_non_loopback_http_callback_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "HTTPS callback"):
+            self.mod._build_registration_metadata(
+                "http://bot.example/callback",
+                ["authorization_code"],
+            )
+
+    def test_device_registration_remains_public_native_client(self):
+        metadata = self.mod._build_registration_metadata(
+            None,
+            ["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"],
+        )
+        self.assertEqual(metadata["application_type"], "native")
+        self.assertEqual(metadata["token_endpoint_auth_method"], "none")
+        self.assertNotIn("redirect_uris", metadata)
+
+
 class StableOAuthFlowSelectionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.mod = load_module("auth.oauth2.flow.login.core")
