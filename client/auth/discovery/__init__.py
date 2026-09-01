@@ -15,16 +15,25 @@ class AuthDiscoveryMixin(
     pass
 
 
-# Preserve direct method attributes exposed by the former mixin.
-AuthDiscoveryMixin.get_versions = AuthDiscoveryCapabilitiesMixin.__dict__[
-    "get_versions"
-]
-AuthDiscoveryMixin.get_capabilities = AuthDiscoveryCapabilitiesMixin.__dict__[
-    "get_capabilities"
-]
-AuthDiscoveryMixin.get_login_flows = AuthDiscoveryCapabilitiesMixin.__dict__[
-    "get_login_flows"
-]
+# Preserve direct method attributes exposed by the former mixin.  Keep this
+# list explicit so capability helpers remain discoverable to callers which
+# introspect ``AuthDiscoveryMixin.__dict__`` rather than relying on inheritance.
+for _name in (
+    "get_versions",
+    "get_msc4357_server_advertisement",
+    "get_capabilities",
+    "is_forget_forced_upon_leave",
+    "get_account_moderation_capability",
+    "can_change_3pids",
+    "get_login_flows",
+    "get_oauth_aware_preferred_sso_flow",
+):
+    setattr(
+        AuthDiscoveryMixin,
+        _name,
+        AuthDiscoveryCapabilitiesMixin.__dict__[_name],
+    )
+
 AuthDiscoveryMixin.get_register_flows = AuthDiscoveryRegistrationMixin.__dict__[
     "get_register_flows"
 ]
