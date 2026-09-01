@@ -40,6 +40,8 @@ MessageReceiptsMixin.send_fully_read_receipt = MessageReadReceiptsMixin.__dict__
 ]
 MessageReceiptsMixin.redact_event = MessageEventOperationsMixin.__dict__["redact_event"]
 MessageReceiptsMixin.report_event = MessageEventOperationsMixin.__dict__["report_event"]
+MessageReceiptsMixin.report_room = MessageEventOperationsMixin.__dict__["report_room"]
+MessageReceiptsMixin.report_user = MessageEventOperationsMixin.__dict__["report_user"]
 MessageReceiptsMixin.get_event_context = MessageEventOperationsMixin.__dict__[
     "get_event_context"
 ]
