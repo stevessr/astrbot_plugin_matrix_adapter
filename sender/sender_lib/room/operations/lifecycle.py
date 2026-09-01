@@ -16,8 +16,10 @@ class SenderRoomLifecycleMixin:
         preset: str | None = None,
         creation_content: dict[str, Any] | None = None,
         initial_state: list[dict[str, Any]] | None = None,
+        room_version: str | None = None,
+        additional_creators: list[str] | None = None,
     ) -> dict:
-        """Create a Matrix room."""
+        """Create a Matrix room, optionally with room-v12 creator metadata."""
         return await self.client.create_room(
             name=name,
             topic=topic,
@@ -26,6 +28,8 @@ class SenderRoomLifecycleMixin:
             preset=preset,
             creation_content=creation_content,
             initial_state=initial_state,
+            room_version=room_version,
+            additional_creators=additional_creators,
         )
 
     async def create_dm_room(
@@ -61,7 +65,7 @@ class SenderRoomLifecycleMixin:
         Matrix v1.19 clarifies that clients following an ``m.room.tombstone``
         ``replacement_room`` or an ``m.room.create.predecessor.room_id`` SHOULD
         use the server name from the reference event's sender as a ``via``
-        server.  ``join_room`` exposes this through its ``server_name`` list.
+        server. ``join_room`` exposes this through its ``server_name`` list.
         """
         via: str | None = None
         if isinstance(event_sender, str) and event_sender.startswith("@"):
@@ -85,9 +89,18 @@ class SenderRoomLifecycleMixin:
         """Get room IDs joined by the current Matrix account."""
         return await self.client.get_joined_rooms()
 
-    async def upgrade_room(self, room_id: str, new_version: str) -> dict:
-        """Upgrade a Matrix room to a new room version."""
-        return await self.client.upgrade_room(room_id=room_id, new_version=new_version)
+    async def upgrade_room(
+        self,
+        room_id: str,
+        new_version: str,
+        additional_creators: list[str] | None = None,
+    ) -> dict:
+        """Upgrade a room, preserving/supplying room-v12 additional creators."""
+        return await self.client.upgrade_room(
+            room_id=room_id,
+            new_version=new_version,
+            additional_creators=additional_creators,
+        )
 
     async def knock_room(
         self,
