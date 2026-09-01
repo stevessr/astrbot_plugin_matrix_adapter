@@ -1,6 +1,13 @@
+import base64
+import hashlib
 import unittest
 
 from test_matrix_new_spec_compat import load_module
+
+
+def _b64(value: bytes, *, urlsafe: bool = False) -> str:
+    encoder = base64.urlsafe_b64encode if urlsafe else base64.b64encode
+    return encoder(value).decode("ascii").rstrip("=")
 
 
 class MatrixV119MutualRoomsTests(unittest.IsolatedAsyncioTestCase):
@@ -128,6 +135,52 @@ class MatrixV119MXCGrammarTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             parse("mxc://example.org/../../etc-passwd")
+
+
+class MatrixV119EncryptedFileTests(unittest.TestCase):
+    def setUp(self):
+        self.mod = load_module("utils.media_crypto")
+        self.ciphertext = b"encrypted attachment bytes"
+        self.file_info = {
+            "url": "mxc://example.org/media_123",
+            "key": {
+                "kty": "oct",
+                "key_ops": ["encrypt", "decrypt"],
+                "alg": "A256CTR",
+                "k": _b64(b"k" * 32, urlsafe=True),
+                "ext": True,
+            },
+            "iv": _b64(b"i" * 16),
+            "hashes": {"sha256": _b64(hashlib.sha256(self.ciphertext).digest())},
+            "v": "v2",
+        }
+
+    def test_stable_encrypted_file_metadata_is_accepted(self):
+        key, iv, digest = self.mod._validate_encrypted_file_info(self.file_info)
+        self.assertEqual(key, b"k" * 32)
+        self.assertEqual(iv, b"i" * 16)
+        self.assertEqual(digest, hashlib.sha256(self.ciphertext).digest())
+
+    def test_sha256_is_required(self):
+        invalid = {**self.file_info, "hashes": {}}
+        with self.assertRaisesRegex(ValueError, "hashes.sha256"):
+            self.mod._validate_encrypted_file_info(invalid)
+
+    def test_jwk_algorithm_contract_is_required(self):
+        invalid = {
+            **self.file_info,
+            "key": {**self.file_info["key"], "alg": "A128CTR"},
+        }
+        with self.assertRaisesRegex(ValueError, "A256CTR"):
+            self.mod._validate_encrypted_file_info(invalid)
+
+    def test_ciphertext_hash_mismatch_is_rejected_before_decryption(self):
+        invalid = {
+            **self.file_info,
+            "hashes": {"sha256": _b64(b"x" * 32)},
+        }
+        with self.assertRaisesRegex(ValueError, "sha256 mismatch"):
+            self.mod.decrypt_encrypted_file(invalid, self.ciphertext)
 
 
 if __name__ == "__main__":
