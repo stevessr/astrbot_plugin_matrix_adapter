@@ -29,12 +29,17 @@ class MatrixSyncManagerEventRoutingFieldsMixin:
             )
             tasks.append(task)
 
-        # 3. One-time keys count + unused fallback key types
+        # 3. One-time keys count + unused fallback key types.
+        # Matrix v1.17 clarifies that device_one_time_keys_count may be omitted
+        # precisely when there are no unclaimed OTKs. Therefore absence is an
+        # actionable zero-count state, not a reason to skip key maintenance.
         device_one_time_keys_count = sync_response.get("device_one_time_keys_count", {})
+        if not isinstance(device_one_time_keys_count, dict):
+            device_one_time_keys_count = {}
         unused_fallback_key_types = sync_response.get(
             "device_unused_fallback_key_types"
         )
-        if device_one_time_keys_count and self.on_device_one_time_keys_count:
+        if self.on_device_one_time_keys_count:
             task = asyncio.create_task(
                 self._run_callback_with_guard(
                     "on_device_one_time_keys_count",
