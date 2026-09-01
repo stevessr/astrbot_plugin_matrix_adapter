@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 
 from test_matrix_new_spec_compat import load_module
@@ -134,6 +135,46 @@ class MatrixV117OAuthUIATests(unittest.IsolatedAsyncioTestCase):
             calls[1]["auth"],
             {"type": "m.login.dummy", "session": "dummy-session"},
         )
+
+
+class MatrixV117OneTimeKeyCountTests(unittest.IsolatedAsyncioTestCase):
+    async def test_omitted_otk_count_is_dispatched_as_zero(self):
+        mod = load_module("sync.sync_lib.dispatch.routing.fields")
+        received = []
+
+        async def on_count(counts, unused_fallback_key_types):
+            received.append((counts, unused_fallback_key_types))
+
+        class Router(mod.MatrixSyncManagerEventRoutingFieldsMixin):
+            on_to_device_event = None
+            on_device_lists = None
+            on_presence_event = None
+            on_account_data = None
+            on_device_one_time_keys_count = on_count
+
+            async def _run_callback_with_guard(self, _name, callback, *args):
+                await callback(*args)
+
+        tasks = []
+        Router()._dispatch_global_fields({}, tasks)
+        await asyncio.gather(*tasks)
+        self.assertEqual(received, [({}, None)])
+
+
+class MatrixV117ResourceLimitTests(unittest.TestCase):
+    def test_resource_limit_error_exposes_admin_contact(self):
+        mod = load_module("client.base.errors")
+        error = mod.MatrixAPIError(
+            403,
+            {
+                "errcode": "M_RESOURCE_LIMIT_EXCEEDED",
+                "error": "disk quota reached",
+                "admin_contact": "mailto:admin@example.org",
+            },
+            "disk quota reached",
+        )
+        self.assertTrue(error.is_resource_limit_exceeded)
+        self.assertEqual(error.admin_contact, "mailto:admin@example.org")
 
 
 if __name__ == "__main__":
