@@ -63,6 +63,7 @@ class E2EEManagerCoreInitializationStartupComponentsMixin:
             secret_storage=self._key_backup,
             request_secret_from_devices=self.request_secret_from_devices,
             repair_current_device_keys=self._upload_device_keys,
+            oauth_uia_callback=self.oauth_uia_callback,
             namespace_key=self._store_namespace,
         )
 
