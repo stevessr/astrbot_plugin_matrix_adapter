@@ -5,22 +5,32 @@ from typing import Any
 from astrbot.api import logger
 
 from ...path_utils import quote_path_segment
+from .account import UserAccountModerationMixin
 from .members import UserMembersMixin
 from .membership import UserMembershipMixin
 from .power import UserPowerLevelsMixin
 
 
 class UserModerationMixin(
+    UserAccountModerationMixin,
     UserMembershipMixin,
     UserPowerLevelsMixin,
     UserMembersMixin,
 ):
-    """Invitation, moderation, power-level, and member helpers."""
+    """Invitation, moderation, power-level, account, and member helpers."""
 
     pass
 
 
 # Preserve direct method attributes exposed by the former mixin.
+UserModerationMixin.get_user_suspension = UserAccountModerationMixin.__dict__[
+    "get_user_suspension"
+]
+UserModerationMixin.set_user_suspension = UserAccountModerationMixin.__dict__[
+    "set_user_suspension"
+]
+UserModerationMixin.get_user_lock = UserAccountModerationMixin.__dict__["get_user_lock"]
+UserModerationMixin.set_user_lock = UserAccountModerationMixin.__dict__["set_user_lock"]
 UserModerationMixin.invite_user = UserMembershipMixin.__dict__["invite_user"]
 UserModerationMixin.kick_user = UserMembershipMixin.__dict__["kick_user"]
 UserModerationMixin.ban_user = UserMembershipMixin.__dict__["ban_user"]
