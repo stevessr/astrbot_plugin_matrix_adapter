@@ -15,22 +15,10 @@ class UserRoomCreationGeneralMixin:
         preset: str | None = None,
         creation_content: dict[str, Any] | None = None,
         initial_state: list[dict[str, Any]] | None = None,
+        room_version: str | None = None,
+        additional_creators: list[str] | None = None,
     ) -> dict[str, Any]:
-        """
-        Create a new room
-
-        Args:
-            name: Room name
-            topic: Room topic
-            invite: List of user IDs to invite
-            is_public: Whether room is public
-            preset: Room preset (private_chat, public_chat, trusted_private_chat)
-            creation_content: Room creation_content payload
-            initial_state: Room initial_state payload
-
-        Returns:
-            Response with room_id
-        """
+        """Create a new room, including room-v12 creator metadata when needed."""
         data = self._build_create_room_data(
             name,
             topic,
@@ -39,6 +27,8 @@ class UserRoomCreationGeneralMixin:
             preset,
             creation_content,
             initial_state,
+            room_version,
+            additional_creators,
         )
 
         endpoint = "/_matrix/client/v3/createRoom"
@@ -53,6 +43,8 @@ class UserRoomCreationGeneralMixin:
         preset: str | None,
         creation_content: dict[str, Any] | None,
         initial_state: list[dict[str, Any]] | None,
+        room_version: str | None = None,
+        additional_creators: list[str] | None = None,
     ) -> dict[str, Any]:
         data: dict[str, Any] = {}
 
@@ -69,9 +61,25 @@ class UserRoomCreationGeneralMixin:
 
         if is_public:
             data["visibility"] = "public"
+        if room_version:
+            data["room_version"] = str(room_version)
 
-        if creation_content and isinstance(creation_content, dict):
-            data["creation_content"] = creation_content
+        create_content = (
+            dict(creation_content)
+            if isinstance(creation_content, dict)
+            else {}
+        )
+        if additional_creators is not None:
+            if not isinstance(additional_creators, list) or not all(
+                isinstance(user_id, str) and user_id.startswith("@")
+                for user_id in additional_creators
+            ):
+                raise ValueError("additional_creators must be a list of Matrix user IDs")
+            create_content["additional_creators"] = list(
+                dict.fromkeys(additional_creators)
+            )
+        if create_content:
+            data["creation_content"] = create_content
 
         if initial_state and isinstance(initial_state, list):
             data["initial_state"] = initial_state
