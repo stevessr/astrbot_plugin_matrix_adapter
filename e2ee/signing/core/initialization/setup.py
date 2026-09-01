@@ -23,6 +23,7 @@ class CrossSigningCoreSetupMixin:
         request_secret_from_devices: Callable[[str], Awaitable[str | None]]
         | None = None,
         repair_current_device_keys: Callable[[], Awaitable[None]] | None = None,
+        oauth_uia_callback: Callable[[dict], Awaitable[None] | None] | None = None,
         namespace_key: str | None = None,
     ):
         self.client = client
@@ -37,6 +38,8 @@ class CrossSigningCoreSetupMixin:
         self.secret_storage = secret_storage
         self.request_secret_from_devices = request_secret_from_devices
         self.repair_current_device_keys = repair_current_device_keys
+        self.oauth_uia_callback = oauth_uia_callback
+        self.pending_oauth_uia: dict | None = None
 
         self._master_key: str | None = None
         self._self_signing_key: str | None = None
