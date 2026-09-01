@@ -45,6 +45,10 @@ def _build_adapter_components(
         user_id=matrix_config.user_id,
         store_path=matrix_config.store_path,
         on_token_invalid=on_token_invalid,
+        # Matrix v1.16 / MSC4222 gives an authoritative end-of-timeline state.
+        # Old homeservers may ignore the query and return legacy `state`, which
+        # the processor continues to support automatically.
+        use_state_after=True,
     )
     event_processor = MatrixEventProcessor(
         client=client,
