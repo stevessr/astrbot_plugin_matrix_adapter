@@ -1,8 +1,11 @@
 """Matrix media repository helpers."""
 
+import re
 from typing import Any
 
 from astrbot.api import logger
+
+_MXC_MEDIA_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class MediaRepositoryMixin:
@@ -12,10 +15,10 @@ class MediaRepositoryMixin:
     def _parse_mxc_server_media_id(mxc_url: str) -> tuple[str, str]:
         """Parse an ``mxc://server/media`` URI into Matrix path segments.
 
-        Some bridges and clients append query strings or fragments to MXC
-        references for local UI hints.  The Matrix media repository path only
-        accepts the server name and media ID, so strip those suffixes before
-        percent-encoding each segment.
+        Matrix v1.19 clarifies that the opaque ``media-id`` contains only
+        ``A-Za-z0-9``, ``_`` and ``-``.  Query strings/fragments sometimes
+        appear as non-standard local UI hints, so they are stripped before the
+        stable media-id grammar is validated.
         """
         if not isinstance(mxc_url, str) or not mxc_url.startswith("mxc://"):
             raise ValueError(f"Invalid MXC URL: {mxc_url}")
@@ -28,6 +31,8 @@ class MediaRepositoryMixin:
         media_id = parts[1].split("?", 1)[0].split("#", 1)[0].strip().lstrip("/")
         if not server_name or not media_id:
             raise ValueError(f"Invalid MXC URL format: {mxc_url}")
+        if _MXC_MEDIA_ID_RE.fullmatch(media_id) is None:
+            raise ValueError(f"Invalid MXC media ID: {mxc_url}")
         return server_name, media_id
 
     async def get_media_config(self) -> dict[str, Any]:
