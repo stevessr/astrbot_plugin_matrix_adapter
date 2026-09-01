@@ -31,7 +31,17 @@ class MatrixSSOLoginMixin(
         device_id: str | None = None,
         show_qr: bool = False,
         url_callback: callable = None,
+        *,
+        action: str = "login",
     ) -> dict:
+        """Run the legacy SSO flow with Matrix v1.18 OAuth-aware context.
+
+        MSC3824 stabilised the optional ``action`` query parameter. This adapter
+        is a login client, so ``login`` is the default; ``register`` remains
+        available to callers that deliberately reuse the helper for signup.
+        """
+        if action not in {"login", "register"}:
+            raise ValueError("SSO action must be 'login' or 'register'")
         try:
             flows_response = await self.client.get_login_flows()
             self._discover_sso_login_flow(flows_response)
@@ -44,7 +54,10 @@ class MatrixSSOLoginMixin(
 
             redirect_uri_with_state = await self._prepare_sso_callback(state)
 
-            params = {"redirectUrl": redirect_uri_with_state}
+            params = {
+                "redirectUrl": redirect_uri_with_state,
+                "action": action,
+            }
             sso_url = (
                 f"{self.homeserver}/_matrix/client/v3/login/sso/redirect?"
                 f"{urlencode(params)}"
