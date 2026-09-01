@@ -1,5 +1,7 @@
 # 已支持的 Matrix Spec Change（MSC）
 
+> Stable 基线：**Matrix Client-Server v1.19（2026-07-08）**。本表优先记录已经进入 Matrix stable 规范、且与 AstrBot 适配器职责相关的能力；仍处于 proposal/unstable 的能力会单独标注，不视为 stable 支持。
+
 | MSC | 名称 | 角色 | 说明 |
 |-----|------|------|------|
 | MSC1767 | Extensible Events | 收/发 | 在音频/文本/投票内容中携带 `m.text` / `m.audio` / `m.file` |
@@ -25,7 +27,24 @@
 | MSC4143 | OAuth2 Auth Metadata | 发 | 优先请求 `/_matrix/client/v1/auth_metadata` |
 | MSC4144 | Per-Message Profiles | 发 | `send_with_per_message_profile` 单条消息携带 displayname/avatar |
 | MSC4145 | Edits in Threads | 发 | 编辑消息列内消息时保留 `m.thread` 关系，编辑聚合在消息列内 |
-| MSC4357 | Live Messages（流式编辑） | 发 | 见下方"流式输出"章节 |
+| MSC4169 | Redactions via `/send` | 发 | v1.18 起默认通过普通 `/send/m.room.redaction/{txnId}` 发送撤回；保留 legacy `/redact` 兼容开关 |
+| MSC4230 | Animated Images | 收/发 | `m.image` / `m.sticker` 的 `info.is_animated`；发送图片自动检测，Sticker 序列化保留该字段 |
+| MSC4267 | Forced Forget on Leave | 收 | `is_forget_forced_upon_leave()` 读取 `m.forget_forced_upon_leave` capability |
+| MSC4277 | Reporting Improvements | 发 | event report 不再发送已移除的 `score`；新增 room/user report helper |
+| MSC4356 | Recent Emoji | 收/发 | `get/set/record_recent_emoji()` 管理稳定 `m.recent_emoji` 全局 account data |
+| MSC4380 | Invite Blocking | 收/发 | `get/set_invite_blocking()` 管理稳定 `m.invite_permission_config` |
+| MSC4357 | Live Messages（流式编辑，unstable） | 发 | 见下方“流式输出”章节；尚未作为 stable 能力计入基线 |
+
+## Matrix v1.18 stable 补齐
+
+本适配器此前已经覆盖一部分较新的 Matrix 能力，但 v1.18 中仍有若干已经 stable、客户端可直接落地的缺口。本轮按 stable 规范补齐：
+
+- **MSC4356 Recent Emoji**：支持读取、整体写入和记录单次使用；记录时把目标 Emoji 移到列表首位、累加 `total`，默认按规范建议截断到 100 项，并保留未知扩展字段。
+- **MSC4380 Invite Blocking**：使用账户级 `m.invite_permission_config`，提供简单的启用/关闭 helper。
+- **MSC4230 Animated Images**：发送 `m.image` 时通过 Pillow 能力检测动画并写入 `info.is_animated`；无法判断时不发送该字段。`m.sticker` 同样支持序列化和反序列化该 stable 字段。
+- **MSC4169 Redactions via `/send`**：撤回默认改走普通事件发送端点；`use_legacy_endpoint=True` 可显式回退旧 `/redact` API，便于兼容尚未实现 v1.18 的 homeserver。
+- **MSC4277 Reporting Improvements**：保留 Python API 的 `score` 参数用于源码兼容，但不会再把已经从 v1.18 协议移除的 `score` 发给 homeserver；同时提供 room/user report helper。
+- **MSC4267 Forced Forget on Leave**：能力缺失或 `enabled` 缺失时按 stable 规范视为 `False`。
 
 ## MSC2246 Asynchronous Media Uploads
 
@@ -52,4 +71,7 @@
 - Megolm 会执行房间/发送者绑定、持久化消息索引防重放、低索引可信会话替换，以及默认 7 天或 100 条消息和成员/设备离开时的出站轮换。
 - 房间密钥请求仅面向本账号设备；只与已验证的同账号设备交换 `m.forwarded_room_key` 和 E2EE secrets，保留 forwarding chain / `withheld`，并实现请求取消与 `m.no_olm` 去重恢复。
 - MSC4268 的 `shared_history` 会持久化到入站/出站会话和 Key Backup，并在历史可见性分类改变、不可共享会话遇到新成员或成员离开时轮换 Megolm。当前不主动生成可选的完整 `m.room_key_bundle` 历史迁移，避免在缺少加密附件和严格 cross-signing 校验时部分实现该高风险流程。
-- 当前 unstable 规范的 HTTP 变更也已落实：OAuth2 发现显式跟随 `/.well-known/matrix/client` 30x 跳转，Matrix API 访问令牌仅通过 Bearer 头发送。
+
+## Unstable / proposal 兼容说明
+
+仓库仍保留部分已实现的 unstable/proposal 行为（例如 MSC4357 Live Messages，以及特定 OAuth2/HTTP 兼容处理），用于与已部署 homeserver/client 互操作；它们不会因为存在实现就被标记为 Matrix stable 支持。后续 stable 发版时应以对应版本 changelog 为准，再将已接受能力从本节迁移到 stable 基线。
