@@ -35,6 +35,58 @@ class MatrixV119MutualRoomsTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class MatrixV119ContextPaginationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_context_start_paginates_backwards_and_end_forwards(self):
+        mod = load_module("sender.core.moderation")
+        calls = []
+
+        class Client:
+            async def room_messages(self, **kwargs):
+                calls.append(kwargs)
+                return {"chunk": []}
+
+        class Sender(mod.SenderModerationMixin):
+            client = Client()
+
+        sender = Sender()
+        context = {"start": "before-token", "end": "after-token"}
+        await sender.paginate_message_context(
+            "!room:example.org", context, direction="b", limit=7
+        )
+        await sender.paginate_message_context(
+            "!room:example.org", context, direction="f", limit=8
+        )
+        self.assertEqual(
+            calls[0],
+            {
+                "room_id": "!room:example.org",
+                "from_token": "before-token",
+                "direction": "b",
+                "limit": 7,
+            },
+        )
+        self.assertEqual(
+            calls[1],
+            {
+                "room_id": "!room:example.org",
+                "from_token": "after-token",
+                "direction": "f",
+                "limit": 8,
+            },
+        )
+
+    async def test_context_pagination_rejects_missing_direction_token(self):
+        mod = load_module("sender.core.moderation")
+
+        class Sender(mod.SenderModerationMixin):
+            client = object()
+
+        with self.assertRaisesRegex(ValueError, "end"):
+            await Sender().paginate_message_context(
+                "!room:example.org", {"start": "before"}, direction="f"
+            )
+
+
 class MatrixV119RoomDirectoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_public_room_order_is_left_server_defined(self):
         mod = load_module("client.room_directory_mixin.public")
