@@ -96,6 +96,7 @@ MSC4153 是客户端选择加密目标设备的安全建议，不是新 wire end
 | MSC2545 Image Packs | ✅ | `m.room.image_pack` / `m.image_pack.rooms` 为主类型，兼容旧 `im.ponies.*` |
 | MSC4268 Encrypted History Sharing | ⚠️ 部分/核心完成 | `shared_history` 在会话与 Key Backup 中持久化，并根据历史可见性/成员变化轮换；尚未主动发送完整 `m.room_key_bundle` |
 | SAS commitment clarification | ✅ | commitment 使用完整 start content canonical JSON + unpadded Base64，并由正确一方验证 |
+| MXC URI media-id grammar clarification | ✅ | 通用 MXC parser 和媒体仓库路径现在只接受 stable `[A-Za-z0-9_-]+` media ID，拒绝 `/`、百分号和 traversal 形态 |
 
 ### MSC4268 未完成部分
 
