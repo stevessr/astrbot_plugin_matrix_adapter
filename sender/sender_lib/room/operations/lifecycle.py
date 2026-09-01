@@ -40,9 +40,38 @@ class SenderRoomLifecycleMixin:
         """Find an existing direct-message room for a Matrix user."""
         return await self.client.get_user_room(user_id)
 
-    async def join_room(self, room_id_or_alias: str) -> dict:
-        """Join a Matrix room by room ID or alias."""
-        return await self.client.join_room(room_id_or_alias)
+    async def join_room(
+        self,
+        room_id_or_alias: str,
+        server_name: list[str] | None = None,
+    ) -> dict:
+        """Join a Matrix room, optionally via explicit remote servers."""
+        return await self.client.join_room(
+            room_id_or_alias,
+            server_name=server_name,
+        )
+
+    async def join_room_from_upgrade_reference(
+        self,
+        room_id: str,
+        event_sender: str,
+    ) -> dict:
+        """Join a room referenced by a tombstone/predecessor event.
+
+        Matrix v1.19 clarifies that clients following an ``m.room.tombstone``
+        ``replacement_room`` or an ``m.room.create.predecessor.room_id`` SHOULD
+        use the server name from the reference event's sender as a ``via``
+        server.  ``join_room`` exposes this through its ``server_name`` list.
+        """
+        via: str | None = None
+        if isinstance(event_sender, str) and event_sender.startswith("@"):
+            _, separator, server = event_sender[1:].partition(":")
+            if separator and server:
+                via = server
+        return await self.join_room(
+            room_id,
+            server_name=[via] if via else None,
+        )
 
     async def leave_room(self, room_id: str) -> dict:
         """Leave a Matrix room."""
@@ -64,11 +93,13 @@ class SenderRoomLifecycleMixin:
         self,
         room_id_or_alias: str,
         reason: str | None = None,
+        server_name: list[str] | None = None,
     ) -> dict:
-        """Knock on a Matrix room that uses knock join rules."""
+        """Knock on a Matrix room, optionally via explicit remote servers."""
         return await self.client.knock_room(
             room_id_or_alias=room_id_or_alias,
             reason=reason,
+            server_name=server_name,
         )
 
     async def accept_knock(
