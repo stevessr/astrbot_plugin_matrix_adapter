@@ -134,6 +134,31 @@ class MatrixV119UpgradeViaTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class MatrixV119RoomMessageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_room_messages_preserve_encrypted_events(self):
+        mod = load_module("client.room_core_mixin.messages")
+        encrypted_event = {
+            "event_id": "$encrypted:example.org",
+            "type": "m.room.encrypted",
+            "content": {
+                "algorithm": "m.megolm.v1.aes-sha2",
+                "ciphertext": "opaque",
+                "session_id": "session",
+                "sender_key": "curve25519",
+            },
+        }
+        response = {"chunk": [encrypted_event], "end": "next"}
+
+        class Client(mod.RoomMessageHistoryMixin):
+            async def _request(self, method, endpoint, **kwargs):
+                return response
+
+        result = await Client().room_messages("!room:example.org")
+        self.assertIs(result, response)
+        self.assertEqual(result["chunk"][0]["type"], "m.room.encrypted")
+        self.assertEqual(result["chunk"][0]["content"]["ciphertext"], "opaque")
+
+
 class MatrixV119RoomDirectoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_public_room_order_is_left_server_defined(self):
         mod = load_module("client.room_directory_mixin.public")
