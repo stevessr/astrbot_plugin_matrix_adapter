@@ -37,12 +37,14 @@ class SenderRoomQueriesMixin:
         room_id: str,
         event_type: str,
         state_key: str = "",
+        format: str | None = None,
     ) -> dict:
-        """Get a specific Matrix room state event content."""
+        """Get state content or, with ``format='event'``, full event metadata."""
         return await self.client.get_room_state_event(
             room_id=room_id,
             event_type=event_type,
             state_key=state_key,
+            format=format,
         )
 
     async def set_room_state_event(
