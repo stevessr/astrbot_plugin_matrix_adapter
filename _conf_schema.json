@@ -165,7 +165,12 @@
     "description": "强制消息类型",
     "type": "string",
     "hint": "强制消息类型：auto（自动判断群聊/私聊）、private（全部私聊）、group（全部群聊）、stalk（写入对话并按群存档 JSONL）",
-    "options": ["auto", "private", "group", "stalk"],
+    "options": [
+      "auto",
+      "private",
+      "group",
+      "stalk"
+    ],
     "default": "auto"
   },
   "matrix_adaptive_thread_reply": {
@@ -180,11 +185,27 @@
     "hint": "是否向房间发送「正在输入」（typing）状态。开启后流式回复期间会持续保活该状态，回复结束或出错时清除",
     "default": false
   },
-  "matrix_send_read_receipt": {
-    "description": "发送已读回执",
-    "type": "bool",
-    "hint": "消息处理完成后是否发送已读回执（m.read）。关闭后机器人不会把消息标记为已读",
-    "default": true
+  "matrix_read_receipt_type": {
+    "description": "已读类型",
+    "type": "string",
+    "hint": "选择已读回执行为：none（不发送）、private（私有 m.read.private）、public（公开 m.read）、batch（按固定时间窗口合并后发送公开 m.read）",
+    "options": [
+      "none",
+      "private",
+      "public",
+      "batch"
+    ],
+    "default": "public"
+  },
+  "matrix_read_receipt_batch_interval_ms": {
+    "description": "批次已读窗口（毫秒）",
+    "type": "int",
+    "hint": "仅 batch 模式生效。首条进入批次队列的消息才开始计时；窗口内每个房间只保留最新事件，到点发送一次后停止，空闲时不会运行定时任务",
+    "condition": {
+      "matrix_read_receipt_type": "batch"
+    },
+    "min": 100,
+    "default": 2000
   },
   "matrix_e2ee_store_max_pending_writes": {
     "description": "E2EE 存储待写队列上限",
@@ -197,13 +218,19 @@
     "description": "数据存储后端",
     "type": "string",
     "hint": "数据存储后端（users/rooms/auth/sync/device_info + E2EE 本地状态）：json / sqlite / pgsql",
-    "options": ["json", "sqlite", "pgsql"],
+    "options": [
+      "json",
+      "sqlite",
+      "pgsql"
+    ],
     "default": "json"
   },
   "matrix_pgsql": {
     "description": "PostgreSQL 配置",
     "type": "object",
-    "condition": { "matrix_data_storage_backend": "pgsql" },
+    "condition": {
+      "matrix_data_storage_backend": "pgsql"
+    },
     "items": {
       "dsn": {
         "description": "PostgreSQL DSN",

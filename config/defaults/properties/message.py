@@ -20,9 +20,19 @@ class PluginConfigDefaultsMessageMixin:
         return self._send_typing
 
     @property
+    def read_receipt_type(self) -> str:
+        """已读回执模式：none / private / public / batch。"""
+        return self._read_receipt_type
+
+    @property
+    def read_receipt_batch_interval_ms(self) -> int:
+        """批次已读固定窗口长度（毫秒）。"""
+        return self._read_receipt_batch_interval_ms
+
+    @property
     def send_read_receipt(self) -> bool:
-        """是否在消息处理完成后发送已读回执"""
-        return self._send_read_receipt
+        """兼容旧调用：除 none 外均视为启用已读回执。"""
+        return self._read_receipt_type != "none"
 
     @property
     def force_private_message(self) -> bool:

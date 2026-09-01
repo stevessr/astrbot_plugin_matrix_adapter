@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from ...constants import M_ROOM_ENCRYPTION
+from ...constants import (
+    M_ROOM_ENCRYPTION,
+    M_ROOM_LIVE_MESSAGING,
+    MSC4357_LIVE_MESSAGING_STATE,
+)
+from ..base.errors import MatrixAPIError
 from ..path_utils import quote_path_segment
 
 
@@ -61,6 +66,43 @@ class RoomCoreStateMixin:
         state = quote_path_segment(state_key)
         endpoint = f"/_matrix/client/v3/rooms/{room}/state/{event}/{state}"
         return await self._request("GET", endpoint)
+
+    async def get_room_live_messaging_allowed(self, room_id: str) -> bool:
+        """Probe the homeserver for the room-level MSC4357 policy.
+
+        MSC4357 does not define a homeserver-wide ``/versions`` capability:
+        Live Messages reuse ordinary ``m.room.message`` + ``m.replace`` events.
+        The normative server-visible control is the room state event. Prefer a
+        future stable ``m.room.live_messaging`` state event when present, then
+        fall back to the current unstable
+        ``org.matrix.msc4357.live_messaging`` identifier.
+
+        A missing state event means Live Messages are enabled by default.
+        Transport/auth/server failures are deliberately propagated so callers
+        can conservatively fall back for the current response and retry later.
+        """
+
+        for event_type in (
+            M_ROOM_LIVE_MESSAGING,
+            MSC4357_LIVE_MESSAGING_STATE,
+        ):
+            try:
+                content = await self.get_room_state_event(room_id, event_type)
+            except MatrixAPIError as exc:
+                # GET /state/{type}/ returns 404/M_NOT_FOUND when this optional
+                # state event is absent. Absence is not lack of MSC4357 server
+                # support: the proposal explicitly defaults the room to enabled.
+                if exc.status == 404:
+                    continue
+                raise
+
+            if not isinstance(content, dict):
+                continue
+            enabled = content.get("enabled")
+            if isinstance(enabled, bool):
+                return enabled
+
+        return True
 
     async def set_room_state_event(
         self,
