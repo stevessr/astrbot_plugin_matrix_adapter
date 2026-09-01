@@ -87,6 +87,53 @@ class MatrixV119ContextPaginationTests(unittest.IsolatedAsyncioTestCase):
             )
 
 
+class MatrixV119UpgradeViaTests(unittest.IsolatedAsyncioTestCase):
+    async def test_sender_preserves_explicit_remote_join_servers(self):
+        mod = load_module("sender.sender_lib.room.operations.lifecycle")
+        calls = []
+
+        class Client:
+            async def join_room(self, room_id, server_name=None):
+                calls.append((room_id, server_name))
+                return {"room_id": room_id}
+
+        class Sender(mod.SenderRoomLifecycleMixin):
+            client = Client()
+
+        await Sender().join_room(
+            "!remote:elsewhere.example",
+            server_name=["elsewhere.example", "backup.example"],
+        )
+        self.assertEqual(
+            calls[-1],
+            (
+                "!remote:elsewhere.example",
+                ["elsewhere.example", "backup.example"],
+            ),
+        )
+
+    async def test_upgrade_reference_uses_event_sender_server_as_via(self):
+        mod = load_module("sender.sender_lib.room.operations.lifecycle")
+        calls = []
+
+        class Client:
+            async def join_room(self, room_id, server_name=None):
+                calls.append((room_id, server_name))
+                return {"room_id": room_id}
+
+        class Sender(mod.SenderRoomLifecycleMixin):
+            client = Client()
+
+        await Sender().join_room_from_upgrade_reference(
+            "!new:remote.example",
+            "@upgrader:via.example:8448",
+        )
+        self.assertEqual(
+            calls[-1],
+            ("!new:remote.example", ["via.example:8448"]),
+        )
+
+
 class MatrixV119RoomDirectoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_public_room_order_is_left_server_defined(self):
         mod = load_module("client.room_directory_mixin.public")
