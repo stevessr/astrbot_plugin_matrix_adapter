@@ -12,6 +12,7 @@ class StickerInfo:
     width: int | None = None
     height: int | None = None
     size: int | None = None
+    is_animated: bool | None = None
     thumbnail_url: str | None = None
     thumbnail_info: dict[str, Any] | None = None
 
