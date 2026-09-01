@@ -11,7 +11,10 @@ class MatrixV119MutualRoomsTests(unittest.IsolatedAsyncioTestCase):
         class Client(mod.UserMutualRoomsMixin):
             async def _request(self, method, endpoint, **kwargs):
                 calls.append((method, endpoint, kwargs))
-                return {"joined": ["!b:example.org", "!a:example.org"], "next_batch": "n"}
+                return {
+                    "joined": ["!b:example.org", "!a:example.org"],
+                    "next_batch": "n",
+                }
 
         result = await Client().get_mutual_rooms(" @alice:example.org ", " page-1 ")
         self.assertEqual(result["next_batch"], "n")
@@ -90,12 +93,41 @@ class MatrixV119StateReplacementTests(unittest.TestCase):
 class MatrixV119ImagePackTests(unittest.TestCase):
     def test_stable_image_pack_event_types_are_primary(self):
         mod = load_module("sticker.syncer.state")
-        self.assertEqual(mod.StickerSyncStateMixin.ROOM_IMAGE_PACK_TYPE, "m.room.image_pack")
+        self.assertEqual(
+            mod.StickerSyncStateMixin.ROOM_IMAGE_PACK_TYPE,
+            "m.room.image_pack",
+        )
         self.assertEqual(
             mod.StickerSyncStateMixin.USER_IMAGE_PACK_ROOMS_TYPE,
             "m.image_pack.rooms",
         )
-        self.assertIn("m.room.image_pack", mod.StickerSyncStateMixin.ROOM_PACK_TYPES)
+        self.assertIn(
+            "m.room.image_pack",
+            mod.StickerSyncStateMixin.ROOM_PACK_TYPES,
+        )
+
+
+class MatrixV119MXCGrammarTests(unittest.TestCase):
+    def test_utils_parser_accepts_only_stable_media_id_characters(self):
+        mod = load_module("utils.utils_lib.media.urls")
+        parser = mod.MatrixUtilsMediaUrlMixin._parse_mxc_url
+        self.assertEqual(
+            parser("mxc://example.org/AbC_123-xyz"),
+            ("example.org", "AbC_123-xyz"),
+        )
+        self.assertIsNone(parser("mxc://example.org/../secret"))
+        self.assertIsNone(parser("mxc://example.org/a%2Fb"))
+        self.assertIsNone(parser("mxc://example.org/a/b"))
+
+    def test_repository_parser_rejects_invalid_media_id(self):
+        mod = load_module("client.media.misc.repository")
+        parse = mod.MediaRepositoryMixin._parse_mxc_server_media_id
+        self.assertEqual(
+            parse("mxc://example.org/media_123-ABC"),
+            ("example.org", "media_123-ABC"),
+        )
+        with self.assertRaises(ValueError):
+            parse("mxc://example.org/../../etc-passwd")
 
 
 if __name__ == "__main__":
