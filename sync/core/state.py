@@ -24,6 +24,7 @@ class MatrixSyncManagerStateMixin:
         store_path: str | Path | None = None,
         on_token_invalid: Callable | None = None,
         filter_id: str | None = None,
+        use_state_after: bool = False,
     ):
         """
         Initialize sync manager
@@ -37,6 +38,9 @@ class MatrixSyncManagerStateMixin:
             user_id: Matrix user ID
             store_path: Base storage path
             on_token_invalid: Callback to handle invalid token (e.g., refresh token)
+            filter_id: Optional server-side sync filter ID
+            use_state_after: Request stable Matrix v1.16 ``state_after`` sync
+                semantics. Callers can leave this disabled for legacy clients.
         """
         self.client = client
         self.sync_timeout = sync_timeout
@@ -46,6 +50,7 @@ class MatrixSyncManagerStateMixin:
         self.store_path = store_path
         self.on_token_invalid = on_token_invalid
         self._filter_id = filter_id
+        self._use_state_after = bool(use_state_after)
         storage_config = get_plugin_config().storage_backend_config
 
         # Delegated components
