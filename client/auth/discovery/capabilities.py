@@ -15,6 +15,27 @@ class AuthDiscoveryCapabilitiesMixin:
             "GET", "/_matrix/client/versions", authenticated=False
         )
 
+    async def get_msc4357_server_advertisement(self) -> bool | None:
+        """Read the advisory MSC4357 advertisement used by the dev branch.
+
+        MSC4357 defines no mandatory ``/versions`` feature flag. Some servers
+        nevertheless publish ``org.matrix.msc4357`` or its ``.stable`` hint;
+        preserve the dev-branch behaviour and treat absence as unknown.
+        """
+        versions = await self.get_versions()
+        unstable = (
+            versions.get("unstable_features", {})
+            if isinstance(versions, dict)
+            else {}
+        )
+        if not isinstance(unstable, dict):
+            return None
+        for feature in ("org.matrix.msc4357.stable", "org.matrix.msc4357"):
+            value = unstable.get(feature)
+            if isinstance(value, bool):
+                return value
+        return None
+
     async def get_capabilities(self) -> dict[str, Any]:
         """Get server capabilities."""
         return await self._request("GET", "/_matrix/client/v3/capabilities")
