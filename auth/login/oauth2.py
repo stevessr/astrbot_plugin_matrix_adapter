@@ -10,14 +10,24 @@ class MatrixAuthOAuth2Mixin:
         try:
             from ..oauth2 import MatrixOAuth2
 
+            # A webhook is only required for the authorization-code flow. Matrix
+            # v1.18 / MSC4341 allows headless clients to fall back to the device
+            # authorization grant when no redirect URI is configured.
+            redirect_uri = (
+                self.config.auth_callback_url
+                if getattr(self.config, "webhook_uuid", None)
+                else None
+            )
             self.oauth2_handler = MatrixOAuth2(
                 client=self.client,
                 homeserver=self.config.homeserver,
                 client_id=self.client_id,
                 client_secret=self.client_secret,
-                redirect_uri=self.config.auth_callback_url,
+                redirect_uri=redirect_uri,
             )
-            self._active_auth_webhook_handler = self.oauth2_handler
+            self._active_auth_webhook_handler = (
+                self.oauth2_handler if redirect_uri else None
+            )
             try:
                 response = await self.oauth2_handler.login()
             finally:
