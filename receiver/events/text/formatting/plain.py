@@ -1,18 +1,72 @@
 """Plain-text and reply helpers for Matrix HTML fragments."""
 
-import html
 import re
+from html.parser import HTMLParser
 from urllib.parse import unquote
 
 from .patterns import (
-    BREAK_RE,
     MENTION_HREF_RE,
     MENTION_MXID_RE,
-    PARA_RE,
     REPLY_BLOCK_RE,
     REPLY_EVENT_RE,
-    TAG_RE,
 )
+
+
+class _MatrixHTMLPlainParser(HTMLParser):
+    """Small Matrix HTML-to-text parser with stable ordered-list semantics."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.list_stack: list[dict[str, object]] = []
+
+    def _newline(self) -> None:
+        if self.parts and not self.parts[-1].endswith("\n"):
+            self.parts.append("\n")
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag = tag.lower()
+        attr_map = {str(key).lower(): value for key, value in attrs}
+        if tag == "br":
+            self.parts.append("\n")
+            return
+        if tag == "ol":
+            start = 1
+            raw_start = attr_map.get("start")
+            if raw_start is not None:
+                try:
+                    start = int(str(raw_start).strip())
+                except (TypeError, ValueError):
+                    start = 1
+            self.list_stack.append({"type": "ol", "next": start})
+            return
+        if tag == "ul":
+            self.list_stack.append({"type": "ul"})
+            return
+        if tag == "li":
+            self._newline()
+            indent = "  " * max(0, len(self.list_stack) - 1)
+            if self.list_stack and self.list_stack[-1].get("type") == "ol":
+                current = int(self.list_stack[-1].get("next", 1))
+                self.parts.append(f"{indent}{current}. ")
+                self.list_stack[-1]["next"] = current + 1
+            elif self.list_stack:
+                self.parts.append(f"{indent}- ")
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in {"p", "li"}:
+            self._newline()
+        elif tag in {"ol", "ul"}:
+            if self.list_stack:
+                self.list_stack.pop()
+            self._newline()
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+    def text(self) -> str:
+        return "".join(self.parts)
 
 
 def _decode_matrix_to_segment(value: str | None) -> str:
@@ -24,10 +78,16 @@ def _decode_matrix_to_segment(value: str | None) -> str:
 def _plain_from_html(fragment: str) -> str:
     if not fragment:
         return ""
-    fragment = BREAK_RE.sub("\n", fragment)
-    fragment = PARA_RE.sub("\n", fragment)
-    fragment = TAG_RE.sub("", fragment)
-    return html.unescape(fragment)
+    parser = _MatrixHTMLPlainParser()
+    try:
+        parser.feed(fragment)
+        parser.close()
+        return parser.text()
+    except Exception:
+        # Formatted bodies are untrusted input. In the unlikely event that the
+        # tolerant stdlib parser still fails, fall back to conservative tag
+        # stripping rather than breaking message delivery.
+        return re.sub(r"<[^>]+>", "", fragment)
 
 
 def _extract_reply_info(
