@@ -161,6 +161,52 @@ class MatrixV117OneTimeKeyCountTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(received, [({}, None)])
 
 
+class MatrixV117IntentionalMentionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_room_message_without_mentions_still_emits_empty_m_mentions(self):
+        mod = load_module("sender.events.common")
+        calls = []
+
+        class Client:
+            async def send_message(self, **kwargs):
+                calls.append(kwargs)
+                return {"event_id": "$event:example.org"}
+
+        content = {"msgtype": "m.text", "body": "hello without mentions"}
+        await mod.send_content(
+            Client(),
+            content,
+            "!room:example.org",
+            None,
+            None,
+            False,
+            False,
+            None,
+        )
+        self.assertEqual(calls[0]["content"]["m.mentions"], {})
+
+    async def test_existing_intentional_mentions_are_preserved(self):
+        mod = load_module("sender.events.common")
+        calls = []
+
+        class Client:
+            async def send_message(self, **kwargs):
+                calls.append(kwargs)
+                return {}
+
+        mentions = {"user_ids": ["@alice:example.org"]}
+        await mod.send_content(
+            Client(),
+            {"msgtype": "m.text", "body": "hi", "m.mentions": mentions},
+            "!room:example.org",
+            None,
+            None,
+            False,
+            False,
+            None,
+        )
+        self.assertEqual(calls[0]["content"]["m.mentions"], mentions)
+
+
 class MatrixV117ResourceLimitTests(unittest.TestCase):
     def test_resource_limit_error_exposes_admin_contact(self):
         mod = load_module("client.base.errors")
