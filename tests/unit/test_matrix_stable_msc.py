@@ -51,6 +51,30 @@ class StableAccountDataMSCTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await client.get_invite_blocking())
 
 
+class StableCapabilityMSCTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.mod = load_module("client.auth.discovery.capabilities")
+
+    async def test_forced_forget_capability_defaults_false_and_reads_enabled(self):
+        class Client(self.mod.AuthDiscoveryCapabilitiesMixin):
+            enabled = False
+
+            async def _request(self, method, endpoint, **kwargs):
+                self.assert_request = (method, endpoint)
+                if self.enabled:
+                    return {
+                        "capabilities": {
+                            "m.forget_forced_upon_leave": {"enabled": True}
+                        }
+                    }
+                return {"capabilities": {}}
+
+        client = Client()
+        self.assertFalse(await client.is_forget_forced_upon_leave())
+        client.enabled = True
+        self.assertTrue(await client.is_forget_forced_upon_leave())
+
+
 class StableModerationMSCTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.mod = load_module("client.message.receipts.events.modify")
