@@ -6,7 +6,17 @@ from ..core import _log
 
 
 class MatrixOAuth2DiscoveryRegistrationMixin:
-    async def _register_client(self, redirect_uri: str) -> dict[str, str]:
+    async def _register_client(
+        self,
+        redirect_uri: str | None = None,
+        *,
+        grant_types: list[str] | None = None,
+    ) -> dict[str, str | None]:
+        """Dynamically register a native OAuth client.
+
+        ``redirect_uri`` may be omitted for Matrix v1.18 / MSC4341 device-code
+        clients. Authorization-code callers keep the previous request shape.
+        """
         if not self.registration_endpoint:
             raise Exception(
                 "Dynamic client registration not supported by this server. "
@@ -16,15 +26,18 @@ class MatrixOAuth2DiscoveryRegistrationMixin:
         try:
             _log("info", f"Registering OAuth2 client with {self.registration_endpoint}")
 
-            registration_data = {
+            requested_grants = list(grant_types or ["authorization_code", "refresh_token"])
+            registration_data: dict[str, object] = {
                 "client_name": "AstrBot Matrix Client",
                 "client_uri": "https://github.com/Soulter/AstrBot",
-                "redirect_uris": [redirect_uri],
-                "grant_types": ["authorization_code", "refresh_token"],
-                "response_types": ["code"],
+                "grant_types": requested_grants,
                 "token_endpoint_auth_method": "none",
                 "application_type": "native",
             }
+            if redirect_uri:
+                registration_data["redirect_uris"] = [redirect_uri]
+                if "authorization_code" in requested_grants:
+                    registration_data["response_types"] = ["code"]
 
             timeout_cfg = aiohttp.ClientTimeout(
                 total=self._get_oauth_http_timeout_seconds()
@@ -52,8 +65,10 @@ class MatrixOAuth2DiscoveryRegistrationMixin:
                     _log("info", f"✅ Successfully registered client: {client_id}")
 
                     return {
-                        "client_id": client_id,
-                        "client_secret": client_secret,
+                        "client_id": str(client_id),
+                        "client_secret": (
+                            str(client_secret) if client_secret is not None else None
+                        ),
                     }
 
         except Exception as e:
