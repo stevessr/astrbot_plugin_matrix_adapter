@@ -2,6 +2,8 @@
 
 from astrbot.api.message_components import Plain
 
+from ......room_topic import extract_room_topic
+
 
 async def handle_room_topic_change(receiver, chain, event, _: str):
     """
@@ -14,7 +16,7 @@ async def handle_room_topic_change(receiver, chain, event, _: str):
         _: Event type (unused)
     """
     content = event.content or {}
-    new_topic = content.get("topic", "")
+    new_topic, _html_topic = extract_room_topic(content)
     sender = getattr(event, "sender", "Someone")
 
     if new_topic:
