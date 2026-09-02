@@ -1,5 +1,7 @@
 """MSC4145 / MSC2676 message edit normalization."""
 
+from collections import OrderedDict
+
 from astrbot.api import logger
 
 from .....constants import REL_TYPE_REPLACE
@@ -8,17 +10,54 @@ from .....constants import REL_TYPE_REPLACE
 class MatrixEventProcessorMessagesEditMixin:
     """Normalize m.replace edit events before delivery."""
 
+    def _record_latest_replacement(self, event, original_event_id: str) -> bool:
+        """Return False for a stale replacement revision.
+
+        Matrix v1.16 clarifies that the newest valid replacement is selected by
+        ``origin_server_ts`` and then, for equal timestamps, the
+        lexicographically largest ``event_id``.  /sync and backfill may deliver
+        revisions out of order, so remember the newest revision observed for a
+        target and suppress older revisions.
+        """
+        if not original_event_id:
+            return True
+
+        cache = getattr(self, "_latest_replacements", None)
+        if not isinstance(cache, OrderedDict):
+            cache = OrderedDict()
+            self._latest_replacements = cache
+
+        room_id = str(getattr(event, "room_id", "") or "")
+        event_id = str(getattr(event, "event_id", "") or "")
+        raw_ts = getattr(event, "origin_server_ts", 0)
+        try:
+            origin_server_ts = int(raw_ts or 0)
+        except (TypeError, ValueError):
+            origin_server_ts = 0
+
+        target_key = (room_id, original_event_id)
+        revision_key = (origin_server_ts, event_id)
+        previous = cache.get(target_key)
+        if previous is not None and revision_key <= previous:
+            logger.debug(
+                "忽略旧 m.replace revision："
+                f"target={original_event_id} revision={revision_key} latest={previous}"
+            )
+            return False
+
+        cache[target_key] = revision_key
+        cache.move_to_end(target_key, last=True)
+        max_entries = int(getattr(self, "_max_processed_messages", 1000) or 1000)
+        while len(cache) > max(1, max_entries):
+            cache.popitem(last=False)
+        return True
+
     def _normalize_message_edit(self, event, event_content) -> bool:
         """Normalize an edit event's content in place.
 
         Returns True when the edit must be skipped, False to continue with the
-        (possibly normalized) event content.  Edits are delivered even when
-        their target message was already processed; the callback adds the
-        target text as quote context.
+        (possibly normalized) event content.
         """
-        # MSC4145 / MSC2676: 处理 m.replace 编辑事件。
-        # 编辑事件始终继续进入回调，由回调补充原消息 quote，避免丢失
-        # 编辑前后的上下文。
         relates_to = event_content.get("m.relates_to", {})
         if not (
             isinstance(relates_to, dict)
@@ -27,8 +66,15 @@ class MatrixEventProcessorMessagesEditMixin:
             return False
 
         original_event_id = relates_to.get("event_id")
-        # Normalize the replacement payload, but always deliver the edit.  The
-        # callback fetches the target event and adds ``[quote] ->`` context.
+        original_event_id = (
+            str(original_event_id) if isinstance(original_event_id, str) else ""
+        )
+        if not self._record_latest_replacement(event, original_event_id):
+            return True
+
+        # A replacement must include m.new_content.  Keep compatibility with
+        # older clients which only sent a fallback body, but never let that
+        # compatibility path affect ordering of newer valid edits.
         new_content = event_content.get("m.new_content")
         if isinstance(new_content, dict):
             old_body = event_content.get("body", "")
@@ -41,8 +87,12 @@ class MatrixEventProcessorMessagesEditMixin:
                 if fb.startswith("* "):
                     fb = fb[2:]
                 event_content["formatted_body"] = fb
+            else:
+                event_content.pop("formatted_body", None)
             if "format" in new_content:
                 event_content["format"] = new_content["format"]
+            else:
+                event_content.pop("format", None)
             if "msgtype" in new_content:
                 event_content["msgtype"] = new_content["msgtype"]
             event.body = cleaned_body
@@ -51,7 +101,6 @@ class MatrixEventProcessorMessagesEditMixin:
                 f"编辑事件已规范化：{event.event_id} (原始={original_event_id})"
             )
         else:
-            # 没有 m.new_content 时至少去掉 * 前缀
             body = event_content.get("body", "")
             if body.startswith("* "):
                 cleaned = body[2:]
