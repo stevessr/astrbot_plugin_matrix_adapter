@@ -20,6 +20,19 @@ class AuthDiscoveryCapabilitiesMixin:
             "GET", "/_matrix/client/versions", authenticated=False
         )
 
+    async def get_server_support(self) -> dict[str, Any]:
+        """Discover server/operator support contacts (v1.10 / MSC1929).
+
+        The stable well-known document can contain ``contacts`` and an optional
+        ``support_page``. Unknown extension fields are deliberately preserved.
+        """
+        response = await self._request(
+            "GET",
+            "/.well-known/matrix/support",
+            authenticated=False,
+        )
+        return response if isinstance(response, dict) else {}
+
     async def get_msc4357_server_advertisement(self) -> bool | None:
         """Read the advisory MSC4357 advertisement used by the dev branch.
 
