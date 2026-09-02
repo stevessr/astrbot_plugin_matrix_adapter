@@ -25,6 +25,9 @@ PushMixin.get_push_rule_actions = PushRuleMixin.__dict__["get_push_rule_actions"
 PushMixin.set_push_rule_actions = PushRuleMixin.__dict__["set_push_rule_actions"]
 PushMixin.get_push_rule_enabled = PushRuleMixin.__dict__["get_push_rule_enabled"]
 PushMixin.set_push_rule_enabled = PushRuleMixin.__dict__["set_push_rule_enabled"]
+PushMixin.is_suppress_edits_push_rule_enabled = PushRuleMixin.__dict__[
+    "is_suppress_edits_push_rule_enabled"
+]
 PushMixin.get_pushers = PushNotificationMixin.__dict__["get_pushers"]
 PushMixin.set_pusher = PushNotificationMixin.__dict__["set_pusher"]
 PushMixin.get_notifications = PushNotificationMixin.__dict__["get_notifications"]
