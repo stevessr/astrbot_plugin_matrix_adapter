@@ -20,7 +20,7 @@ class SASVerificationHandshakeNegotiationCoreMixin:
     async def _send_accept(
         self, to_user: str, to_device: str, transaction_id: str, start_content: dict
     ):
-        """发送 accept - 使用真正的密钥协商"""
+        """发送 accept - 使用真正的共同算法集合。"""
         their_key_agreement = self._normalize_algorithm_values(
             start_content.get("key_agreement_protocols", [])
         )
@@ -35,19 +35,38 @@ class SASVerificationHandshakeNegotiationCoreMixin:
         key_agreement = self._pick_algorithm(
             KEY_AGREEMENT_PROTOCOLS,
             their_key_agreement,
-            fallback="curve25519-hkdf-sha256",
         )
-        hash_algo = self._pick_algorithm(HASHES, their_hashes, fallback="sha256")
-        mac = self._pick_algorithm(
-            MESSAGE_AUTHENTICATION_CODES,
-            their_macs,
-            fallback="hkdf-hmac-sha256.v2",
-        )
+        hash_algo = self._pick_algorithm(HASHES, their_hashes)
+        mac = self._pick_algorithm(MESSAGE_AUTHENTICATION_CODES, their_macs)
         sas_methods = [s for s in SHORT_AUTHENTICATION_STRING if s in their_sas]
-        if not sas_methods:
-            sas_methods = list(SHORT_AUTHENTICATION_STRING)
 
         session = self._sessions.get(transaction_id, {})
+        if not key_agreement or not hash_algo or not mac or not sas_methods:
+            logger.warning(
+                "[E2EE-Verify] SAS 协商失败：对端与本端没有完整的共同算法集合"
+            )
+            cancel_bound = getattr(self, "_cancel_bound_verification_session", None)
+            if callable(cancel_bound) and isinstance(session, dict) and session:
+                await cancel_bound(
+                    session,
+                    transaction_id,
+                    "m.unknown_method",
+                    "No common SAS verification algorithms",
+                    sender=to_user,
+                    from_device=to_device,
+                )
+            else:
+                if isinstance(session, dict):
+                    session["state"] = "cancelled"
+                    session["cancel_code"] = "m.unknown_method"
+                await self._send_cancel(
+                    to_user,
+                    to_device,
+                    transaction_id,
+                    "m.unknown_method",
+                    "No common SAS verification algorithms",
+                )
+            return
 
         our_public_key = await self._resolve_our_public_key(session)
 
@@ -72,6 +91,8 @@ class SASVerificationHandshakeNegotiationCoreMixin:
         await self._send_to_device(
             M_KEY_VERIFICATION_ACCEPT, to_user, to_device, content
         )
+        session["accept_sent"] = True
+        session["state"] = "accept_sent"
         logger.info(
             f"[E2EE-Verify] 已发送 accept (commitment: {(commitment or '')[:16]}...)"
         )
