@@ -1,6 +1,6 @@
 # 已支持的 Matrix Spec Change（MSC）
 
-> Stable 基线：**Matrix Client-Server v1.19（2026-07-08）**。截至 2026-09-02，Matrix 官方 latest release 仍为 v1.19。本文件按 **v1.10 → v1.19** 逐版对账。只把与 AstrBot Client Adapter 职责直接相关、且代码真实覆盖的能力记为 ✅；Application Service / Federation / homeserver-only 变更明确记为 N/A；安全敏感但尚未完整实现的能力继续标记为部分支持。
+> Stable 基线：**Matrix Client-Server v1.19（2026-07-08）**。截至 2026-09-02，Matrix 官方 latest release 仍为 v1.19。本文件按 **v1.7 → v1.19** 逐版对账。只把与 AstrBot Client Adapter 职责直接相关、且代码真实覆盖的能力记为 ✅；Application Service / Federation / homeserver-only 变更明确记为 N/A；安全敏感但尚未完整实现的能力继续标记为部分支持。
 
 ## Stable MSC 支持总表
 
@@ -9,10 +9,12 @@
 | MSC1767 | Extensible Events | 收/发 | ✅ 音频/文本/投票等 extensible content |
 | MSC1929 | Server Support Discovery | 收 | ✅ `get_server_support()` → `/.well-known/matrix/support`，保留扩展字段 |
 | MSC2191 | Mathematical Messages | 发 | ✅ `send_math_message()` 生成 `span/div[data-mx-maths]` + plain fallback，复用 E2EE-aware send path |
+| MSC2246 | Asynchronous Media Uploads | 发 | ✅ `upload_id` + upload-status polling，兼容直接 `content_uri` |
 | MSC2403 | Knock Rooms | 收/发 | ✅ `/sync.rooms.knock`、knock membership、stable `via` |
 | MSC2530 | Media Captions | 收/发 | ✅ `body` caption / formatted media message 兼容 |
 | MSC2545 | Image Packs | 收 | ✅ stable `m.room.image_pack` / `m.image_pack.rooms`，兼容 `im.ponies.*` |
 | MSC2666 | Mutual Rooms | 发 | ✅ stable `GET /_matrix/client/v1/mutual_rooms` + pagination |
+| MSC2677 | Reactions | 收/发 | ✅ `m.annotation` relation 收发 |
 | MSC2697 | Dehydrated Devices | E2EE | ✅ 脱水设备恢复 |
 | MSC2746 | VoIP / MatrixRTC | 收 | ✅ 1 对 1 VoIP 与群组 Live 通话状态 |
 | MSC2781 | Remove Reply Fallbacks | 发/收 | ✅ outbound 不再复制旧消息正文或 `<mx-reply>`；接收仍兼容历史 fallback |
@@ -31,6 +33,7 @@
 | MSC3824 | OAuth-aware Clients | 收/发 | ✅ adapter-relevant preferred SSO / actions / account management |
 | MSC3939 | Account Locking | 收 | ✅ `M_USER_LOCKED` / `soft_logout`; `/sync` 保留 session/E2EE |
 | MSC3952 | Intentional Mentions | 收/发 | ✅ `m.mentions` |
+| MSC3958 | Suppress Edit Notifications | 收 | ✅ `is_suppress_edits_push_rule_enabled()` 查询 stable default push rule |
 | MSC3967 | Cross-signing First Upload | E2EE | ✅ 首次上传先无 UIA，仅收到 challenge 后进入 UIA |
 | MSC3981 | Recursive Relations | 收 | ✅ `get_event_relations(..., recurse=...)` / sender wrapper |
 | MSC4025 | Local User Erasure | 发 | ✅ `deactivate_account(..., erase=True)` |
@@ -70,6 +73,42 @@
 | MSC4423 | Room Directory Ordering | 收 | ✅ 保留 homeserver 返回顺序 |
 
 > MSC4357 Live Messages 目前仍为 **unstable/proposal**，不计入 stable 支持。
+
+## Matrix v1.7 changelog 对账
+
+| v1.7 Client-Server 变更 | 覆盖状态 | 当前实现 |
+|------------------------|----------|----------|
+| MSC3925 server-side `m.replace` aggregation | ✅ | parser 应用 homeserver bundled `unsigned.m.relations.m.replace`，standalone edit 另有严格 target/revision 校验 |
+| MSC3758 / MSC3966 push-rule property conditions | ✅ API-compatible | push-rule JSON 保持开放结构，不丢弃 `event_property_is` / `event_property_contains` |
+| MSC2677 `m.annotation` reactions | ✅ | reaction 收发与 relation query 已实现 |
+| MSC2246 asynchronous media uploads | ✅ | 支持 create/upload-id/status polling 与传统同步 upload |
+| MSC3952 intentional mentions | ✅ | stable `m.mentions` 收发；后续 v1.17 已移除 legacy mention fallback |
+| MSC2746 improved VoIP signaling | ✅/透传 | VoIP / MatrixRTC event content 保持兼容 |
+| MSC3970 transaction ID scope | ✅/底层 | 发送事务 ID 按请求生成，不跨 endpoint 误复用 |
+| MSC3860 media redirects | ✅ HTTP layer | 下载走标准 HTTP redirect 行为，不把 redirect 当 Matrix JSON 错误解析 |
+| `POST /_matrix/client/v1/login/get_token` | ✅ | `generate_login_token(auth=...)`；见 v1.12 审计中的 capability 与 account-state hardening |
+| MSC3987 remove `dont_notify` / `coalesce` push actions | ✅ compatibility boundary | adapter 不主动生成已移除 action；generic push-rule API 仍透传调用方显式 payload，便于旧 homeserver 管理 |
+| Appservice ping | ➖ N/A | Application Service-only |
+
+## Matrix v1.8 changelog 对账
+
+| v1.8 Client-Server 变更 | 覆盖状态 | 当前实现 |
+|------------------------|----------|----------|
+| MSC2249 caller must be joined to report an event | ✅ server-enforced | `report_event()` 使用 stable endpoint；是否 joined 由 homeserver 权威校验，adapter 不以可能过期的本地成员缓存替代授权判断 |
+| `m.reaction.type` schema fix | ✅ | reaction events 通过真实 event `type` 路由，不依赖旧缺失 schema |
+| `publicRooms.room_types` may include null | ✅/透传 | public-room response 不用封闭 enum 重写 `room_types` |
+| SAS MAC clarification | ✅ | 当前 SAS 实现按后续 stable clarification 计算/验证 MAC |
+| MSC4040 federation SRV changes | ➖ N/A | Server-Server discovery，不属于 Client Adapter |
+
+## Matrix v1.9 changelog 对账
+
+| v1.9 Client-Server 变更 | 覆盖状态 | 当前实现 |
+|------------------------|----------|----------|
+| MSC3958 `m.rule.suppress_edits` | ✅ | `is_suppress_edits_push_rule_enabled()` 查询 `/pushrules/global/override/m.rule.suppress_edits/enabled`，不复制完整 push evaluator |
+| MSC1772 Space `via` required | ✅ receive/preserve | `m.space.child` / `m.space.parent` content 完整保留 `via`；system-event renderer 也展示 via 列表 |
+| `publicRooms` server name case sensitivity | ✅ pass-through | server 参数不做 lower-case 规范化 |
+| absent `m.room.name.name` is invalid-ish clarification | ✅ defensive | room state parser 不凭空构造合法 name；缺失字段按缺失处理 |
+| `initialSync` account-data/presence schema fixes | ✅/兼容 | 主同步路径为 `/sync`; generic event/account data 仍保留原始对象结构 |
 
 ## Matrix v1.10 changelog 对账
 
@@ -225,6 +264,7 @@
 
 ## 回归测试索引
 
+- `tests/unit/test_matrix_v109_stable.py`
 - `tests/unit/test_matrix_v110_stable.py`
 - `tests/unit/test_matrix_v111_stable.py`
 - `tests/unit/test_matrix_v112_stable.py`
@@ -235,10 +275,7 @@
 - `tests/unit/test_matrix_v116_followup.py`
 - `tests/unit/test_matrix_v117_stable.py`
 - `tests/unit/test_matrix_v119_stable.py`
+- 既有 v1.7/v1.8 行为由通用 reaction/media/report/edit 测试及后续 stable regression 共同覆盖
 - 既有 v1.18/v1.19 compatibility tests
 
 这些测试用于固定 wire shape 与 protocol semantics；是否通过完整 CI 以实际运行结果为准，本文件不会把“已写测试”表述成“CI 已通过”。
-
-## Unstable / proposal 兼容说明
-
-仓库仍保留少量 unstable/proposal 行为，例如 MSC4357 Live Messages。后续 Matrix stable 发版时必须重新对照正式 changelog / OpenAPI schema 再迁移到 stable 表；不会仅因 proposal 已实现就提前标记为 stable。
