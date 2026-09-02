@@ -15,16 +15,18 @@ class SenderRelationsMixin:
         recurse: bool | None = None,
     ) -> dict:
         """Get Matrix relations, optionally recursively (v1.10 / MSC3981)."""
-        return await self.client.get_event_relations(
-            room_id=room_id,
-            event_id=event_id,
-            rel_type=rel_type,
-            event_type=event_type,
-            from_token=from_token,
-            to_token=to_token,
-            limit=limit,
-            recurse=recurse,
-        )
+        kwargs = {
+            "room_id": room_id,
+            "event_id": event_id,
+            "rel_type": rel_type,
+            "event_type": event_type,
+            "from_token": from_token,
+            "to_token": to_token,
+            "limit": limit,
+        }
+        if recurse is not None:
+            kwargs["recurse"] = recurse
+        return await self.client.get_event_relations(**kwargs)
 
     async def set_read_markers(
         self,
