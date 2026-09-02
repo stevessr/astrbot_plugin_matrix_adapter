@@ -7,11 +7,12 @@ import json
 
 from .canonical import _canonical_json
 from .encoding import _decode_base64, _encode_unpadded_base64
-from .kdf import _compute_hkdf
+from .kdf import _compute_hkdf, _compute_sas_mac_v2
 
 __all__ = [
     "_canonical_json",
     "_compute_hkdf",
+    "_compute_sas_mac_v2",
     "_decode_base64",
     "_encode_unpadded_base64",
     "base64",
