@@ -1,44 +1,51 @@
 # Matrix Stable Client-Server 覆盖审计
 
-> Stable 基线：**Matrix Client-Server v1.19（2026-07-08）**。截至 2026-09-02，官方 latest stable 仍为 v1.19。本文件按 **v1.5 → v1.19** 逐版对账，只把普通 AstrBot Client Adapter 真正承担且代码已覆盖的能力记为 ✅；Application Service / Federation / homeserver-only 项标 N/A；安全敏感但未完整实现的 E2EE 能力继续标部分支持。
+> Stable 基线：**Matrix Client-Server v1.19（2026-07-08）**。截至 2026-09-02，官方 latest stable 仍为 v1.19。本文件按 **v1.3 → v1.19** 逐版对账。只把普通 AstrBot Client Adapter 真正承担且代码已覆盖的能力记为 ✅；Application Service / Federation / homeserver-only 项标 N/A；安全敏感但未完整实现的 E2EE 能力继续标部分支持。
 
 ## Stable MSC 总表
 
 | MSC | 能力 | 状态 |
 |---|---|---|
-| MSC1767 | Extensible Events | ✅ 文本/媒体/投票等 extensible content |
+| MSC1767 | Extensible Events | ✅ |
 | MSC1929 | Server Support Discovery | ✅ `get_server_support()` |
-| MSC2191 | Mathematical Messages | ✅ `send_math_message()` + E2EE-aware send |
-| MSC2246 | Asynchronous Media Uploads | ✅ `upload_id` + status polling |
-| MSC2403 | Knock Rooms | ✅ sync/knock/stable `via` |
-| MSC2530 | Media Captions | ✅ `body` caption / formatted media |
-| MSC2545 | Image Packs | ✅ stable image-pack event types |
-| MSC2666 | Mutual Rooms | ✅ stable v1 endpoint + pagination |
+| MSC2191 | Mathematical Messages | ✅ E2EE-aware `send_math_message()` |
+| MSC2246 | Asynchronous Media Uploads | ✅ upload ID/status polling |
+| MSC2285 | Private receipts / optional fully-read | ✅ `m.read.private`, optional `m.fully_read`, receipt helper |
+| MSC2403 | Knock Rooms | ✅ |
+| MSC2530 | Media Captions | ✅ |
+| MSC2545 | Image Packs | ✅ |
+| MSC2666 | Mutual Rooms | ✅ |
+| MSC2674 / MSC2675 | Event relations / aggregation | ✅ generic relation APIs + bundled relations |
+| MSC2676 | Event Edits (`m.replace`) | ✅ strict replacement handling |
 | MSC2677 | Reactions | ✅ `m.annotation` |
 | MSC2697 | Dehydrated Devices | ✅ |
 | MSC2746 | VoIP / MatrixRTC | ✅ adapter-relevant receive state |
-| MSC2781 | Remove Reply Fallbacks | ✅ outbound no `<mx-reply>`/copied body |
+| MSC2781 | Remove Reply Fallbacks | ✅ |
 | MSC2867 | Marking Rooms Unread | ✅ |
+| MSC2918 | Refresh Tokens | ✅ login opt-in + persistence + `/refresh` |
 | MSC2965 / MSC4143 | OAuth/Auth metadata | ✅ |
 | MSC2967 | OAuth scopes | ✅ |
 | MSC3026 | Busy Presence | ✅ |
 | MSC3030 | Timestamp to Event | ✅ client + sender helper |
 | MSC3245 | Voice Messages | ✅ |
 | MSC3266 | Room Summary | ✅ |
-| MSC3267 | Extensible Media / `m.reference` | ✅ |
+| MSC3267 | Reference Relations (`m.reference`) | ✅ |
 | MSC3381 | Polls | ✅ |
+| MSC3440 / MSC3816 / MSC3856 / MSC3715 | Threads | ✅ send/receive/relation behavior |
 | MSC3488 / MSC3489 / MSC3672 | Location / Live Location | ✅ |
-| MSC3765 | Rich Room Topics | ✅ stable `m.topic` + legacy plain fallback |
-| MSC3771 | Thread Read Receipts | ✅ |
-| MSC3783 | SAS MAC `hkdf-hmac-sha256.v2` | ✅ strict negotiated MAC + correct fallback |
+| MSC3765 | Rich Room Topics | ✅ |
+| MSC3771 / MSC3773 | Thread receipts / notifications | ✅ adapter-relevant receipt handling |
+| MSC3783 | SAS MAC `hkdf-hmac-sha256.v2` | ✅ hardened negotiated MAC |
+| MSC3787 | `knock_restricted` | ✅ open join-rule state path |
 | MSC3824 | OAuth-aware clients | ✅ adapter-relevant portion |
+| MSC3827 | Public room type filtering | ✅ `room_types` + stable POST wire |
 | MSC3939 | Account Locking | ✅ preserve session/E2EE |
 | MSC3952 | Intentional Mentions | ✅ |
 | MSC3958 | Suppress Edit Notifications | ✅ push-rule helper |
 | MSC3967 | Cross-signing first upload | ✅ no proactive UIA |
 | MSC3981 | Recursive Relations | ✅ |
-| MSC4025 | Local Erasure | ✅ `erase=True` |
-| MSC4041 | Retry-After | ✅ JSON + HTTP header |
+| MSC4025 | Local Erasure | ✅ |
+| MSC4041 | Retry-After | ✅ body + HTTP header |
 | MSC4075 | Ringing Notifications | ✅ |
 | MSC4115 | `unsigned.membership` | ✅ |
 | MSC4126 | Header Authentication | ✅ Bearer header |
@@ -53,7 +60,7 @@
 | MSC4169 | Redactions via `/send` | ✅ |
 | MSC4175 | User Time Zone | ✅ `m.tz` |
 | MSC4191 | OAuth Account Management | ✅ |
-| MSC4210 | Remove Legacy Mentions | ✅ empty `m.mentions` when needed |
+| MSC4210 | Remove Legacy Mentions | ✅ |
 | MSC4222 | `/sync state_after` | ✅ authoritative state handling |
 | MSC4230 | Animated Images | ✅ |
 | MSC4260 | User Reporting | ✅ |
@@ -72,128 +79,156 @@
 | MSC4380 | Invite Blocking | ✅ |
 | MSC4423 | Room Directory Ordering | ✅ |
 
+> **更正：MSC3267 是 Reference Relations (`m.reference`)**。旧文档曾误写为 Extensible Media，现已按正式 proposal/changelog 修正。
+>
 > MSC4357 Live Messages 仍是 unstable/proposal，不计入 stable coverage。
+
+## v1.3
+
+| 变更 | 状态 | 当前实现 |
+|---|---|---|
+| MSC3567 `/messages` 的 `from` 可省略 | ✅ | `room_messages(from_token=None)` 不发送 `from` |
+| MSC2918 refresh tokens | ✅ fixed | password/token login 默认发送 `refresh_token: true`；可用 `request_refresh_token=False` 关闭；返回 token 持久化并可调用 `/refresh` |
+| MSC2674 structured relations | ✅ | `m.relates_to` 原样支持 |
+| MSC2675/MSC3666 relation aggregation | ✅ | parser 保留/应用 bundled relation data |
+| MSC3787 `knock_restricted` | ✅ | join-rule sender 不做过时封闭 enum；receiver 可识别展示 |
+| MSC3700 Megolm `sender_key/device_id` deprecation | ✅ security semantics | 出站按规范 SHOULD 继续携带兼容字段；入站不使用 encrypted event 外层字段验证来源，而使用 inbound-session provenance + validated device keys |
+| UIA `type` may be omitted | ✅ | OAuth UIA completion 已支持 session-only payload |
+| optional room avatar URL | ✅ defensive | receiver 不假设 URL 必定存在 |
+| AS timestamp massaging | ➖ N/A | Application Service-only |
+
+### v1.3 Refresh Token 补全
+
+此前代码会保存 `refresh_token`、也实现了 `/refresh`，但普通 password/token login 没有请求 refresh token，导致许多 homeserver 不会返回它。现在登录 payload 默认包含：
+
+```json
+{"refresh_token": true}
+```
+
+因此标准 Matrix token-refresh 链路从请求、保存到刷新真正闭环。
+
+## v1.4
+
+| 变更 | 状态 | 当前实现 |
+|---|---|---|
+| MSC3786 `.m.rule.room.server_acl` push rule | ✅ API-compatible | push-rule payload 为开放结构，不丢弃 stable default rule |
+| MSC3818 copy room `type` on upgrade | ➖ homeserver behavior | `/upgrade` 调用无需客户端重复模拟 server copy |
+| MSC3827 `/publicRooms` room types | ✅ fixed | `room_types: list[str|None]` 一等参数；`None` 可包含无 room type 的房间；响应 `room_type` 原样保留 |
+| filtered remote `/publicRooms` wire | ✅ fixed | POST 时 `server` 放 query；`filter/limit/since` 放 JSON body，符合 stable OpenAPI |
+| MSC2676 `m.replace` edits | ✅ | send/receive/latest replacement validation |
+| MSC2285 `m.read.private` | ✅ | private receipt helper |
+| MSC2285 optional `m.fully_read` | ✅ | read markers 不强制 fully-read |
+| MSC2285 fully-read through receipt endpoint | ✅ | `send_fully_read_receipt()` |
+| MSC3440 etc. threads | ✅ | `m.thread` send/receive/edit behavior |
+| MSC3771 thread receipts | ✅ | receipt `thread_id` |
+| CORP media header | ➖ server-side | media repository response header |
+| removed policy-room sharing | ✅ boundary | adapter 不依赖已移除机制 |
+
+### v1.4 `/publicRooms` 修复
+
+过滤目录时 Matrix 使用 `POST /publicRooms`，但远程 `server` 仍是 **query parameter**。旧实现错误地把 `server` 塞进 POST body。现在：
+
+```text
+POST /_matrix/client/v3/publicRooms?server=remote.example
+```
+
+body 示例：
+
+```json
+{
+  "limit": 20,
+  "filter": {
+    "generic_search_term": "matrix",
+    "room_types": [null, "m.space"]
+  }
+}
+```
 
 ## v1.5
 
-| 变更 | 状态 | 实现 |
-|---|---|---|
-| MSC3267 `m.reference` relations | ✅ | relation API / custom event path 原样支持 `m.reference` |
-| in-room `m.key.verification.request` msgtype | ✅ | room verification dispatcher 明确识别 `m.room.message` +该 msgtype |
-| `device_one_time_keys_count` naming clarification | ✅ | sync 使用 stable field，v1.17 omission rule 也已修正 |
-| `POST /refresh` requires `refresh_token` | ✅ | `refresh_access_token()` 本地拒绝空/非法 token，并发送 required field |
-| `set_sound` replaced by `set_tweak` | ✅ boundary | adapter 不生成废弃 `set_sound`; generic push-rule payload 保持 pass-through |
-| AS local-user interest clarification | ➖ N/A | Application Service-only |
+- ✅ MSC3267 `m.reference` relation。
+- ✅ in-room `m.key.verification.request` msgtype 进入 E2EE verification dispatcher。
+- ✅ `/refresh` 本地要求非空 `refresh_token`，并发送 required field。
+- ✅ stable `device_one_time_keys_count`；后续 omission rule 也已覆盖。
+- ➖ AS local-user-interest clarification 为 N/A。
 
 ## v1.6
 
-| 变更 | 状态 | 实现 |
-|---|---|---|
-| MSC3030 `/rooms/{roomId}/timestamp_to_event` | ✅ | `timestamp_to_event()` + `MatrixSender.get_event_at_timestamp()`；校验 non-negative ms 与 `dir=b/f` |
-| MSC3743 unknown endpoint/method errors | ✅ | `M_UNRECOGNIZED`, `is_unrecognized`, `is_endpoint_unsupported`; 仅 404/405 + `M_UNRECOGNIZED` 判定 endpoint unsupported，普通 `M_NOT_FOUND` 不误判 |
-| MSC3783 `hkdf-hmac-sha256.v2` | ✅ hardened | 规范算法：HKDF(shared secret, MAC info) → HMAC-SHA256(message) → correct unpadded Base64；收发均遵循 session 协商方法 |
-| deprecated `hkdf-hmac-sha256` | ✅ fail-closed | 仅 crypto backend 明确提供 `calculate_mac_invalid_base64` 时兼容 libolm bug；无兼容实现时不伪造错误 MAC |
-| `/context?limit=0` still returns event | ✅ compatible | context API 不把 limit=0 当“无 event”特殊处理 |
-| stripped-state clarification | ✅ pass-through | invite/knock stripped state 保留原始 events |
-| default room version 10 | ➖ server default | adapter 不硬编码默认版本，可显式传 room version |
-
-### SAS v1.6 安全修复
-
-旧 fallback 曾把被 MAC 的 key 错误当作 HKDF `info`，且 `KEY_IDS` 只做 SHA-256，这并不是 Matrix SAS MAC。现在 fallback 与规范一致：完整 `MATRIX_KEY_VERIFICATION_MAC...<key_id|KEY_IDS>` 作为 HKDF info，派生 HMAC key，再对 public key 或排序后的 key-id CSV 做 HMAC-SHA256。MSC3783 要求 v2 使用正确 Base64；若双方都支持 v2，绝不降级到 deprecated 方法。
+- ✅ MSC3030 `timestamp_to_event()` + `MatrixSender.get_event_at_timestamp()`，校验非负毫秒与 `b/f`。
+- ✅ MSC3743 `M_UNRECOGNIZED` / `is_endpoint_unsupported`，不把 `M_NOT_FOUND` 误判 feature absence。
+- ✅ MSC3783 SAS MAC v2：HKDF(full Matrix MAC info) → HMAC-SHA256(message) → correct unpadded Base64。
+- ✅ deprecated legacy MAC 只在 backend 提供 `calculate_mac_invalid_base64()` 时兼容，否则 fail closed。
 
 ## v1.7
 
-- ✅ MSC3925 bundled `unsigned.m.relations.m.replace`；standalone edit 还会验证 same room/sender/type，并按 `(origin_server_ts,event_id)` 选最新。
-- ✅ MSC2677 reactions、MSC2246 async media、MSC3952 intentional mentions、VoIP signaling、transaction-id/media redirect 行为。
-- ✅ stable login-token endpoint 已实现，后续 v1.12 又补 capability 与 account-state 语义。
-- ➖ Appservice ping 为 N/A。
+- ✅ server-side bundled `m.replace` aggregation、reactions、async media、intentional mentions、VoIP signaling、media redirect、stable login-token endpoint。
+- ➖ Appservice ping N/A。
 
 ## v1.8
 
-- ✅ MSC2249 report endpoint；“caller joined”由 homeserver 权威授权，adapter 不以可能过期的本地 membership cache 替代。
-- ✅ reaction schema / nullable public-room room types / SAS clarifications 与当前 parser/crypto 兼容。
-- ➖ Federation SRV changes 为 N/A。
+- ✅ event report endpoint；joined authorization 交给 homeserver 权威判断。
+- ✅ reaction/public-room/SAS clarifications 兼容。
+- ➖ federation SRV N/A。
 
 ## v1.9
 
-- ✅ MSC3958 `m.rule.suppress_edits`：`is_suppress_edits_push_rule_enabled()`。
-- ✅ Space parent/child `via` 保留并在 system event 中展示。
-- ✅ publicRooms server name 不强制 lower-case。
+- ✅ `m.rule.suppress_edits` helper。
+- ✅ Space parent/child `via` 保留并展示。
 
 ## v1.10
 
-- ✅ MSC1929 `/.well-known/matrix/support`。
-- ✅ MSC4025 local erasure。
-- ✅ MSC3981 recursive relations。
-- ✅ MSC4041 `Retry-After` header。
-- ✅ MSC2530 media captions。
+- ✅ server support discovery、local erasure、recursive relations、`Retry-After`、media captions。
 
 ## v1.11
 
-- ✅ MSC4126 Bearer header authentication。
-- ✅ MSC3916 authenticated Client-Server media endpoints。
-- ✅ MSC2191 maths messages。
-- ✅ MSC3967 first cross-signing upload without UIA。
-- ✅ MSC4115 `unsigned.membership`。
+- ✅ Bearer auth、authenticated media、maths、first cross-signing upload no-UIA、`unsigned.membership`。
 
 ## v1.12
 
-- ✅ stable `via` for join/knock。
-- ✅ MSC3939 `M_USER_LOCKED + soft_logout`: sync preserves token/session/E2EE and backs off。
-- ✅ `m.get_login_token` capability + stable `/v1/login/get_token` UIA helper。
+- ✅ stable `via`、account locking semantics、login-token capability/UIA helper。
 
 ## v1.13
 
-- ✅ MSC2781 no outbound reply fallback。
-- ✅ MSC3823 `M_USER_SUSPENDED` does not trigger token refresh/re-login。
-- ✅ stable room report。
+- ✅ no outbound reply fallback、`M_USER_SUSPENDED`、room report。
 
 ## v1.14
 
-- ✅ MSC4260 user report。
-- ✅ MSC4213 removed `server_name` from wire; source-compatible alias maps to `via`。
-- ✅ redaction receive path handles pre-v11 top-level and v11+ content `redacts` and refreshes redacted state from homeserver。
+- ✅ user report、remove `server_name` wire、redaction semantics。
 
 ## v1.15
 
-- ✅ MSC3266 Room Summary。
-- ✅ MSC3765 Rich Room Topics。
-- ✅ MSC4147 signed `sender_device_keys` with Curve25519/Ed25519 binding validation。
-- ✅ OAuth API family relevant to adapter。
+- ✅ Room Summary、Rich Room Topics、signed `sender_device_keys` validation、OAuth adapter scope。
 
 ## v1.16
 
-- ✅ stable Extended Profiles + `m.profile_fields` + `m.tz`。
-- ✅ state-event `format=event`。
-- ✅ MSC4222 `state_after` authoritative sync。
-- ✅ room v12 `additional_creators` create/upgrade。
-- ✅ MSC4311 stripped create event。
-- ✅ MSC4142 reply mentions and latest edit aggregation semantics。
+- ✅ Extended Profiles/`m.profile_fields`/`m.tz`、state-event metadata、authoritative `state_after`、room-v12 creators、reply/edit semantics。
 
 ## v1.17
 
-- ✅ MSC4210 remove legacy mentions。
-- ✅ MSC4312 `m.oauth` UIA for cross-signing reset。
-- ✅ `M_RESOURCE_LIMIT_EXCEEDED` helper。
-- ✅ omitted `device_one_time_keys_count` means zero unclaimed OTKs and still triggers bounded maintenance。
-- ➖ MSC4326 / MSC4190 are Application Service-only。
+- ✅ remove legacy mentions、`m.oauth` UIA、resource-limit helper、OTK omission semantics。
+- ➖ AS device/user management N/A。
 
 ## v1.18
 
-- ✅ OAuth account management / OAuth-aware client semantics / device grant。
-- ✅ account moderation, recent emoji, forced forget, `/send` redactions, reporting changes, animated images。
-- ⚠️ MSC4153 remains partial; no false claim of complete cross-user trust enforcement。
+- ✅ OAuth account management/device grant、account moderation、recent emoji、forced forget、`/send` redactions、reporting improvements、animated images。
+- ⚠️ MSC4153 remains partial。
 
 ## v1.19
 
-- ✅ Mutual Rooms, `unsigned.replaces_state`, `m.key_backup`, Image Packs, room-directory order。
-- ✅ strict MXC media-id grammar and EncryptedFile metadata/hash validation。
-- ✅ `/context` start/backward and end/forward token mapping。
-- ✅ SAS commitment canonical JSON + unpadded Base64 clarification。
-- ⚠️ MSC4268 core `shared_history`/safe rotation implemented; full `m.room_key_bundle` remains intentionally incomplete pending encrypted attachment + cross-user trust audit。
+- ✅ Mutual Rooms、`unsigned.replaces_state`、`m.key_backup`、Image Packs、directory order。
+- ✅ strict MXC grammar、EncryptedFile validation、`/context` token mapping、SAS commitment clarification。
+- ⚠️ MSC4268 core history sharing present; full `m.room_key_bundle` intentionally incomplete pending trust/encrypted-attachment audit。
+
+## E2EE 安全边界
+
+- MSC4153：同账号 verified-device policy 已有；跨用户 master/self-signing trust chain 未完整强制，因此继续标 partial。
+- MSC4268：`shared_history`、Key Backup、安全轮换已有；完整 bundle attachment encryption/import/trust validation 未完成前不主动发送 `m.room_key_bundle`。
+- SAS legacy MAC：没有 libolm-compatible backend 时不生成伪兼容结果，fail closed。
 
 ## Regression 测试索引
 
+- `tests/unit/test_matrix_v103_stable.py`
+- `tests/unit/test_matrix_v104_stable.py`
 - `tests/unit/test_matrix_v105_stable.py`
 - `tests/unit/test_matrix_v106_stable.py`
 - `tests/unit/test_matrix_v109_stable.py`
@@ -207,6 +242,6 @@
 - `tests/unit/test_matrix_v116_followup.py`
 - `tests/unit/test_matrix_v117_stable.py`
 - `tests/unit/test_matrix_v119_stable.py`
-- v1.7/v1.8 行为由通用 reaction/media/report/edit/E2EE suites 与后续 stable regressions 共同固定。
+- v1.7/v1.8 等行为还由通用 reaction/media/report/edit/E2EE suites 固定。
 
-测试文件存在只表示 protocol semantics 已被写成 regression；是否通过完整 suite/CI 以实际运行结果为准，本文件不会把“已写测试”表述成“CI 已通过”。
+测试文件存在只表示 protocol semantics 已写成 regression；是否通过完整 suite/CI 以实际运行结果为准，不把“已写测试”表述成“CI 已通过”。
