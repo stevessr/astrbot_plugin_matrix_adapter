@@ -15,11 +15,10 @@ class SenderRoomConfigMixin:
         formatted_topic: str | None = None,
     ) -> dict:
         """Set a Matrix v1.15 rich room topic with a plain fallback."""
-        return await self.client.set_room_topic(
-            room_id=room_id,
-            topic=topic,
-            formatted_topic=formatted_topic,
-        )
+        kwargs = {"room_id": room_id, "topic": topic}
+        if formatted_topic is not None:
+            kwargs["formatted_topic"] = formatted_topic
+        return await self.client.set_room_topic(**kwargs)
 
     async def set_room_avatar(self, room_id: str, avatar_url: str) -> dict:
         """Set the Matrix room avatar MXC URL."""
