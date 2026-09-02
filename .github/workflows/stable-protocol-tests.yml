@@ -71,3 +71,7 @@ jobs:
       - name: Run shared stable protocol regressions
         run: |
           python -m unittest discover -s tests/unit -p 'test_matrix_stable_*.py' -v
+
+      - name: Run complete unit suite
+        run: |
+          python -m unittest discover -s tests/unit -p 'test_*.py' -v
