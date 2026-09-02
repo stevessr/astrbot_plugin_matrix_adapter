@@ -45,10 +45,23 @@ class SASVerificationEventDispatchMixin:
         }
 
         handler = handlers.get(event_type)
-        if handler:
-            await handler(sender, content, transaction_id)
-            return True
-        return False
+        if not handler:
+            return False
+
+        # Since Matrix v1.1, request is the only to-device verification event which
+        # may create a flow. All later messages must remain bound to that flow's
+        # transaction, sender, device (when present), and non-terminal lifecycle.
+        if event_type != M_KEY_VERIFICATION_REQUEST:
+            session = self._get_bound_verification_session(
+                transaction_id,
+                sender,
+                content.get("from_device"),
+            )
+            if session is None:
+                return True
+
+        await handler(sender, content, transaction_id)
+        return True
 
 
 __all__ = ["SASVerificationEventDispatchMixin"]
