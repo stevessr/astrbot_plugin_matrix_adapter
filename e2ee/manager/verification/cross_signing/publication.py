@@ -33,7 +33,10 @@ class CrossSigningVerificationPublicationMixin:
             )
         )
         cooldown_sec = 60.0
-        if now - last_ts < cooldown_sec:
+        # ``0`` means no refresh has ever happened.  Comparing a freshly
+        # started process' small monotonic clock value against zero would
+        # otherwise suppress the first trust publication for up to 60 seconds.
+        if last_ts > 0.0 and now - last_ts < cooldown_sec:
             return
 
         self._last_current_device_key_refresh_after_verification_ts = now
