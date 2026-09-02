@@ -18,7 +18,6 @@ class SASVerificationHandshakeKeyMixin:
 
         sas = session.get("sas")
         if sas and _vodozemac_sas_available():
-            # vodozemac 返回 Key 对象，需要转换为 base64 字符串
             our_public_key = sas.public_key.to_base64()
         else:
             our_public_key = session.get(
@@ -26,7 +25,6 @@ class SASVerificationHandshakeKeyMixin:
             )
 
         session["our_public_key"] = our_public_key
-        session["key_sent"] = True
 
         content = {
             "transaction_id": transaction_id,
@@ -34,4 +32,5 @@ class SASVerificationHandshakeKeyMixin:
         }
 
         await self._send_to_device(M_KEY_VERIFICATION_KEY, to_user, to_device, content)
+        session["key_sent"] = True
         logger.info(f"[E2EE-Verify] 已发送 key: {(our_public_key or '')[:20]}...")
