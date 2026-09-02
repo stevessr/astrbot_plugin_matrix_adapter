@@ -1,6 +1,6 @@
 # 开发接口
 
-Matrix 适配器通过 `adapter.sender`（`MatrixSender`）和 `adapter.sender.client` / `adapter.client`（`MatrixHTTPClient`）提供发送与管理接口。协议示例以 **Matrix Client-Server stable v1.19** 为准；当前逐版审计覆盖 **v1.10 → v1.19**，旧参数仅在不破坏现有插件源码时保留。
+Matrix 适配器通过 `adapter.sender`（`MatrixSender`）和 `adapter.sender.client` / `adapter.client`（`MatrixHTTPClient`）提供发送与管理接口。协议示例以 **Matrix Client-Server stable v1.19** 为准；当前逐版审计覆盖 **v1.7 → v1.19**，旧参数仅在不破坏现有插件源码时保留。
 
 ## 媒体与普通消息
 
@@ -11,7 +11,7 @@ await adapter.sender.send_receipt("!room:example.org", "$event")
 await adapter.sender.set_typing("!room:example.org", True, timeout_ms=30000)
 ```
 
-媒体 download/thumbnail/preview/config 使用 authenticated `/_matrix/client/v1/media/*`。`m.image` / `m.sticker` 在可检测时写入 v1.18 / MSC4230 `info.is_animated`。媒体消息支持 `body` caption 与 extensible `m.media`。
+媒体 download/thumbnail/preview/config 使用 authenticated `/_matrix/client/v1/media/*`。`m.image` / `m.sticker` 在可检测时写入 v1.18 / MSC4230 `info.is_animated`。媒体消息支持 `body` caption 与 extensible `m.media`。v1.7 / MSC2246 的异步媒体上传也已覆盖：若 homeserver 返回 `upload_id`，客户端会继续轮询 upload status；传统直接返回 `content_uri` 的服务器仍兼容。
 
 ## 数学消息（v1.11 / MSC2191）
 
@@ -51,13 +51,13 @@ await adapter.sender.send_custom_message(
 )
 ```
 
-标准 outbound `m.room.message` 至少携带空 `m.mentions: {}`，避免 v1.17 已移除的 legacy plaintext mention inference。
+标准 outbound `m.room.message` 至少携带空 `m.mentions: {}`，避免 v1.17 已移除的 legacy plaintext mention inference。v1.7 的 `m.annotation` reaction 与 intentional mentions 已由当前稳定发送/接收链覆盖。
 
 ## Reply / Edit
 
 v1.13 / MSC2781 起，发送 reply **不再**复制原消息正文，也不生成 `<mx-reply>`。上下文使用 `m.relates_to.m.in_reply_to`，通知对象由 intentional `m.mentions` 表达；接收端仍兼容旧历史事件中的 reply fallback。
 
-Edit (`m.replace`) 会验证 target 与 replacement 的 room/sender/type，拒绝编辑 state event 或另一个 edit；同一 original 按 `(origin_server_ts, event_id)` 选最新 revision。原事件若带 `unsigned.m.relations.m.replace`，会应用 homeserver 聚合出的 latest edit。
+Edit (`m.replace`) 会验证 target 与 replacement 的 room/sender/type，拒绝编辑 state event 或另一个 edit；同一 original 按 `(origin_server_ts, event_id)` 选最新 revision。原事件若带 `unsigned.m.relations.m.replace`，会应用 homeserver 聚合出的 latest edit，覆盖 v1.7 / MSC3925 的 server-side edit aggregation 语义。
 
 ## Context / Relations / Redaction / Reporting
 
@@ -86,7 +86,18 @@ await adapter.sender.report_room("!room:example.org", reason="abuse")
 await adapter.sender.report_user("@alice:example.org", reason="abuse")
 ```
 
-`score` 参数为旧插件源码保留，但 v1.18+ wire 不再发送。接收 redaction 同时识别 pre-room-v11 顶层 `redacts` 与 v11+ `content.redacts`；当前 state 被 redacted 时从 homeserver 重新读取权威 redacted state。
+`score` 参数为旧插件源码保留，但 v1.18+ wire 不再发送。v1.8 / MSC2249 要求调用者必须已加入房间才能 report event；这个授权判断由 homeserver 权威执行，adapter 不用可能过期的本地 membership cache 提前替代服务器判断。接收 redaction 同时识别 pre-room-v11 顶层 `redacts` 与 v11+ `content.redacts`；当前 state 被 redacted 时从 homeserver 重新读取权威 redacted state。
+
+## Push Rules（v1.9 / MSC3958）
+
+```python
+client = adapter.sender.client
+
+# stable global override default rule: m.rule.suppress_edits
+enabled = await client.is_suppress_edits_push_rule_enabled()
+```
+
+该 helper 查询 `/_matrix/client/v3/pushrules/global/override/m.rule.suppress_edits/enabled`。适配器不会复制整套 Matrix push-rule evaluator；通知/插件层需要判断 edit 是否应产生通知时应尊重 homeserver 暴露的 stable rule。通用 push-rule API 仍可用于管理其他规则。
 
 ## Server / Capability Discovery
 
@@ -125,7 +136,7 @@ forced_forget = await client.is_forget_forced_upon_leave()
 - `is_user_limit_exceeded`
 - `admin_contact`
 
-## 单次 Login Token（v1.12）
+## 单次 Login Token（v1.7 endpoint / v1.12 capability audit）
 
 ```python
 # 首次请求若需要 UIA，会正常抛出带 challenge 的 401 MatrixAPIError。
@@ -230,6 +241,8 @@ state_event = await adapter.sender.get_room_state_event(
 ```
 
 生产 `/sync` 请求 `use_state_after=true`。如果 homeserver 返回 `state_after`，它是最终 authoritative state；processor 不会再让 timeline 中的旧 state 覆盖它。
+
+Space state 的 `m.space.child` / `m.space.parent` content 会完整保留 v1.9 明确要求的 `via` 列表；system-event renderer 也会展示这些 routing servers。
 
 ## Rich Room Topic（v1.15 / MSC3765）
 
