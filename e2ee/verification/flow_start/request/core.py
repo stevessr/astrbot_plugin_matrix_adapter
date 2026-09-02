@@ -43,6 +43,17 @@ class SASVerificationFlowRequestCoreMixin:
             )
             return
 
+        if transaction_id in self._sessions:
+            existing = self._sessions.get(transaction_id) or {}
+            logger.warning(
+                "[E2EE-Verify] 忽略重复 verification transaction，保留原会话："
+                f"txn={self._mask_txn_id(transaction_id)} "
+                f"sender={self._mask_identifier(sender)} "
+                f"device={self._mask_identifier(from_device)} "
+                f"existing_state={existing.get('state')}"
+            )
+            return
+
         logger.info(
             f"[E2EE-Verify] 收到验证请求："
             f"sender={self._mask_identifier(sender)} "
