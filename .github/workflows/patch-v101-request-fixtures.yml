@@ -1,0 +1,77 @@
+name: Patch v1.1 verification request fixtures
+
+on:
+  push:
+    branches:
+      - feat/stable-followup-qr-e2ee
+    paths:
+      - ".github/workflows/patch-v101-request-fixtures.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/stable-followup-qr-e2ee
+
+      - name: Add stable request timestamps to legacy fixtures
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("tests/unit/test_matrix_new_spec_compat.py")
+          text = path.read_text(encoding="utf-8")
+
+          old1 = '''            {
+                "from_device": "DEV123",
+                "methods": ["m.sas.v1"],
+            },
+            "txn123",
+'''
+          new1 = '''            {
+                "from_device": "DEV123",
+                "methods": ["m.sas.v1"],
+                "timestamp": int(__import__("time").time() * 1000),
+            },
+            "txn123",
+'''
+
+          old2 = '''                "methods": [
+                    constants.M_SAS_V1_METHOD,
+                    constants.M_QR_CODE_SHOW_V1_METHOD,
+                    constants.M_RECIPROCATE_V1_METHOD,
+                ],
+            },
+            "txn123",
+'''
+          new2 = '''                "methods": [
+                    constants.M_SAS_V1_METHOD,
+                    constants.M_QR_CODE_SHOW_V1_METHOD,
+                    constants.M_RECIPROCATE_V1_METHOD,
+                ],
+                "timestamp": int(__import__("time").time() * 1000),
+            },
+            "txn123",
+'''
+
+          for old, new in ((old1, new1), (old2, new2)):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one legacy fixture, found {count}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Commit fixture migration
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/unit/test_matrix_new_spec_compat.py
+          git commit -m "test(e2ee): add stable verification request timestamps"
+          git push origin HEAD:feat/stable-followup-qr-e2ee
