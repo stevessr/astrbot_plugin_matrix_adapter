@@ -97,11 +97,15 @@ class MatrixV101VerificationTests(unittest.TestCase):
         self.assertEqual(crypto.M_KEY_VERIFICATION_READY, "m.key.verification.ready")
         self.assertEqual(crypto.M_KEY_VERIFICATION_DONE, "m.key.verification.done")
 
-    def test_qr_constants_exist_but_do_not_imply_flow_support(self):
+    def test_qr_self_verification_methods_and_wire_constants_are_stable(self):
         crypto = load_module("constants.crypto")
         self.assertEqual(crypto.M_QR_CODE_SHOW_V1_METHOD, "m.qr_code.show.v1")
         self.assertEqual(crypto.M_QR_CODE_SCAN_V1_METHOD, "m.qr_code.scan.v1")
+        self.assertEqual(crypto.M_RECIPROCATE_V1_METHOD, "m.reciprocate.v1")
         self.assertEqual(crypto.QR_CODE_HEADER, b"MATRIX")
+        self.assertEqual(crypto.QR_CODE_VERSION, 0x02)
+        self.assertEqual(crypto.QR_CODE_MODE_SELF_VERIFICATION_TRUSTED_MASTER, 0x01)
+        self.assertEqual(crypto.QR_CODE_MODE_SELF_VERIFICATION_UNTRUSTED_MASTER, 0x02)
 
 
 if __name__ == "__main__":

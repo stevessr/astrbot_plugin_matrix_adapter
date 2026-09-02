@@ -32,8 +32,12 @@ class SASVerificationFlowIdentityMixin:
     def _can_continue_with_qr(self, sender: str, methods: object) -> bool:
         if sender != self.user_id:
             return False
+        # MSC1544 requires m.reciprocate.v1 alongside either QR direction. A
+        # peer which can scan/show but cannot reciprocate cannot complete the
+        # verification, so do not select QR in that case.
+        can_reciprocate = self._supports_method(methods, M_RECIPROCATE_V1_METHOD)
+        if not can_reciprocate:
+            return False
         can_show_to_peer = self._supports_method(methods, M_QR_CODE_SCAN_V1_METHOD)
-        can_scan_peer = self._supports_method(
-            methods, M_QR_CODE_SHOW_V1_METHOD
-        ) and self._supports_method(methods, M_RECIPROCATE_V1_METHOD)
+        can_scan_peer = self._supports_method(methods, M_QR_CODE_SHOW_V1_METHOD)
         return can_show_to_peer or can_scan_peer

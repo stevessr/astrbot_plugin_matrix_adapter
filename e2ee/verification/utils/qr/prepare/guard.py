@@ -1,6 +1,6 @@
 """Self-verification QR readiness checks."""
 
-from ......constants import M_QR_CODE_SCAN_V1_METHOD
+from ......constants import M_QR_CODE_SCAN_V1_METHOD, M_RECIPROCATE_V1_METHOD
 
 
 class SASVerificationFlowQRPrepareGuardMixin:
@@ -15,6 +15,8 @@ class SASVerificationFlowQRPrepareGuardMixin:
         if sender != self.user_id or not peer_device:
             return False
         if not self._supports_method(methods, M_QR_CODE_SCAN_V1_METHOD):
+            return False
+        if not self._supports_method(methods, M_RECIPROCATE_V1_METHOD):
             return False
         return True
 

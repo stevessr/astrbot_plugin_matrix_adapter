@@ -5,6 +5,9 @@ from pathlib import Path
 
 from .....constants import (
     QR_CODE_HEADER,
+    QR_CODE_MODE_SELF_VERIFICATION_TRUSTED_MASTER,
+    QR_CODE_MODE_SELF_VERIFICATION_UNTRUSTED_MASTER,
+    QR_CODE_MODE_VERIFY_OTHER_USER,
     QR_CODE_VERSION,
 )
 
@@ -46,6 +49,12 @@ class SASVerificationQRDecodingMixin:
         if version != QR_CODE_VERSION:
             raise ValueError(f"不支持的二维码版本：{version}")
         mode = payload[7]
+        if mode not in {
+            QR_CODE_MODE_VERIFY_OTHER_USER,
+            QR_CODE_MODE_SELF_VERIFICATION_TRUSTED_MASTER,
+            QR_CODE_MODE_SELF_VERIFICATION_UNTRUSTED_MASTER,
+        }:
+            raise ValueError(f"不支持的二维码模式：0x{mode:02x}")
         txn_len = int.from_bytes(payload[8:10], "big")
         if len(payload) < 10 + txn_len + 64 + 1:
             raise ValueError("二维码载荷缺少事务或密钥字段")
@@ -54,14 +63,22 @@ class SASVerificationQRDecodingMixin:
         key1_start = txn_end
         key2_start = key1_start + 32
         secret_start = key2_start + 32
-        transaction_id = payload[txn_start:txn_end].decode("ascii")
+        try:
+            transaction_id = payload[txn_start:txn_end].decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("二维码事务 ID 不是有效 UTF-8") from exc
+        if not transaction_id:
+            raise ValueError("二维码事务 ID 不能为空")
+        secret = payload[secret_start:]
+        if not secret:
+            raise ValueError("二维码 shared secret 不能为空")
         return {
             "version": version,
             "mode": mode,
             "transaction_id": transaction_id,
             "key1": payload[key1_start:key2_start],
             "key2": payload[key2_start:secret_start],
-            "secret": payload[secret_start:],
+            "secret": secret,
         }
 
     def _load_qr_payload_bytes(self, qr_input: str) -> bytes:
