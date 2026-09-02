@@ -14,6 +14,14 @@ class SASVerificationFlowStartEventMixin:
         method = content.get("method")
         their_commitment = content.get("commitment")
 
+        session = self._get_bound_verification_session(
+            transaction_id,
+            sender,
+            from_device,
+        )
+        if session is None:
+            return
+
         masked_their_commitment = (
             their_commitment[:16] if isinstance(their_commitment, str) else "None"
         )
@@ -22,7 +30,6 @@ class SASVerificationFlowStartEventMixin:
             f"commitment={masked_their_commitment}..."
         )
 
-        session = self._sessions.get(transaction_id, {})
         session["state"] = "started"
         session["method"] = method
         session["their_commitment"] = their_commitment
