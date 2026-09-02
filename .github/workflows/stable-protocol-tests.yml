@@ -66,11 +66,8 @@ jobs:
 
       - name: Run versioned stable protocol regressions
         run: |
-          python -m unittest discover -s tests/unit -p 'test_matrix_v*_stable.py' -v
+          python -m unittest discover -s tests/unit -p 'test_matrix_v*.py' -v
 
       - name: Run shared stable protocol regressions
         run: |
-          python -m unittest \
-            tests.unit.test_matrix_stable_auth \
-            tests.unit.test_matrix_stable_msc \
-            -v
+          python -m unittest discover -s tests/unit -p 'test_matrix_stable_*.py' -v
