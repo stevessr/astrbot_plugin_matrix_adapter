@@ -36,12 +36,14 @@ class SenderRoomQueriesMixin:
         state_key: str = "",
         format: str | None = None,
     ) -> dict:
-        return await self.client.get_room_state_event(
-            room_id=room_id,
-            event_type=event_type,
-            state_key=state_key,
-            format=format,
-        )
+        kwargs: dict[str, Any] = {
+            "room_id": room_id,
+            "event_type": event_type,
+            "state_key": state_key,
+        }
+        if format is not None:
+            kwargs["format"] = format
+        return await self.client.get_room_state_event(**kwargs)
 
     async def set_room_state_event(
         self,
