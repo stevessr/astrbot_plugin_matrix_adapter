@@ -14,50 +14,47 @@ class RoomPublicDirectoryMixin:
         limit: int | None = None,
         since: str | None = None,
         filter: dict[str, Any] | None = None,
+        room_types: list[str | None] | None = None,
     ) -> dict[str, Any]:
-        """
-        List public rooms
+        """List public rooms using the stable GET/POST wire shapes.
 
-        Args:
-            server: Optional server to query
-            limit: Optional limit
-            since: Pagination token
-            filter: Optional filter (uses POST when provided)
-
-        Returns:
-            Public rooms response
+        Matrix v1.4 / MSC3827 adds ``filter.room_types`` to the POST form. A
+        ``None`` entry explicitly includes rooms which have no room type. The
+        remote ``server`` selector is a query parameter for *both* GET and POST;
+        it is never part of the POST JSON body.
         """
         endpoint = "/_matrix/client/v3/publicRooms"
         params: dict[str, Any] = {}
         if server:
             params["server"] = server
-        if limit is not None:
-            params["limit"] = limit
-        if since:
-            params["since"] = since
 
-        if filter is None:
+        if room_types is not None:
+            if not isinstance(room_types, list) or not all(
+                value is None or isinstance(value, str) for value in room_types
+            ):
+                raise ValueError("room_types must be a list of strings or None")
+
+        effective_filter = dict(filter) if isinstance(filter, dict) else {}
+        if filter is not None and not isinstance(filter, dict):
+            raise ValueError("filter must be a dict when provided")
+        if room_types is not None:
+            effective_filter["room_types"] = list(room_types)
+
+        if not effective_filter:
+            if limit is not None:
+                params["limit"] = limit
+            if since:
+                params["since"] = since
             return await self._request("GET", endpoint, params=params)
 
-        data: dict[str, Any] = {"filter": filter}
-        if server:
-            data["server"] = server
+        data: dict[str, Any] = {"filter": effective_filter}
         if limit is not None:
             data["limit"] = limit
         if since:
             data["since"] = since
-        return await self._request("POST", endpoint, data=data)
+        return await self._request("POST", endpoint, params=params, data=data)
 
     async def get_room_visibility(self, room_id: str) -> dict[str, Any]:
-        """
-        Get a room's visibility in the public directory
-
-        Args:
-            room_id: Room ID
-
-        Returns:
-            Response with visibility
-        """
         room = quote_path_segment(room_id)
         endpoint = f"/_matrix/client/v3/directory/list/room/{room}"
         return await self._request("GET", endpoint)
@@ -65,16 +62,6 @@ class RoomPublicDirectoryMixin:
     async def set_room_visibility(
         self, room_id: str, visibility: str
     ) -> dict[str, Any]:
-        """
-        Set a room's visibility in the public directory
-
-        Args:
-            room_id: Room ID
-            visibility: "public" or "private"
-
-        Returns:
-            Empty dict on success
-        """
         room = quote_path_segment(room_id)
         endpoint = f"/_matrix/client/v3/directory/list/room/{room}"
         return await self._request("PUT", endpoint, data={"visibility": visibility})
