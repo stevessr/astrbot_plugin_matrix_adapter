@@ -20,12 +20,18 @@ class SASVerificationFlowMACOrchestratorMixin(
 
     async def _handle_mac(self, sender: str, content: dict, transaction_id: str):
         """处理 MAC 验证"""
+        session = self._get_bound_verification_session(
+            transaction_id,
+            sender,
+            content.get("from_device"),
+        )
+        if session is None:
+            return
+
         their_mac = content.get("mac") or {}
         their_keys = content.get("keys")
 
         logger.debug(f"[E2EE-Verify] 收到 MAC: keys={their_keys}")
-
-        session = self._sessions.get(transaction_id, {})
         self._record_mac_received(session, their_mac)
 
         established_sas = session.get("established_sas")
