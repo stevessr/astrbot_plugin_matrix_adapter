@@ -30,6 +30,23 @@ class SASVerificationRoomRequestCoreMixin:
             logger.warning("[E2EE-Verify] 房间内验证请求缺少 from_device")
             return
 
+        session = self._sessions.get(transaction_id)
+        if session is None:
+            # Direct unit callers may bypass the room dispatcher.
+            session = {}
+            self._sessions[transaction_id] = session
+        elif not session.get("_room_context_only"):
+            logger.warning(
+                "[E2EE-Verify] 忽略重复房间 verification transaction，保留原会话："
+                f"txn={self._mask_txn_id(transaction_id)} "
+                f"sender={self._mask_identifier(sender)} "
+                f"device={self._mask_identifier(from_device)} "
+                f"existing_state={session.get('state')}"
+            )
+            return
+
+        session.pop("_room_context_only", None)
+
         logger.info(
             f"[E2EE-Verify] 收到房间内验证请求："
             f"sender={sender} device={from_device} methods={methods}"
@@ -47,7 +64,6 @@ class SASVerificationRoomRequestCoreMixin:
             except Exception as e:
                 logger.warning(f"[E2EE-Verify] 创建 SAS 实例失败：{e}")
 
-        session = self._sessions.get(transaction_id, {})
         session.update(
             {
                 "sender": sender,
@@ -57,7 +73,6 @@ class SASVerificationRoomRequestCoreMixin:
                 "sas": sas,
             }
         )
-        self._sessions[transaction_id] = session
 
         # TOFU: Check if device is trusted
         fingerprint = await self._query_device_fingerprint(sender, from_device)
