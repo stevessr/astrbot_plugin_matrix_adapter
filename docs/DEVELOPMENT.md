@@ -1,6 +1,60 @@
 # 开发接口
 
-Matrix 适配器通过 `adapter.sender`（`MatrixSender`）以及 `adapter.client` / `adapter.sender.client`（`MatrixHTTPClient`）提供 Matrix API。示例以 **Client-Server stable v1.19** 为准，当前逐版审计覆盖 **v1.3 → v1.19**。
+Matrix 适配器通过 `adapter.sender`（`MatrixSender`）以及 `adapter.client` / `adapter.sender.client`（`MatrixHTTPClient`）提供 Matrix API。示例以 **Client-Server stable v1.19** 为准，当前逐版审计覆盖 **v1.1 → v1.19**。
+
+## SSO Provider 选择（v1.1 / MSC2858）
+
+Homeserver 若在 `m.login.sso` flow 中公布多个 `identity_providers`，可显式选择 stable IdP redirect：
+
+```python
+from auth.sso import MatrixSSO
+
+sso = MatrixSSO(
+    client=adapter.client,
+    homeserver="https://matrix.example.org",
+    redirect_uri="https://bot.example.org/matrix/callback",
+)
+
+response = await sso.login(
+    device_name="AstrBot",
+    idp_id="google",
+)
+```
+
+指定 `idp_id` 时使用：
+
+```text
+/_matrix/client/v3/login/sso/redirect/{idpId}
+```
+
+`idpId` 会作为单个 path segment percent-encode。如果 homeserver 已明确 advertise `identity_providers`，传入未公布的 ID 会在打开浏览器前本地拒绝。省略 `idp_id` 时继续使用通用 `/login/sso/redirect`，保持旧行为。
+
+### QR verification 边界
+
+仓库目前定义了 `m.qr_code.show.v1`、`m.qr_code.scan.v1`、`m.reciprocate.v1` 和 Matrix QR binary header 常量，但**没有完整 MSC1544 QR verification trust workflow**。不要把这些常量当成“已支持扫码验证”的 API。QR verification 涉及 cross-signing identity binding 与 trust transition，在完整 state machine 审计前保持 unsupported。
+
+## Registration Token（v1.2 / MSC3231）
+
+```python
+valid = await adapter.client.check_registration_token("registration-token")
+```
+
+底层请求：
+
+```text
+GET /_matrix/client/v1/register/m.login.registration_token/validity?token=...
+```
+
+该 endpoint 不携带 access token；空 token 会在本地拒绝。返回值是当前时刻的 point-in-time validity，真正注册时仍需由 homeserver 再次验证。
+
+## State `prev_content`（v1.2 / MSC3442）
+
+```python
+event = await adapter.sender.get_event("!room:example.org", "$event")
+previous = event.prev_content
+```
+
+`MatrixEvent.prev_content` **只读取 `unsigned.prev_content`**。v1.2 已把顶层 `prev_content` 移除，因此 adapter 不会把废弃顶层字段当作可信 fallback。
 
 ## 普通消息、媒体与 Relations
 
@@ -221,6 +275,8 @@ can_set_tz = await client.can_set_profile_field("m.tz")
 moderation = await client.get_account_moderation_capability()
 forced_forget = await client.is_forget_forced_upon_leave()
 ```
+
+v1.2 的 legacy `m.set_displayname` / `m.set_avatar_url` capabilities 在 v1.16 已 deprecated；新代码应优先依据 MSC4133 `m.profile_fields`，而不是强化旧 capability。
 
 ## Account locked / suspended
 
