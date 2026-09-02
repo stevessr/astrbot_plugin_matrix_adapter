@@ -29,6 +29,19 @@ class MatrixEvent:
         event_id = self.unsigned.get("replaces_state")
         return event_id if isinstance(event_id, str) and event_id else None
 
+    @property
+    def unsigned_membership(self) -> str | None:
+        """Membership associated with the event via Matrix v1.11 / MSC4115.
+
+        The homeserver may expose the requesting user's membership in
+        ``unsigned.membership``. Keep this separate from ``m.room.member``
+        content membership so generic timeline events can expose it safely.
+        """
+        if not isinstance(self.unsigned, dict):
+            return None
+        membership = self.unsigned.get("membership")
+        return membership if isinstance(membership, str) and membership else None
+
     @classmethod
     def from_dict(cls, data: dict[str, Any], room_id: str):
         """Create event from dictionary."""
