@@ -48,10 +48,18 @@ class SASVerificationEventDispatchMixin:
         if not handler:
             return False
 
-        # Since Matrix v1.1, request is the only to-device verification event which
-        # may create a flow. All later messages must remain bound to that flow's
-        # transaction, sender, device (when present), and non-terminal lifecycle.
+        # A request normally creates the flow. Matrix still requires receivers to
+        # handle the deprecated legacy to-device standalone start, so an unknown
+        # START is delegated to _handle_start to create a tightly-bound legacy SAS
+        # session. No other follow-up message is allowed to create a flow.
         if event_type != M_KEY_VERIFICATION_REQUEST:
+            if (
+                event_type == M_KEY_VERIFICATION_START
+                and transaction_id not in self._sessions
+            ):
+                await handler(sender, content, transaction_id)
+                return True
+
             session = self._get_bound_verification_session(
                 transaction_id,
                 sender,
