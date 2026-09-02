@@ -30,11 +30,13 @@ class MatrixV109PushRuleTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(await Client().is_suppress_edits_push_rule_enabled())
 
+    def test_suppress_edits_rule_constant_is_stable_id(self):
+        mod = load_module("client.push_mixin.rules.query")
+        self.assertEqual(mod.SUPPRESS_EDITS_RULE_ID, "m.rule.suppress_edits")
+
 
 class MatrixV109SpaceViaTests(unittest.TestCase):
     def test_via_is_preserved_for_space_events(self):
-        # v1.9 clarifies that m.space.child / m.space.parent require `via`.
-        # The adapter's generic event model must therefore preserve the field.
         mod = load_module("client.event_types.base")
         event = mod.MatrixEvent.from_dict(
             {
