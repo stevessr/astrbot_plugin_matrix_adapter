@@ -1,4 +1,4 @@
-"""Composable Matrix room lifecycle and hierarchy operations."""
+"""Composable Matrix room lifecycle, summary, and hierarchy operations."""
 
 from typing import Any
 
@@ -22,6 +22,7 @@ RoomManagementMixin.upgrade_room = RoomLifecycleMixin.__dict__["upgrade_room"]
 RoomManagementMixin.knock_room = RoomLifecycleMixin.__dict__["knock_room"]
 RoomManagementMixin.accept_knock = RoomLifecycleMixin.__dict__["accept_knock"]
 RoomManagementMixin.reject_knock = RoomLifecycleMixin.__dict__["reject_knock"]
+RoomManagementMixin.get_room_summary = RoomHierarchyMixin.__dict__["get_room_summary"]
 RoomManagementMixin.get_room_hierarchy = RoomHierarchyMixin.__dict__[
     "get_room_hierarchy"
 ]
