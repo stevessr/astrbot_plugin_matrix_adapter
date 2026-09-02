@@ -1,6 +1,9 @@
 """Custom Matrix event send methods."""
 
+import html
 from typing import Any
+
+from ......constants import MATRIX_HTML_FORMAT
 
 
 class SenderMediaCustomMixin:
@@ -53,6 +56,49 @@ class SenderMediaCustomMixin:
             is_encrypted_room=is_encrypted_room,
             e2ee_manager=self.e2ee_manager,
             msg_type=event_type,
+        )
+
+    async def send_math_message(
+        self,
+        room_id: str,
+        latex: str,
+        *,
+        fallback: str | None = None,
+        block: bool = False,
+        reply_to: str | None = None,
+        thread_root: str | None = None,
+        use_thread: bool = False,
+        use_notice: bool | None = None,
+    ) -> dict | None:
+        """Send a Matrix v1.11 / MSC2191 mathematical message.
+
+        Inline maths uses ``span[data-mx-maths]`` and block maths uses
+        ``div[data-mx-maths]`` inside ``org.matrix.custom.html``. ``body`` is
+        always retained as the plain-text fallback for clients which do not
+        render mathematical notation.
+        """
+        if not isinstance(latex, str) or not latex:
+            raise ValueError("latex must be a non-empty string")
+        plain = fallback if isinstance(fallback, str) and fallback else latex
+        tag = "div" if block else "span"
+        formatted = (
+            f'<{tag} data-mx-maths="{html.escape(latex, quote=True)}">'
+            f"{html.escape(plain)}</{tag}>"
+        )
+        notice = self.use_notice if use_notice is None else bool(use_notice)
+        content = {
+            "msgtype": "m.notice" if notice else "m.text",
+            "body": plain,
+            "format": MATRIX_HTML_FORMAT,
+            "formatted_body": formatted,
+        }
+        return await self.send_custom_message(
+            room_id=room_id,
+            event_type="m.room.message",
+            content=content,
+            reply_to=reply_to,
+            thread_root=thread_root,
+            use_thread=use_thread,
         )
 
     async def send_custom_event(
