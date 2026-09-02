@@ -20,6 +20,7 @@ class AuthDiscoveryMixin(
 # introspect ``AuthDiscoveryMixin.__dict__`` rather than relying on inheritance.
 for _name in (
     "get_versions",
+    "get_server_support",
     "get_msc4357_server_advertisement",
     "get_capabilities",
     "is_forget_forced_upon_leave",
