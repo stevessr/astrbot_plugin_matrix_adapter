@@ -1,10 +1,10 @@
-"""Room creation, membership lifecycle, and knock operations."""
+"""Room creation, membership lifecycle, summary, and knock operations."""
 
 from typing import Any
 
 
 class SenderRoomLifecycleMixin:
-    """Delegates room creation, membership lifecycle, and knock operations."""
+    """Delegates room creation, membership lifecycle, summary, and knock operations."""
 
     async def create_room(
         self,
@@ -139,6 +139,18 @@ class SenderRoomLifecycleMixin:
             room_id=room_id,
             user_id=user_id,
             reason=reason,
+        )
+
+    async def get_room_summary(
+        self,
+        room_id_or_alias: str,
+        *,
+        via: list[str] | None = None,
+    ) -> dict:
+        """Get the Matrix v1.15 stable summary for a room or alias."""
+        return await self.client.get_room_summary(
+            room_id_or_alias=room_id_or_alias,
+            via=via,
         )
 
     async def get_room_hierarchy(
