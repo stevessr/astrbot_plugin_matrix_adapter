@@ -42,6 +42,14 @@ class MatrixEventProcessorStateMixin:
         self._processed_messages: OrderedDict[str, None] = OrderedDict()
         self._max_processed_messages = MAX_PROCESSED_MESSAGES_1000
 
+        # Matrix v1.16 clarification: when multiple m.replace revisions are
+        # observed for the same target, only the newest revision is current.
+        # Keep a bounded ordering cache so a delayed /sync or history fill
+        # cannot make an older edit supersede a newer one already delivered.
+        self._latest_replacements: OrderedDict[
+            tuple[str, str], tuple[int, str]
+        ] = OrderedDict()
+
         # Event callbacks
         self.on_message: Callable | None = None
 
@@ -84,8 +92,9 @@ class MatrixEventProcessorStateMixin:
     _parse_bool_like = staticmethod(parse_bool)
 
     def clear_processed_messages(self):
-        """Clear the processed messages cache"""
+        """Clear the processed messages and replacement-order caches."""
         self._processed_messages.clear()
+        self._latest_replacements.clear()
 
     def get_processed_message_count(self) -> int:
         """Get the number of processed messages in cache"""
