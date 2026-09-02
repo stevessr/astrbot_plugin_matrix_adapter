@@ -61,8 +61,8 @@ class MatrixEventProcessorMessagesCoreMixin:
                 logger.debug(f"忽略重复消息：{event.event_id}")
                 return
 
-            # MSC4145 / MSC2676: 处理 m.replace 编辑事件
-            if self._normalize_message_edit(event, event_content):
+            # MSC4145 / MSC2676: validate and normalize m.replace edits.
+            if await self._normalize_message_edit(event, event_content):
                 return
 
             # Call message callback + send read receipt
