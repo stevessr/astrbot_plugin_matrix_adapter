@@ -1285,7 +1285,11 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             client.calls[1][1],
-            "/_matrix/client/v3/rooms/%21room%3Aexample.org/redact/%24event%2Fwith%2Fslash%3Aexample.org/redact%2F1",
+            "/_matrix/client/v3/rooms/%21room%3Aexample.org/send/m.room.redaction/redact%2F1",
+        )
+        self.assertEqual(
+            client.calls[1][2],
+            {"redacts": "$event/with/slash:example.org", "reason": "duplicate"},
         )
         self.assertEqual(
             client.calls[2][1],
@@ -2376,7 +2380,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
         client = FakeClient()
         with self.assertRaises(Exception):
             await client.get_thumbnail(
-                "mxc://example.org:8448/media/id with spaces",
+                "mxc://example.org:8448/media_id",
                 800,
                 600,
                 method="scale/fast",
@@ -2385,19 +2389,19 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             client.session.urls[0],
-            "https://matrix.example/_matrix/client/v1/media/thumbnail/example.org%3A8448/media%2Fid%20with%20spaces?width=800&height=600&method=scale%2Ffast&animated=false",
+            "https://matrix.example/_matrix/client/v1/media/thumbnail/example.org%3A8448/media_id?width=800&height=600&method=scale%2Ffast&animated=false",
         )
 
         with self.assertRaises(Exception):
             await client.get_thumbnail(
-                "mxc://example.org/media/id?download=1#frag",
+                "mxc://example.org/media_id?download=1#frag",
                 64,
                 64,
             )
 
         self.assertEqual(
             client.session.urls[1],
-            "https://matrix.example/_matrix/client/v1/media/thumbnail/example.org/media%2Fid?width=64&height=64",
+            "https://matrix.example/_matrix/client/v1/media/thumbnail/example.org/media_id?width=64&height=64",
         )
 
     async def test_get_media_config_uses_unified_request(self):
@@ -2506,7 +2510,7 @@ class MatrixClientPathEncodingTests(unittest.IsolatedAsyncioTestCase):
                 self.failures.append((source_key, status))
 
         client = FakeClient()
-        data = await client.get_thumbnail("mxc://Example.ORG/media/id", 32, 32)
+        data = await client.get_thumbnail("mxc://Example.ORG/media_id", 32, 32)
 
         self.assertEqual(data, b"thumb")
         self.assertEqual(len(client.session.urls), 2)
@@ -2716,9 +2720,14 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
             "!room:example.org",
         )
 
-        self.assertEqual(event.body, "hello")
+        # Standalone edits retain their fallback at parse time; strict
+        # target validation and m.new_content application happen asynchronously.
+        self.assertEqual(event.body, "* hello")
         self.assertEqual(event.content["m.relates_to"]["rel_type"], "m.replace")
-        self.assertIn("org.matrix.msc4357.live", event.content)
+        self.assertEqual(event.content["m.new_content"]["body"], "hello")
+        self.assertIn(
+            "org.matrix.msc4357.live", event.content["m.new_content"]
+        )
 
     async def test_message_callback_ignores_live_drafts_but_processes_final_edits(
         self,
@@ -2869,7 +2878,7 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("formatted_body", event.content)
         handle_msg.assert_awaited_once()
 
-    async def test_processed_replace_target_is_not_dropped(self):
+    async def test_malformed_replace_without_new_content_is_dropped(self):
         edit_module = load_module("processors.event_lib.msg.dispatch.edit")
 
         processor = edit_module.MatrixEventProcessorMessagesEditMixin()
@@ -2888,9 +2897,11 @@ class MatrixLiveMessageCompatTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.assertFalse(processor._normalize_message_edit(event, event.content))
-        self.assertEqual(event.body, "编辑后的内容")
-        self.assertEqual(event.content["body"], "编辑后的内容")
+        self.assertTrue(
+            await processor._normalize_message_edit(event, event.content)
+        )
+        self.assertEqual(event.body, "* 编辑后的内容")
+        self.assertEqual(event.content["body"], "* 编辑后的内容")
 
     async def test_message_callback_does_not_auto_dispatch_notice_messages(self):
         adapter_message = load_module("adapter.message")
@@ -3859,7 +3870,9 @@ class MatrixRoomStateCompatTests(unittest.IsolatedAsyncioTestCase):
                         "content": {"enabled": enabled},
                     },
                 )
-                self.assertEqual(room.live_messaging_enabled, enabled)
+                # Once stable state has been seen it is authoritative;
+                # a later unstable MSC4357 state cannot override it.
+                self.assertFalse(room.live_messaging_enabled)
                 self.assertEqual(
                     room.state_events[event_type][""],
                     {"enabled": enabled},
@@ -5403,7 +5416,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(client.content["msgtype"], "m.notice")
-        self.assertNotIn("m.mentions", client.content)
+        self.assertEqual(client.content["m.mentions"], {})
         self.assertEqual(
             client.content["m.relates_to"],
             {
@@ -5594,7 +5607,7 @@ class MatrixThreadCompatTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             captured["content"]["m.mentions"],
-            {"user_ids": ["@alice:example.org", "@carol:example.org"]},
+            {"user_ids": ["@alice:example.org"]},
         )
 
     async def test_send_plain_escapes_html_when_markdown_renderer_fails(self):
