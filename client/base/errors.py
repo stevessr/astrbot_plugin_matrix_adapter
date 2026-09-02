@@ -2,6 +2,7 @@
 
 M_RESOURCE_LIMIT_EXCEEDED = "M_RESOURCE_LIMIT_EXCEEDED"
 M_USER_LIMIT_EXCEEDED = "M_USER_LIMIT_EXCEEDED"
+M_USER_SUSPENDED = "M_USER_SUSPENDED"
 
 
 class MatrixAPIError(Exception):
@@ -32,6 +33,11 @@ class MatrixAPIError(Exception):
         return self.errcode == M_USER_LIMIT_EXCEEDED
 
     @property
+    def is_user_suspended(self) -> bool:
+        """Whether this is Matrix v1.13 / MSC3823 ``M_USER_SUSPENDED``."""
+        return self.errcode == M_USER_SUSPENDED
+
+    @property
     def admin_contact(self) -> str | None:
         """Return the required admin contact for resource/user limit errors."""
         if not isinstance(self.data, dict):
@@ -43,5 +49,6 @@ class MatrixAPIError(Exception):
 __all__ = [
     "M_RESOURCE_LIMIT_EXCEEDED",
     "M_USER_LIMIT_EXCEEDED",
+    "M_USER_SUSPENDED",
     "MatrixAPIError",
 ]
