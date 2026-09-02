@@ -36,10 +36,52 @@ class MatrixV103MessagesTests(unittest.IsolatedAsyncioTestCase):
 
 class MatrixV103MegolmMetadataTests(unittest.TestCase):
     def test_outbound_megolm_keeps_deprecated_compat_metadata(self):
-        # Matrix v1.3 deprecated sender_key/device_id for source authentication,
-        # but says clients SHOULD continue sending them for compatibility.
-        source = load_module("e2ee.megolm.outbound.encryption")
-        self.assertTrue(hasattr(source, "MegolmEncryptionMixin") or source is not None)
+        # v1.3 says sender_key/device_id SHOULD still be emitted for compatibility,
+        # despite being deprecated for authenticating the event source.
+        mod = load_module("e2ee.megolm.outbound.encryption")
+
+        class Ciphertext:
+            def to_base64(self):
+                return "ciphertext"
+
+        class Session:
+            session_id = "session"
+
+            def encrypt(self, payload):
+                self.last_payload = payload
+                return Ciphertext()
+
+            def pickle(self, key):
+                return "pickle"
+
+        class CurveKey:
+            def to_base64(self):
+                return "curve-key"
+
+        class Account:
+            curve25519_key = CurveKey()
+
+        class Store:
+            def save_megolm_outbound(self, room_id, pickle):
+                pass
+
+            def record_megolm_outbound_message(self, room_id, session_id):
+                pass
+
+        machine = mod.OlmMachineMegolmOutboundEncryptionMixin()
+        machine._megolm_outbound = {"!room:example.org": Session()}
+        machine._megolm_inbound = {"session": object()}
+        machine._pickle_key = b"pickle-key"
+        machine._account = Account()
+        machine.device_id = "DEVICE"
+        machine.store = Store()
+
+        encrypted = machine.encrypt_megolm(
+            "!room:example.org", "m.room.message", {"body": "hello"}
+        )
+        self.assertEqual(encrypted["sender_key"], "curve-key")
+        self.assertEqual(encrypted["device_id"], "DEVICE")
+        self.assertEqual(encrypted["session_id"], "session")
 
 
 if __name__ == "__main__":
