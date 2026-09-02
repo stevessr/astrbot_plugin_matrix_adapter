@@ -8,6 +8,14 @@ class SASVerificationFlowAcceptMixin:
 
     async def _handle_accept(self, sender: str, content: dict, transaction_id: str):
         """处理验证接受"""
+        session = self._get_bound_verification_session(
+            transaction_id,
+            sender,
+            content.get("from_device"),
+        )
+        if session is None:
+            return
+
         commitment = content.get("commitment")
         key_agreement = content.get("key_agreement_protocol")
         hash_algo = content.get("hash")
@@ -19,7 +27,6 @@ class SASVerificationFlowAcceptMixin:
             f"key_agreement={key_agreement} hash={hash_algo} mac={mac}"
         )
 
-        session = self._sessions.get(transaction_id, {})
         session["state"] = "accepted"
         session["their_commitment"] = commitment
         session["key_agreement"] = key_agreement
