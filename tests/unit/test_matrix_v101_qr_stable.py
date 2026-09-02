@@ -162,5 +162,29 @@ class MatrixV101QRScanTests(unittest.IsolatedAsyncioTestCase):
         scanner._send_to_device.assert_not_awaited()
 
 
+class MatrixV101QRTrustPublicationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_first_post_verification_republish_is_not_suppressed(self):
+        publication_mod = load_module(
+            "e2ee.manager.verification.cross_signing.publication"
+        )
+        manager = publication_mod.CrossSigningVerificationPublicationMixin()
+        manager.device_id = "CURRENT"
+        republish = mock.AsyncMock()
+        manager._cross_signing = types.SimpleNamespace(
+            _republish_current_device_keys=republish
+        )
+
+        with mock.patch.object(publication_mod.time, "monotonic", return_value=10.0):
+            await manager._maybe_republish_current_device_keys_after_verification(
+                "PEER"
+            )
+
+        republish.assert_awaited_once_with()
+        self.assertEqual(
+            manager._last_current_device_key_refresh_after_verification_ts,
+            10.0,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
