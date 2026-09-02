@@ -8,6 +8,7 @@ from ....constants import M_PROFILE_FIELDS_CAPABILITY
 FORGET_FORCED_UPON_LEAVE_CAPABILITY = "m.forget_forced_upon_leave"
 ACCOUNT_MODERATION_CAPABILITY = "m.account_moderation"
 THREEPID_CHANGES_CAPABILITY = "m.3pid_changes"
+GET_LOGIN_TOKEN_CAPABILITY = "m.get_login_token"
 
 
 class AuthDiscoveryCapabilitiesMixin:
@@ -84,6 +85,20 @@ class AuthDiscoveryCapabilitiesMixin:
         capability = capabilities.get(THREEPID_CHANGES_CAPABILITY)
         if capability is None:
             return True
+        return isinstance(capability, dict) and capability.get("enabled") is True
+
+    async def can_get_login_token(self) -> bool:
+        """Return the stable ``m.get_login_token`` per-user capability.
+
+        Unlike several older boolean capabilities there is no permissive
+        default here: clients should hide the feature unless ``enabled`` is
+        explicitly true for the authenticated account.
+        """
+        response = await self.get_capabilities()
+        capabilities = (
+            response.get("capabilities", {}) if isinstance(response, dict) else {}
+        )
+        capability = capabilities.get(GET_LOGIN_TOKEN_CAPABILITY)
         return isinstance(capability, dict) and capability.get("enabled") is True
 
     async def get_profile_fields_capability(self) -> dict[str, Any] | None:
