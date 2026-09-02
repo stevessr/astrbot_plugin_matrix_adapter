@@ -28,24 +28,25 @@ class RoomPublicDirectoryMixin:
         if server:
             params["server"] = server
 
+        if filter is not None and not isinstance(filter, dict):
+            raise ValueError("filter must be a dict when provided")
         if room_types is not None:
             if not isinstance(room_types, list) or not all(
                 value is None or isinstance(value, str) for value in room_types
             ):
                 raise ValueError("room_types must be a list of strings or None")
 
-        effective_filter = dict(filter) if isinstance(filter, dict) else {}
-        if filter is not None and not isinstance(filter, dict):
-            raise ValueError("filter must be a dict when provided")
-        if room_types is not None:
-            effective_filter["room_types"] = list(room_types)
-
-        if not effective_filter:
+        use_post = filter is not None or room_types is not None
+        if not use_post:
             if limit is not None:
                 params["limit"] = limit
             if since:
                 params["since"] = since
             return await self._request("GET", endpoint, params=params)
+
+        effective_filter = dict(filter or {})
+        if room_types is not None:
+            effective_filter["room_types"] = list(room_types)
 
         data: dict[str, Any] = {"filter": effective_filter}
         if limit is not None:
