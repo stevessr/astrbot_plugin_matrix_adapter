@@ -1,6 +1,6 @@
 # 开发接口
 
-Matrix 适配器通过 `adapter.sender`（`MatrixSender` 实例）提供发送与管理接口。协议示例以当前 Matrix Client-Server stable v1.19 为准，同时保留必要的旧源码兼容入口。
+Matrix 适配器通过 `adapter.sender`（`MatrixSender` 实例）提供发送与管理接口。协议示例以当前 Matrix Client-Server stable v1.19 为准，同时保留必要的旧源码兼容入口。当前 stable 审计覆盖 v1.11 → v1.19。
 
 ## 媒体消息发送
 
@@ -20,7 +20,7 @@ await adapter.sender.send_message(
 )
 ```
 
-`m.image` 和 `m.sticker` 会按 Matrix v1.18 / MSC4230 使用 `info.is_animated`。图片发送器在可检测时自动填写该字段，无法判断时保持未设置。
+`m.image` 和 `m.sticker` 会按 Matrix v1.18 / MSC4230 使用 `info.is_animated`。图片发送器在可检测时自动填写该字段，无法判断时保持未设置。媒体下载、thumbnail、preview 与 media config 使用 v1.11 起的 authenticated `/_matrix/client/v1/media/*` 路径。
 
 ## 已读回执与 typing
 
@@ -64,6 +64,30 @@ await adapter.sender.send_custom_event(
 ```
 
 标准 `m.room.message` 的发送链会至少补上 `m.mentions: {}`，以符合 v1.17 / MSC4210 移除 legacy plaintext mention 后的客户端语义。
+
+### 数学消息（v1.11 / MSC2191）
+
+```python
+# inline maths -> span[data-mx-maths]
+await adapter.sender.send_math_message(
+    "!roomid:example.org",
+    r"x^2 + y^2 = z^2",
+    fallback="x² + y² = z²",
+)
+
+# block maths -> div[data-mx-maths]
+await adapter.sender.send_math_message(
+    "!roomid:example.org",
+    r"\int_0^1 x^2 dx",
+    block=True,
+)
+```
+
+`send_math_message()` 会对 LaTeX 属性和 HTML fallback 做转义，生成 `org.matrix.custom.html`，同时始终保留 plain `body`。它复用 `send_custom_message()` 的 E2EE-aware 发送链，因此加密房间不会绕过加密。
+
+## Reply fallback（v1.13 / MSC2781）
+
+新发送的 reply 不再复制被回复消息正文，也不再生成 `<mx-reply>`。上下文通过 `m.relates_to.m.in_reply_to` 表示，通知目标由 `m.mentions` 明确表达；接收端仍会兼容旧历史事件中的 reply fallback 并在解析时剥离。
 
 ## MessageOverrideMixin
 
@@ -135,7 +159,7 @@ await adapter.sender.report_message(
     reason="spam",
 )
 
-# 举报整个房间 / 用户（user report 自 v1.14 / MSC4260 stable）
+# 举报整个房间（v1.13 / MSC4151）/ 用户（v1.14 / MSC4260）
 await adapter.sender.report_room("!roomid:example.org", reason="abuse")
 await adapter.sender.report_user("@alice:example.org", reason="abuse")
 
@@ -171,6 +195,9 @@ blocked = await client.get_invite_blocking()
 # MSC4267：homeserver 是否在 leave 后自动 forget
 forced_forget = await client.is_forget_forced_upon_leave()
 
+# v1.12：是否允许为另一个未认证设备生成一次性 login token
+can_token = await client.can_get_login_token()
+
 # v1.16 / MSC4133：扩展 profile field capability
 profile_fields = await client.get_profile_fields_capability()
 can_set_tz = await client.can_set_profile_field("m.tz")
@@ -178,6 +205,29 @@ can_set_tz = await client.can_set_profile_field("m.tz")
 # v1.18 / MSC4323：账号管理能力
 moderation = await client.get_account_moderation_capability()
 ```
+
+### 单次 Login Token（v1.12 stable capability / `/v1/login/get_token`）
+
+```python
+# 首次调用如果 homeserver 要求 UIA，会抛 MatrixAPIError(401) 并携带 UIA challenge。
+# 完成 challenge 后把 auth 对象传回：
+response = await client.generate_login_token(
+    auth={
+        "type": "m.login.password",
+        "session": "uia-session",
+        "identifier": {"type": "m.id.user", "user": "@bot:example.org"},
+        "password": "...",
+    }
+)
+login_token = response["login_token"]
+expires_in_ms = response["expires_in_ms"]
+```
+
+该 token 是给**另一个未认证 client/device** 的单次登录凭据，不会覆盖当前 `MatrixHTTPClient.access_token`。
+
+### Account locked / suspended
+
+`M_USER_LOCKED`（v1.12 / MSC3939）与 `M_USER_SUSPENDED`（v1.13 / MSC3823）不会被 `/sync` 当成 token invalid。同步器会保留当前 access token、设备与 E2EE state，并限速继续探测；只有 `M_UNKNOWN_TOKEN` / `M_MISSING_TOKEN` 才触发 token-invalid refresh callback。`MatrixAPIError` 提供 `is_user_locked`、`is_user_suspended` 与 `soft_logout` helper。
 
 ## 房间生命周期、远程路由、历史和搜索
 
@@ -219,6 +269,9 @@ members = await adapter.sender.get_room_members("!roomid:example.org")
 history = await adapter.sender.get_room_messages("!roomid:example.org", limit=20)
 event = await adapter.sender.get_event("!roomid:example.org", "$event_id:example.org")
 mutual = await adapter.sender.get_mutual_rooms("@alice:example.org")  # v1.19
+
+# v1.11 / MSC4115: generic event accessor
+membership_at_event = event.unsigned_membership
 
 # v1.15 / MSC3266 room summary，保留 encryption / room_version / allowed_room_ids 等扩展字段
 summary = await adapter.sender.get_room_summary(
@@ -371,3 +424,5 @@ await client.delete_profile_timezone()
 ## OAuth UIA / Cross-signing（v1.17 / MSC4312）
 
 当 cross-signing upload 收到 `m.oauth` UIA challenge 时，适配器暴露 `{session, url}` 审批信息。审批完成后只使用 UIA `session` 重试，不提交 OAuth access token，也不会在 malformed OAuth challenge 时自动降级到 password UIA。无浏览器 UI 的默认运行方式会记录审批 URL 并进行有界轮询；嵌入式调用方可以向 E2EE manager 注入 `oauth_uia_callback`。
+
+首次 cross-signing key upload（v1.11 / MSC3967）会先直接提交，不主动要求 UIA；只有 homeserver 真正返回 challenge 时才进入上述 UIA 流程。
