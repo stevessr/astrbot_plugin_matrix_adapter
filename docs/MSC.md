@@ -1,17 +1,19 @@
 # 已支持的 Matrix Spec Change（MSC）
 
-> Stable 基线：**Matrix Client-Server v1.19（2026-07-08）**。截至 2026-09-02，Matrix 官方 latest release 仍为 v1.19。本文件按 v1.14 → v1.19 逐版对账，只把与 AstrBot Client Adapter 职责直接相关、且代码真实覆盖的能力记为 ✅；Application Service / Federation / homeserver-only 变更明确记为 N/A，安全敏感但尚未完整实现的能力继续标记为部分支持。
+> Stable 基线：**Matrix Client-Server v1.19（2026-07-08）**。截至 2026-09-02，Matrix 官方 latest release 仍为 v1.19。本文件按 v1.11 → v1.19 逐版对账，只把与 AstrBot Client Adapter 职责直接相关、且代码真实覆盖的能力记为 ✅；Application Service / Federation / homeserver-only 变更明确记为 N/A，安全敏感但尚未完整实现的能力继续标记为部分支持。
 
 ## Stable MSC 支持总表
 
 | MSC | 名称 | 角色 | 状态 / 说明 |
 |-----|------|------|-------------|
 | MSC1767 | Extensible Events | 收/发 | 已支持：音频/文本/投票等 extensible content |
+| MSC2191 | Mathematical Messages | 发 | 已支持：`send_math_message()` 生成 `span/div[data-mx-maths]` 与 plain fallback，并复用 E2EE-aware send path |
 | MSC2403 | Knock Rooms | 收/发 | 已支持：`/sync.rooms.knock`、knock membership、stable `via` 路由 |
 | MSC2545 | Image Packs | 收 | 已支持：stable `m.room.image_pack` / `m.image_pack.rooms`，兼容 `im.ponies.*` |
 | MSC2666 | Mutual Rooms | 发 | 已支持：`GET /_matrix/client/v1/mutual_rooms` 与分页 |
 | MSC2697 | Dehydrated Devices | E2EE | 已支持：脱水设备恢复 |
 | MSC2746 | VoIP / MatrixRTC | 收 | 已支持：1 对 1 VoIP 与群组 Live 通话状态 |
+| MSC2781 | Remove Reply Fallbacks | 发/收 | 已支持：v1.13+ outbound reply 不再复制旧消息正文或 `<mx-reply>`；接收仍兼容剥离历史 fallback |
 | MSC2867 | Marking Rooms as Unread | 发 | 已支持：`mark_room_unread`，兼容稳定与旧键 |
 | MSC2965 | OAuth2 Discovery | 发 | 已支持：stable `/_matrix/client/v1/auth_metadata` 与 metadata discovery |
 | MSC2967 | OAuth2 Scopes | 发 | 已支持：Matrix API / device scopes |
@@ -25,8 +27,11 @@
 | MSC3765 | Rich Room Topics | 收/发 | 已支持：stable `m.topic` → `m.text[]`，始终保留 legacy `topic` plain fallback |
 | MSC3771 | Thread Read Receipts | 发 | 已支持：receipt `thread_id` |
 | MSC3824 | OAuth-aware Clients | 收/发 | 已覆盖适配器相关部分：preferred SSO、`action`、`m.3pid_changes`、account management |
+| MSC3939 | Account Locking | 收 | 已支持：`M_USER_LOCKED` / `soft_logout`；`/sync` 保留 session/E2EE，不把账号锁定误判成 token invalid |
 | MSC3952 | Intentional Mentions | 收/发 | 已支持：`m.mentions` |
+| MSC3967 | Cross-signing First Upload | E2EE | 已支持：首次上传先无 UIA 尝试，仅 homeserver 实际 challenge 时进入 UIA |
 | MSC4075 | Ringing Notifications | 收 | 已支持：`m.call.notify` |
+| MSC4115 | `unsigned.membership` | 收 | 已支持：通用事件保留 `unsigned` 并提供 `MatrixEvent.unsigned_membership` |
 | MSC4133 | Extended Profile Fields | 收/发 | 已支持：v1.16 stable `/v3/profile` 为主，旧 MSC endpoint 仅 unsupported fallback；支持 `m.profile_fields` capability |
 | MSC4140 | Cancellable Delayed Events | 发 | 已支持：延迟事件发送/取消/触发 |
 | MSC4142 | Reply Mention Semantics | 发 | 已支持：回复仅合并当前显式 mentions + 被回复 sender，不传播旧消息 mention 链 |
@@ -59,6 +64,45 @@
 | MSC4423 | Room Directory Ordering | 收 | 已支持：完整保留 homeserver 返回顺序 |
 
 > MSC4357 Live Messages 目前仍为 **unstable/proposal**。仓库保留服务器 advisory probe 与房间 policy probe，但不计入 stable 支持。
+
+## Matrix v1.11 changelog 对账
+
+| v1.11 Client-Server 变更 | 覆盖状态 | 当前实现 |
+|-------------------------|----------|----------|
+| MSC4126 query-string access-token deprecation | ✅ | Matrix API token 统一使用 `Authorization: Bearer`，不依赖 query-string token |
+| MSC3916 authenticated media | ✅ | 下载、缩略图、preview、config 使用 `/_matrix/client/v1/media/*` authenticated endpoints |
+| MSC2191 mathematical messages | ✅ | `send_math_message()` 生成安全转义的 `span/div[data-mx-maths]`，保留 plain `body` fallback，并走 E2EE-aware custom send |
+| MSC3967 first cross-signing upload without UIA | ✅ | cross-signing 上传先无 `auth` 请求；只有实际 UIA challenge 后才进入 dummy/password/OAuth approval |
+| MSC4115 `unsigned.membership` | ✅ | 通用 `MatrixEvent` 完整保留 `unsigned` 并提供 `unsigned_membership` accessor |
+| MSC3291 VoIP mute | ✅/透传 | MatrixRTC/VoIP state/event content 不丢弃未知合法字段 |
+| `/_matrix/media/*` deprecation | ✅ | 客户端媒体主路径已经迁移到 authenticated Client-Server media API |
+
+## Matrix v1.12 changelog 对账
+
+| v1.12 Client-Server 变更 | 覆盖状态 | 当前实现 |
+|-------------------------|----------|----------|
+| MSC4156 `via` for join/knock | ✅ | `join_room(..., via=[...])` / `knock_room(..., via=[...])` 发送重复 `via` query 参数 |
+| MSC2867 marking rooms unread | ✅ | stable `m.marked_unread` helper，同时保留旧 key compatibility |
+| MSC3939 account locking | ✅ | `MatrixAPIError.is_user_locked` / `soft_logout`; `/sync` 遇 `M_USER_LOCKED` 保留 token/session/E2EE 并限速继续探测，不触发 refresh/re-login |
+| `m.get_login_token` capability | ✅ | `can_get_login_token()` 仅在 capability 显式 `enabled: true` 时开放 |
+| stable `POST /_matrix/client/v1/login/get_token` | ✅ | `generate_login_token(auth=...)` 支持 UIA challenge/completion，返回的单次 token 不写入当前 client session |
+| MSC4189 guest authenticated media | ✅ | authenticated media 请求可复用当前会话/guest access token |
+| deprecated `server_name` | ✅ | 仅保留 Python compatibility alias；wire 使用 stable `via` |
+
+### Account locking 与 token refresh
+
+账号锁定/暂停是 **account state**，不是 access-token invalidation。同步器只在标准 `M_UNKNOWN_TOKEN` / `M_MISSING_TOKEN` 401 上调用 token-invalid callback；`M_USER_LOCKED` 与 `M_USER_SUSPENDED` 不会触发 refresh 或重新登录，从而避免删除/覆盖应保留的 E2EE session。其他未知 401/403 也不会被武断当成 token invalid。
+
+## Matrix v1.13 changelog 对账
+
+| v1.13 Client-Server 变更 | 覆盖状态 | 当前实现 |
+|-------------------------|----------|----------|
+| MSC4151 room report | ✅ | `report_room()` → `POST /_matrix/client/v3/rooms/{roomId}/report` |
+| MSC2781 remove reply fallbacks | ✅ | outbound reply 不再把原消息 body 或 `<mx-reply>` 复制进新事件；仍发送 `m.in_reply_to` + intentional mentions；接收侧继续兼容历史 fallback stripping |
+| MSC3823 `M_USER_SUSPENDED` | ✅ | error helper + `/sync` 不误触发 token refresh/re-login |
+| event report reason may be omitted | ✅ | `report_event()` 在 reason 为 `None` 时不发送空字段 |
+| MSC4178 requestToken error additions | ➖ N/A | 当前没有独立 3PID Identity-Service requestToken 用户流程 |
+| MSC2409 AS ephemeral data | ➖ N/A | Application Service 能力，不属于普通 AstrBot Client Adapter |
 
 ## Matrix v1.14 changelog 对账
 
@@ -135,7 +179,7 @@ MSC4222 不是只多传一个 query 参数。服务器返回 `state_after` 时�
 4. 不提交 OAuth access token，也不伪造 `type`；
 5. malformed `m.oauth` challenge 不允许静默降级到 password UIA。
 
-默认 AstrBot 无交互式浏览器 UI 时会记录审批 URL 并进行有界轮询；高级调用方可注入 `oauth_uia_callback`。
+默认 AstrBot 无交互式浏览器 UI 时会记录审批 URL并进行有界轮询；高级调用方可注入 `oauth_uia_callback`。
 
 ## Matrix v1.18 changelog 对账
 
@@ -205,6 +249,9 @@ v1.19 stable 规范包含 `m.room_key_bundle` 历史密钥迁移流程。该消�
 
 本轮 stable 对账新增/扩展了以下测试文件：
 
+- `tests/unit/test_matrix_v111_stable.py`
+- `tests/unit/test_matrix_v112_stable.py`
+- `tests/unit/test_matrix_v113_stable.py`
 - `tests/unit/test_matrix_v114_stable.py`
 - `tests/unit/test_matrix_v115_stable.py`
 - `tests/unit/test_matrix_v116_stable.py`
