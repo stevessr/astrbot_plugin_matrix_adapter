@@ -6,7 +6,13 @@ class SASVerificationFlowKeyCoreOrchestratorMixin:
 
     async def _handle_key(self, sender: str, content: dict, transaction_id: str):
         """处理密钥交换 - 使用真正的 X25519"""
-        session = self._sessions.get(transaction_id, {})
+        session = self._get_bound_verification_session(
+            transaction_id,
+            sender,
+            content.get("from_device"),
+        )
+        if session is None:
+            return
 
         their_key = await self._validate_key_and_commitment(
             sender,
