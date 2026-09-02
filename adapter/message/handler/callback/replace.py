@@ -52,8 +52,12 @@ def _strip_edit_fallback(text: str) -> str:
     return text
 
 
-async def _fetch_replace_target(adapter, room, event_id: str):
+async def _fetch_replace_target(adapter, room, event_id: str, event=None):
     """Fetch the event targeted by an ``m.replace`` relation if possible."""
+    validated = getattr(event, "_validated_replace_target", None) if event else None
+    if isinstance(validated, dict):
+        return validated
+
     client = getattr(adapter, "client", None)
     get_event = getattr(client, "get_event", None)
     if not event_id or not callable(get_event):
@@ -87,7 +91,7 @@ def _replace_event_text(event, text: str) -> None:
 
 
 async def _normalize_replace_event(adapter, room, event) -> bool:
-    """Convert an edit into ``[quote] -> [new_text]`` before conversion."""
+    """Convert a validated edit into ``[quote] -> [new_text]``."""
     content = getattr(event, "content", {})
     if not isinstance(content, dict):
         return False
@@ -101,7 +105,10 @@ async def _normalize_replace_event(adapter, room, event) -> bool:
 
     original_event_id = relates_to.get("event_id")
     original_event = await _fetch_replace_target(
-        adapter, room, str(original_event_id or "")
+        adapter,
+        room,
+        str(original_event_id or ""),
+        event=event,
     )
     quote = _extract_event_text(original_event)
     if not quote:
