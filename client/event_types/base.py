@@ -18,12 +18,21 @@ class MatrixEvent:
     unsigned: dict[str, Any] | None = None
 
     @property
-    def replaces_state(self) -> str | None:
-        """Event ID replaced by this state event (Matrix v1.19).
+    def prev_content(self) -> dict[str, Any] | None:
+        """Previous state-event content from Matrix v1.2 ``unsigned.prev_content``.
 
-        Homeservers expose this as ``unsigned.replaces_state`` even when
-        ``unsigned.prev_content`` is hidden by history visibility.
+        v1.2 moved this field out of the event top level. Do not fall back to a
+        top-level ``prev_content`` because doing so would preserve the obsolete
+        wire shape and can hide parser regressions.
         """
+        if not isinstance(self.unsigned, dict):
+            return None
+        value = self.unsigned.get("prev_content")
+        return dict(value) if isinstance(value, dict) else None
+
+    @property
+    def replaces_state(self) -> str | None:
+        """Event ID replaced by this state event (Matrix v1.19)."""
         if not isinstance(self.unsigned, dict):
             return None
         event_id = self.unsigned.get("replaces_state")
@@ -31,12 +40,7 @@ class MatrixEvent:
 
     @property
     def unsigned_membership(self) -> str | None:
-        """Membership associated with the event via Matrix v1.11 / MSC4115.
-
-        The homeserver may expose the requesting user's membership in
-        ``unsigned.membership``. Keep this separate from ``m.room.member``
-        content membership so generic timeline events can expose it safely.
-        """
+        """Membership associated with the event via Matrix v1.11 / MSC4115."""
         if not isinstance(self.unsigned, dict):
             return None
         membership = self.unsigned.get("membership")
@@ -44,7 +48,6 @@ class MatrixEvent:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], room_id: str):
-        """Create event from dictionary."""
         return cls(
             event_id=data.get("event_id", ""),
             sender=data.get("sender", ""),
