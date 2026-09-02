@@ -1,6 +1,7 @@
 """Incoming SAS verification request handling."""
 
 import sys
+import time
 
 from astrbot.api import logger
 
@@ -10,12 +11,36 @@ from ...constants import VODOZEMAC_SAS_AVAILABLE, Sas
 class SASVerificationFlowRequestCoreMixin:
     """处理验证请求、设备指纹查询和验证模式分派。"""
 
+    _REQUEST_MAX_FUTURE_MS = 5 * 60 * 1000
+    _REQUEST_MAX_AGE_MS = 10 * 60 * 1000
+
+    @classmethod
+    def _is_fresh_to_device_verification_request(cls, timestamp: object) -> bool:
+        """Validate the stable Matrix to-device verification request window."""
+        if isinstance(timestamp, bool) or not isinstance(timestamp, int):
+            return False
+        now_ms = int(time.time() * 1000)
+        return (
+            now_ms - cls._REQUEST_MAX_AGE_MS
+            <= timestamp
+            <= now_ms + cls._REQUEST_MAX_FUTURE_MS
+        )
+
     async def _handle_request(self, sender: str, content: dict, transaction_id: str):
         """处理验证请求"""
         from_device = content.get("from_device")
         methods = content.get("methods", [])
         if not from_device:
             logger.warning("[E2EE-Verify] 验证请求缺少 from_device，忽略")
+            return
+
+        timestamp = content.get("timestamp")
+        if not self._is_fresh_to_device_verification_request(timestamp):
+            logger.warning(
+                "[E2EE-Verify] 忽略过期、过早或缺少 timestamp 的 to-device 验证请求："
+                f"sender={self._mask_identifier(sender)} "
+                f"device={self._mask_identifier(from_device)}"
+            )
             return
 
         logger.info(
