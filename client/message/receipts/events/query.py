@@ -47,21 +47,13 @@ class MessageEventQueryMixin:
         from_token: str | None = None,
         to_token: str | None = None,
         limit: int | None = None,
+        recurse: bool | None = None,
     ) -> dict[str, Any]:
-        """
-        Get relations for an event
+        """Get relations for an event.
 
-        Args:
-            room_id: Room ID
-            event_id: Event ID
-            rel_type: Relation type (e.g., m.annotation)
-            event_type: Optional event type filter
-            from_token: Pagination token
-            to_token: Pagination token
-            limit: Optional limit
-
-        Returns:
-            Relations response
+        ``recurse`` is the Matrix v1.10 / MSC3981 stable query flag. When true,
+        the homeserver may include indirect relations in addition to direct
+        children. ``None`` omits the flag for compatibility with older servers.
         """
         room = quote_path_segment(room_id)
         event = quote_path_segment(event_id)
@@ -76,4 +68,6 @@ class MessageEventQueryMixin:
             params["to"] = to_token
         if limit is not None:
             params["limit"] = limit
+        if recurse is not None:
+            params["recurse"] = "true" if recurse else "false"
         return await self._request("GET", path, params=params)
