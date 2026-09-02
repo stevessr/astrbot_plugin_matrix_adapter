@@ -1,16 +1,11 @@
-"""Expected MAC computation (vodozemac SAS or HKDF fallback)."""
-
-import base64
-import hashlib
+"""Expected SAS MAC computation."""
 
 from astrbot.api import logger
 
-from ...crypto_utils import _compute_hkdf
+from ...crypto_utils import SAS_MAC_V2, _calculate_sas_mac
 
 
 class SASVerificationFlowMACExpectedMixin:
-    """计算对端应提交的 MAC 值。"""
-
     async def _compute_expected_macs(
         self,
         session: dict,
@@ -21,29 +16,26 @@ class SASVerificationFlowMACExpectedMixin:
         base_info: str,
         available_keys: dict[str, str],
     ) -> tuple[dict, str] | None:
-        """Return (expected_mac_map, expected_keys_mac), or None on failure."""
+        method = session.get("mac") or SAS_MAC_V2
         try:
-            if established_sas:
-                expected_mac_map = {
-                    key_id: established_sas.calculate_mac(
-                        available_keys[key_id], (base_info + key_id)
-                    )
-                    for key_id in key_ids
-                }
-                expected_keys_mac = established_sas.calculate_mac(
-                    key_ids_csv, (base_info + "KEY_IDS")
+            macs = {
+                key_id: _calculate_sas_mac(
+                    method=method,
+                    message=available_keys[key_id],
+                    info=base_info + key_id,
+                    established_sas=established_sas,
+                    shared_secret=sas_bytes,
                 )
-            else:
-                expected_mac_map = {
-                    key_id: base64.b64encode(
-                        _compute_hkdf(sas_bytes, b"", available_keys[key_id].encode())
-                    ).decode()
-                    for key_id in key_ids
-                }
-                expected_keys_mac = base64.b64encode(
-                    hashlib.sha256(key_ids_csv.encode()).digest()
-                ).decode()
-        except Exception as e:
-            logger.error(f"[E2EE-Verify] MAC 计算失败：{e}")
+                for key_id in key_ids
+            }
+            keys_mac = _calculate_sas_mac(
+                method=method,
+                message=key_ids_csv,
+                info=base_info + "KEY_IDS",
+                established_sas=established_sas,
+                shared_secret=sas_bytes,
+            )
+        except Exception as exc:
+            logger.error(f"[E2EE-Verify] SAS MAC calculation failed: {exc}")
             return None
-        return expected_mac_map, expected_keys_mac
+        return macs, keys_mac
