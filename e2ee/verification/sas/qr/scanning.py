@@ -58,6 +58,15 @@ class SASVerificationQRScanningMixin:
                 return False, f"暂不支持的二维码模式：0x{mode:02x}"
 
             if key1_b64 != expected_key1 or key2_b64 != expected_key2:
+                session["state"] = "cancelled"
+                session["qr_confirmed"] = False
+                await self._send_cancel(
+                    user_id,
+                    device_id,
+                    resolved_txn_id,
+                    "m.key_mismatch",
+                    "QR code keys do not match the verification session",
+                )
                 return (
                     False,
                     "二维码载荷与当前验证会话不匹配，请确认扫描的是对应设备展示的验证二维码",
