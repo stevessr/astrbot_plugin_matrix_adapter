@@ -32,11 +32,7 @@ class SenderRoomLifecycleMixin:
             additional_creators=additional_creators,
         )
 
-    async def create_dm_room(
-        self,
-        user_id: str,
-        name: str | None = None,
-    ) -> dict:
+    async def create_dm_room(self, user_id: str, name: str | None = None) -> dict:
         """Create a Matrix direct-message room and update m.direct when possible."""
         return await self.client.create_dm_room(user_id=user_id, name=name)
 
@@ -48,11 +44,17 @@ class SenderRoomLifecycleMixin:
         self,
         room_id_or_alias: str,
         server_name: list[str] | None = None,
+        *,
+        via: list[str] | None = None,
     ) -> dict:
-        """Join a Matrix room, optionally via explicit remote servers."""
+        """Join a Matrix room through stable ``via`` servers.
+
+        ``server_name`` is retained as a deprecated source-compatible alias.
+        """
         return await self.client.join_room(
             room_id_or_alias,
             server_name=server_name,
+            via=via,
         )
 
     async def join_room_from_upgrade_reference(
@@ -62,19 +64,17 @@ class SenderRoomLifecycleMixin:
     ) -> dict:
         """Join a room referenced by a tombstone/predecessor event.
 
-        Matrix v1.19 clarifies that clients following an ``m.room.tombstone``
-        ``replacement_room`` or an ``m.room.create.predecessor.room_id`` SHOULD
-        use the server name from the reference event's sender as a ``via``
-        server. ``join_room`` exposes this through its ``server_name`` list.
+        Matrix v1.19 recommends using the reference event sender's homeserver as
+        a stable ``via`` server when following upgrade references.
         """
-        via: str | None = None
+        via_server: str | None = None
         if isinstance(event_sender, str) and event_sender.startswith("@"):
             _, separator, server = event_sender[1:].partition(":")
             if separator and server:
-                via = server
+                via_server = server
         return await self.join_room(
             room_id,
-            server_name=[via] if via else None,
+            via=[via_server] if via_server else None,
         )
 
     async def leave_room(self, room_id: str) -> dict:
@@ -107,12 +107,15 @@ class SenderRoomLifecycleMixin:
         room_id_or_alias: str,
         reason: str | None = None,
         server_name: list[str] | None = None,
+        *,
+        via: list[str] | None = None,
     ) -> dict:
-        """Knock on a Matrix room, optionally via explicit remote servers."""
+        """Knock on a Matrix room through stable ``via`` servers."""
         return await self.client.knock_room(
             room_id_or_alias=room_id_or_alias,
             reason=reason,
             server_name=server_name,
+            via=via,
         )
 
     async def accept_knock(
