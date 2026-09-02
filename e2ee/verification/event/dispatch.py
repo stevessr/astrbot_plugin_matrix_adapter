@@ -48,25 +48,46 @@ class SASVerificationEventDispatchMixin:
         if not handler:
             return False
 
-        # A request normally creates the flow. Matrix still requires receivers to
-        # handle the deprecated legacy to-device standalone start, so an unknown
-        # START is delegated to _handle_start to create a tightly-bound legacy SAS
-        # session. No other follow-up message is allowed to create a flow.
-        if event_type != M_KEY_VERIFICATION_REQUEST:
-            if (
-                event_type == M_KEY_VERIFICATION_START
-                and transaction_id not in self._sessions
-            ):
-                await handler(sender, content, transaction_id)
-                return True
+        if event_type == M_KEY_VERIFICATION_REQUEST:
+            await handler(sender, content, transaction_id)
+            return True
 
-            session = self._get_bound_verification_session(
-                transaction_id,
+        raw_session = self._sessions.get(transaction_id)
+
+        # Matrix keeps support for the deprecated to-device standalone START so
+        # older peers can still begin SAS. START is therefore the only follow-up
+        # event allowed to establish a missing to-device transaction.
+        if event_type == M_KEY_VERIFICATION_START and not isinstance(raw_session, dict):
+            await handler(sender, content, transaction_id)
+            return True
+
+        # Never answer an unknown cancellation with another cancellation: doing
+        # so can create an error loop between clients.
+        if event_type == M_KEY_VERIFICATION_CANCEL and not isinstance(
+            raw_session, dict
+        ):
+            return True
+
+        session = self._get_bound_verification_session(
+            transaction_id,
+            sender,
+            content.get("from_device"),
+        )
+        if session is None:
+            # A terminal transaction is intentionally silent. For a missing or
+            # identity-mismatched active flow, report unknown_transaction without
+            # mutating the legitimate session. Some verification events do not
+            # carry from_device, so send-to-device wildcard is used in that case.
+            if isinstance(raw_session, dict) and raw_session.get(
+                "state"
+            ) in self._TERMINAL_VERIFICATION_STATES:
+                return True
+            await self._send_unknown_transaction_cancel(
                 sender,
+                transaction_id,
                 content.get("from_device"),
             )
-            if session is None:
-                return True
+            return True
 
         await handler(sender, content, transaction_id)
         return True
