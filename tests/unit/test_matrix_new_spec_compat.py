@@ -7617,7 +7617,10 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         prepared = await verifier._maybe_prepare_self_verification_qr(
             "@bot:example.org",
             "DEV456",
-            [constants.M_QR_CODE_SCAN_V1_METHOD],
+            [
+                constants.M_QR_CODE_SCAN_V1_METHOD,
+                constants.M_RECIPROCATE_V1_METHOD,
+            ],
             "txn123",
         )
 
