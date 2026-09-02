@@ -32,13 +32,10 @@ class SASVerificationSendRoomTransportMixin:
     def _pick_algorithm(
         supported: list[str], peer_supported: list[str], fallback: str = ""
     ) -> str:
+        """Return only a real intersection between local and peer algorithms."""
         for algorithm in supported:
             if algorithm in peer_supported:
                 return algorithm
-        if supported:
-            return supported[0]
-        if peer_supported:
-            return peer_supported[0]
         return fallback
 
     async def _send_in_room_event(
