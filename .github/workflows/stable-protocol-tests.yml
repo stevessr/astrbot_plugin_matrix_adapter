@@ -58,6 +58,9 @@ jobs:
             qrcode \
             vodozemac
 
+      - name: Verify dependency consistency
+        run: python -m pip check
+
       - name: Compile protocol-facing modules
         run: |
           python -m compileall -q \
