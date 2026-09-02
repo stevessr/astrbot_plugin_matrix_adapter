@@ -93,8 +93,8 @@ class MatrixV119UpgradeViaTests(unittest.IsolatedAsyncioTestCase):
         calls = []
 
         class Client:
-            async def join_room(self, room_id, server_name=None):
-                calls.append((room_id, server_name))
+            async def join_room(self, room_id, server_name=None, *, via=None):
+                calls.append((room_id, server_name, via))
                 return {"room_id": room_id}
 
         class Sender(mod.SenderRoomLifecycleMixin):
@@ -102,12 +102,13 @@ class MatrixV119UpgradeViaTests(unittest.IsolatedAsyncioTestCase):
 
         await Sender().join_room(
             "!remote:elsewhere.example",
-            server_name=["elsewhere.example", "backup.example"],
+            via=["elsewhere.example", "backup.example"],
         )
         self.assertEqual(
             calls[-1],
             (
                 "!remote:elsewhere.example",
+                None,
                 ["elsewhere.example", "backup.example"],
             ),
         )
@@ -117,8 +118,8 @@ class MatrixV119UpgradeViaTests(unittest.IsolatedAsyncioTestCase):
         calls = []
 
         class Client:
-            async def join_room(self, room_id, server_name=None):
-                calls.append((room_id, server_name))
+            async def join_room(self, room_id, server_name=None, *, via=None):
+                calls.append((room_id, server_name, via))
                 return {"room_id": room_id}
 
         class Sender(mod.SenderRoomLifecycleMixin):
@@ -130,7 +131,7 @@ class MatrixV119UpgradeViaTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             calls[-1],
-            ("!new:remote.example", ["via.example:8448"]),
+            ("!new:remote.example", None, ["via.example:8448"]),
         )
 
 
