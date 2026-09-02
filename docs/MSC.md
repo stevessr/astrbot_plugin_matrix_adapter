@@ -9,7 +9,7 @@
 | MSC | 能力 | 状态 |
 |---|---|---|
 | MSC1219 | Key Backup | ✅ `/room_keys/*` + startup/restore |
-| MSC1544 | QR Verification | ⚠️ **未完整实现**：协议常量/QR header 已有，但没有完整 show/scan/reciprocate trust flow |
+| MSC1544 | QR Verification | ⚠️ partial：同账号 self-verification modes `0x01/0x02` 已实现 show/scan/reciprocate/done 与 trust transition；跨用户 mode `0x00` / in-room QR 尚未实现 |
 | MSC1756 | Cross-signing | ✅ device-signing/signatures + UIA integration |
 | MSC1767 | Extensible Events | ✅ |
 | MSC1929 | Server Support Discovery | ✅ `get_server_support()` |
@@ -115,13 +115,13 @@
 | MSC1946 / MSC2472 SSSS | ✅ | secret storage / sharing |
 | MSC2241 in-room verification | ✅ | `m.room.message` verification request + room verification events |
 | MSC2858 multiple SSO providers | ✅ fixed | `idp_id` 使用 stable `/login/sso/redirect/{idpId}`，若 server advertise providers 则未知 ID 本地拒绝 |
-| MSC1544 QR verification | ⚠️ 未完整实现 | `m.qr_code.show.v1` / `scan` / QR binary constants 已定义，但没有完整 QR verification trust workflow；不计为支持 |
+| MSC1544 QR verification | ⚠️ partial | 同账号 `0x01/0x02`：stable show/scan/`m.reciprocate.v1`、QR payload binding、done 与 cross-signing trust flow 已实现；跨用户 `0x00` / in-room QR 尚未实现 |
 | MSC2403 knock | ✅ | stable knock endpoint/sync |
 | MSC2844 v3 endpoints | ✅ | 常规 Client-Server endpoint 已使用 stable v3/v1 路径 |
 
 ### v1.1 QR Verification 安全边界
 
-QR verification 会直接影响 cross-signing trust。当前仓库只有 QR method 常量与编码头定义，缺少完整的 show/scan/reciprocate state machine、二维码 payload binding、cross-signing identity validation 与完成态 trust transition。因此继续标为 **未完整实现**，不会仅凭常量存在就宣称 MSC1544 已支持。
+QR verification 会直接影响 cross-signing trust，因此这里按真实安全边界记为 **partial**。同账号设备自验证已覆盖 `m.qr_code.show.v1` / `m.qr_code.scan.v1` / `m.reciprocate.v1`、modes `0x01/0x02`、UTF-8 request ID 的二进制 payload binding、扫码 key 校验、shared-secret 校验、key mismatch cancel、done gating、device-store 与 cross-signing trust publication；新设备随后可请求缺失 cross-signing / backup secrets。当前 QR 协商明确限制为同账号，MSC1544 的跨用户 mode `0x00` 与相应 in-room QR trust flow 尚未实现，因此不宣称 full support。
 
 ## v1.2
 
