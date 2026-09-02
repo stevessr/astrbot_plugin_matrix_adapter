@@ -35,7 +35,14 @@ class MatrixV101QRPayloadTests(unittest.TestCase):
 
     def test_qr_parser_rejects_unknown_mode(self):
         decoding_mod = load_module("e2ee.verification.sas.qr.decoding")
-        payload = b"MATRIX" + bytes([0x02, 0x7F]) + b"\x00\x01x" + b"A" * 32 + b"B" * 32 + b"secret"
+        payload = (
+            b"MATRIX"
+            + bytes([0x02, 0x7F])
+            + b"\x00\x01x"
+            + b"A" * 32
+            + b"B" * 32
+            + b"secret"
+        )
 
         with self.assertRaisesRegex(ValueError, "二维码模式"):
             decoding_mod.SASVerificationQRDecodingMixin._parse_verification_qr_payload(
@@ -44,12 +51,60 @@ class MatrixV101QRPayloadTests(unittest.TestCase):
 
     def test_qr_parser_rejects_invalid_utf8_request_id(self):
         decoding_mod = load_module("e2ee.verification.sas.qr.decoding")
-        payload = b"MATRIX" + bytes([0x02, 0x01]) + b"\x00\x01\xff" + b"A" * 32 + b"B" * 32 + b"secret"
+        payload = (
+            b"MATRIX"
+            + bytes([0x02, 0x01])
+            + b"\x00\x01\xff"
+            + b"A" * 32
+            + b"B" * 32
+            + b"secret"
+        )
 
         with self.assertRaisesRegex(ValueError, "UTF-8"):
             decoding_mod.SASVerificationQRDecodingMixin._parse_verification_qr_payload(
                 payload
             )
+
+
+class MatrixV101QRNegotiationTests(unittest.TestCase):
+    def test_qr_requires_reciprocate_in_peer_methods(self):
+        identity_mod = load_module("e2ee.verification.utils.identity")
+        guard_mod = load_module("e2ee.verification.utils.qr.prepare.guard")
+        crypto = load_module("constants.crypto")
+
+        identity = identity_mod.SASVerificationFlowIdentityMixin()
+        identity.user_id = "@alice:example.org"
+        identity._supports_method = lambda methods, method: method in methods
+
+        self.assertFalse(
+            identity._can_continue_with_qr(
+                "@alice:example.org", [crypto.M_QR_CODE_SCAN_V1_METHOD]
+            )
+        )
+        self.assertTrue(
+            identity._can_continue_with_qr(
+                "@alice:example.org",
+                [crypto.M_QR_CODE_SCAN_V1_METHOD, crypto.M_RECIPROCATE_V1_METHOD],
+            )
+        )
+
+        guard = guard_mod.SASVerificationFlowQRPrepareGuardMixin()
+        guard.user_id = "@alice:example.org"
+        guard._supports_method = lambda methods, method: method in methods
+        self.assertFalse(
+            guard._check_self_verification_qr_ready(
+                "@alice:example.org",
+                "PEER",
+                [crypto.M_QR_CODE_SCAN_V1_METHOD],
+            )
+        )
+        self.assertTrue(
+            guard._check_self_verification_qr_ready(
+                "@alice:example.org",
+                "PEER",
+                [crypto.M_QR_CODE_SCAN_V1_METHOD, crypto.M_RECIPROCATE_V1_METHOD],
+            )
+        )
 
 
 class MatrixV101QRScanTests(unittest.IsolatedAsyncioTestCase):
