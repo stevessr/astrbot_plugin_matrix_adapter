@@ -12,8 +12,9 @@ class SenderRelationsMixin:
         from_token: str | None = None,
         to_token: str | None = None,
         limit: int | None = None,
+        recurse: bool | None = None,
     ) -> dict:
-        """Get Matrix relations for an event, such as reactions or edits."""
+        """Get Matrix relations, optionally recursively (v1.10 / MSC3981)."""
         return await self.client.get_event_relations(
             room_id=room_id,
             event_id=event_id,
@@ -22,6 +23,7 @@ class SenderRelationsMixin:
             from_token=from_token,
             to_token=to_token,
             limit=limit,
+            recurse=recurse,
         )
 
     async def set_read_markers(
