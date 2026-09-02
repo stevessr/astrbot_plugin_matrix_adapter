@@ -13,7 +13,7 @@ class AuthLoginMixin(
     AuthLoginCredentialsMixin,
     AuthLoginRegistrationMixin,
 ):
-    """Perform Matrix login and registration flows."""
+    """Perform Matrix login, registration, and login-token flows."""
 
     pass
 
@@ -22,6 +22,9 @@ class AuthLoginMixin(
 AuthLoginMixin.login_password = AuthLoginCredentialsMixin.__dict__["login_password"]
 AuthLoginMixin.login_token = AuthLoginCredentialsMixin.__dict__["login_token"]
 AuthLoginMixin.register = AuthLoginRegistrationMixin.__dict__["register"]
+AuthLoginMixin.generate_login_token = AuthLoginRegistrationMixin.__dict__[
+    "generate_login_token"
+]
 
 
 __all__ = [
