@@ -1,0 +1,116 @@
+name: Migrate stable compatibility tests
+
+on:
+  push:
+    branches:
+      - feat/stable-msc-v1.18-v1.19
+    paths:
+      - ".github/workflows/migrate-stable-compat-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/stable-msc-v1.18-v1.19
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Apply exact stable-semantics replacements
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("tests/unit/test_matrix_new_spec_compat.py")
+          text = path.read_text(encoding="utf-8")
+
+          replacements = [
+              (
+                  '"mxc://example.org:8448/media/id with spaces"',
+                  '"mxc://example.org:8448/media_id"',
+                  "strict MXC media id with server port",
+              ),
+              (
+                  '"https://matrix.example/_matrix/client/v1/media/thumbnail/example.org%3A8448/media%2Fid%20with%20spaces?width=800&height=600&method=scale%2Ffast&animated=false"',
+                  '"https://matrix.example/_matrix/client/v1/media/thumbnail/example.org%3A8448/media_id?width=800&height=600&method=scale%2Ffast&animated=false"',
+                  "strict MXC expected thumbnail URL with server port",
+              ),
+              (
+                  '"mxc://example.org/media/id?download=1#frag"',
+                  '"mxc://example.org/media_id?download=1#frag"',
+                  "strict MXC media id with query fragment",
+              ),
+              (
+                  '"https://matrix.example/_matrix/client/v1/media/thumbnail/example.org/media%2Fid?width=64&height=64"',
+                  '"https://matrix.example/_matrix/client/v1/media/thumbnail/example.org/media_id?width=64&height=64"',
+                  "strict MXC expected thumbnail URL",
+              ),
+              (
+                  '"mxc://Example.ORG/media/id"',
+                  '"mxc://Example.ORG/media_id"',
+                  "strict MXC retry fixture",
+              ),
+              (
+                  '''        self.assertEqual(\n            client.calls[1][1],\n            "/_matrix/client/v3/rooms/%21room%3Aexample.org/redact/%24event%2Fwith%2Fslash%3Aexample.org/redact%2F1",\n        )''',
+                  '''        self.assertEqual(\n            client.calls[1][1],\n            "/_matrix/client/v3/rooms/%21room%3Aexample.org/send/m.room.redaction/redact%2F1",\n        )\n        self.assertEqual(\n            client.calls[1][2],\n            {"redacts": "$event/with/slash:example.org", "reason": "duplicate"},\n        )''',
+                  "stable v1.18 redaction send endpoint",
+              ),
+              (
+                  '''        self.assertEqual(event.body, "hello")\n        self.assertEqual(event.content["m.relates_to"]["rel_type"], "m.replace")\n        self.assertIn("org.matrix.msc4357.live", event.content)''',
+                  '''        # Standalone edits retain their fallback at parse time; strict\n        # target validation and m.new_content application happen asynchronously.\n        self.assertEqual(event.body, "* hello")\n        self.assertEqual(event.content["m.relates_to"]["rel_type"], "m.replace")\n        self.assertEqual(event.content["m.new_content"]["body"], "hello")\n        self.assertIn(\n            "org.matrix.msc4357.live", event.content["m.new_content"]\n        )''',
+                  "defer standalone edit normalization until validation",
+              ),
+              (
+                  '    async def test_processed_replace_target_is_not_dropped(self):',
+                  '    async def test_malformed_replace_without_new_content_is_dropped(self):',
+                  "rename malformed replacement regression",
+              ),
+              (
+                  '''        self.assertFalse(processor._normalize_message_edit(event, event.content))\n        self.assertEqual(event.body, "编辑后的内容")\n        self.assertEqual(event.content["body"], "编辑后的内容")''',
+                  '''        self.assertTrue(\n            await processor._normalize_message_edit(event, event.content)\n        )\n        self.assertEqual(event.body, "* 编辑后的内容")\n        self.assertEqual(event.content["body"], "* 编辑后的内容")''',
+                  "await strict malformed replacement normalization",
+              ),
+              (
+                  '                self.assertEqual(room.live_messaging_enabled, enabled)',
+                  '''                # Once stable state has been seen it is authoritative;\n                # a later unstable MSC4357 state cannot override it.\n                self.assertFalse(room.live_messaging_enabled)''',
+                  "stable live messaging state precedence",
+              ),
+              (
+                  '        self.assertNotIn("m.mentions", client.content)',
+                  '        self.assertEqual(client.content["m.mentions"], {})',
+                  "MSC4210 explicit empty intentional mentions",
+              ),
+              (
+                  '''            {"user_ids": ["@alice:example.org", "@carol:example.org"]},''',
+                  '''            {"user_ids": ["@alice:example.org"]},''',
+                  "MSC4142 reply mention non-propagation",
+              ),
+          ]
+
+          for old, new, label in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(
+                      f"{label}: expected exactly one old fragment, found {count}"
+                  )
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Commit migrated expectations
+        run: |
+          git diff --check
+          git diff -- tests/unit/test_matrix_new_spec_compat.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/unit/test_matrix_new_spec_compat.py
+          git commit -m "test(matrix): align legacy suite with stable semantics"
+          git push origin HEAD:feat/stable-msc-v1.18-v1.19
