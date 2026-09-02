@@ -2,6 +2,7 @@
 
 M_RESOURCE_LIMIT_EXCEEDED = "M_RESOURCE_LIMIT_EXCEEDED"
 M_USER_LIMIT_EXCEEDED = "M_USER_LIMIT_EXCEEDED"
+M_USER_LOCKED = "M_USER_LOCKED"
 M_USER_SUSPENDED = "M_USER_SUSPENDED"
 
 
@@ -23,6 +24,11 @@ class MatrixAPIError(Exception):
         return None
 
     @property
+    def soft_logout(self) -> bool:
+        """Return the Matrix soft-logout hint carried by an error response."""
+        return isinstance(self.data, dict) and self.data.get("soft_logout") is True
+
+    @property
     def is_resource_limit_exceeded(self) -> bool:
         """Whether this is stable ``M_RESOURCE_LIMIT_EXCEEDED``."""
         return self.errcode == M_RESOURCE_LIMIT_EXCEEDED
@@ -31,6 +37,11 @@ class MatrixAPIError(Exception):
     def is_user_limit_exceeded(self) -> bool:
         """Whether this is Matrix v1.18 / MSC4335 ``M_USER_LIMIT_EXCEEDED``."""
         return self.errcode == M_USER_LIMIT_EXCEEDED
+
+    @property
+    def is_user_locked(self) -> bool:
+        """Whether this is Matrix v1.12 / MSC3939 ``M_USER_LOCKED``."""
+        return self.errcode == M_USER_LOCKED
 
     @property
     def is_user_suspended(self) -> bool:
@@ -49,6 +60,7 @@ class MatrixAPIError(Exception):
 __all__ = [
     "M_RESOURCE_LIMIT_EXCEEDED",
     "M_USER_LIMIT_EXCEEDED",
+    "M_USER_LOCKED",
     "M_USER_SUSPENDED",
     "MatrixAPIError",
 ]
