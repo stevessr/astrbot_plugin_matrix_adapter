@@ -24,7 +24,9 @@ class SASVerificationRoomEventDispatchRouteMixin:
         is_verification_request: bool,
     ) -> bool | None:
         """Dispatch to the matching handler; None means not handled here."""
-        # Check if this event is from our own user
+        # Check if this event is from our own user. This must happen before the
+        # normal identity guard because a sibling device can legitimately take
+        # over an in-room self-verification flow.
         if sender == self.user_id:
             handled = await self._handle_own_user_room_event(
                 sender,
@@ -46,17 +48,24 @@ class SASVerificationRoomEventDispatchRouteMixin:
             M_KEY_VERIFICATION_CANCEL: self._handle_cancel,
         }
 
-        # For verification requests (m.room.message with msgtype m.key.verification.request),
-        # use _handle_in_room_request directly
         if is_verification_request:
             await self._handle_in_room_request(sender, content, transaction_id)
             return True
 
         handler = handlers.get(event_type)
-        if handler:
-            await handler(sender, content, transaction_id)
+        if not handler:
+            return False
+
+        session = self._get_bound_verification_session(
+            transaction_id,
+            sender,
+            content.get("from_device"),
+        )
+        if session is None:
             return True
-        return False
+
+        await handler(sender, content, transaction_id)
+        return True
 
 
 __all__ = ["SASVerificationRoomEventDispatchRouteMixin"]
