@@ -33,14 +33,15 @@ class SASVerificationHandshakeMessagesMixin:
         await self._send_to_device(
             M_KEY_VERIFICATION_READY, to_user, to_device, content
         )
+        session = self._sessions.get(transaction_id)
+        if isinstance(session, dict):
+            session["ready_sent"] = True
         logger.info("[E2EE-Verify] 已发送 ready")
 
     async def _send_start(self, to_user: str, to_device: str, transaction_id: str):
         """发送 start 消息 (作为发起者)"""
-        # 生成 commitment
-
-        # 1. 生成公钥 (start 时不发送，但在 start 后发送 key 时会用到)
-        # 此时我们需要创建一个 SAS 对象
+        # 1. Generate the ephemeral SAS public key. It is sent in the later key
+        # event, while start advertises the algorithms we can actually use.
         sas = None
         if _vodozemac_sas_available():
             try:
@@ -56,7 +57,6 @@ class SASVerificationHandshakeMessagesMixin:
         session["sas"] = sas
         session["our_public_key"] = our_public_key
 
-        # 2. 构造 start 内容
         content = {
             "from_device": self.device_id,
             "method": M_SAS_V1_METHOD,
@@ -66,23 +66,12 @@ class SASVerificationHandshakeMessagesMixin:
             "short_authentication_string": SHORT_AUTHENTICATION_STRING,
             "transaction_id": transaction_id,
         }
-        # The accept-side commitment hashes this exact content object. Keep a
-        # byte-for-byte semantic copy for validation when the peer key arrives.
         session["start_content"] = dict(content)
         session["we_are_initiator"] = True
-
-        # 3. 计算 commitment (注意：start 消息本身不包含 commitment，
-        # 而是 accept 消息包含。但是等等，根据 Matrix 流程：
-        # Initiator sends start.
-        # Responder sends accept (with commitment).
-        # Initiator sends key.
-        # Responder sends key.
-        # 所以 start 消息只需要包含支持的算法)
-
-        # 实际上 start 消息不需要 commitment。
-        # Commitment 是 Responder 发送的。
 
         await self._send_to_device(
             M_KEY_VERIFICATION_START, to_user, to_device, content
         )
+        session["start_sent"] = True
+        session["state"] = "start_sent"
         logger.info("[E2EE-Verify] 已发送 start")
