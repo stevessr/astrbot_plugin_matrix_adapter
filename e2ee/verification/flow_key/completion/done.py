@@ -8,18 +8,23 @@ class SASVerificationFlowDoneMixin:
 
     async def _handle_done(self, sender: str, content: dict, transaction_id: str):
         """处理验证完成"""
+        session = self._get_bound_verification_session(
+            transaction_id,
+            sender,
+            content.get("from_device"),
+        )
+        if session is None:
+            return
+
         logger.info(
             "[E2EE-Verify] ✅ 验证完成！"
             f"sender={self._mask_identifier(sender)} "
             f"txn={self._mask_txn_id(transaction_id)}"
         )
 
-        session = self._sessions.get(transaction_id, {})
         qr_verified = bool(session.get("qr_confirmed"))
-        if session.get("state") == "cancelled" or (
-            not session.get("mac_verified") and not qr_verified
-        ):
-            logger.warning("[E2EE-Verify] 忽略 done：会话已取消或 MAC 尚未验证通过")
+        if not session.get("mac_verified") and not qr_verified:
+            logger.warning("[E2EE-Verify] 忽略 done：MAC/QR 尚未验证通过")
             return
 
         target_device = session.get("from_device") or session.get("their_device")
