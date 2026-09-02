@@ -63,6 +63,7 @@ LOGIN_TYPE_PASSWORD = "m.login.password"
 LOGIN_TYPE_TOKEN = "m.login.token"
 LOGIN_TYPE_SSO = "m.login.sso"
 LOGIN_TYPE_DUMMY = "m.login.dummy"
+LOGIN_TYPE_OAUTH = "m.oauth"
 
 # 特定 API 参数键名
 MSC4140_DELAY_KEY = "org.matrix.msc4140.delay"

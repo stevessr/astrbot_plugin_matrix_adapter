@@ -16,15 +16,18 @@ class AuthSyncPollingMixin:
         timeout: int = DEFAULT_TIMEOUT_MS_30000,
         full_state: bool = False,
         filter_id: str | None = None,
+        use_state_after: bool = False,
     ) -> dict[str, Any]:
         """
-        Sync with the Matrix server
+        Sync with the Matrix server.
 
         Args:
             since: Sync batch token from previous sync
             timeout: Timeout in milliseconds
             full_state: Whether to return full state
             filter_id: Filter ID for filtering events
+            use_state_after: Request Matrix v1.16 / MSC4222 authoritative
+                ``state_after`` room state instead of legacy ``state``.
 
         Returns:
             Sync response
@@ -36,6 +39,8 @@ class AuthSyncPollingMixin:
             params["full_state"] = "true"
         if filter_id:
             params["filter"] = filter_id
+        if use_state_after:
+            params["use_state_after"] = "true"
 
         # HTTP timeout must exceed sync poll timeout to account for network latency
         http_timeout_s = timeout / 1000 + 15

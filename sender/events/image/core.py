@@ -8,7 +8,12 @@ from astrbot.api.message_components import Image
 from ..common import send_content
 from .compress import _compress_image
 from .content import _build_image_content
-from .size import _get_image_dimensions_from_data, _get_image_dimensions_from_path
+from .size import (
+    _get_image_dimensions_from_data,
+    _get_image_dimensions_from_path,
+    _is_image_animated_from_data,
+    _is_image_animated_from_path,
+)
 
 
 async def send_image(
@@ -28,6 +33,7 @@ async def send_image(
     filename = image_path.name
 
     width, height = _get_image_dimensions_from_path(image_path)
+    is_animated = _is_image_animated_from_path(image_path)
 
     content_type = mimetypes.guess_type(filename)[0] or "image/png"
     source_size = image_path.stat().st_size
@@ -48,6 +54,7 @@ async def send_image(
         filename = image_path.stem + ".jpg"
         if image_data is not None:
             width, height = _get_image_dimensions_from_data(image_data)
+            is_animated = _is_image_animated_from_data(image_data)
 
     if image_data is not None:
         upload_resp = await client.upload_file(
@@ -71,6 +78,7 @@ async def send_image(
         uploaded_size,
         width,
         height,
+        is_animated=is_animated,
     )
 
     await send_content(

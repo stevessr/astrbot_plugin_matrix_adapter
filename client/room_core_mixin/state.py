@@ -48,24 +48,27 @@ class RoomCoreStateMixin:
             return False
 
     async def get_room_state_event(
-        self, room_id: str, event_type: str, state_key: str = ""
+        self,
+        room_id: str,
+        event_type: str,
+        state_key: str = "",
+        format: str | None = None,
     ) -> dict[str, Any]:
-        """
-        Get a specific state event from a room
+        """Get a specific state event from a room.
 
-        Args:
-            room_id: Room ID
-            event_type: Event type (e.g., im.vector.modular.widgets)
-            state_key: State key (widget ID for widgets)
-
-        Returns:
-            State event content
+        Matrix v1.16 adds ``format=event`` to return the full client-formatted
+        state event, including metadata such as event ID, sender and timestamp.
+        The default/``content`` form retains the historical content-only shape.
         """
+        if format is not None and format not in {"content", "event"}:
+            raise ValueError("format must be 'content', 'event', or None")
+
         room = quote_path_segment(room_id)
         event = quote_path_segment(event_type)
         state = quote_path_segment(state_key)
         endpoint = f"/_matrix/client/v3/rooms/{room}/state/{event}/{state}"
-        return await self._request("GET", endpoint)
+        params = {"format": format} if format is not None else None
+        return await self._request("GET", endpoint, params=params)
 
     async def get_room_live_messaging_allowed(self, room_id: str) -> bool:
         """Probe the homeserver for the room-level MSC4357 policy.

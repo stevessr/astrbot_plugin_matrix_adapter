@@ -1,6 +1,6 @@
 """Matrix push-rule operations."""
 
-from .query import PushRuleQueryMixin
+from .query import PushRuleQueryMixin, SUPPRESS_EDITS_RULE_ID
 from .update import PushRuleUpdateMixin
 
 
@@ -26,4 +26,5 @@ __all__ = [
     "PushRuleMixin",
     "PushRuleQueryMixin",
     "PushRuleUpdateMixin",
+    "SUPPRESS_EDITS_RULE_ID",
 ]

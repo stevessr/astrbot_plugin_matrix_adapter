@@ -1,15 +1,17 @@
 # Changelog
 
-## 0.4.0 - 202-08-28
+## 0.4.0 - 2026-08-28
 
+- **Matrix Client-Server stable v1.1 → v1.19 全链审计**：逐版核对普通 Client Adapter 职责，修正 stable wire、错误码、relations、profile、sync、OAuth/UIA 与 E2EE 语义；server/federation/Application Service-only 项明确标记边界，MSC1544 QR verification、MSC4153、MSC4268 等未完整能力不虚报全支持。
+- **Stable protocol CI**：新增 `.github/workflows/stable-protocol-tests.yml`，在 Python 3.11 / 3.12 上执行 protocol-facing `compileall`、全部 `test_matrix_v*.py`（含 follow-up）与共享 `test_matrix_stable_*.py`；当前 PR 最新 workflow 两个 Python job 均通过。
 - **MSC2403 敲门房间处理**：`MatrixSyncManager` 新增 `knocked` 房间同步（`/sync` 的 `rooms.knocked`），新增 `on_knock` 回调和 `set_knock_callback` 接口；`MatrixEventProcessorMembers` 新增 `MEMBERSHIP_KNOCK` 分支处理敲门成员事件；`MatrixEventHandler` 新增 `knock_callback` 用于记录待审批敲门。
 - **E2EE 关闭竞态修复（H3）**：`decrypt_event` / `encrypt_message` / `respond_to_key_request` 等入口统一增加 `_closing` 守卫，避免关停后访问 `None` 的 `_olm`/`_store` 崩溃。
 - **E2EE 设备身份优先（M6）**：`handle_secret_request` 现在优先使用 to-device 元数据中的 `sender_device`（已认证）而非事件内容里的 `requesting_device_id`（未认证），符合纵深防御。
 - **E2EE 私有属性访问（L8）**：新增 `CryptoStore.get_megolm_inbound_ids()` 公开访问器，`upload_room_keys` 不再直接读取私有 `_megolm_inbound`。
 - **MSC2246 异步媒体上传**：`upload_file` / `upload_file_path` 兼容服务器返回 `upload_id` 的异步上传，自动轮询 `/_matrix/client/v1/media/upload/{uploadId}` 直至 `status == "done"` 并返回 `content_uri`；仍兼容同步返回 `content_uri` 的服务器。
-- **MSC3267 可扩展媒体（m.media）**：发送图片/视频/音频/文件时携带 `m.media` 块（mxc/mimetype/size/width/height/duration），接收时优先使用 legacy `url`/`info`、回退解析 `m.media` 块。
+- **Extensible Events 媒体兼容（`m.media`，非 MSC3267）**：发送图片/视频/音频/文件时携带 `m.media` 块（mxc/mimetype/size/width/height/duration），接收时优先使用 legacy `url`/`info`、回退解析 `m.media` 块。MSC3267 的正式含义是 Reference Relations（`m.reference`），相关文档已纠正。
 - **MSC3245 Voice Messages v2**：发送音频时同时附加 `org.matrix.msc3245.voice.v2` 标记（与 v1 并存）。
-- **MSC3881 远程房间加入**：`join_room` / `knock_room` 新增 `server_name` 参数，可在远程加入时指定目标服务器列表。
+- **远程房间加入 stable `via`（MSC4156 / MSC4213）**：`join_room` / `knock_room` 网络请求使用 repeated `via` query；旧 `server_name` 仅保留为 Python source-compatible deprecated alias，不再出现在 stable wire。
 - **MSC4145 消息列内编辑**：编辑消息列内消息时，编辑事件自动携带 `m.thread` 关系（`edit_message` / `edit_message_encrypted` / `edit_message_plain` 新增 `thread_root` 参数），流式编辑也同步传递线程上下文，确保编辑聚合在消息列内而非落到房间时间线。
 - **MSC3026 忙绿状态**：新增 `PRESENCE_BUSY` 常量，`set_presence("busy")` 可设置忙绿状态。
 - **MSC3874 —— 同步过滤器链路**：`MatrixSyncManager` 构造时可选传入 `filter_id`，传递至 `client.sync(filter_id=...)` 以过滤 `/sync` 返回的 room/event 类型。

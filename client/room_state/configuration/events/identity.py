@@ -3,6 +3,7 @@
 from typing import Any
 
 from .....constants import M_ROOM_AVATAR, M_ROOM_NAME, M_ROOM_TOPIC
+from .....room_topic import build_room_topic_content
 
 
 class RoomStateIdentityMixin:
@@ -23,19 +24,25 @@ class RoomStateIdentityMixin:
             room_id=room_id, event_type=M_ROOM_NAME, content={"name": name}
         )
 
-    async def set_room_topic(self, room_id: str, topic: str) -> dict[str, Any]:
-        """
-        Set room topic
+    async def set_room_topic(
+        self,
+        room_id: str,
+        topic: str,
+        formatted_topic: str | None = None,
+    ) -> dict[str, Any]:
+        """Set a Matrix v1.15 rich room topic.
 
-        Args:
-            room_id: Room ID
-            topic: Room topic
-
-        Returns:
-            Response with event_id
+        ``topic`` is always emitted as the backwards-compatible plain fallback.
+        When ``formatted_topic`` is provided it is emitted as the HTML variant
+        inside the stable ``m.topic``/``m.text`` content block.
         """
         return await self.set_room_state_event(
-            room_id=room_id, event_type=M_ROOM_TOPIC, content={"topic": topic}
+            room_id=room_id,
+            event_type=M_ROOM_TOPIC,
+            content=build_room_topic_content(
+                topic,
+                formatted_topic=formatted_topic,
+            ),
         )
 
     async def set_room_avatar(self, room_id: str, avatar_url: str) -> dict[str, Any]:

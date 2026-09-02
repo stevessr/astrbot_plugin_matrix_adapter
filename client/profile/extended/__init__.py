@@ -21,15 +21,19 @@ class ProfileExtendedMixin(
 
 # Preserve the historical direct method surface for introspection and callers
 # that use ProfileExtendedMixin as a standalone mixin.
-ProfileExtendedMixin.set_presence = ProfileBasicMixin.set_presence
-ProfileExtendedMixin.get_presence = ProfileBasicMixin.get_presence
-ProfileExtendedMixin.get_extended_profile = ProfileBasicMixin.get_extended_profile
-ProfileExtendedMixin.set_extended_profile_field = (
-    ProfileBasicMixin.set_extended_profile_field
-)
-ProfileExtendedMixin.delete_extended_profile_field = (
-    ProfileBasicMixin.delete_extended_profile_field
-)
+for _name in (
+    "set_presence",
+    "get_presence",
+    "get_extended_profile",
+    "get_extended_profile_field",
+    "set_extended_profile_field",
+    "delete_extended_profile_field",
+    "get_profile_timezone",
+    "set_profile_timezone",
+    "delete_profile_timezone",
+):
+    setattr(ProfileExtendedMixin, _name, ProfileBasicMixin.__dict__[_name])
+
 ProfileExtendedMixin._validate_presence_sharing_maps = (
     PresenceSharingMixin._validate_presence_sharing_maps
 )

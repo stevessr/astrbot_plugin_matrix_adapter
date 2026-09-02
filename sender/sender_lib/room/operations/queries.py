@@ -7,7 +7,6 @@ class SenderRoomQueriesMixin:
     """Delegates room event, state, and search queries."""
 
     async def get_room_members(self, room_id: str) -> dict:
-        """Get Matrix room member events."""
         return await self.client.get_room_members(room_id)
 
     async def get_room_messages(
@@ -19,7 +18,6 @@ class SenderRoomQueriesMixin:
         direction: str = "b",
         limit: int = 10,
     ) -> dict:
-        """Paginate Matrix room messages."""
         return await self.client.room_messages(
             room_id=room_id,
             from_token=from_token,
@@ -29,7 +27,6 @@ class SenderRoomQueriesMixin:
         )
 
     async def get_room_state(self, room_id: str) -> list[dict[str, Any]]:
-        """Get full Matrix room state."""
         return await self.client.get_room_state(room_id)
 
     async def get_room_state_event(
@@ -37,13 +34,16 @@ class SenderRoomQueriesMixin:
         room_id: str,
         event_type: str,
         state_key: str = "",
+        format: str | None = None,
     ) -> dict:
-        """Get a specific Matrix room state event content."""
-        return await self.client.get_room_state_event(
-            room_id=room_id,
-            event_type=event_type,
-            state_key=state_key,
-        )
+        kwargs: dict[str, Any] = {
+            "room_id": room_id,
+            "event_type": event_type,
+            "state_key": state_key,
+        }
+        if format is not None:
+            kwargs["format"] = format
+        return await self.client.get_room_state_event(**kwargs)
 
     async def set_room_state_event(
         self,
@@ -52,7 +52,6 @@ class SenderRoomQueriesMixin:
         content: dict[str, Any],
         state_key: str = "",
     ) -> dict:
-        """Set a generic Matrix room state event."""
         return await self.client.set_room_state_event(
             room_id=room_id,
             event_type=event_type,
@@ -61,8 +60,21 @@ class SenderRoomQueriesMixin:
         )
 
     async def get_event(self, room_id: str, event_id: str) -> dict:
-        """Fetch one Matrix event from a room."""
         return await self.client.get_event(room_id=room_id, event_id=event_id)
+
+    async def get_event_at_timestamp(
+        self,
+        room_id: str,
+        timestamp: int,
+        *,
+        direction: str = "b",
+    ) -> dict:
+        """Matrix v1.6 / MSC3030 timestamp-to-event lookup."""
+        return await self.client.timestamp_to_event(
+            room_id=room_id,
+            timestamp=timestamp,
+            direction=direction,
+        )
 
     async def search_messages(
         self,
@@ -73,7 +85,6 @@ class SenderRoomQueriesMixin:
         order_by: str = "recent",
         event_context: dict[str, Any] | None = None,
     ) -> dict:
-        """Search Matrix room events by content."""
         return await self.client.search(
             search_term=search_term,
             keys=keys,

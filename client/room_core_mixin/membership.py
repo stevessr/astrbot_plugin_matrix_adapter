@@ -9,25 +9,25 @@ class RoomMembershipMixin:
     """Join, leave, and inspect room membership."""
 
     async def join_room(
-        self, room_id: str, server_name: list[str] | None = None
+        self,
+        room_id: str,
+        server_name: list[str] | None = None,
+        *,
+        via: list[str] | None = None,
     ) -> dict[str, Any]:
-        """
-        Join a room
+        """Join a room using the current stable ``via`` query parameter.
 
-        Args:
-            room_id: Room ID or alias
-            server_name: Optional list of server names to try joining via
-                (MSC3881 remote room joining, e.g. joining a room ID on
-                another homeserver). Also accepted as ``via`` servers.
-
-        Returns:
-            Join response with room_id
+        ``server_name`` is retained as a source-compatible alias for callers
+        written against the pre-v1.14 adapter API. It is never emitted on the
+        wire: Matrix v1.14 removed the old ``server_name`` parameter after
+        ``via`` replaced it in v1.12.
         """
-        data: dict[str, Any] = {}
-        if server_name:
-            data["server_name"] = list(server_name)
+        selected_via = via if via is not None else server_name
+        params: dict[str, Any] = {}
+        if selected_via:
+            params["via"] = list(dict.fromkeys(selected_via))
         endpoint = f"/_matrix/client/v3/join/{quote_path_segment(room_id)}"
-        return await self._request("POST", endpoint, data=data)
+        return await self._request("POST", endpoint, data={}, params=params)
 
     async def leave_room(self, room_id: str) -> dict[str, Any]:
         """

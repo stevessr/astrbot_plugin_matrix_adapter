@@ -20,6 +20,7 @@ from .....constants import (
     M_SPACE_PARENT,
     MSC4357_LIVE_MESSAGING_STATE,
 )
+from .....room_topic import extract_room_topic
 from .types import (
     LIVE_MESSAGING_STATE_EVENT_TYPES,
     _is_room_state_event_type,
@@ -41,7 +42,7 @@ class MatrixEventProcessorApplyMixin:
         if event_type == M_ROOM_NAME:
             room.display_name = content.get("name", "") or ""
         elif event_type == M_ROOM_TOPIC:
-            room.topic = content.get("topic", "") or ""
+            room.topic, room.topic_html = extract_room_topic(content)
         elif event_type == M_ROOM_AVATAR:
             room.avatar_url = content.get("url") or None
         elif event_type == M_ROOM_JOIN_RULES:

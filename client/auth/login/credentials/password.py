@@ -14,12 +14,15 @@ class AuthLoginCredentialsPasswordMixin:
         password: str,
         device_name: str,
         device_id: str | None,
+        request_refresh_token: bool = True,
     ) -> dict:
         data = {
             "type": LOGIN_TYPE_PASSWORD,
             "identifier": {"type": "m.id.user", "user": user_id},
             "password": password,
             "initial_device_display_name": device_name,
+            # Matrix v1.3 / MSC2918: refresh tokens are opt-in at login.
+            "refresh_token": bool(request_refresh_token),
         }
         if device_id:
             data["device_id"] = device_id

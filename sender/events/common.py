@@ -1,11 +1,25 @@
 from astrbot.api import logger
 
-from ...constants import M_ROOM_ENCRYPTED, M_ROOM_MESSAGE
+from ...constants import M_MENTIONS_KEY, M_ROOM_ENCRYPTED, M_ROOM_MESSAGE
 
 
 def resolve_text_msgtype(use_notice: bool = False) -> str:
     """Resolve the Matrix ``msgtype`` for textual adapter output."""
     return "m.notice" if use_notice else "m.text"
+
+
+def _ensure_intentional_mentions(content: dict, msg_type: str) -> None:
+    """Mark outbound room messages as intentional-mentions aware.
+
+    Matrix v1.17 / MSC4210 removes legacy plaintext mentions. Clients that
+    understand ``m.mentions`` must still include an empty object when a message
+    intentionally mentions nobody, otherwise compatibility clients may treat
+    the event as using the removed legacy mention semantics.
+    """
+    if msg_type != M_ROOM_MESSAGE or not isinstance(content, dict):
+        return
+    if not isinstance(content.get(M_MENTIONS_KEY), dict):
+        content[M_MENTIONS_KEY] = {}
 
 
 def _copy_cleartext_relates_to(encrypted: dict, content: dict) -> dict:
@@ -28,6 +42,8 @@ async def send_content(
     msg_type: str = M_ROOM_MESSAGE,
     thread_is_falling_back: bool | None = None,
 ) -> dict | None:
+    _ensure_intentional_mentions(content, msg_type)
+
     if use_thread and thread_root:
         # A thread fallback still points to the latest known event, so target
         # presence alone cannot distinguish it from an explicit thread reply.

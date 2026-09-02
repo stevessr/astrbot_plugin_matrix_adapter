@@ -1,6 +1,9 @@
 """MXC URL parsing and HTTP URL conversion helpers."""
 
+import re
 from urllib.parse import quote
+
+_MXC_MEDIA_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class MatrixUtilsMediaUrlMixin:
@@ -17,6 +20,11 @@ class MatrixUtilsMediaUrlMixin:
         server_name = parts[0].strip()
         media_id = parts[1].split("?", 1)[0].split("#", 1)[0].strip().lstrip("/")
         if not server_name or not media_id:
+            return None
+        # Matrix v1.19 clarifies the MXC media-id grammar.  Reject slashes,
+        # percent-encoded traversal and other non-opaque path characters instead
+        # of silently turning an invalid MXC URI into a media download request.
+        if _MXC_MEDIA_ID_RE.fullmatch(media_id) is None:
             return None
         return server_name, media_id
 

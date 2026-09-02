@@ -43,14 +43,18 @@ async def send_sticker(
 
         if sticker_path_obj is not None:
             width, height = segment.info.width, segment.info.height
-            if width is None or height is None:
+            is_animated = segment.info.is_animated
+            if width is None or height is None or is_animated is None:
                 try:
                     from PIL import Image as PILImage
 
                     with PILImage.open(sticker_path_obj) as img:
-                        width, height = img.size
+                        if width is None or height is None:
+                            width, height = img.size
+                        if is_animated is None:
+                            is_animated = bool(getattr(img, "is_animated", False))
                 except Exception as e:
-                    logger.debug(f"无法获取 sticker 尺寸：{e}")
+                    logger.debug(f"无法获取 sticker 媒体信息：{e}")
 
             guessed_type = mimetypes.guess_type(filename)[0]
             if guessed_type:
@@ -74,6 +78,8 @@ async def send_sticker(
             if width and height:
                 segment.info.width = width
                 segment.info.height = height
+            if is_animated is not None:
+                segment.info.is_animated = is_animated
 
     content = segment.to_matrix_content(content_uri)
 

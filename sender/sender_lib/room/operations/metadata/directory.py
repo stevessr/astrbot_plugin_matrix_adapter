@@ -13,21 +13,23 @@ class SenderRoomDirectoryMixin:
         limit: int | None = None,
         since: str | None = None,
         filter: dict[str, Any] | None = None,
+        room_types: list[str | None] | None = None,
     ) -> dict:
-        """List Matrix public rooms, optionally on another server."""
-        return await self.client.list_public_rooms(
-            server=server,
-            limit=limit,
-            since=since,
-            filter=filter,
-        )
+        """List Matrix public rooms, optionally filtering by room type."""
+        kwargs: dict[str, Any] = {
+            "server": server,
+            "limit": limit,
+            "since": since,
+            "filter": filter,
+        }
+        if room_types is not None:
+            kwargs["room_types"] = room_types
+        return await self.client.list_public_rooms(**kwargs)
 
     async def get_room_visibility(self, room_id: str) -> dict:
-        """Get room visibility in the public directory."""
         return await self.client.get_room_visibility(room_id)
 
     async def set_room_visibility(self, room_id: str, visibility: str) -> dict:
-        """Set room visibility in the public directory."""
         return await self.client.set_room_visibility(
             room_id=room_id,
             visibility=visibility,

@@ -12,6 +12,7 @@ def _build_image_content(
     uploaded_size: int,
     width,
     height,
+    is_animated: bool | None = None,
 ) -> dict[str, Any]:
     info: dict[str, Any] = {
         "mimetype": content_type,
@@ -20,6 +21,9 @@ def _build_image_content(
     if width and height:
         info["w"] = width
         info["h"] = height
+    if is_animated is not None:
+        # Matrix v1.18 / MSC4230 stable media metadata.
+        info["is_animated"] = is_animated
 
     return {
         "msgtype": "m.image",

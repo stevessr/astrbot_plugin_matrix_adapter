@@ -49,6 +49,9 @@ class StickerMatrixMixin:
             info_dict["h"] = self.info.height
         if self.info.size:
             info_dict["size"] = self.info.size
+        if self.info.is_animated is not None:
+            # Matrix v1.18 / MSC4230 stable sticker metadata.
+            info_dict["is_animated"] = self.info.is_animated
         if self.info.thumbnail_url:
             info_dict["thumbnail_url"] = self.info.thumbnail_url
         if self.info.thumbnail_info:
@@ -75,6 +78,7 @@ class StickerMatrixMixin:
             width=info_data.get("w"),
             height=info_data.get("h"),
             size=info_data.get("size"),
+            is_animated=info_data.get("is_animated"),
             thumbnail_url=info_data.get("thumbnail_url"),
             thumbnail_info=info_data.get("thumbnail_info"),
         )

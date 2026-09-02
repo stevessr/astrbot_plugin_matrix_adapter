@@ -13,6 +13,7 @@ class MatrixRoom:
     room_id: str
     display_name: str = ""
     topic: str = ""
+    topic_html: str | None = None
     avatar_url: str | None = None
     join_rules: dict[str, Any] | None = None
     power_levels: dict[str, Any] | None = None

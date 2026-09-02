@@ -14,17 +14,11 @@ class MatrixOAuth2ConfigInitializationMixin:
         scopes: list | None = None,
         device_id: str | None = None,
     ):
-        """
-        Initialize OAuth2 handler
+        """Initialize the Matrix OAuth 2.0 handler.
 
-        Args:
-            client: Matrix HTTP client
-            homeserver: Matrix homeserver URL
-            client_id: OAuth2 client ID (optional, will be discovered from server if not provided)
-            client_secret: OAuth2 client secret (optional for PKCE)
-            redirect_uri: OAuth2 redirect URI (required, provided by AstrBot unified webhook)
-            scopes: OAuth2 scopes (default: stable Matrix API scope + device scope)
-            device_id: Preferred Matrix device ID for stable device scope
+        ``redirect_uri`` is optional because Matrix v1.18 / MSC4341 allows
+        headless clients to use the OAuth Device Authorization Grant instead of
+        the browser redirect flow.
         """
         self.client = client
         self.homeserver = homeserver.rstrip("/")
@@ -40,9 +34,15 @@ class MatrixOAuth2ConfigInitializationMixin:
         self.token_type: str | None = None
         self.expires_in: int | None = None
 
-        # OAuth2 configuration discovered from server
+        # OAuth2 configuration discovered from the homeserver.  Keep the
+        # Matrix v1.18 extensions instead of discarding them so callers can use
+        # account-management deep links and the device authorization grant.
         self.issuer: str | None = None
         self.authorization_endpoint: str | None = None
         self.token_endpoint: str | None = None
+        self.revocation_endpoint: str | None = None
         self.registration_endpoint: str | None = None
+        self.device_authorization_endpoint: str | None = None
+        self.grant_types_supported: list[str] = []
         self.account_management_uri: str | None = None
+        self.account_management_actions_supported: list[str] = []
