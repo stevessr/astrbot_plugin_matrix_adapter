@@ -25,6 +25,7 @@ for _name in (
     "is_forget_forced_upon_leave",
     "get_account_moderation_capability",
     "can_change_3pids",
+    "can_get_login_token",
     "get_profile_fields_capability",
     "can_set_profile_field",
     "get_login_flows",
