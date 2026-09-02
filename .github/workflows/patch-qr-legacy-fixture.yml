@@ -1,0 +1,43 @@
+name: Patch QR legacy fixture
+
+on:
+  push:
+    branches:
+      - feat/stable-followup-qr-e2ee
+    paths:
+      - ".github/workflows/patch-qr-legacy-fixture.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/stable-followup-qr-e2ee
+
+      - name: Align legacy QR fixture with MSC1544 negotiation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("tests/unit/test_matrix_new_spec_compat.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''        prepared = await verifier._maybe_prepare_self_verification_qr(\n            "@bot:example.org",\n            "DEV456",\n            [constants.M_QR_CODE_SCAN_V1_METHOD],\n            "txn123",\n        )'''
+          new = '''        prepared = await verifier._maybe_prepare_self_verification_qr(\n            "@bot:example.org",\n            "DEV456",\n            [\n                constants.M_QR_CODE_SCAN_V1_METHOD,\n                constants.M_RECIPROCATE_V1_METHOD,\n            ],\n            "txn123",\n        )'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"expected one QR fixture, found {count}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+      - name: Commit fixture migration
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/unit/test_matrix_new_spec_compat.py
+          git commit -m "test(e2ee): advertise reciprocate in QR fixture"
+          git push origin HEAD:feat/stable-followup-qr-e2ee
