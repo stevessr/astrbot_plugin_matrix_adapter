@@ -68,20 +68,32 @@ class MatrixV101ToDeviceDispatchGuardTests(unittest.IsolatedAsyncioTestCase):
             setattr(handler, name, mock.AsyncMock())
         return handler, dispatch_mod
 
-    async def test_unsolicited_start_is_consumed_without_accepting_flow(self):
+    async def test_legacy_standalone_start_is_delegated_for_compatibility(self):
         handler, dispatch_mod = self._make_handler()
         handled = await handler.handle_verification_event(
             dispatch_mod.M_KEY_VERIFICATION_START,
             "@alice:example.org",
             {
-                "transaction_id": "unknown",
+                "transaction_id": "legacy",
                 "from_device": "ALICE1",
                 "method": "m.sas.v1",
             },
         )
 
         self.assertTrue(handled)
-        handler._handle_start.assert_not_awaited()
+        handler._handle_start.assert_awaited_once()
+        self.assertEqual(handler._sessions, {})
+
+    async def test_other_orphan_followup_events_do_not_create_flow(self):
+        handler, dispatch_mod = self._make_handler()
+        handled = await handler.handle_verification_event(
+            dispatch_mod.M_KEY_VERIFICATION_ACCEPT,
+            "@alice:example.org",
+            {"transaction_id": "unknown"},
+        )
+
+        self.assertTrue(handled)
+        handler._handle_accept.assert_not_awaited()
         self.assertEqual(handler._sessions, {})
 
     async def test_wrong_sender_or_device_cannot_drive_existing_flow(self):
@@ -125,7 +137,7 @@ class MatrixV101ToDeviceDispatchGuardTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MatrixV101HandlerDefenseTests(unittest.IsolatedAsyncioTestCase):
-    async def test_direct_unsolicited_start_does_not_send_accept(self):
+    def _make_start_handler(self):
         start_mod = load_module("e2ee.verification.flow_start.handshake.start")
         guard_mod = load_module("e2ee.verification.utils.session")
 
@@ -140,22 +152,97 @@ class MatrixV101HandlerDefenseTests(unittest.IsolatedAsyncioTestCase):
         handler._mask_identifier = lambda value: str(value)
         handler._mask_txn_id = lambda value: str(value)
         handler.auto_verify_mode = "auto_accept"
+        handler.user_id = "@alice:example.org"
+        handler.device_id = "ALICE1"
         handler._send_accept = mock.AsyncMock()
         handler._send_in_room_accept = mock.AsyncMock()
+        handler._send_cancel = mock.AsyncMock()
         handler._handle_reciprocate_start = mock.AsyncMock(return_value=False)
+        handler._query_request_verification_keys = mock.AsyncMock()
+        return handler
+
+    async def test_direct_legacy_sas_start_creates_bound_session_and_accepts(self):
+        handler = self._make_start_handler()
 
         await handler._handle_start(
-            "@alice:example.org",
+            "@bob:example.org",
             {
-                "transaction_id": "unknown",
-                "from_device": "ALICE1",
+                "transaction_id": "legacy",
+                "from_device": "BOB1",
                 "method": "m.sas.v1",
             },
-            "unknown",
+            "legacy",
         )
 
+        session = handler._sessions["legacy"]
+        self.assertEqual(session["sender"], "@bob:example.org")
+        self.assertEqual(session["from_device"], "BOB1")
+        self.assertTrue(session["legacy_standalone_start"])
+        self.assertEqual(session["state"], "started")
+        handler._query_request_verification_keys.assert_awaited_once()
+        handler._send_accept.assert_awaited_once()
+
+    async def test_unknown_qr_reciprocate_cannot_create_legacy_flow(self):
+        handler = self._make_start_handler()
+
+        await handler._handle_start(
+            "@bob:example.org",
+            {
+                "transaction_id": "unknown-qr",
+                "from_device": "BOB1",
+                "method": "m.reciprocate.v1",
+                "secret": "not-bound-to-a-qr",
+            },
+            "unknown-qr",
+        )
+
+        self.assertNotIn("unknown-qr", handler._sessions)
         handler._send_accept.assert_not_awaited()
-        handler._send_in_room_accept.assert_not_awaited()
+        handler._send_cancel.assert_awaited_once()
+        self.assertEqual(handler._send_cancel.await_args.args[3], "m.unknown_transaction")
+
+    async def test_simultaneous_same_method_uses_lexicographic_tiebreak(self):
+        handler = self._make_start_handler()
+        handler._sessions["txn"] = {
+            "sender": "@bob:example.org",
+            "their_device": "BOB1",
+            "state": "ready",
+            "we_are_initiator": True,
+            "start_content": {"method": "m.sas.v1"},
+        }
+
+        await handler._handle_start(
+            "@bob:example.org",
+            {"from_device": "BOB1", "method": "m.sas.v1"},
+            "txn",
+        )
+
+        # @bob is lexicographically larger than @alice, therefore Bob's start is ignored.
+        self.assertEqual(handler._sessions["txn"]["state"], "ready")
+        self.assertTrue(handler._sessions["txn"]["we_are_initiator"])
+        handler._send_accept.assert_not_awaited()
+
+    async def test_simultaneous_different_methods_cancel(self):
+        handler = self._make_start_handler()
+        handler._sessions["txn"] = {
+            "sender": "@bob:example.org",
+            "their_device": "BOB1",
+            "state": "ready",
+            "we_are_initiator": True,
+            "start_content": {"method": "m.sas.v1"},
+        }
+
+        await handler._handle_start(
+            "@bob:example.org",
+            {"from_device": "BOB1", "method": "com.example.other"},
+            "txn",
+        )
+
+        self.assertEqual(handler._sessions["txn"]["state"], "cancelled")
+        self.assertEqual(
+            handler._sessions["txn"]["cancel_code"], "m.unexpected_message"
+        )
+        handler._send_cancel.assert_awaited_once()
 
 
 class MatrixV101InRoomSessionCreationTests(unittest.TestCase):
