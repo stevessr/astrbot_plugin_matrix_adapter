@@ -7,7 +7,6 @@ from ....constants import MATRIX_HTML_FORMAT
 from ....utils.markdown_utils import markdown_to_html
 from ..common import resolve_text_msgtype, send_content
 from .mentions import _merge_reply_mentions
-from .reply import _build_reply_fallback_html, _build_reply_fallback_text
 
 
 async def send_plain(
@@ -31,11 +30,10 @@ async def send_plain(
     if original_message_info and is_explicit_reply:
         _merge_reply_mentions(content, client, original_message_info)
 
-    if original_message_info and reply_to and not use_thread:
-        content["body"] = (
-            _build_reply_fallback_text(original_message_info) + content["body"]
-        )
-
+    # Matrix v1.13 / MSC2781 removed reply fallbacks from the specification.
+    # Do not copy the replied-to event into body/formatted_body: the relation
+    # added by send_content() is the reply. Receive-side fallback stripping is
+    # intentionally retained for historical events and older clients.
     formatted_body = None
     if hasattr(segment, "formatted_body") and segment.formatted_body:
         formatted_body = segment.formatted_body
@@ -52,13 +50,6 @@ async def send_plain(
         content["format"] = MATRIX_HTML_FORMAT
 
     if formatted_body:
-        if original_message_info and reply_to and not use_thread:
-            fallback_html = _build_reply_fallback_html(
-                original_message_info, reply_to, room_id
-            )
-            formatted_body = fallback_html + formatted_body
-            content["format"] = MATRIX_HTML_FORMAT
-
         content["formatted_body"] = formatted_body
 
     await send_content(
