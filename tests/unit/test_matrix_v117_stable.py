@@ -150,7 +150,7 @@ class MatrixV117OneTimeKeyCountTests(unittest.IsolatedAsyncioTestCase):
             on_device_lists = None
             on_presence_event = None
             on_account_data = None
-            on_device_one_time_keys_count = on_count
+            on_device_one_time_keys_count = staticmethod(on_count)
 
             async def _run_callback_with_guard(self, _name, callback, *args):
                 await callback(*args)
