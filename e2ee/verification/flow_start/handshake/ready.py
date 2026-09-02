@@ -17,12 +17,19 @@ class SASVerificationFlowReadyMixin:
         from_device = content.get("from_device")
         methods = content.get("methods", [])
 
+        session = self._get_bound_verification_session(
+            transaction_id,
+            sender,
+            from_device,
+        )
+        if session is None:
+            return
+
         logger.info(
             "[E2EE-Verify] 对方已就绪："
             f"device={self._mask_identifier(from_device)} methods={methods}"
         )
 
-        session = self._sessions.get(transaction_id, {})
         session["state"] = "ready"
         session["their_device"] = from_device
 
