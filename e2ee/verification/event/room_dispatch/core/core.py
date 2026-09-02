@@ -30,9 +30,13 @@ class SASVerificationRoomEventDispatchOrchestratorMixin:
             f"from={sender} room={(room_id or '')[:16]}... txn={(transaction_id or '')[:16]}..."
         )
 
-        # CRITICAL: Check if this session was already taken over by another device
-        # If so, ignore ALL subsequent events for this transaction (except cancel)
-        if self._prepare_in_room_session(transaction_id, room_id, event_type):
+        # Only an actual verification request may create an in-room session.
+        if self._prepare_in_room_session(
+            transaction_id,
+            room_id,
+            event_type,
+            is_verification_request,
+        ):
             return True
 
         return await self._route_in_room_event(
