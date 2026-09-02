@@ -1,81 +1,62 @@
 """In-room SAS MAC message construction."""
 
-import base64
-import hashlib
-
 from astrbot.api import logger
 
 from .....constants import INFO_PREFIX_MAC, M_KEY_VERIFICATION_MAC
-from ...crypto_utils import _compute_hkdf
-from .compat import _vodozemac_sas_available
+from ...crypto_utils import SAS_MAC_V2, _calculate_sas_mac
 
 
 class SASVerificationSendRoomMACMixin:
     """构造房间内 SAS MAC 消息。"""
 
     async def _send_in_room_mac(self, room_id: str, transaction_id: str, session: dict):
-        """发送房间内 MAC - 使用 HKDF-HMAC-SHA256.v2"""
+        """发送房间内 MAC，并严格遵循协商出的 MAC 方法。"""
         established_sas = session.get("established_sas")
-        sas_bytes = session.get("sas_bytes", b"\x00" * 32)
+        sas_bytes = session.get("sas_bytes")
+        mac_method = session.get("mac") or SAS_MAC_V2
 
-        # Get their user and device info from session
         to_user = session.get("sender")
         to_device = session.get("from_device", session.get("their_device", ""))
         keys_to_mac = await self._get_verification_keys_to_mac(
             other_user=to_user,
             session=session,
         )
-
         if not keys_to_mac:
             logger.warning("[E2EE-Verify] 缺少可用于发送房间内 MAC 的本地身份密钥")
             return
 
-        if established_sas and _vodozemac_sas_available():
-            try:
-                # 根据 Matrix 规范，info 格式为：
-                # MATRIX_KEY_VERIFICATION_MAC + user_id + device_id + other_user_id + other_device_id + transaction_id + key_id
-                base_info = f"{INFO_PREFIX_MAC}{self.user_id}{self.device_id}{to_user}{to_device}{transaction_id}"
+        base_info = (
+            f"{INFO_PREFIX_MAC}{self.user_id}{self.device_id}"
+            f"{to_user}{to_device}{transaction_id}"
+        )
+        key_ids = sorted(keys_to_mac.keys())
 
-                key_ids = sorted(keys_to_mac.keys())
-                mac_content = {
-                    key_id: established_sas.calculate_mac(
-                        keys_to_mac[key_id], (base_info + key_id)
-                    )
-                    for key_id in key_ids
-                }
-                keys_mac = established_sas.calculate_mac(
-                    ",".join(key_ids), (base_info + "KEY_IDS")
-                )
-            except Exception as e:
-                logger.warning(f"[E2EE-Verify] vodozemac MAC 计算失败，使用回退：{e}")
-                key_ids = sorted(keys_to_mac.keys())
-                mac_content = {
-                    key_id: base64.b64encode(
-                        _compute_hkdf(sas_bytes, b"", keys_to_mac[key_id].encode())
-                    ).decode()
-                    for key_id in key_ids
-                }
-                keys_mac = base64.b64encode(
-                    hashlib.sha256(",".join(key_ids).encode()).digest()
-                ).decode()
-        else:
-            key_ids = sorted(keys_to_mac.keys())
+        try:
             mac_content = {
-                key_id: base64.b64encode(
-                    _compute_hkdf(sas_bytes, b"", keys_to_mac[key_id].encode())
-                ).decode()
+                key_id: _calculate_sas_mac(
+                    method=mac_method,
+                    message=keys_to_mac[key_id],
+                    info=base_info + key_id,
+                    established_sas=established_sas,
+                    shared_secret=sas_bytes,
+                )
                 for key_id in key_ids
             }
-            keys_mac = base64.b64encode(
-                hashlib.sha256(",".join(key_ids).encode()).digest()
-            ).decode()
+            keys_mac = _calculate_sas_mac(
+                method=mac_method,
+                message=",".join(key_ids),
+                info=base_info + "KEY_IDS",
+                established_sas=established_sas,
+                shared_secret=sas_bytes,
+            )
+        except Exception as e:
+            logger.error(
+                f"[E2EE-Verify] 无法使用协商的 SAS MAC 方法 {mac_method}: {e}"
+            )
+            raise
 
-        content = {
-            "mac": mac_content,
-            "keys": keys_mac,
-        }
-
+        content = {"mac": mac_content, "keys": keys_mac}
         await self._send_in_room_event(
             room_id, M_KEY_VERIFICATION_MAC, content, transaction_id
         )
-        logger.info("[E2EE-Verify] 已发送 mac")
+        logger.info(f"[E2EE-Verify] 已发送 mac ({mac_method})")
