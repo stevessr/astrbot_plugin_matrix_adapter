@@ -4,7 +4,7 @@ from typing import Any
 
 from ..path_utils import quote_path_segment
 from .notifications import PushNotificationMixin
-from .rules import PushRuleMixin
+from .rules import PushRuleMixin, SUPPRESS_EDITS_RULE_ID
 
 
 class PushMixin(
@@ -33,4 +33,9 @@ PushMixin.set_pusher = PushNotificationMixin.__dict__["set_pusher"]
 PushMixin.get_notifications = PushNotificationMixin.__dict__["get_notifications"]
 
 
-__all__ = ["Any", "PushMixin", "quote_path_segment"]
+__all__ = [
+    "Any",
+    "PushMixin",
+    "SUPPRESS_EDITS_RULE_ID",
+    "quote_path_segment",
+]
