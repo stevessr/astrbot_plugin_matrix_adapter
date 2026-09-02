@@ -65,7 +65,11 @@ for _method_name in ("_sign", "_sign_device_object"):
 CrossSigningCryptoMixin._build_password_auth = (
     CrossSigningCryptoAuthMixin._build_password_auth
 )
-CrossSigningCryptoMixin._extract_uia_session = staticmethod(
+# ``_extract_uia_session`` became a classmethod when OAuth UIA parsing started
+# sharing the same extractor.  Preserve that descriptor here: wrapping its
+# ``__func__`` as a staticmethod drops the implicit class argument and breaks
+# the legacy CrossSigningCryptoMixin aggregation surface.
+CrossSigningCryptoMixin._extract_uia_session = classmethod(
     CrossSigningCryptoAuthMixin.__dict__["_extract_uia_session"].__func__
 )
 
