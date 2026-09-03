@@ -1,8 +1,5 @@
 """SAS ready and start message construction."""
 
-import base64
-import secrets
-
 from astrbot.api import logger
 
 from .....constants import (
@@ -38,22 +35,66 @@ class SASVerificationHandshakeMessagesMixin:
             session["ready_sent"] = True
         logger.info("[E2EE-Verify] 已发送 ready")
 
-    async def _send_start(self, to_user: str, to_device: str, transaction_id: str):
-        """发送 start 消息 (作为发起者)"""
-        # 1. Generate the ephemeral SAS public key. It is sent in the later key
-        # event, while start advertises the algorithms we can actually use.
-        sas = None
-        if _vodozemac_sas_available():
-            try:
-                sas = Sas()
-                our_public_key = sas.public_key.to_base64()
-            except Exception as e:
-                logger.warning(f"Failed to create SAS: {e}")
-                our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
-        else:
-            our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
+    async def _abort_unavailable_sas_start(
+        self,
+        session: dict,
+        to_user: str,
+        to_device: str,
+        transaction_id: str,
+        reason: str,
+    ) -> None:
+        cancel_bound = getattr(self, "_cancel_bound_verification_session", None)
+        if callable(cancel_bound):
+            await cancel_bound(
+                session,
+                transaction_id,
+                "m.unknown_method",
+                reason,
+                sender=to_user,
+                from_device=to_device,
+            )
+            return
 
+        session["state"] = "cancelled"
+        session["cancel_code"] = "m.unknown_method"
+        send_cancel = getattr(self, "_send_cancel", None)
+        if callable(send_cancel):
+            await send_cancel(
+                to_user,
+                to_device,
+                transaction_id,
+                "m.unknown_method",
+                reason,
+            )
+
+    async def _send_start(self, to_user: str, to_device: str, transaction_id: str):
+        """发送 start 消息 (作为发起者)。"""
         session = self._sessions.get(transaction_id, {})
+        if not _vodozemac_sas_available() or Sas is None:
+            logger.warning("[E2EE-Verify] vodozemac 不可用，拒绝发送 SAS start")
+            await self._abort_unavailable_sas_start(
+                session,
+                to_user,
+                to_device,
+                transaction_id,
+                "SAS verification is unavailable on this client",
+            )
+            return
+
+        try:
+            sas = Sas()
+            our_public_key = sas.public_key.to_base64()
+        except Exception as e:
+            logger.warning(f"[E2EE-Verify] Failed to create SAS: {e}")
+            await self._abort_unavailable_sas_start(
+                session,
+                to_user,
+                to_device,
+                transaction_id,
+                "Unable to initialize SAS verification",
+            )
+            return
+
         session["sas"] = sas
         session["our_public_key"] = our_public_key
 
