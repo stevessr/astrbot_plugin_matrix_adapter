@@ -89,6 +89,7 @@ class SASVerificationEventDispatchMixin:
             )
             return True
 
+        self._touch_verification_session(transaction_id)
         await handler(sender, content, transaction_id)
         return True
 
