@@ -54,6 +54,16 @@ class SASVerificationFlowRequestCoreMixin:
             )
             return
 
+        # Stable verification forbids a device from driving multiple concurrent
+        # verification attempts. Cancel both the existing flow(s) and this new
+        # request instead of allowing the newest transaction to replace the old.
+        if await self._cancel_parallel_verification_attempts(
+            sender,
+            from_device,
+            transaction_id,
+        ):
+            return
+
         logger.info(
             f"[E2EE-Verify] 收到验证请求："
             f"sender={self._mask_identifier(sender)} "
@@ -78,6 +88,7 @@ class SASVerificationFlowRequestCoreMixin:
         }
 
         session = self._sessions[transaction_id]
+        self._initialize_verification_session_lifecycle(session, transaction_id)
         await self._query_request_verification_keys(session, sender, from_device)
 
         await self._dispatch_verification_mode(
