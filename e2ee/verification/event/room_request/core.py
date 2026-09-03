@@ -45,6 +45,15 @@ class SASVerificationRoomRequestCoreMixin:
             )
             return
 
+        if await self._cancel_parallel_verification_attempts(
+            sender,
+            from_device,
+            transaction_id,
+            current_session=session,
+            room_id=session.get("room_id"),
+        ):
+            return
+
         session.pop("_room_context_only", None)
 
         logger.info(
@@ -73,6 +82,7 @@ class SASVerificationRoomRequestCoreMixin:
                 "sas": sas,
             }
         )
+        self._initialize_verification_session_lifecycle(session, transaction_id)
 
         # TOFU: Check if device is trusted
         fingerprint = await self._query_device_fingerprint(sender, from_device)
