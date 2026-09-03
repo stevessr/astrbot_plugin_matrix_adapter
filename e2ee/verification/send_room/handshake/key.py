@@ -1,8 +1,5 @@
 """In-room SAS public-key message construction."""
 
-import base64
-import secrets
-
 from astrbot.api import logger
 
 from .....constants import M_KEY_VERIFICATION_KEY
@@ -13,19 +10,30 @@ class SASVerificationSendRoomKeyMixin:
     """构造房间内 SAS 公钥消息。"""
 
     async def _send_in_room_key(self, room_id: str, transaction_id: str):
-        """发送房间内公钥"""
+        """发送由真实 SAS 会话生成的房间内 ephemeral 公钥。"""
         session = self._sessions.get(transaction_id, {})
 
-        # Prefer the same public key used while computing the accept commitment.
         our_public_key = session.get("our_public_key")
-        if not our_public_key:
+        if not isinstance(our_public_key, str) or not our_public_key:
             sas = session.get("sas")
             if sas and _vodozemac_sas_available():
-                our_public_key = sas.public_key.to_base64()
-            else:
-                our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
-            session["our_public_key"] = our_public_key
+                try:
+                    our_public_key = sas.public_key.to_base64()
+                except Exception as exc:
+                    logger.error(f"[E2EE-Verify] 无法读取房间内 SAS 公钥：{exc}")
+                    our_public_key = None
 
+        if not isinstance(our_public_key, str) or not our_public_key:
+            logger.warning("[E2EE-Verify] 缺少真实房间内 SAS ephemeral key，拒绝发送 key")
+            await self._cancel_bound_verification_session(
+                session,
+                transaction_id,
+                "m.unknown_method",
+                "SAS cryptographic state is unavailable",
+            )
+            return
+
+        session["our_public_key"] = our_public_key
         content = {"key": our_public_key}
 
         await self._send_in_room_event(
