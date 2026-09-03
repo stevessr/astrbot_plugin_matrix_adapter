@@ -1,0 +1,157 @@
+name: Patch verification fixtures once
+
+on:
+  push:
+    branches:
+      - feat/stable-verification-state-machine
+    paths:
+      - .github/workflows/patch-verification-fixtures-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/stable-verification-state-machine
+          fetch-depth: 0
+      - name: Patch protocol-state fixtures
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("tests/unit/test_matrix_new_spec_compat.py")
+          text = path.read_text(encoding="utf-8")
+
+          def section(name: str) -> tuple[int, int, str]:
+              marker = f"    async def {name}("
+              start = text.index(marker)
+              candidates = []
+              for next_marker in ("\n    async def ", "\n    def ", "\nclass "):
+                  pos = text.find(next_marker, start + len(marker))
+                  if pos != -1:
+                      candidates.append(pos)
+              end = min(candidates) if candidates else len(text)
+              return start, end, text[start:end]
+
+          def replace_in(name: str, old: str, new: str) -> None:
+              global text
+              start, end, body = section(name)
+              count = body.count(old)
+              if count != 1:
+                  raise RuntimeError(f"{name}: expected one replacement, found {count}")
+              body = body.replace(old, new, 1)
+              text = text[:start] + body + text[end:]
+
+          replace_in(
+              "test_handle_ready_prefers_self_verification_qr_when_peer_can_scan",
+              '                self._sessions = {"txn123": {"we_started_it": True}}',
+              '''                self._sessions = {
+                    "txn123": {
+                        "sender": "@bot:example.org",
+                        "their_device": "DEV456",
+                        "state": "request_sent",
+                        "we_started_it": True,
+                    }
+                }''',
+          )
+
+          replace_in(
+              "test_handle_accept_uses_cached_target_device_for_initiator",
+              '                self._sessions = {"txn123": {"their_device": "DEV456"}}',
+              '''                self._sessions = {
+                    "txn123": {
+                        "sender": "@alice:example.org",
+                        "their_device": "DEV456",
+                        "state": "start_sent",
+                        "we_are_initiator": True,
+                        "start_sent": True,
+                        "start_content": {
+                            "from_device": "BOT123",
+                            "method": "m.sas.v1",
+                            "key_agreement_protocols": ["curve25519-hkdf-sha256"],
+                            "hashes": ["sha256"],
+                            "message_authentication_codes": ["hkdf-hmac-sha256.v2"],
+                            "short_authentication_string": ["decimal", "emoji"],
+                            "transaction_id": "txn123",
+                        },
+                    }
+                }''',
+          )
+          replace_in(
+              "test_handle_accept_uses_cached_target_device_for_initiator",
+              '                "commitment": "abc",',
+              '                "method": "m.sas.v1",\n                "commitment": "abc",',
+          )
+
+          replace_in(
+              "test_sas_commitment_is_checked_by_start_sender_unpadded",
+              '''                        "we_are_initiator": True,
+                        "start_content": start_content,
+                        "their_commitment": expected,
+                        "their_device": "PEER",
+                        "our_public_key": "our-key",
+                        "established_sas": object(),''',
+              '''                        "sender": "@peer:example.org",
+                        "state": "accepted",
+                        "method": "m.sas.v1",
+                        "we_are_initiator": True,
+                        "start_sent": True,
+                        "key_sent": True,
+                        "start_content": start_content,
+                        "their_commitment": expected,
+                        "their_device": "PEER",
+                        "our_public_key": "our-key",
+                        "established_sas": object(),''',
+          )
+
+          mac_context_old = '''                        "from_device": "DEV456",
+                        "their_device": "DEV456",
+                        "fingerprint": "fingerprint-ed25519",
+                        "master_key_id": "ed25519:MASTERKEY",
+                        "master_key": "master-key-base64",
+                        "established_sas": DummyEstablishedSas(),'''
+          mac_context_new = '''                        "sender": "@alice:example.org",
+                        "from_device": "DEV456",
+                        "their_device": "DEV456",
+                        "state": "key_exchanged",
+                        "method": "m.sas.v1",
+                        "their_key": "peer-curve25519",
+                        "key_sent": True,
+                        "fingerprint": "fingerprint-ed25519",
+                        "master_key_id": "ed25519:MASTERKEY",
+                        "master_key": "master-key-base64",
+                        "established_sas": DummyEstablishedSas(),'''
+          for name in (
+              "test_handle_mac_sends_done_only_after_successful_verification",
+              "test_handle_mac_cancels_on_mismatched_mac",
+          ):
+              replace_in(name, mac_context_old, mac_context_new)
+
+          replace_in(
+              "test_handle_mac_cancels_when_fingerprint_missing",
+              '''                        "from_device": "DEV456",
+                        "their_device": "DEV456",''',
+              '''                        "sender": "@alice:example.org",
+                        "from_device": "DEV456",
+                        "their_device": "DEV456",
+                        "state": "key_exchanged",
+                        "method": "m.sas.v1",
+                        "their_key": "peer-curve25519",
+                        "key_sent": True,
+                        "sas_bytes": b"123456",
+                        "sas_emojis": [("x", "x")],''',
+          )
+
+          path.write_text(text, encoding="utf-8")
+          PY
+          git rm .github/workflows/patch-verification-fixtures-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/unit/test_matrix_new_spec_compat.py
+          git commit -m "test(e2ee): align legacy fixtures with verification states"
+          git push origin HEAD:feat/stable-verification-state-machine
