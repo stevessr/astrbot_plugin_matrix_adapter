@@ -69,6 +69,30 @@ class SASVerificationHandshakeNegotiationCoreMixin:
             return
 
         our_public_key = await self._resolve_our_public_key(session)
+        if not our_public_key:
+            logger.warning("[E2EE-Verify] 无法初始化真实 SAS 公钥，取消验证")
+            cancel_bound = getattr(self, "_cancel_bound_verification_session", None)
+            if callable(cancel_bound) and isinstance(session, dict) and session:
+                await cancel_bound(
+                    session,
+                    transaction_id,
+                    "m.unknown_method",
+                    "Unable to initialize SAS verification",
+                    sender=to_user,
+                    from_device=to_device,
+                )
+            else:
+                if isinstance(session, dict):
+                    session["state"] = "cancelled"
+                    session["cancel_code"] = "m.unknown_method"
+                await self._send_cancel(
+                    to_user,
+                    to_device,
+                    transaction_id,
+                    "m.unknown_method",
+                    "Unable to initialize SAS verification",
+                )
+            return
 
         session["our_public_key"] = our_public_key
         session["key_agreement"] = key_agreement
