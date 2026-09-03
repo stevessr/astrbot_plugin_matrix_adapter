@@ -23,3 +23,4 @@ class SASVerificationFlowCancelMixin:
         session["state"] = "cancelled"
         session["cancel_code"] = code
         session["cancel_reason"] = reason
+        self._stop_verification_timeout_task(transaction_id)
