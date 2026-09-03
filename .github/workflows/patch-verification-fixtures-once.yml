@@ -90,23 +90,13 @@ jobs:
 
           replace_in(
               "test_sas_commitment_is_checked_by_start_sender_unpadded",
-              '''                        "we_are_initiator": True,
-                        "start_content": start_content,
-                        "their_commitment": expected,
-                        "their_device": "PEER",
-                        "our_public_key": "our-key",
-                        "established_sas": object(),''',
+              '                        "we_are_initiator": True,',
               '''                        "sender": "@peer:example.org",
                         "state": "accepted",
                         "method": "m.sas.v1",
                         "we_are_initiator": True,
                         "start_sent": True,
-                        "key_sent": True,
-                        "start_content": start_content,
-                        "their_commitment": expected,
-                        "their_device": "PEER",
-                        "our_public_key": "our-key",
-                        "established_sas": object(),''',
+                        "key_sent": True,''',
           )
 
           mac_context_old = '''                        "from_device": "DEV456",
