@@ -7484,7 +7484,14 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
             def __init__(self):
                 self.user_id = "@bot:example.org"
                 self.device_id = "BOT123"
-                self._sessions = {"txn123": {"we_started_it": True}}
+                self._sessions = {
+          "txn123": {
+              "sender": "@bot:example.org",
+              "their_device": "DEV456",
+              "state": "request_sent",
+              "we_started_it": True,
+          }
+      }
                 self.qr_calls = []
                 self.start_calls = []
                 self.cancel_calls = []
@@ -7543,7 +7550,24 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         class DummyVerifier(flow_module.SASVerificationFlowMixin):
             def __init__(self):
                 self.auto_verify_mode = "auto_accept"
-                self._sessions = {"txn123": {"their_device": "DEV456"}}
+                self._sessions = {
+          "txn123": {
+              "sender": "@alice:example.org",
+              "their_device": "DEV456",
+              "state": "start_sent",
+              "we_are_initiator": True,
+              "start_sent": True,
+              "start_content": {
+                  "from_device": "BOT123",
+                  "method": "m.sas.v1",
+                  "key_agreement_protocols": ["curve25519-hkdf-sha256"],
+                  "hashes": ["sha256"],
+                  "message_authentication_codes": ["hkdf-hmac-sha256.v2"],
+                  "short_authentication_string": ["decimal", "emoji"],
+                  "transaction_id": "txn123",
+              },
+          }
+      }
                 self.key_calls = []
 
             async def _send_in_room_key(self, room_id, transaction_id):
@@ -7556,6 +7580,7 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
         await verifier._handle_accept(
             "@alice:example.org",
             {
+                "method": "m.sas.v1",
                 "commitment": "abc",
                 "key_agreement_protocol": "curve25519-hkdf-sha256",
                 "hash": "sha256",
@@ -8679,7 +8704,12 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.auto_verify_mode = "auto_accept"
                 self._sessions = {
                     "txn123": {
-                        "from_device": "DEV456",
+                        "sender": "@alice:example.org",
+              "from_device": "DEV456",
+              "state": "key_exchanged",
+              "method": "m.sas.v1",
+              "their_key": "peer-curve25519",
+              "key_sent": True,
                         "their_device": "DEV456",
                         "fingerprint": "fingerprint-ed25519",
                         "master_key_id": "ed25519:MASTERKEY",
@@ -8738,7 +8768,12 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.auto_verify_mode = "auto_accept"
                 self._sessions = {
                     "txn123": {
-                        "from_device": "DEV456",
+                        "sender": "@alice:example.org",
+              "from_device": "DEV456",
+              "state": "key_exchanged",
+              "method": "m.sas.v1",
+              "their_key": "peer-curve25519",
+              "key_sent": True,
                         "their_device": "DEV456",
                         "fingerprint": "fingerprint-ed25519",
                         "master_key_id": "ed25519:MASTERKEY",
@@ -8805,8 +8840,15 @@ class MatrixVerificationCompatTests(unittest.IsolatedAsyncioTestCase):
                 self.auto_verify_mode = "auto_accept"
                 self._sessions = {
                     "txn123": {
-                        "from_device": "DEV456",
+                        "sender": "@alice:example.org",
+              "from_device": "DEV456",
+              "state": "key_exchanged",
+              "method": "m.sas.v1",
+              "their_key": "peer-curve25519",
+              "key_sent": True,
                         "their_device": "DEV456",
+              "sas_bytes": b"123456",
+              "sas_emojis": [("x", "x")],
                     }
                 }
                 self.done_calls = []
@@ -10648,7 +10690,12 @@ class MatrixV119CompatTests(unittest.IsolatedAsyncioTestCase):
                 self.cancelled = []
                 self._sessions = {
                     "txn": {
-                        "we_are_initiator": True,
+                        "sender": "@peer:example.org",
+              "state": "accepted",
+              "method": "m.sas.v1",
+              "we_are_initiator": True,
+              "start_sent": True,
+              "key_sent": True,
                         "start_content": start_content,
                         "their_commitment": expected,
                         "their_device": "PEER",
