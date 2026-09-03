@@ -28,4 +28,4 @@ except ImportError:
     EstablishedSas = None
     Sas = None
     VODOZEMAC_SAS_AVAILABLE = False
-    logger.debug("vodozemac SAS 模块不可用，将使用简化实现")
+    logger.warning("vodozemac SAS 模块不可用；m.sas.v1 将按安全策略禁用")

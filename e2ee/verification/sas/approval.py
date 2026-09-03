@@ -8,8 +8,15 @@ class SASVerificationApprovalMixin:
 
     async def approve_device(self, device_id: str) -> tuple[bool, str]:
         """手动确认某个设备的验证（SAS 或 QR）。"""
+        terminal_states = getattr(
+            self,
+            "_TERMINAL_VERIFICATION_STATES",
+            frozenset({"done", "cancelled", "handled_by_other_device"}),
+        )
         candidates: list[tuple[str, dict[str, Any]]] = []
         for txn_id, session in self._sessions.items():
+            if session.get("state") in terminal_states:
+                continue
             if (
                 session.get("from_device") == device_id
                 or session.get("their_device") == device_id
@@ -19,7 +26,7 @@ class SASVerificationApprovalMixin:
         if not candidates:
             return False, f"未找到设备 {device_id} 的待验证会话"
 
-        # 优先选择已收到 QR reciprocate 或已完成 SAS 密钥交换的会话
+        # Prefer a flow which has actually reached a user-verifiable phase.
         txn_id, session = candidates[0]
         for tid, candidate_session in candidates:
             if (
@@ -44,34 +51,51 @@ class SASVerificationApprovalMixin:
             session.get("qr_reciprocated") and not session.get("qr_confirmed")
         )
 
-        if (
-            not qr_pending_confirm
-            and not session.get("sas_emojis")
-            and not session.get("sas_decimals")
-        ):
+        if qr_pending_confirm:
+            try:
+                session["qr_confirmed"] = True
+                if not session.get("done_sent"):
+                    if is_in_room and room_id:
+                        await self._send_in_room_done(room_id, txn_id)
+                    else:
+                        await self._send_done(sender, target_device, txn_id)
+                    session["done_sent"] = True
+                session["state"] = "qr_confirmed"
+            except Exception as e:
+                return False, f"发送验证消息失败：{e}"
+            return True, f"已发送 QR 验证确认（device_id={device_id}）"
+
+        if not session.get("sas_emojis") and not session.get("sas_decimals"):
             return False, "SAS 尚未就绪，请稍后再试"
 
+        # Human approval authorizes our MAC. It does not prove the peer MAC yet.
+        # done is emitted only after both directions have cryptographically
+        # completed, regardless of whether approval or the peer MAC arrives first.
+        session["manual_approved"] = True
         try:
-            if qr_pending_confirm:
-                session["qr_confirmed"] = True
-            elif not session.get("mac_sent"):
+            if not session.get("mac_sent"):
+                if is_in_room and room_id:
+                    sent = await self._send_in_room_mac(room_id, txn_id, session)
+                else:
+                    sent = await self._send_mac(sender, target_device, txn_id, session)
+                if sent is False:
+                    return False, "无法发送 SAS MAC，请检查验证会话的密钥状态"
                 session["mac_sent"] = True
-                if is_in_room and room_id:
-                    await self._send_in_room_mac(room_id, txn_id, session)
-                else:
-                    await self._send_mac(sender, target_device, txn_id, session)
-            if not session.get("done_sent"):
-                session["done_sent"] = True
-                if is_in_room and room_id:
-                    await self._send_in_room_done(room_id, txn_id)
-                else:
-                    await self._send_done(sender, target_device, txn_id)
-            session["state"] = "qr_confirmed" if qr_pending_confirm else "done"
+
+            if session.get("mac_verified"):
+                await self._send_mac_done(
+                    session,
+                    sender,
+                    txn_id,
+                    is_in_room,
+                    room_id,
+                )
         except Exception as e:
             return False, f"发送验证消息失败：{e}"
 
-        flow_name = "QR" if qr_pending_confirm else "SAS"
-        return True, f"已发送 {flow_name} 验证确认（device_id={device_id}）"
+        if session.get("done_sent"):
+            return True, f"SAS 双向验证完成（device_id={device_id}）"
+        return True, f"已确认 SAS 并发送本端 MAC，等待对端 MAC（device_id={device_id}）"
 
 
 __all__ = ["SASVerificationApprovalMixin"]

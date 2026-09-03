@@ -24,11 +24,14 @@ class SASVerificationSendDeviceNegotiationAlgorithmsMixin:
     def _pick_algorithm(
         supported: list[str], peer_supported: list[str], fallback: str = ""
     ) -> str:
+        """Pick only a genuinely shared algorithm.
+
+        The old helper silently selected our first local algorithm when there was
+        no intersection, which could make an accept claim an algorithm the peer
+        never offered. ``fallback`` is now used only when the caller explicitly
+        wants a non-negotiated fallback; verification callers must leave it empty.
+        """
         for algorithm in supported:
             if algorithm in peer_supported:
                 return algorithm
-        if supported:
-            return supported[0]
-        if peer_supported:
-            return peer_supported[0]
         return fallback

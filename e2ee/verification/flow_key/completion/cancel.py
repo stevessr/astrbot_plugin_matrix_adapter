@@ -8,12 +8,19 @@ class SASVerificationFlowCancelMixin:
 
     async def _handle_cancel(self, sender: str, content: dict, transaction_id: str):
         """处理验证取消"""
+        session = self._get_bound_verification_session(
+            transaction_id,
+            sender,
+            content.get("from_device"),
+        )
+        if session is None:
+            return
+
         code = content.get("code")
         reason = content.get("reason")
 
         logger.warning(f"[E2EE-Verify] ❌ 验证被取消：code={code} reason={reason}")
-
-        if transaction_id in self._sessions:
-            self._sessions[transaction_id]["state"] = "cancelled"
-            self._sessions[transaction_id]["cancel_code"] = code
-            self._sessions[transaction_id]["cancel_reason"] = reason
+        session["state"] = "cancelled"
+        session["cancel_code"] = code
+        session["cancel_reason"] = reason
+        self._stop_verification_timeout_task(transaction_id)

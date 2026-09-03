@@ -32,13 +32,10 @@ class SASVerificationSendRoomTransportMixin:
     def _pick_algorithm(
         supported: list[str], peer_supported: list[str], fallback: str = ""
     ) -> str:
+        """Return only a real intersection between local and peer algorithms."""
         for algorithm in supported:
             if algorithm in peer_supported:
                 return algorithm
-        if supported:
-            return supported[0]
-        if peer_supported:
-            return peer_supported[0]
         return fallback
 
     async def _send_in_room_event(
@@ -85,6 +82,9 @@ class SASVerificationSendRoomTransportMixin:
                 await self.client.send_room_event(room_id, event_type, content)
                 logger.debug(f"[E2EE-Verify] 已发送房间内事件：{event_type}")
 
+            touch = getattr(self, "_touch_verification_session", None)
+            if callable(touch):
+                touch(transaction_id)
         except Exception as e:
             logger.error(f"[E2EE-Verify] 发送房间内事件 {event_type} 失败：{e}")
 
