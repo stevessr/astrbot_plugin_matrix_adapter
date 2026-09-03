@@ -41,12 +41,8 @@ class SASVerificationSendRoomAcceptCoreMixin:
             logger.warning(
                 "[E2EE-Verify] 房间内 SAS 协商失败：没有完整的共同算法集合"
             )
-            if isinstance(session, dict):
-                session["state"] = "cancelled"
-                session["cancel_code"] = "m.unknown_method"
-                session["cancel_reason"] = "No common SAS verification algorithms"
-            await self._send_in_room_cancel(
-                room_id,
+            await self._cancel_bound_verification_session(
+                session,
                 transaction_id,
                 "m.unknown_method",
                 "No common SAS verification algorithms",
@@ -54,6 +50,15 @@ class SASVerificationSendRoomAcceptCoreMixin:
             return
 
         our_public_key = await self._resolve_room_accept_public_key(session)
+        if not our_public_key:
+            logger.warning("[E2EE-Verify] 无法初始化真实房间内 SAS 公钥，取消验证")
+            await self._cancel_bound_verification_session(
+                session,
+                transaction_id,
+                "m.unknown_method",
+                "Unable to initialize SAS verification",
+            )
+            return
 
         session["our_public_key"] = our_public_key
         session["key_agreement"] = key_agreement
