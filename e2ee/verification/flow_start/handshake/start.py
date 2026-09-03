@@ -14,14 +14,30 @@ class SASVerificationFlowStartEventMixin:
         sender: str,
         from_device: str,
         transaction_id: str,
-    ) -> dict:
+    ) -> dict | None:
         """Create the deprecated-but-still-receivable standalone SAS flow."""
-        sas = None
-        if VODOZEMAC_SAS_AVAILABLE and Sas is not None:
-            try:
-                sas = Sas()
-            except Exception as e:
-                logger.warning(f"[E2EE-Verify] 创建 legacy standalone SAS 失败：{e}")
+        if not VODOZEMAC_SAS_AVAILABLE or Sas is None:
+            await self._send_cancel(
+                sender,
+                from_device,
+                transaction_id,
+                "m.unknown_method",
+                "SAS verification is unavailable on this client",
+            )
+            return None
+
+        try:
+            sas = Sas()
+        except Exception as e:
+            logger.warning(f"[E2EE-Verify] 创建 legacy standalone SAS 失败：{e}")
+            await self._send_cancel(
+                sender,
+                from_device,
+                transaction_id,
+                "m.unknown_method",
+                "Unable to initialize SAS verification",
+            )
+            return None
 
         session = {
             "sender": sender,
@@ -35,6 +51,7 @@ class SASVerificationFlowStartEventMixin:
             "we_are_initiator": False,
         }
         self._sessions[transaction_id] = session
+        self._initialize_verification_session_lifecycle(session, transaction_id)
 
         query_keys = getattr(self, "_query_request_verification_keys", None)
         if callable(query_keys):
@@ -55,15 +72,14 @@ class SASVerificationFlowStartEventMixin:
 
         our_method = session.get("start_content", {}).get("method")
         if our_method != method:
-            await self._send_cancel(
-                sender,
-                from_device,
+            await self._cancel_bound_verification_session(
+                session,
                 transaction_id,
                 "m.unexpected_message",
                 "Simultaneous verification starts selected different methods",
+                sender=sender,
+                from_device=from_device,
             )
-            session["state"] = "cancelled"
-            session["cancel_code"] = "m.unexpected_message"
             return True
 
         # The lexicographically largest sender's start is ignored. For self-
@@ -114,11 +130,28 @@ class SASVerificationFlowStartEventMixin:
                     else "Unsupported standalone verification method",
                 )
                 return
+            if not VODOZEMAC_SAS_AVAILABLE or Sas is None:
+                await self._send_cancel(
+                    sender,
+                    from_device,
+                    transaction_id,
+                    "m.unknown_method",
+                    "SAS verification is unavailable on this client",
+                )
+                return
+            if await self._cancel_parallel_verification_attempts(
+                sender,
+                from_device,
+                transaction_id,
+            ):
+                return
             session = await self._create_legacy_standalone_sas_session(
                 sender,
                 from_device,
                 transaction_id,
             )
+            if session is None:
+                return
         else:
             session = self._get_bound_verification_session(
                 transaction_id,
@@ -127,6 +160,19 @@ class SASVerificationFlowStartEventMixin:
             )
             if session is None:
                 return
+
+        if method == M_SAS_V1_METHOD and (
+            not VODOZEMAC_SAS_AVAILABLE or Sas is None
+        ):
+            await self._cancel_bound_verification_session(
+                session,
+                transaction_id,
+                "m.unknown_method",
+                "SAS verification is unavailable on this client",
+                sender=sender,
+                from_device=from_device,
+            )
+            return
 
         if from_device and await self._resolve_simultaneous_start(
             session,
