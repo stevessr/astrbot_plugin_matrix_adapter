@@ -1,8 +1,5 @@
 """In-room SAS start message construction."""
 
-import base64
-import secrets
-
 from astrbot.api import logger
 
 from .....constants import (
@@ -24,17 +21,28 @@ class SASVerificationSendRoomStartMixin:
 
     async def _send_in_room_start(self, room_id: str, transaction_id: str):
         session = self._sessions.get(transaction_id, {})
+        if not _vodozemac_sas_available() or Sas is None:
+            logger.warning("[E2EE-Verify] vodozemac 不可用，拒绝发送房间内 SAS start")
+            await self._cancel_bound_verification_session(
+                session,
+                transaction_id,
+                "m.unknown_method",
+                "SAS verification is unavailable on this client",
+            )
+            return
 
-        sas = None
-        if _vodozemac_sas_available():
-            try:
-                sas = Sas()
-                our_public_key = sas.public_key.to_base64()
-            except Exception as e:
-                logger.warning(f"[E2EE-Verify] Failed to create in-room SAS: {e}")
-                our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
-        else:
-            our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
+        try:
+            sas = Sas()
+            our_public_key = sas.public_key.to_base64()
+        except Exception as e:
+            logger.warning(f"[E2EE-Verify] Failed to create in-room SAS: {e}")
+            await self._cancel_bound_verification_session(
+                session,
+                transaction_id,
+                "m.unknown_method",
+                "Unable to initialize SAS verification",
+            )
+            return
 
         session["sas"] = sas
         session["our_public_key"] = our_public_key
