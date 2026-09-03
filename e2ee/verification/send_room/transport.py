@@ -82,6 +82,9 @@ class SASVerificationSendRoomTransportMixin:
                 await self.client.send_room_event(room_id, event_type, content)
                 logger.debug(f"[E2EE-Verify] 已发送房间内事件：{event_type}")
 
+            touch = getattr(self, "_touch_verification_session", None)
+            if callable(touch):
+                touch(transaction_id)
         except Exception as e:
             logger.error(f"[E2EE-Verify] 发送房间内事件 {event_type} 失败：{e}")
 
