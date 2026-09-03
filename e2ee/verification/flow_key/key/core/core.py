@@ -66,13 +66,23 @@ class SASVerificationFlowKeyCoreOrchestratorMixin:
             their_key,
         )
 
-        await self._compute_sas_shared_secret(
+        established = await self._compute_sas_shared_secret(
             session,
             sender=sender,
             their_device=their_device,
             their_key=their_key,
             transaction_id=transaction_id,
         )
+        if not established:
+            await self._cancel_bound_verification_session(
+                session,
+                transaction_id,
+                "m.key_mismatch",
+                "Unable to establish SAS shared secret",
+                sender=sender,
+                from_device=from_device,
+            )
+            return
 
         await self._send_sas_mac(
             session,
