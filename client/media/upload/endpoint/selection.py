@@ -8,10 +8,17 @@ class MediaUploadEndpointSelectionMixin:
 
     @staticmethod
     def _get_media_upload_endpoints() -> tuple[str, ...]:
-        """Return preferred media upload endpoints in compatibility order."""
+        """Return preferred media upload endpoints in compatibility order.
+
+        The Matrix spec (content repository) only defines
+        ``POST /_matrix/media/v3/upload``; ``/_matrix/client/v1/media/*``
+        covers MSC3916 read endpoints only. Keep the unversioned
+        ``/_matrix/client/v1/media/upload`` as a 404 fallback for
+        non-conforming homeservers that proxy it.
+        """
         return (
-            "/_matrix/client/v1/media/upload",
             "/_matrix/media/v3/upload",
+            "/_matrix/client/v1/media/upload",
         )
 
     @staticmethod

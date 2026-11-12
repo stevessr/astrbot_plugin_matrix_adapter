@@ -45,7 +45,7 @@ class MediaUploadTransferAttemptMixin:
             if status >= HTTP_ERROR_STATUS_400:
                 return ("status", status, response_data, response_headers)
 
-            payload = await self._consume_upload_result(
+            payload = await self._consume_file_upload_result(
                 response_data,
                 hashing_reader,
                 path_cache_key,

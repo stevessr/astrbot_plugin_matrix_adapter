@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1 - 2026-11-12
+
+- **修复出站语音上传崩溃（issue #19）**：`MediaUploadBytesResultMixin` 与 `MediaUploadTransferResultMixin` 的同名 `_consume_upload_result` 因 MRO 遮蔽导致 file 上传路径（语音/文件/视频等所有 `upload_file_path` 调用）按错误签名调用 bytes 版而抛 `TypeError: takes 1 positional argument but 5 were given`；现分别重命名为 `_consume_bytes_upload_result` / `_consume_file_upload_result` 并同步调用点。
+- **上传端点符合规范（issue #19）**：首选端点改为规范定义的 `POST /_matrix/media/v3/upload`（Matrix spec content repository 仅定义该上传路由；`/_matrix/client/v1/media/*` 只有 MSC3916 读端点），不合规的 `/_matrix/client/v1/media/upload` 降为 404 兜底，避免每次上传先白传一遍完整 body。
+- **修正 404 回退日志**：原日志把「刚失败的端点」写成 `trying fallback endpoint: X`，现改为 `not supported (404): <failed>, falling back to <next>`，避免排查误导。
+- **修复入站语音 STT 拼接文件名（issue #20）**：`m.audio` 事件的 `body` 是客户端生成的文件名（如 Element 的 `voice-message-<ts>.ogg`），AstrBot 核心 STT 将转录追加（`+=`）到 `message_str`，导致模型收到 `voice-message-1.ogg你好` 这样的粘连文本。现在当音频成功渲染为 `Record` 且 `body` 非真字幕时，转换阶段将 `message_str` 置空，STT 转录成为唯一正文；下载失败或存在真字幕时保留原值。
+- **回归测试**：新增 `tests/unit/test_media_voice_regressions.py`（12 个用例），覆盖上传结果消费的 file/bytes 签名隔离、规范上传端点优先与 404 回退日志、以及 `m.audio` 的 `message_str` 真值表（文件名占位 / 旧式占位 / 真字幕 / 下载失败 / 文本对照）。
+
 ## 0.4.0 - 2026-08-28
 
 - **Matrix Client-Server stable v1.1 → v1.19 全链审计**：逐版核对普通 Client Adapter 职责，修正 stable wire、错误码、relations、profile、sync、OAuth/UIA 与 E2EE 语义；server/federation/Application Service-only 项明确标记边界，MSC1544 QR verification、MSC4153、MSC4268 等未完整能力不虚报全支持。

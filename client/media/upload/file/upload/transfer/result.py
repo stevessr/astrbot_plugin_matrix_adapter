@@ -6,7 +6,7 @@ from typing import Any
 class MediaUploadTransferResultMixin:
     """Consume a successful upload response into a cached result."""
 
-    async def _consume_upload_result(
+    async def _consume_file_upload_result(
         self,
         response_data: dict[str, Any],
         hashing_reader,

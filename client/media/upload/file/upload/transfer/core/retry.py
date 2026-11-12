@@ -23,9 +23,10 @@ class MediaUploadTransferRetryMixin:
             endpoint_index,
             len(endpoints),
         ):
+            next_endpoint = endpoints[endpoint_index + 1]
             logger.warning(
-                "Matrix media upload endpoint returned 404, "
-                f"trying fallback endpoint: {endpoint}"
+                "Matrix media upload endpoint not supported "
+                f"(404): {endpoint}, falling back to {next_endpoint}"
             )
             return ("switch", None)
 

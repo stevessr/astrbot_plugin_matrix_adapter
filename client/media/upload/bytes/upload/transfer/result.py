@@ -4,7 +4,7 @@
 class MediaUploadBytesResultMixin:
     """Extract the upload result, polling async uploads when needed."""
 
-    async def _consume_upload_result(
+    async def _consume_bytes_upload_result(
         self, *, response_data: dict, cache_key: str
     ) -> dict:
         content_uri = response_data.get("content_uri")

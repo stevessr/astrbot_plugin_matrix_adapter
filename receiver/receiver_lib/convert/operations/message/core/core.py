@@ -1,11 +1,14 @@
 """Matrix message event conversion orchestrator."""
 
 from astrbot.api.event import MessageChain
+from astrbot.api.message_components import Record
 from astrbot.api.platform import AstrBotMessage
 
 from .......client.event_types import MatrixRoom
-from .......constants import MSGTYPE_REDACTION
+from .......constants import MSGTYPE_AUDIO, MSGTYPE_REDACTION
 from .......utils.utils import MatrixUtils
+from ......events.audio.extraction import _extract_audio_filename
+from ......events.text import should_append_caption
 
 
 class MatrixReceiverMessageConvertOrchestratorMixin:
@@ -61,10 +64,35 @@ class MatrixReceiverMessageConvertOrchestratorMixin:
                 if getattr(component, "text", None)
             )
 
+        if msgtype == MSGTYPE_AUDIO:
+            self._strip_audio_filename_placeholder(message, chain, event)
+
         message.message = (
             chain.chain
         )  # AstrBotMessage 需要列表格式的消息链 (list[BaseMessageComponent])
         return message
+
+    @staticmethod
+    def _strip_audio_filename_placeholder(message, chain, event) -> None:
+        """Drop the ``m.audio`` filename placeholder from ``message_str``.
+
+        Matrix clients set the ``body`` of ``m.audio`` events to a generated
+        filename (e.g. Element's ``voice-message-<ts>.ogg`` or "Voice
+        message"), which is not user-authored text. AstrBot's speech-to-text
+        pipeline appends the transcription to ``message_str`` instead of
+        replacing it, so a leftover filename would glue itself to the
+        transcript (``voice-message-1.ogg你好``) and the model would read the
+        message as "user sent a file". Clear it when the audio was actually
+        rendered as a ``Record`` and the body carries no real caption;
+        otherwise keep it so the event is not treated as empty.
+        """
+        if not any(isinstance(component, Record) for component in chain.chain):
+            return
+        content = event.content if isinstance(event.content, dict) else {}
+        filename = _extract_audio_filename(content, getattr(event, "body", ""))
+        if should_append_caption(content, filename):
+            return
+        message.message_str = ""
 
 
 __all__ = ["MatrixReceiverMessageConvertOrchestratorMixin"]

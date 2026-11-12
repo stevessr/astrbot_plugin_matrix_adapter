@@ -72,7 +72,7 @@ class MediaUploadBytesTransferOrchestratorMixin:
                     if action_kind == "raise":
                         raise action_value
 
-                    return await self._consume_upload_result(
+                    return await self._consume_bytes_upload_result(
                         response_data=response_data,
                         cache_key=cache_key,
                     )
