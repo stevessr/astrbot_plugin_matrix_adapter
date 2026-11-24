@@ -2,7 +2,6 @@
 
 import base64
 import hashlib
-import secrets
 
 from astrbot.api import logger
 
@@ -14,28 +13,29 @@ from ..compat import _vodozemac_sas_available
 class SASVerificationSendRoomAcceptKeyMixin:
     """解析房间内 accept 公钥并计算 commitment。"""
 
-    async def _resolve_room_accept_public_key(self, session: dict) -> str:
-        """生成或复用 accept 用的 SAS 公钥。"""
+    async def _resolve_room_accept_public_key(self, session: dict) -> str | None:
+        """生成或复用真实 SAS 公钥；后端不可用时返回 None。"""
+        if not _vodozemac_sas_available() or Sas is None:
+            logger.warning("[E2EE-Verify] vodozemac unavailable for in-room SAS accept")
+            return None
+
         sas = session.get("sas")
-        if sas and _vodozemac_sas_available():
-            our_public_key = sas.public_key.to_base64()
-        elif _vodozemac_sas_available():
-            logger.warning(
-                "[E2EE-Verify] SAS object not in session, creating new SAS for accept"
-            )
+        if sas:
             try:
-                sas = Sas()
-                our_public_key = sas.public_key.to_base64()
-                session["sas"] = sas
-            except Exception as e:
-                logger.error(f"[E2EE-Verify] Failed to create SAS: {e}")
-                our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
-        else:
-            logger.warning(
-                "[E2EE-Verify] vodozemac not available, using fallback random key"
-            )
-            our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
-        return our_public_key
+                return sas.public_key.to_base64()
+            except Exception as exc:
+                logger.error(f"[E2EE-Verify] Existing SAS object is unusable: {exc}")
+                return None
+
+        logger.debug("[E2EE-Verify] Creating SAS object for in-room accept")
+        try:
+            sas = Sas()
+            our_public_key = sas.public_key.to_base64()
+            session["sas"] = sas
+            return our_public_key
+        except Exception as e:
+            logger.error(f"[E2EE-Verify] Failed to create SAS: {e}")
+            return None
 
     @staticmethod
     def _compute_room_accept_commitment(

@@ -18,4 +18,5 @@ class SASVerificationSendRoomReadyMixin:
         await self._send_in_room_event(
             room_id, M_KEY_VERIFICATION_READY, content, transaction_id
         )
+        session["ready_sent"] = True
         logger.info("[E2EE-Verify] 已发送 ready")

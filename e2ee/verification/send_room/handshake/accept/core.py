@@ -31,24 +31,34 @@ class SASVerificationSendRoomAcceptCoreMixin:
             start_content.get("short_authentication_string", [])
         )
 
-        key_agreement = self._pick_algorithm(
-            KEY_AGREEMENT_PROTOCOLS,
-            their_key_agreement,
-            fallback="curve25519-hkdf-sha256",
-        )
-        hash_algo = self._pick_algorithm(HASHES, their_hashes, fallback="sha256")
-        mac = self._pick_algorithm(
-            MESSAGE_AUTHENTICATION_CODES,
-            their_macs,
-            fallback="hkdf-hmac-sha256.v2",
-        )
+        key_agreement = self._pick_algorithm(KEY_AGREEMENT_PROTOCOLS, their_key_agreement)
+        hash_algo = self._pick_algorithm(HASHES, their_hashes)
+        mac = self._pick_algorithm(MESSAGE_AUTHENTICATION_CODES, their_macs)
         sas_methods = [s for s in SHORT_AUTHENTICATION_STRING if s in their_sas]
-        if not sas_methods:
-            sas_methods = list(SHORT_AUTHENTICATION_STRING)
 
         session = self._sessions.get(transaction_id, {})
+        if not key_agreement or not hash_algo or not mac or not sas_methods:
+            logger.warning(
+                "[E2EE-Verify] 房间内 SAS 协商失败：没有完整的共同算法集合"
+            )
+            await self._cancel_bound_verification_session(
+                session,
+                transaction_id,
+                "m.unknown_method",
+                "No common SAS verification algorithms",
+            )
+            return
 
         our_public_key = await self._resolve_room_accept_public_key(session)
+        if not our_public_key:
+            logger.warning("[E2EE-Verify] 无法初始化真实房间内 SAS 公钥，取消验证")
+            await self._cancel_bound_verification_session(
+                session,
+                transaction_id,
+                "m.unknown_method",
+                "Unable to initialize SAS verification",
+            )
+            return
 
         session["our_public_key"] = our_public_key
         session["key_agreement"] = key_agreement
@@ -70,6 +80,8 @@ class SASVerificationSendRoomAcceptCoreMixin:
         await self._send_in_room_event(
             room_id, M_KEY_VERIFICATION_ACCEPT, content, transaction_id
         )
+        session["accept_sent"] = True
+        session["state"] = "accept_sent"
         logger.info(
             f"[E2EE-Verify] 已发送房间内 accept (commitment: {(commitment or '')[:16]}...)"
         )

@@ -15,42 +15,48 @@ class SASVerificationFlowKeyValidateMixin:
     ) -> str | None:
         """Return the validated peer key, or ``None`` to abort."""
         their_key = content.get("key")
+        their_device = session.get("from_device") or session.get("their_device")
 
         if not isinstance(their_key, str) or not their_key:
             logger.warning("[E2EE-Verify] 对方公钥缺失或格式不正确")
+            await self._cancel_bound_verification_session(
+                session,
+                transaction_id,
+                "m.invalid_message",
+                "Missing or malformed verification key",
+                sender=sender,
+                from_device=their_device,
+            )
             return None
         logger.info("[E2EE-Verify] 收到对方公钥")
 
-        # 根据 Matrix 规范验证 commitment
-        # commitment = SHA256(公钥 || canonical_json(start_content))
-        # 参考：https://spec.matrix.org/latest/client-server-api/#sas-verification
+        # commitment = SHA256(public_key || canonical_json(start_content))
         their_commitment = session.get("their_commitment")
         start_content = session.get("start_content")
-        if their_commitment and start_content and session.get("we_are_initiator"):
-            if not self._verify_commitment(
+        if session.get("we_are_initiator"):
+            if not isinstance(their_commitment, str) or not their_commitment:
+                await self._cancel_bound_verification_session(
+                    session,
+                    transaction_id,
+                    "m.invalid_message",
+                    "Missing SAS commitment",
+                    sender=sender,
+                    from_device=their_device,
+                )
+                return None
+            if not isinstance(start_content, dict) or not self._verify_commitment(
                 their_key,
                 start_content,
                 their_commitment,
             ):
-                # 根据规范，commitment 不匹配应该取消验证
-                if session.get("is_in_room") and session.get("room_id"):
-                    await self._send_in_room_cancel(
-                        session["room_id"],
-                        transaction_id,
-                        "m.mismatched_commitment",
-                        "Commitment verification failed",
-                    )
-                else:
-                    their_device = session.get(
-                        "from_device", session.get("their_device", "")
-                    )
-                    await self._send_cancel(
-                        sender,
-                        their_device,
-                        transaction_id,
-                        "m.mismatched_commitment",
-                        "Commitment verification failed",
-                    )
+                await self._cancel_bound_verification_session(
+                    session,
+                    transaction_id,
+                    "m.mismatched_commitment",
+                    "Commitment verification failed",
+                    sender=sender,
+                    from_device=their_device,
+                )
                 return None
             logger.info("[E2EE-Verify] ✅ Commitment 验证通过")
 

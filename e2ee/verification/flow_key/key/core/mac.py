@@ -14,18 +14,20 @@ class SASVerificationFlowKeyMacMixin:
         room_id: str | None,
         their_device: str,
     ) -> None:
-        # Send MAC only if not already sent
-        if self.auto_verify_mode == "auto_accept" and not session.get("mac_sent"):
+        if self.auto_verify_mode != "auto_accept" or session.get("mac_sent"):
+            return
+
+        if is_in_room and room_id:
+            sent = await self._send_in_room_mac(room_id, transaction_id, session)
+        else:
+            sent = await self._send_mac(
+                sender,
+                their_device,
+                transaction_id,
+                session,
+            )
+        if sent is not False:
             session["mac_sent"] = True
-            if is_in_room and room_id:
-                await self._send_in_room_mac(room_id, transaction_id, session)
-            else:
-                await self._send_mac(
-                    sender,
-                    their_device,
-                    transaction_id,
-                    session,
-                )
 
 
 __all__ = ["SASVerificationFlowKeyMacMixin"]

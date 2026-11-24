@@ -2,6 +2,8 @@
 
 from astrbot.api import logger
 
+from ......constants import M_KEY_VERIFICATION_CANCEL, M_KEY_VERIFICATION_START
+
 
 class SASVerificationRoomEventDispatchOrchestratorMixin:
     """Orchestrate in-room verification event handling."""
@@ -30,9 +32,34 @@ class SASVerificationRoomEventDispatchOrchestratorMixin:
             f"from={sender} room={(room_id or '')[:16]}... txn={(transaction_id or '')[:16]}..."
         )
 
-        # CRITICAL: Check if this session was already taken over by another device
-        # If so, ignore ALL subsequent events for this transaction (except cancel)
-        if self._prepare_in_room_session(transaction_id, room_id, event_type):
+        raw_session = self._sessions.get(transaction_id)
+        if not is_verification_request and not isinstance(raw_session, dict):
+            # Do not answer our own stale echoes, and never answer cancel with
+            # cancel. In-room standalone START is not a supported way to create a
+            # flow, but it is also ignored rather than error-looped here.
+            if sender == self.user_id or event_type in (
+                M_KEY_VERIFICATION_START,
+                M_KEY_VERIFICATION_CANCEL,
+            ):
+                return True
+
+            send_cancel = getattr(self, "_send_in_room_cancel", None)
+            if callable(send_cancel):
+                await send_cancel(
+                    room_id,
+                    transaction_id,
+                    "m.unknown_transaction",
+                    "Unknown verification transaction",
+                )
+            return True
+
+        # Only an actual verification request may create an in-room session.
+        if self._prepare_in_room_session(
+            transaction_id,
+            room_id,
+            event_type,
+            is_verification_request,
+        ):
             return True
 
         return await self._route_in_room_event(

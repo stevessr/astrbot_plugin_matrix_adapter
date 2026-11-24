@@ -1,8 +1,5 @@
 """SAS ready and start message construction."""
 
-import base64
-import secrets
-
 from astrbot.api import logger
 
 from .....constants import (
@@ -33,30 +30,74 @@ class SASVerificationHandshakeMessagesMixin:
         await self._send_to_device(
             M_KEY_VERIFICATION_READY, to_user, to_device, content
         )
+        session = self._sessions.get(transaction_id)
+        if isinstance(session, dict):
+            session["ready_sent"] = True
         logger.info("[E2EE-Verify] 已发送 ready")
 
+    async def _abort_unavailable_sas_start(
+        self,
+        session: dict,
+        to_user: str,
+        to_device: str,
+        transaction_id: str,
+        reason: str,
+    ) -> None:
+        cancel_bound = getattr(self, "_cancel_bound_verification_session", None)
+        if callable(cancel_bound):
+            await cancel_bound(
+                session,
+                transaction_id,
+                "m.unknown_method",
+                reason,
+                sender=to_user,
+                from_device=to_device,
+            )
+            return
+
+        session["state"] = "cancelled"
+        session["cancel_code"] = "m.unknown_method"
+        send_cancel = getattr(self, "_send_cancel", None)
+        if callable(send_cancel):
+            await send_cancel(
+                to_user,
+                to_device,
+                transaction_id,
+                "m.unknown_method",
+                reason,
+            )
+
     async def _send_start(self, to_user: str, to_device: str, transaction_id: str):
-        """发送 start 消息 (作为发起者)"""
-        # 生成 commitment
-
-        # 1. 生成公钥 (start 时不发送，但在 start 后发送 key 时会用到)
-        # 此时我们需要创建一个 SAS 对象
-        sas = None
-        if _vodozemac_sas_available():
-            try:
-                sas = Sas()
-                our_public_key = sas.public_key.to_base64()
-            except Exception as e:
-                logger.warning(f"Failed to create SAS: {e}")
-                our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
-        else:
-            our_public_key = base64.b64encode(secrets.token_bytes(32)).decode()
-
+        """发送 start 消息 (作为发起者)。"""
         session = self._sessions.get(transaction_id, {})
+        if not _vodozemac_sas_available() or Sas is None:
+            logger.warning("[E2EE-Verify] vodozemac 不可用，拒绝发送 SAS start")
+            await self._abort_unavailable_sas_start(
+                session,
+                to_user,
+                to_device,
+                transaction_id,
+                "SAS verification is unavailable on this client",
+            )
+            return
+
+        try:
+            sas = Sas()
+            our_public_key = sas.public_key.to_base64()
+        except Exception as e:
+            logger.warning(f"[E2EE-Verify] Failed to create SAS: {e}")
+            await self._abort_unavailable_sas_start(
+                session,
+                to_user,
+                to_device,
+                transaction_id,
+                "Unable to initialize SAS verification",
+            )
+            return
+
         session["sas"] = sas
         session["our_public_key"] = our_public_key
 
-        # 2. 构造 start 内容
         content = {
             "from_device": self.device_id,
             "method": M_SAS_V1_METHOD,
@@ -66,23 +107,12 @@ class SASVerificationHandshakeMessagesMixin:
             "short_authentication_string": SHORT_AUTHENTICATION_STRING,
             "transaction_id": transaction_id,
         }
-        # The accept-side commitment hashes this exact content object. Keep a
-        # byte-for-byte semantic copy for validation when the peer key arrives.
         session["start_content"] = dict(content)
         session["we_are_initiator"] = True
-
-        # 3. 计算 commitment (注意：start 消息本身不包含 commitment，
-        # 而是 accept 消息包含。但是等等，根据 Matrix 流程：
-        # Initiator sends start.
-        # Responder sends accept (with commitment).
-        # Initiator sends key.
-        # Responder sends key.
-        # 所以 start 消息只需要包含支持的算法)
-
-        # 实际上 start 消息不需要 commitment。
-        # Commitment 是 Responder 发送的。
 
         await self._send_to_device(
             M_KEY_VERIFICATION_START, to_user, to_device, content
         )
+        session["start_sent"] = True
+        session["state"] = "start_sent"
         logger.info("[E2EE-Verify] 已发送 start")

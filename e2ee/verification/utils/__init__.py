@@ -22,15 +22,17 @@ from .identity import SASVerificationFlowIdentityMixin
 from .masking import SASVerificationFlowMaskingMixin
 from .qr import SASVerificationFlowQRMixin
 from .sas import SASVerificationFlowSASMixin
+from .session import SASVerificationFlowSessionGuardMixin
 
 
 class SASVerificationFlowUtilsMixin(
     SASVerificationFlowMaskingMixin,
     SASVerificationFlowIdentityMixin,
+    SASVerificationFlowSessionGuardMixin,
     SASVerificationFlowQRMixin,
     SASVerificationFlowSASMixin,
 ):
-    """Verification helpers split by masking, identity, QR, and SAS concerns."""
+    """Verification helpers split by masking, identity, session, QR, and SAS concerns."""
 
     pass
 
@@ -57,6 +59,9 @@ SASVerificationFlowUtilsMixin._device_trusts_master_key = staticmethod(
 SASVerificationFlowUtilsMixin._can_continue_with_qr = (
     SASVerificationFlowIdentityMixin._can_continue_with_qr
 )
+SASVerificationFlowUtilsMixin._get_bound_verification_session = (
+    SASVerificationFlowSessionGuardMixin._get_bound_verification_session
+)
 SASVerificationFlowUtilsMixin._build_self_verification_qr_payload = (
     SASVerificationFlowQRMixin._build_self_verification_qr_payload
 )
@@ -81,6 +86,7 @@ __all__ = [
     "SASVerificationFlowMaskingMixin",
     "SASVerificationFlowQRMixin",
     "SASVerificationFlowSASMixin",
+    "SASVerificationFlowSessionGuardMixin",
     "SASVerificationFlowUtilsMixin",
     "SAS_BYTES_LENGTH_6",
     "_encode_unpadded_base64",

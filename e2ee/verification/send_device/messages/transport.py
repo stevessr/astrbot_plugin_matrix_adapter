@@ -14,5 +14,9 @@ class SASVerificationSendDeviceTransportMixin:
             txn_id = secrets.token_hex(16)
             messages = {to_user: {to_device: content}}
             await self.client.send_to_device(event_type, messages, txn_id)
+            verification_txn = content.get("transaction_id")
+            touch = getattr(self, "_touch_verification_session", None)
+            if isinstance(verification_txn, str) and verification_txn and callable(touch):
+                touch(verification_txn)
         except Exception as e:
             logger.error(f"[E2EE-Verify] 发送 {event_type} 失败：{e}")

@@ -9,21 +9,27 @@ from ...crypto_utils import SAS_MAC_V2, _calculate_sas_mac
 class SASVerificationSendRoomMACMixin:
     """构造房间内 SAS MAC 消息。"""
 
-    async def _send_in_room_mac(self, room_id: str, transaction_id: str, session: dict):
+    async def _send_in_room_mac(
+        self, room_id: str, transaction_id: str, session: dict
+    ) -> bool:
         """发送房间内 MAC，并严格遵循协商出的 MAC 方法。"""
         established_sas = session.get("established_sas")
         sas_bytes = session.get("sas_bytes")
+        if established_sas is None and not sas_bytes:
+            logger.warning("[E2EE-Verify] SAS 尚未建立，拒绝发送房间内 MAC")
+            return False
+
         mac_method = session.get("mac") or SAS_MAC_V2
 
         to_user = session.get("sender")
-        to_device = session.get("from_device", session.get("their_device", ""))
+        to_device = session.get("from_device") or session.get("their_device", "")
         keys_to_mac = await self._get_verification_keys_to_mac(
             other_user=to_user,
             session=session,
         )
         if not keys_to_mac:
             logger.warning("[E2EE-Verify] 缺少可用于发送房间内 MAC 的本地身份密钥")
-            return
+            return False
 
         base_info = (
             f"{INFO_PREFIX_MAC}{self.user_id}{self.device_id}"
@@ -60,3 +66,4 @@ class SASVerificationSendRoomMACMixin:
             room_id, M_KEY_VERIFICATION_MAC, content, transaction_id
         )
         logger.info(f"[E2EE-Verify] 已发送 mac ({mac_method})")
+        return True
