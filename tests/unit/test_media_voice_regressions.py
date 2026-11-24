@@ -238,6 +238,116 @@ class MatrixAudioMessageStrTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.message_str, "你好")
 
 
+    async def test_localized_placeholders_with_explicit_filename(self):
+        for label in ("语音消息", "語音訊息", "音声メッセージ", "VOICE MESSAGE", "음성 메시지"):
+            with self.subTest(label=label):
+                message = await self._convert(
+                    label, {"msgtype": "m.audio", "body": label, "filename": "voice.ogg"}
+                )
+                self.assertEqual(message.message_str, "")
+
+    async def test_msc1767_filename_and_placeholder(self):
+        message = await self._convert(
+            "语音消息",
+            {
+                "msgtype": "m.audio",
+                "body": "语音消息",
+                "org.matrix.msc1767.file": {"name": "voice.ogg"},
+            },
+        )
+        self.assertEqual(message.message_str, "")
+
+    async def test_caption_without_filename_and_partial_label_are_preserved(self):
+        for caption in ("听一下这段", "语音消息是我刚录的", "Listen to this voice message"):
+            with self.subTest(caption=caption):
+                message = await self._convert(
+                    caption, {"msgtype": "m.audio", "body": caption}
+                )
+                self.assertEqual(message.message_str, caption)
+
+    async def test_formatted_placeholder_is_stripped(self):
+        message = await self._convert(
+            "语音消息",
+            {
+                "msgtype": "m.audio",
+                "body": "语音消息",
+                "filename": "voice.ogg",
+                "format": "org.matrix.custom.html",
+                "formatted_body": "<p><strong>语音消息</strong></p>",
+            },
+        )
+        self.assertEqual(message.message_str, "")
+
+    async def test_meaningful_formatted_caption_is_preserved(self):
+        message = await self._convert(
+            "语音消息",
+            {
+                "msgtype": "m.audio",
+                "body": "语音消息",
+                "filename": "voice.ogg",
+                "format": "org.matrix.custom.html",
+                "formatted_body": '<a href="https://example.org">语音消息</a>',
+            },
+        )
+        self.assertEqual(message.message_str, "语音消息")
+
+    async def test_localized_placeholder_preserved_on_download_failure(self):
+        message = await self._convert(
+            "语音消息",
+            {"msgtype": "m.audio", "body": "语音消息", "filename": "voice.ogg"},
+            record=False,
+        )
+        self.assertEqual(message.message_str, "语音消息")
+
+    async def test_quoted_record_does_not_count_as_current_audio(self):
+        core_module = sys.modules[
+            "astrbot_plugin_matrix_adapter.receiver.receiver_lib.convert"
+            ".operations.message.core.core"
+        ]
+        message = types.SimpleNamespace(message_str="语音消息")
+        chain = types.SimpleNamespace(chain=[self.record_cls(file="/tmp/quoted.ogg")])
+        event = types.SimpleNamespace(
+            content={"body": "语音消息", "filename": "voice.ogg"}
+        )
+        core_module.MatrixReceiverMessageConvertOrchestratorMixin._strip_audio_filename_placeholder(
+            message, chain, event, 1
+        )
+        self.assertEqual(message.message_str, "语音消息")
+
+
+class AudioCaptionPolicyTests(unittest.TestCase):
+    def setUp(self):
+        self.caption = load_module("receiver.events.audio.caption").audio_caption_content
+
+    def test_placeholder_not_appended_to_chain(self):
+        for body in ("voice-message-123.ogg", "语音消息", "Voice message"):
+            with self.subTest(body=body):
+                content = {"body": body, "filename": "voice-message-123.ogg"}
+                self.assertIsNone(self.caption(content))
+
+    def test_distinct_filename_like_caption_is_preserved(self):
+        content = {"body": "another.ogg", "filename": "voice.ogg"}
+        self.assertEqual(self.caption(content), content)
+
+    def test_reply_fallback_and_html_wrapper(self):
+        content = {
+            "body": "> <@user:example.org> previous\n\n语音消息",
+            "formatted_body": "<mx-reply>previous</mx-reply><p>语音消息</p>",
+            "filename": "voice.ogg",
+            "m.relates_to": {"m.in_reply_to": {"event_id": "$previous"}},
+        }
+        self.assertIsNone(self.caption(content))
+        content["body"] = "> previous\n\n听一下"
+        content["formatted_body"] = "<mx-reply>previous</mx-reply><p>听一下</p>"
+        result = self.caption(content)
+        self.assertEqual(result["body"], "听一下")
+        self.assertEqual(result["formatted_body"], "<p>听一下</p>")
+
+    def test_literal_blockquote_without_relation_is_preserved(self):
+        content = {"body": "> previous\n\n语音消息", "filename": "voice.ogg"}
+        self.assertEqual(self.caption(content), content)
+
+
 def _hydrate_events_package() -> None:
     """Execute the real ``receiver/events/__init__.py`` inside the test stub.
 

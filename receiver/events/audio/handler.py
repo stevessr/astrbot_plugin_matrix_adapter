@@ -3,7 +3,8 @@
 from astrbot.api import logger
 from astrbot.api.message_components import Plain, Record
 
-from ..text import append_formatted_text, should_append_caption
+from ..text import append_formatted_text
+from .caption import audio_caption_content
 from .extraction import (
     _extract_audio_file_info,
     _extract_audio_filename,
@@ -74,10 +75,6 @@ async def handle_audio(receiver, chain, event, _: str):
         else:
             chain.chain.append(Plain(f"[语音：{getattr(event, 'body', '')}]"))
 
-    if should_append_caption(content, filename):
-        append_formatted_text(
-            receiver,
-            chain,
-            content.get("body") or "",
-            content,
-        )
+    caption = audio_caption_content(content)
+    if caption is not None:
+        append_formatted_text(receiver, chain, caption["body"], caption)
